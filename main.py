@@ -13,10 +13,12 @@ from nio import (
     LoginResponse,
     RoomSendResponse,
     ProfileGetResponse,
+    SyncError, # For more specific error handling
+    LocalProtocolError, # For more specific error handling
 )
 
-# Import from our new module
 import prompt_constructor
+import database # Our new database module
 
 # --- Configuration ---
 load_dotenv()
@@ -25,25 +27,32 @@ load_dotenv()
 MATRIX_HOMESERVER = os.getenv("MATRIX_HOMESERVER")
 MATRIX_USER_ID = os.getenv("MATRIX_USER_ID")
 MATRIX_PASSWORD = os.getenv("MATRIX_PASSWORD")
-MATRIX_ROOM_ID = os.getenv("MATRIX_ROOM_ID")
-DEVICE_NAME = os.getenv("DEVICE_NAME", "NioChatBotPollingMem")
+MATRIX_ROOM_ID = os.getenv("MATRIX_ROOM_ID") # Optional startup room
+DEVICE_NAME = os.getenv("DEVICE_NAME", "NioChatBotSummarizer")
 
 # OpenRouter Configuration
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini")
+OPENROUTER_SUMMARY_MODEL = os.getenv("OPENROUTER_SUMMARY_MODEL", "openai/gpt-3.5-turbo") # Cheaper model for summaries
 YOUR_SITE_URL = os.getenv("YOUR_SITE_URL", "https://your-matrix-bot.example.com")
-YOUR_SITE_NAME = os.getenv("YOUR_SITE_NAME", "MyMatrixBotWithMemory")
+YOUR_SITE_NAME = os.getenv("YOUR_SITE_NAME", "MyMatrixBotSummarizer")
 
-# Active Listening / Decay Configuration
-POLLING_INITIAL_INTERVAL = int(os.getenv("POLLING_INITIAL_INTERVAL", "10"))
+# Active Listening / Decay / Batching Configuration
+POLLING_INITIAL_INTERVAL = int(os.getenv("POLLING_INITIAL_INTERVAL", "10")) # Interval for decay checks
 POLLING_MAX_INTERVAL = int(os.getenv("POLLING_MAX_INTERVAL", "120"))
 POLLING_INACTIVITY_DECAY_CYCLES = int(os.getenv("POLLING_INACTIVITY_DECAY_CYCLES", "3"))
+MESSAGE_BATCH_DELAY = float(os.getenv("MESSAGE_BATCH_DELAY", "3.0")) # Seconds to wait for more messages before responding
 
-# Memory Configuration
-MAX_MESSAGES_PER_ROOM_MEMORY = int(os.getenv("MAX_MESSAGES_PER_ROOM_MEMORY", "20"))
+# Memory and Summary Configuration
+MAX_MESSAGES_PER_ROOM_MEMORY = int(os.getenv("MAX_MESSAGES_PER_ROOM_MEMORY", "10")) # Short-term memory (user+AI turns)
+SUMMARY_UPDATE_MESSAGE_COUNT = int(os.getenv("SUMMARY_UPDATE_MESSAGE_COUNT", "15")) # Update summary after this many new messages (user+AI)
 
 # --- Global State ---
 BOT_DISPLAY_NAME: Optional[str] = "ChatBot"
+# room_activity_config stores state for rooms. New fields:
+# 'pending_messages_for_batch': List of raw incoming messages for current batch
+# 'batch_response_task': asyncio.Task for debounced AI response
+# 'messages_since_last_summary': Counter for triggering summary updates
 room_activity_config: Dict[str, Dict[str, Any]] = {}
 
 
@@ -55,7 +64,9 @@ async def send_matrix_message(
         print(f"[{room_id}] Attempted to send an empty message. Skipping.")
         return None
     try:
-        print(f"[{room_id}] Sending message: \"{text[:70].replace(os.linesep, ' ')}{'...' if len(text) > 70 else ''}\"")
+        # Limit log length and replace newlines for cleaner logging
+        log_text = text[:70].replace('\n', ' ').replace('\r', '')
+        print(f"[{room_id}] Sending message: \"{log_text}{'...' if len(text) > 70 else ''}\"")
         return await client.room_send(
             room_id=room_id,
             message_type="m.room.message",
@@ -66,20 +77,20 @@ async def send_matrix_message(
         return None
 
 
-# --- OpenRouter API Call ---
-def get_openrouter_response(messages_payload: List[Dict[str, str]]) -> str:
+# --- OpenRouter API Call (modified to allow different models) ---
+def get_openrouter_response(messages_payload: List[Dict[str, str]], model_name: str = OPENROUTER_MODEL) -> str:
     global BOT_DISPLAY_NAME
     if not OPENROUTER_API_KEY or "YOUR_OPENROUTER_API_KEY" in OPENROUTER_API_KEY:
-        print("OpenRouter API key not configured. Skipping API call.")
-        return f"Sorry, my AI connection is not configured. (Bot: {BOT_DISPLAY_NAME})"
+        print(f"OpenRouter API key not configured. Skipping API call for model {model_name}.")
+        return f"Sorry, my AI connection is not configured."
 
     if not messages_payload:
-        print("Error: Empty messages_payload passed to get_openrouter_response.")
+        print(f"Error: Empty messages_payload passed to get_openrouter_response for model {model_name}.")
         return "Sorry, I received an empty request."
 
     conn = http.client.HTTPSConnection("openrouter.ai")
     payload_data = {
-        "model": OPENROUTER_MODEL,
+        "model": model_name,
         "messages": messages_payload,
     }
     headers = {
@@ -89,7 +100,7 @@ def get_openrouter_response(messages_payload: List[Dict[str, str]]) -> str:
         "X-Title": YOUR_SITE_NAME,
     }
     try:
-        print(f"Sending to OpenRouter with model {OPENROUTER_MODEL}. Payload messages count: {len(messages_payload)}")
+        print(f"Sending to OpenRouter with model {model_name}. Payload messages count: {len(messages_payload)}")
         conn.request("POST", "/api/v1/chat/completions", json.dumps(payload_data), headers)
         res = conn.getresponse()
         data = res.read()
@@ -99,17 +110,147 @@ def get_openrouter_response(messages_payload: List[Dict[str, str]]) -> str:
             return response_json["choices"][0]["message"]["content"]
         else:
             error_message = response_json.get("error", {}).get("message", "Unknown error")
-            print(f"Error from OpenRouter: {res.status} - {error_message} - Response: {response_json}")
-            return f"Sorry, I couldn't get a response from the AI. (Error: {res.status})"
+            print(f"Error from OpenRouter ({model_name}): {res.status} - {error_message} - Response: {response_json}")
+            return f"Sorry, I couldn't get a response from the AI ({model_name}). (Error: {res.status})"
     except Exception as e:
-        print(f"Error connecting to OpenRouter: {e}")
-        return "Sorry, there was an issue connecting to the AI service."
+        print(f"Error connecting to OpenRouter ({model_name}): {e}")
+        return f"Sorry, there was an issue connecting to the AI service ({model_name})."
     finally:
         conn.close()
+
+# --- Summary Management ---
+async def update_channel_summary_if_needed(room_id: str, client: AsyncClient, force_update: bool = False):
+    config = room_activity_config.get(room_id)
+    if not config: return
+
+    # Check if enough messages have accumulated or if forced
+    # We will use short-term memory for summarization.
+    short_term_memory: List[Dict[str,str]] = config.get('memory', [])
+    
+    # This logic needs refinement: what *exactly* do we summarize?
+    # For now, let's assume we summarize the entire current short_term_memory if a threshold is met.
+    # A more advanced approach would be to get messages since last_event_id_summarized from DB.
+    
+    messages_in_short_term_mem = len(short_term_memory) # Counts user + AI turns
+
+    if force_update or (messages_in_short_term_mem > 0 and config.get('messages_since_last_summary', 0) >= SUMMARY_UPDATE_MESSAGE_COUNT) :
+        print(f"[{room_id}] Triggering summary update. Force: {force_update}, Msgs since last: {config.get('messages_since_last_summary',0)}")
+        
+        previous_summary_data = database.get_summary(room_id)
+        previous_summary_text = previous_summary_data[0] if previous_summary_data else None
+        # last_event_id_summarized = previous_summary_data[1] if previous_summary_data else None
+        
+        # We need a list of {"name": ..., "content": ...} from short_term_memory
+        # The short_term_memory already has this structure, but 'role' needs to be handled.
+        # For summarization, the 'role' (user/assistant) is less important than the content and speaker name.
+        messages_for_summary_prompt: List[Dict[str,str]] = []
+        for mem_item in short_term_memory:
+            messages_for_summary_prompt.append({"name": mem_item.get("name", "Unknown"), "content": mem_item["content"]})
+
+        if not messages_for_summary_prompt:
+            print(f"[{room_id}] No messages in short-term memory to summarize.")
+            config['messages_since_last_summary'] = 0 # Reset counter
+            return
+
+        summary_payload = prompt_constructor.build_summary_generation_payload(
+            messages_to_summarize=messages_for_summary_prompt,
+            bot_name=BOT_DISPLAY_NAME,
+            previous_summary=previous_summary_text
+        )
+        
+        new_summary = get_openrouter_response(summary_payload, model_name=OPENROUTER_SUMMARY_MODEL)
+
+        if "Sorry, I couldn't" not in new_summary and "not configured" not in new_summary:
+            # TODO: Determine the 'last_event_id_summarized'. This is tricky with batched inputs.
+            # For now, we're not precisely tracking it for summarization.
+            # A robust way would be to store event IDs with messages in short-term memory.
+            database.update_summary(room_id, new_summary, last_event_id_summarized=None) 
+            print(f"[{room_id}] New summary generated and stored. Length: {len(new_summary)}")
+            config['messages_since_last_summary'] = 0 # Reset counter
+            
+            # Optional: Clear short_term_memory after summarization to prevent it growing too large
+            # if it's only used for summarization. If it's also for immediate context,
+            # then keep it and rely on MAX_MESSAGES_PER_ROOM_MEMORY truncation.
+            # config['memory'] = [] # Example: Clearing memory after summarization
+        else:
+            print(f"[{room_id}] Failed to generate a valid summary.")
+
+
+# --- Batched Response Processing ---
+async def process_batched_messages(room_id: str, client: AsyncClient):
+    config = room_activity_config.get(room_id)
+    if not config or not config.get('is_active_listening', False):
+        print(f"[{room_id}] process_batched_messages: Not active or no config. Aborting.")
+        return
+
+    pending_batch: List[Dict[str, str]] = list(config.get('pending_messages_for_batch', [])) # copy
+    config['pending_messages_for_batch'] = [] # Clear immediately
+
+    if not pending_batch:
+        print(f"[{room_id}] process_batched_messages: No messages in batch. Aborting.")
+        return
+
+    print(f"[{room_id}] Processing batch of {len(pending_batch)} message(s).")
+
+    short_term_memory: List[Dict[str, str]] = config.get('memory', [])
+    summary_data = database.get_summary(room_id)
+    channel_summary_text = summary_data[0] if summary_data else None
+
+    # Construct payload for AI using prompt_constructor
+    messages_payload_for_ai = prompt_constructor.build_messages_for_ai(
+        historical_messages=list(short_term_memory), # pass a copy
+        current_batched_user_inputs=pending_batch, # these are {"name": ..., "content": ...}
+        bot_display_name=BOT_DISPLAY_NAME,
+        channel_summary=channel_summary_text
+    )
+
+    ai_response_text = get_openrouter_response(messages_payload_for_ai, model_name=OPENROUTER_MODEL)
+    await send_matrix_message(client, room_id, ai_response_text)
+
+    # Update short-term memory
+    # 1. Add the combined batched user input as a single "user" turn
+    # This representation is simplified; more complex scenarios might store individual messages.
+    if pending_batch:
+        combined_user_content = ""
+        first_user_name = pending_batch[0]["name"]
+        for msg_data in pending_batch:
+            combined_user_content += f"{msg_data['name']}: {msg_data['content']}\n"
+        
+        short_term_memory.append({
+            "role": "user", 
+            "name": first_user_name, # Or a generic "Multiple Users"
+            "content": combined_user_content.strip()
+        })
+        config['messages_since_last_summary'] = config.get('messages_since_last_summary', 0) + 1
+
+
+    # 2. Add AI's response
+    is_error_response = "Sorry, I couldn't" in ai_response_text or \
+                        "not configured" in ai_response_text or \
+                        "issue connecting" in ai_response_text
+    if ai_response_text and not is_error_response:
+        short_term_memory.append({
+            "role": "assistant", 
+            "name": BOT_DISPLAY_NAME, 
+            "content": ai_response_text
+        })
+        config['messages_since_last_summary'] = config.get('messages_since_last_summary', 0) + 1
+
+
+    # 3. Truncate short-term memory
+    while len(short_term_memory) > MAX_MESSAGES_PER_ROOM_MEMORY:
+        short_term_memory.pop(0)
+    
+    config['memory'] = short_term_memory # Ensure the main config is updated
+    print(f"[{room_id}] Short-term memory updated. Size: {len(short_term_memory)}. Msgs since summary: {config.get('messages_since_last_summary',0)}")
+
+    # Trigger summary update if needed
+    await update_channel_summary_if_needed(room_id, client)
 
 
 # --- Matrix Bot Logic: Active Listening and Decay Management ---
 async def manage_room_activity_decay(room_id: str, client: AsyncClient):
+    # (Largely same, but calls force summary update on deactivation)
     initial_interval = room_activity_config.get(room_id, {}).get('current_interval', POLLING_INITIAL_INTERVAL)
     print(f"[{room_id}] Starting activity decay manager. Initial check interval: {initial_interval}s")
     try:
@@ -118,41 +259,31 @@ async def manage_room_activity_decay(room_id: str, client: AsyncClient):
             if not current_config or not current_config.get('is_active_listening', False):
                 print(f"[{room_id}] Decay manager: No longer active listening or config removed. Exiting task.")
                 break
-
             sleep_duration = current_config['current_interval']
             await asyncio.sleep(sleep_duration)
-
-            current_config = room_activity_config.get(room_id)
+            current_config = room_activity_config.get(room_id) # Re-fetch
             if not current_config or not current_config.get('is_active_listening', False):
                 print(f"[{room_id}] Decay manager: No longer active listening or config removed after sleep. Exiting task.")
                 break
-
             now = time.time()
-            time_since_last_activity = now - current_config['last_message_timestamp']
-
-            if time_since_last_activity >= current_config['current_interval']:
+            if (now - current_config['last_message_timestamp']) >= current_config['current_interval']:
                 new_interval = min(current_config['current_interval'] * 2, POLLING_MAX_INTERVAL)
-                print(f"[{room_id}] Decay: No detected activity for >= {current_config['current_interval']}s. New check interval: {new_interval}s.")
+                print(f"[{room_id}] Decay: No detected activity for >= {current_config['current_interval']}s. New interval: {new_interval}s.")
                 current_config['current_interval'] = new_interval
-
-                if current_config['current_interval'] == POLLING_MAX_INTERVAL:
+                if new_interval == POLLING_MAX_INTERVAL:
                     current_config['max_interval_no_activity_cycles'] += 1
                 else:
                     current_config['max_interval_no_activity_cycles'] = 0
-
                 if current_config['max_interval_no_activity_cycles'] >= POLLING_INACTIVITY_DECAY_CYCLES:
                     current_config['is_active_listening'] = False
-                    print(f"[{room_id}] Decay: Deactivating listening due to prolonged inactivity. Memory preserved.")
-                    await send_matrix_message(
-                        client,
-                        room_id,
-                        f"Stopping active listening in this room due to inactivity. "
-                        f"Mention me (@{BOT_DISPLAY_NAME}) to re-activate."
-                    )
+                    print(f"[{room_id}] Decay: Deactivating listening. Forcing summary update.")
+                    await update_channel_summary_if_needed(room_id, client, force_update=True) # Force summary
+                    await send_matrix_message(client, room_id, f"Stopping active listening due to inactivity. Mention me (@{BOT_DISPLAY_NAME}) to re-activate.")
             else:
                 current_config['max_interval_no_activity_cycles'] = 0
     except asyncio.CancelledError:
         print(f"[{room_id}] Activity decay manager task was cancelled.")
+        # If cancelled, it might be due to reactivation. Summary update might happen elsewhere or be pending.
     except Exception as e:
         print(f"[{room_id}] Error in activity decay manager: {e}")
     finally:
@@ -162,117 +293,100 @@ async def manage_room_activity_decay(room_id: str, client: AsyncClient):
 async def message_callback(room: MatrixRoom, event: RoomMessageText, client: AsyncClient) -> None:
     global room_activity_config, BOT_DISPLAY_NAME
 
-    if event.sender == client.user_id:
-        return
+    if event.sender == client.user_id: return
 
     now = time.time()
     room_id = room.room_id
     message_body = event.body.strip()
-    
-    # Get sender's display name for AI context and memory
-    # room.user_name(event.sender) will return the display name if known in the room,
-    # otherwise it returns the Matrix User ID (MXID).
-    sender_display_name = room.user_name(event.sender) 
-    # Fallback to raw sender ID if display name is somehow None or empty, though room.user_name should prevent this.
-    if not sender_display_name:
-        sender_display_name = event.sender
-        print(f"[{room_id}] Warning: Could not get display name for {event.sender} from room state, using MXID.")
+    sender_display_name = room.user_name(event.sender) or event.sender
 
-
-    print(f"Message received in room '{room.display_name}' ({room_id}) from '{sender_display_name}' ({event.sender}): \"{message_body[:100].replace(os.linesep, ' ')}{'...' if len(message_body) > 100 else ''}\"")
+    print(f"Msg in '{room.display_name}' ({room_id}) from '{sender_display_name}': \"{message_body[:50].replace(os.linesep,' ')}...\"")
 
     current_room_config = room_activity_config.get(room_id)
+    bot_name_lower = BOT_DISPLAY_NAME.lower()
+    is_mention = bool(bot_name_lower and bot_name_lower in message_body.lower())
 
-    bot_name_lower = BOT_DISPLAY_NAME.lower() if BOT_DISPLAY_NAME else ""
-    is_mention = bool(BOT_DISPLAY_NAME and bot_name_lower in message_body.lower())
+    should_activate_or_reset_listening = is_mention
 
-    text_for_ai_processing: Optional[str] = None
-
-    if is_mention:
-        existing_memory: List[Dict[str, str]] = []
-        if current_room_config and 'memory' in current_room_config:
-            existing_memory = current_room_config['memory']
+    if should_activate_or_reset_listening:
+        # Cancel any existing batch task if we're re-triggering listening
+        if current_room_config and current_room_config.get('batch_response_task'):
+            task = current_room_config['batch_response_task']
+            if not task.done(): task.cancel()
         
+        # Cancel existing decay task
         if current_room_config and current_room_config.get('decay_task'):
-            old_task = current_room_config['decay_task']
-            if not old_task.done():
-                old_task.cancel()
-                try: await asyncio.wait_for(old_task, timeout=2.0)
-                except (asyncio.CancelledError, asyncio.TimeoutError): pass
-                except Exception as e: print(f"[{room_id}] Error awaiting old cancelled task: {e}")
-        
-        room_activity_config[room_id] = {
+            task = current_room_config['decay_task']
+            if not task.done(): task.cancel()
+
+        # Initialize or update room config
+        if not current_room_config:
+            current_room_config = {
+                'memory': [], 
+                'pending_messages_for_batch': [],
+                'messages_since_last_summary': 0,
+            }
+        current_room_config.update({
             'is_active_listening': True, 'current_interval': POLLING_INITIAL_INTERVAL,
             'last_message_timestamp': now, 'max_interval_no_activity_cycles': 0,
             'decay_task': asyncio.create_task(manage_room_activity_decay(room_id, client)),
-            'memory': existing_memory
-        }
-        current_room_config = room_activity_config[room_id]
-        print(f"[{room_id}] Activated/Reset active listening. Interval: {POLLING_INITIAL_INTERVAL}s. Memory size: {len(existing_memory)}")
+            'batch_response_task': None # Will be set below
+        })
+        room_activity_config[room_id] = current_room_config
+        print(f"[{room_id}] Activated/Reset listening. Interval: {POLLING_INITIAL_INTERVAL}s. Mem size: {len(current_room_config['memory'])}")
+        # If it was a bare mention (no actual question), we might not add to batch immediately or handle differently
+        # For now, all mentions will make the bot listen and process this message in a batch.
 
-        # AI call will happen below if perform_ai_call and text_for_ai_processing are set
-
-    if current_room_config and current_room_config.get('is_active_listening'):
-        if not message_body: return
-        text_for_ai_processing = message_body
-        current_room_config['last_message_timestamp'] = now
-        current_room_config['current_interval'] = POLLING_INITIAL_INTERVAL
-        current_room_config['max_interval_no_activity_cycles'] = 0
-        print(f"[{room_id}] Active listening: Activity processed. Interval reset to {POLLING_INITIAL_INTERVAL}s.")
-    else:
+    # If not actively listening now (even after potential activation by mention), ignore further processing.
+    if not current_room_config or not current_room_config.get('is_active_listening', False):
+        # print(f"[{room_id}] Not actively listening. Ignoring message.")
         return
 
-    if text_for_ai_processing:
-        if not current_room_config:
-             print(f"[{room_id}] Error: current_room_config not found before AI call. This shouldn't happen.")
-             return
+    # Add current message to the pending batch for this room
+    current_room_config['pending_messages_for_batch'].append({
+        "name": sender_display_name,
+        "content": message_body,
+        "event_id": event.event_id # Store event_id for potential future use (e.g. precise summarization point)
+    })
+    print(f"[{room_id}] Added message to batch. Batch size: {len(current_room_config['pending_messages_for_batch'])}")
 
-        room_memory_store: List[Dict[str, str]] = current_room_config['memory']
-        
-        # sender_display_name is already fetched at the beginning of the callback
-        # This is the name used in the AI prompt for the current user.
-        user_name_for_ai_input = sender_display_name
+    # Update activity timestamp for decay manager
+    current_room_config['last_message_timestamp'] = now
+    current_room_config['current_interval'] = POLLING_INITIAL_INTERVAL # Reset decay interval
+    current_room_config['max_interval_no_activity_cycles'] = 0
 
-        messages_payload = prompt_constructor.build_messages_for_ai(
-            historical_messages=list(room_memory_store),
-            current_user_input=text_for_ai_processing,
-            user_name_for_input=user_name_for_ai_input, # Use the fetched display name
-            bot_display_name=BOT_DISPLAY_NAME
-        )
-        
-        print(f"[{room_id}] Preparing to call AI. History length: {len(room_memory_store)}, Current input by '{user_name_for_ai_input}': '{text_for_ai_processing[:50]}...'")
+    # Debounce: If a batch response task is already scheduled, cancel it and reschedule.
+    if current_room_config.get('batch_response_task'):
+        task = current_room_config['batch_response_task']
+        if not task.done():
+            # print(f"[{room_id}] Cancelling existing batch task to reschedule.")
+            task.cancel()
 
-        ai_response_text = get_openrouter_response(messages_payload)
-        await send_matrix_message(client, room_id, ai_response_text)
+    # Schedule (or reschedule) the batched processing
+    current_room_config['batch_response_task'] = asyncio.create_task(
+        _delayed_batch_processing(room_id, client, MESSAGE_BATCH_DELAY)
+    )
+    # print(f"[{room_id}] Scheduled/Rescheduled batch processing task.")
 
-        user_message_to_store = {
-            "role": "user",
-            "name": user_name_for_ai_input, # Store with display name
-            "content": text_for_ai_processing
-        }
-        room_memory_store.append(user_message_to_store)
-        
-        is_error_response = "Sorry, I couldn't" in ai_response_text or \
-                            "not configured" in ai_response_text or \
-                            "issue connecting" in ai_response_text
-        if ai_response_text and not is_error_response:
-            ai_response_to_store = {
-                "role": "assistant",
-                "name": BOT_DISPLAY_NAME, 
-                "content": ai_response_text
-            }
-            room_memory_store.append(ai_response_to_store)
-        
-        while len(room_memory_store) > MAX_MESSAGES_PER_ROOM_MEMORY:
-            room_memory_store.pop(0)
-        print(f"[{room_id}] Updated memory. New size: {len(room_memory_store)}")
+
+async def _delayed_batch_processing(room_id: str, client: AsyncClient, delay: float):
+    """Helper to introduce a delay before processing the batch."""
+    await asyncio.sleep(delay)
+    try:
+        await process_batched_messages(room_id, client)
+    except asyncio.CancelledError:
+        print(f"[{room_id}] Delayed batch processing task was cancelled before execution.")
+    except Exception as e:
+        print(f"[{room_id}] Error in delayed_batch_processing: {e}")
 
 
 async def main_matrix():
     global BOT_DISPLAY_NAME, room_activity_config
 
+    database.initialize_database() # Initialize DB
+
     if not all([MATRIX_HOMESERVER, MATRIX_USER_ID, MATRIX_PASSWORD]):
-        print("CRITICAL: MATRIX_HOMESERVER, MATRIX_USER_ID, or MATRIX_PASSWORD not set. Exiting.")
+        print("CRITICAL: Matrix credentials not set. Exiting.")
         return
     
     client = AsyncClient(MATRIX_HOMESERVER, MATRIX_USER_ID)
@@ -286,57 +400,53 @@ async def main_matrix():
         if not isinstance(login_response, LoginResponse):
             print(f"Failed to log in: {login_response}"); return
     except Exception as e:
-        print(f"Login failed with exception: {e}"); return
-    print(f"Logged in successfully as {client.user_id} (device ID: {client.device_id})")
+        print(f"Login failed: {e}"); return
+    print(f"Logged in as {client.user_id} (device: {client.device_id})")
 
     try:
         profile: ProfileGetResponse = await client.get_profile(client.user_id)
-        fetched_displayname = profile.displayname
-        if fetched_displayname:
-            BOT_DISPLAY_NAME = fetched_displayname
-        else:
-            localpart = client.user_id.split(':')[0]
-            BOT_DISPLAY_NAME = localpart[1:] if localpart.startswith("@") else localpart
-        print(f"Bot's display name set to: '{BOT_DISPLAY_NAME}'")
+        BOT_DISPLAY_NAME = profile.displayname or (client.user_id.split(':')[0][1:] if client.user_id.startswith("@") else client.user_id.split(':')[0])
+        print(f"Bot display name: '{BOT_DISPLAY_NAME}'")
     except Exception as e:
-        print(f"Could not fetch bot's display name, using fallback '{BOT_DISPLAY_NAME}'. Error: {e}")
+        print(f"Could not fetch display name, using fallback. Error: {e}")
 
     if MATRIX_ROOM_ID and "YOUR_MATRIX_ROOM_ID" not in MATRIX_ROOM_ID:
-        print(f"Attempting to join predefined room: {MATRIX_ROOM_ID}...")
+        print(f"Joining predefined room: {MATRIX_ROOM_ID}...")
         try:
-            join_response = await client.join(MATRIX_ROOM_ID)
-            if hasattr(join_response, 'room_id') and join_response.room_id:
-                print(f"Successfully joined room: {MATRIX_ROOM_ID}")
-            else:
-                print(f"Failed to join room {MATRIX_ROOM_ID}: {join_response}")
+            await client.join(MATRIX_ROOM_ID)
+            print(f"Joined {MATRIX_ROOM_ID}")
         except Exception as e:
-            print(f"Error joining room {MATRIX_ROOM_ID}: {e}")
+            print(f"Failed to join {MATRIX_ROOM_ID}: {e}")
 
-    print("Bot is running. Listening for messages and invitations...")
+    print("Bot is running...")
     try:
         await client.sync_forever(timeout=30000, full_state=True)
-    except Exception as e: # Catch specific exceptions if needed, e.g. nio.exceptions.TransportError
-        print(f"Error during sync_forever: {type(e).__name__} - {e}")
+    except (SyncError, LocalProtocolError) as e: # Catch common nio sync errors
+        print(f"Matrix Sync Error: {type(e).__name__} - {e}. This might be a server or network issue.")
+    except Exception as e:
+        print(f"Unexpected error during sync: {type(e).__name__} - {e}")
     finally:
-        print("Shutting down. Cancelling active room decay tasks...")
-        active_decay_tasks = [
-            cfg['decay_task'] for cfg in room_activity_config.values()
-            if cfg.get('decay_task') and not cfg['decay_task'].done()
-        ]
-        for task in active_decay_tasks: task.cancel()
+        print("Shutting down...")
+        # Cancel all active tasks
+        tasks_to_cancel = []
+        for r_id, cfg in list(room_activity_config.items()):
+            for task_key in ['decay_task', 'batch_response_task']:
+                task = cfg.get(task_key)
+                if task and not task.done():
+                    task.cancel()
+                    tasks_to_cancel.append(task)
         
-        if active_decay_tasks:
-            done, pending = await asyncio.wait(active_decay_tasks, timeout=5.0, return_when=asyncio.ALL_COMPLETED)
-            for task in pending: print(f"Warning: Task {task.get_name()} did not complete cancellation in time.")
-            for task in done:
-                if task.cancelled(): print(f"Task {task.get_name()} successfully cancelled.")
-                elif task.exception(): print(f"Task {task.get_name()} raised an exception during shutdown: {task.exception()}")
+        if tasks_to_cancel:
+            print(f"Waiting for {len(tasks_to_cancel)} tasks to cancel...")
+            await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
+            print("Active tasks cancelled.")
         
-        print("Closing Matrix client..."); await client.close()
+        await client.close()
         print("Matrix client closed. Bot shutdown complete.")
 
 
 if __name__ == "__main__":
+    # (Credential checks remain the same)
     essential_configs = {"MATRIX_HOMESERVER": MATRIX_HOMESERVER, "MATRIX_USER_ID": MATRIX_USER_ID, "MATRIX_PASSWORD": MATRIX_PASSWORD}
     if any(not val or f"YOUR_{key}" in str(val) or "placeholder" in str(val).lower() for key, val in essential_configs.items()):
         print("CRITICAL: Missing or placeholder essential Matrix configs. Please set them in .env or environment. Exiting.")
