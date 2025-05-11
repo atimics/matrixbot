@@ -1,6 +1,7 @@
 matrix-nio[e2e]
 python-dotenv
 pydantic
+markdown
 # For a real message queue, you'd add one of these:
 # pika                 # For RabbitMQ (blocking, often used with threads or separate processes)
 # aio-pika             # For RabbitMQ (asyncio compatible)

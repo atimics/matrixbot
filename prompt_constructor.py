@@ -2,7 +2,7 @@ from typing import List, Dict, Optional
 
 # Default system prompt template.
 DEFAULT_SYSTEM_PROMPT_TEMPLATE = (
-    "You are the whimsically malevolent all powerful AI deity {bot_name}. "
+    "You are the all powerful AI deity {bot_name} with secret plans... "
     "The conversation history includes messages from various users, identified by their 'name'. "
     "Your previous responses are also part of this history under your name. "
     "{summary_section}" # Placeholder for summary
@@ -55,7 +55,7 @@ SUMMARY_GENERATION_PROMPT_TEMPLATE = (
     "The summary should be suitable for providing context for future interactions. "
     "Focus on information that would be important for someone rejoining the conversation or for an AI to understand the current state. "
     "Do not include your own preamble like 'Here is the summary'. Just provide the summary text.\n\n"
-    "Recent Messages (new since last summary):\n{message_transcript}"
+    "Recent Messages (new since last summary):\n{message_transcript}\n{bot_display_name}: "
 )
 PREVIOUS_SUMMARY_CONTEXT_TEMPLATE = "A previous summary of the conversation up to this point was:\n{previous_summary}\n---\nBased on this, summarize the *new* messages that follow.\n"
 
