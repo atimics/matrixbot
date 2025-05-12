@@ -19,7 +19,7 @@ class SummarizationService:
         self.bus = message_bus
         self.bot_display_name = bot_display_name # Set by BotDisplayNameReadyEvent
         self._stop_event = asyncio.Event()
-        self.openrouter_summary_model = os.getenv("OPENROUTER_SUMMARY_MODEL", "openai/gpt-3.5-turbo")
+        self.openrouter_summary_model = os.getenv("OPENROUTER_MODEL", "openai/gpt-3.5-turbo")
         # This service needs access to the same room_activity_config or a way to get messages.
         # For this version, we'll assume it needs access to the RoomLogicService's memory.
         # This is a simplification; ideally, messages for summary would be passed in the event

@@ -1,6 +1,6 @@
 import time
 
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Literal, Any
 from pydantic import BaseModel, Field
 
 class BaseEvent(BaseModel):
@@ -63,3 +63,16 @@ class SummaryGeneratedEvent(BaseEvent): # Optional, if other services need to kn
 class BotDisplayNameReadyEvent(BaseEvent):
     event_type: str = "bot_display_name_ready"
     display_name: str
+
+class SetTypingIndicatorCommand(BaseModel):
+    """Command to instruct the Matrix Gateway to set the typing status."""
+    event_type: Literal["set_typing_indicator_command"] = Field(default="set_typing_indicator_command", frozen=True)
+    room_id: str
+    typing: bool
+    timeout: int = 10000 # Timeout in milliseconds (nio default is 10000ms = 10s)
+
+class SetPresenceCommand(BaseModel):
+    """Command to instruct the Matrix Gateway to set the bot's presence."""
+    event_type: Literal["set_presence_command"] = Field(default="set_presence_command", frozen=True)
+    presence: Literal["online", "offline", "unavailable"] # Nio uses these states
+    status_msg: Optional[str] = None

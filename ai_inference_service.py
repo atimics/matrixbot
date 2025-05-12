@@ -19,8 +19,7 @@ class AIInferenceService:
         self._stop_event = asyncio.Event()
 
     def _get_openrouter_response(self, model_name: str, messages_payload: List[Dict[str, str]]) -> Tuple[bool, Optional[str], Optional[str]]:
-        if not self.api_key or "YOUR_OPENROUTER_API_KEY" in self.api_key:
-            # print(f"AIInfer: OpenRouter API key not configured for model {model_name}.")
+        if not self.api_key in self.api_key:
             return False, None, "OpenRouter API key not configured."
 
         if not messages_payload:

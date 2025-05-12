@@ -13,6 +13,13 @@ SUMMARY_SYSTEM_PROMPT_INSERT = (
     "The following is a brief summary of earlier parts of this conversation for context:\n{channel_summary}\n---\n"
 )
 
+def build_status_prompt(bot_display_name: str = "AI Bot"):
+    # You can enhance this prompt with more personalized or context-driven content!
+    return [
+        {"role": "system", "content": f"You are an AI assistant named {bot_display_name}. Generate a short, friendly status message summarizing your readiness to help in chat. Keep it under 10 words."}
+    ]
+
+
 def get_formatted_system_prompt(bot_name: str, channel_summary: Optional[str] = None) -> str:
     summary_section_text = ""
     if channel_summary:
