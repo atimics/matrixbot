@@ -91,4 +91,4 @@ class SetPresenceCommand(BaseModel):
     event_type: Literal["set_presence_command"] = Field(default="set_presence_command", frozen=True)
     presence: Literal["online", "offline", "unavailable"] # Nio uses these states
     status_msg: Optional[str] = None
-    timeout: Optional[int] = None # Timeout in milliseconds for the presence update
+    # Removed unused timeout field

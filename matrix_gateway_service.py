@@ -40,6 +40,46 @@ class MatrixGatewayService:
         self.client: Optional[AsyncClient] = None
         self.bot_display_name: Optional[str] = "ChatBot" # Default
         self._stop_event = asyncio.Event()
+        self._command_queue = asyncio.Queue()
+        self._rate_limit_until = 0.0  # Timestamp until which we must wait due to 429
+        self._command_worker_task = None
+
+    async def _rate_limited_matrix_call(self, coro_func, *args, **kwargs):
+        # Wait if we are currently rate limited
+        now = asyncio.get_event_loop().time()
+        if self._rate_limit_until > now:
+            await asyncio.sleep(self._rate_limit_until - now)
+        try:
+            return await coro_func(*args, **kwargs)
+        except Exception as e:
+            # Check for 429 in exception message (nio does not always raise a specific exception)
+            if hasattr(e, 'status_code') and e.status_code == 429:
+                retry_after = getattr(e, 'retry_after_ms', 10000) / 1000.0  # Default 10s
+                print(f"Gateway: Got 429 response (rate limited), sleeping for {retry_after}s")
+                self._rate_limit_until = asyncio.get_event_loop().time() + retry_after
+                await asyncio.sleep(retry_after)
+                # Optionally retry once after waiting
+                return await coro_func(*args, **kwargs)
+            elif '429' in str(e):
+                print(f"Gateway: Got 429 response (rate limited), sleeping for 10s")
+                self._rate_limit_until = asyncio.get_event_loop().time() + 10
+                await asyncio.sleep(10)
+                return await coro_func(*args, **kwargs)
+            else:
+                raise
+
+    async def _command_worker(self):
+        while not self._stop_event.is_set():
+            try:
+                func, args, kwargs = await self._command_queue.get()
+                await func(*args, **kwargs)
+            except Exception as e:
+                print(f"Gateway: Error in command worker: {e}")
+            finally:
+                self._command_queue.task_done()
+
+    async def _enqueue_command(self, func, *args, **kwargs):
+        await self._command_queue.put((func, args, kwargs))
 
     async def _matrix_message_callback(self, room: MatrixRoom, event: RoomMessageText):
         if not self.client or event.sender == self.client.user_id:
@@ -58,6 +98,9 @@ class MatrixGatewayService:
         await self.bus.publish(msg_event)
 
     async def _handle_send_message_command(self, command: SendMatrixMessageCommand):
+        await self._enqueue_command(self._send_message_impl, command)
+
+    async def _send_message_impl(self, command: SendMatrixMessageCommand):
         if self.client:
             plain_text_body = command.text
 
@@ -77,7 +120,8 @@ class MatrixGatewayService:
                 }
 
             try:
-                await self.client.room_send(
+                await self._rate_limited_matrix_call(
+                    self.client.room_send,
                     room_id=command.room_id,
                     message_type="m.room.message",
                     content=content
@@ -90,6 +134,9 @@ class MatrixGatewayService:
             print("Gateway: Cannot send message, client not initialized.")
 
     async def _handle_react_to_message_command(self, command: ReactToMessageCommand):
+        await self._enqueue_command(self._react_to_message_impl, command)
+
+    async def _react_to_message_impl(self, command: ReactToMessageCommand):
         if not self.client or not self.client.logged_in:
             print("Gateway: Client not ready, cannot send reaction.")
             return
@@ -101,16 +148,19 @@ class MatrixGatewayService:
                     "key": command.reaction_key
                 }
             }
-            await self.client.room_send(
+            await self._rate_limited_matrix_call(
+                self.client.room_send,
                 room_id=command.room_id,
                 message_type="m.reaction",
                 content=content
             )
-            # print(f"Gateway: Sent reaction '{command.reaction_key}' to event {command.target_event_id} in {command.room_id}")
         except Exception as e:
             print(f"Gateway: Error sending reaction to {command.room_id}: {e}")
 
     async def _handle_send_reply_command(self, command: SendReplyCommand):
+        await self._enqueue_command(self._send_reply_impl, command)
+
+    async def _send_reply_impl(self, command: SendReplyCommand):
         if not self.client or not self.client.logged_in:
             print("Gateway: Client not ready, cannot send reply.")
             return
@@ -158,7 +208,8 @@ class MatrixGatewayService:
                 }
             }
 
-            await self.client.room_send(
+            await self._rate_limited_matrix_call(
+                self.client.room_send,
                 room_id=command.room_id,
                 message_type="m.room.message",
                 content=content
@@ -167,10 +218,13 @@ class MatrixGatewayService:
             print(f"Gateway: Error sending reply to {command.room_id}: {e}")
 
     async def _handle_set_typing_command(self, command: SetTypingIndicatorCommand):
+        await self._enqueue_command(self._set_typing_impl, command)
+
+    async def _set_typing_impl(self, command: SetTypingIndicatorCommand):
         if self.client and self.client.logged_in:
             try:
-                # Use nio's built-in method
-                await self.client.room_typing(
+                await self._rate_limited_matrix_call(
+                    self.client.room_typing,
                     room_id=command.room_id,
                     typing_state=command.typing,
                     timeout=command.timeout # Pass timeout from command
@@ -184,12 +238,15 @@ class MatrixGatewayService:
             print(f"Gateway: Cannot set typing indicator in {command.room_id}, client not ready or not logged in.")
 
     async def _handle_set_presence_command(self, command: SetPresenceCommand):
+        await self._enqueue_command(self._set_presence_impl, command)
+
+    async def _set_presence_impl(self, command: SetPresenceCommand):
         if self.client and self.client.logged_in:
             try:
-                await self.client.set_presence(
+                await self._rate_limited_matrix_call(
+                    self.client.set_presence,
                     presence=command.presence,
-                    status_msg=command.status_msg,
-                    # timeout=command.timeout # This was the original line, nio uses status_msg not status_message
+                    status_msg=command.status_msg
                 )
                 print(f"Gateway: Presence set to {command.presence} with message '{command.status_msg}'")
             except LocalProtocolError as e:
@@ -245,6 +302,8 @@ class MatrixGatewayService:
         self.bus.subscribe(SendReplyCommand.model_fields['event_type'].default, self._handle_send_reply_command)
         self.bus.subscribe(SetTypingIndicatorCommand.model_fields['event_type'].default, self._handle_set_typing_command)
         self.bus.subscribe(SetPresenceCommand.model_fields['event_type'].default, self._handle_set_presence_command)
+
+        self._command_worker_task = asyncio.create_task(self._command_worker())
 
         login_success = False
         try:
@@ -388,6 +447,12 @@ class MatrixGatewayService:
                      print("Gateway: Client is no longer logged in.")
                 print("Gateway: Closing Matrix client...")
                 await self.client.close()
+            if self._command_worker_task:
+                self._command_worker_task.cancel()
+                try:
+                    await self._command_worker_task
+                except Exception:
+                    pass
             print("MatrixGatewayService: Stopped.")
 
     async def stop(self):

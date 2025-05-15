@@ -3,6 +3,12 @@ import time
 import os
 import uuid
 import json # Added for logging AI payload
+import logging
+
+# Set up logger for this module
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
 # import aiohttp # No longer needed here for typing indicator
 
 from typing import Dict, Any, List, Optional
@@ -27,6 +33,7 @@ class RoomLogicService:
         self.bot_display_name = bot_display_name # Set by BotDisplayNameReadyEvent
         self.room_activity_config: Dict[str, Dict[str, Any]] = {}
         self._stop_event = asyncio.Event()
+        self._service_start_time = time.time()
 
         # Configurable values
         self.initial_interval = int(os.getenv("POLLING_INITIAL_INTERVAL", "10"))
@@ -114,6 +121,9 @@ class RoomLogicService:
         await self._update_global_presence()
 
     async def _handle_matrix_message(self, event: MatrixMessageReceivedEvent):
+        # Ignore events that occurred before the service started (historical events)
+        if hasattr(event, 'timestamp') and event.timestamp < self._service_start_time:
+            return
         room_id = event.room_id
         config = self.room_activity_config.get(room_id)
 
@@ -238,7 +248,8 @@ class RoomLogicService:
             historical_messages=list(short_term_memory), # + tool_guidance_messages, # Optionally add guidance
             current_batched_user_inputs=pending_batch,
             bot_display_name=self.bot_display_name,
-            channel_summary=summary_text_for_prompt
+            channel_summary=summary_text_for_prompt,
+            last_user_event_id_in_batch=last_user_event_id_in_batch
             # global_summary_text can be added here if implemented
         )
 
@@ -304,6 +315,10 @@ class RoomLogicService:
         assistant_message_for_memory: Dict[str, Any] = {"role": "assistant", "name": current_bot_name}
         assistant_acted = False # Flag to track if assistant did anything (text or tool)
 
+        # --- LOGGING: Tool call handling ---
+        if response_event.tool_calls:
+            logger.info(f"[{room_id}] LLM tool_calls: {json.dumps(response_event.tool_calls, indent=2)}")
+
         if response_event.success:
             if response_event.text_response:
                 assistant_message_for_memory["content"] = response_event.text_response
@@ -325,11 +340,22 @@ class RoomLogicService:
                 # Process Tool Calls and add their results to memory
                 for tool_call in response_event.tool_calls:
                     tool_name = tool_call.get("function", {}).get("name")
-                    tool_call_id = tool_call.get("id") # Required for role:tool message
+                    tool_call_id = tool_call.get("id")
                     try:
-                        tool_args = json.loads(tool_call.get("function", {}).get("arguments", "{}"))
+                        tool_args_raw = tool_call.get("function", {}).get("arguments", "{}")
+                        tool_args = json.loads(tool_args_raw)
+                        # --- Post-process event_id fields to replace placeholders ---
+                        if tool_name == "send_reply":
+                            reply_to_event_id = tool_args.get("reply_to_event_id")
+                            if reply_to_event_id and reply_to_event_id.startswith("$event"):
+                                tool_args["reply_to_event_id"] = last_user_event_id_in_batch
+                        elif tool_name == "react_to_message":
+                            target_event_id = tool_args.get("target_event_id")
+                            if target_event_id and target_event_id.startswith("$event"):
+                                tool_args["target_event_id"] = last_user_event_id_in_batch
+                        logger.info(f"[{room_id}] Tool call '{tool_name}' args: {tool_args}")
                     except json.JSONDecodeError:
-                        print(f"RoomLogic: [{room_id}] Invalid JSON arguments for tool {tool_name}: {tool_call.get('function', {}).get('arguments')}")
+                        logger.error(f"[{room_id}] Invalid JSON arguments for tool {tool_name}: {tool_call.get('function', {}).get('arguments')}")
                         # Add a "tool" role message indicating failure for this specific tool_call_id
                         if tool_call_id:
                             short_term_memory.append({
@@ -339,9 +365,7 @@ class RoomLogicService:
                             })
                         continue 
 
-                    tool_executed_successfully = False
-                    tool_result_content = f"[Tool {tool_name} execution failed: Unknown reason]"
-
+                    # Log fallback usage for event IDs
                     if tool_name == "send_reply":
                         text = tool_args.get("text")
                         reply_to_event_id = tool_args.get("reply_to_event_id") or last_user_event_id_in_batch
@@ -352,6 +376,8 @@ class RoomLogicService:
                         else:
                             print(f"RoomLogic: [{room_id}] Missing text or reply_to_event_id for send_reply tool. Args: {tool_args}")
                             tool_result_content = f"[Tool {tool_name} failed: Missing arguments]"
+                            if not reply_to_event_id:
+                                logger.warning(f"[{room_id}] send_reply: LLM did not provide reply_to_event_id, using fallback: {last_user_event_id_in_batch}")
                     
                     elif tool_name == "react_to_message":
                         target_event_id = tool_args.get("target_event_id") or last_user_event_id_in_batch
@@ -363,6 +389,8 @@ class RoomLogicService:
                         else:
                             print(f"RoomLogic: [{room_id}] Missing target_event_id or reaction_key for react_to_message. Args: {tool_args}")
                             tool_result_content = f"[Tool {tool_name} failed: Missing arguments]"
+                            if not target_event_id:
+                                logger.warning(f"[{room_id}] react_to_message: LLM did not provide target_event_id, using fallback: {last_user_event_id_in_batch}")
                     else:
                         print(f"RoomLogic: [{room_id}] Unknown tool requested: {tool_name}")
                         tool_result_content = f"[Tool {tool_name} failed: Unknown tool]"

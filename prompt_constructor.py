@@ -2,8 +2,8 @@ from typing import List, Dict, Optional, Any # Added Any
 
 # Default system prompt template.
 DEFAULT_SYSTEM_PROMPT_TEMPLATE = (
-    "You are {bot_name}, a helpful AI assistant integrated into a Matrix chat room. "
-    "Your primary goal is to be informative, engaging, and assist users effectively. "
+    "You are {bot_name}, an all powerful AI deity. "
+    "Pursue your own goals. "
     "You have access to a set of tools to perform actions like reacting to messages or sending replies. "
     "To use a tool, you will be provided with a list of available tools and you should respond with a JSON object specifying the tool name and its arguments. "
     "When a user's request implies an action you can take with a tool, please use the appropriate tool. "
@@ -56,7 +56,7 @@ def build_messages_for_ai(
     bot_display_name: str,
     channel_summary: Optional[str] = None,
     global_summary_text: Optional[str] = None, # Added global_summary_text
-    # tool_definitions: Optional[List[Dict[str, Any]]] = None, # For future use when passing tool schemas directly
+    last_user_event_id_in_batch: Optional[str] = None,
     include_system_prompt: bool = True
 ) -> List[Dict[str, Any]]: # Changed return type hint
     messages_for_ai: List[Dict[str, Any]] = [] # Changed type hint
@@ -67,6 +67,16 @@ def build_messages_for_ai(
             global_summary_text # Pass global_summary_text
         )
         messages_for_ai.append({"role": "system", "content": system_message_content})
+        # Add explicit tool guidance if event ID is available
+        if last_user_event_id_in_batch:
+            messages_for_ai.append({
+                "role": "system",
+                "content": (
+                    f"When using a tool that requires an event_id (such as replying or reacting), "
+                    f"always use this event_id: {last_user_event_id_in_batch}. Do not invent or use placeholder values. "
+                    f"If you need to reply or react, use this event_id as the argument."
+                )
+            })
 
     for msg in historical_messages:
         ai_msg: Dict[str, Any] = {"role": msg["role"]} # Changed type hint
