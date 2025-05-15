@@ -48,11 +48,11 @@ class ProcessMessageBatchCommand(BaseEvent):
     event_type: str = "process_message_batch_command"
     room_id: str
 
-class GenerateSummaryRequestEvent(BaseEvent):
-    event_type: str = "generate_summary_request_event"
-    room_id: str
-    force_update: bool = False
-    # Potentially include messages_to_summarize if not fetched from memory by summarizer
+# class GenerateSummaryRequestEvent(BaseEvent): # No longer needed, RoomLogicService directly calls for AI summary
+#     event_type: str = "generate_summary_request_event"
+#     room_id: str
+#     force_update: bool = False
+#     # Potentially include messages_to_summarize if not fetched from memory by summarizer
 
 class SummaryGeneratedEvent(BaseEvent): # Optional, if other services need to know
     event_type: str = "summary_generated_event"
@@ -76,3 +76,4 @@ class SetPresenceCommand(BaseModel):
     event_type: Literal["set_presence_command"] = Field(default="set_presence_command", frozen=True)
     presence: Literal["online", "offline", "unavailable"] # Nio uses these states
     status_msg: Optional[str] = None
+    timeout: Optional[int] = None # Timeout in milliseconds for the presence update

@@ -68,13 +68,14 @@ PREVIOUS_SUMMARY_CONTEXT_TEMPLATE = "A previous summary of the conversation up t
 
 def build_summary_generation_payload(
     messages_to_summarize: List[Dict[str, str]], 
-    bot_name: str, 
+    bot_display_name: str, # Changed from bot_name
     previous_summary: Optional[str] = None
 ) -> List[Dict[str,str]]:
     transcript = "".join(f"{msg['name']}: {msg['content']}\n" for msg in messages_to_summarize)
     previous_summary_context_text = PREVIOUS_SUMMARY_CONTEXT_TEMPLATE.format(previous_summary=previous_summary) if previous_summary else ""
     prompt_content = SUMMARY_GENERATION_PROMPT_TEMPLATE.format(
         message_transcript=transcript.strip(),
-        previous_summary_context=previous_summary_context_text
+        previous_summary_context=previous_summary_context_text,
+        bot_display_name=bot_display_name # Added this format argument
     )
     return [{"role": "user", "content": prompt_content}]

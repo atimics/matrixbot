@@ -2,6 +2,7 @@ import asyncio
 import time
 import os
 import uuid
+import json # Added for logging AI payload
 # import aiohttp # No longer needed here for typing indicator
 
 from typing import Dict, Any, List, Optional
@@ -11,7 +12,7 @@ from message_bus import MessageBus
 from event_definitions import (
     MatrixMessageReceivedEvent, AIInferenceRequestEvent, AIInferenceResponseEvent,
     SendMatrixMessageCommand, ProcessMessageBatchCommand, ActivateListeningEvent,
-    GenerateSummaryRequestEvent, BotDisplayNameReadyEvent,
+    BotDisplayNameReadyEvent,
     SetTypingIndicatorCommand, SetPresenceCommand
 )
 import prompt_constructor # For building AI payload
@@ -33,14 +34,38 @@ class RoomLogicService:
         self.batch_delay = float(os.getenv("MESSAGE_BATCH_DELAY", "3.0"))
         self.short_term_memory_items = int(os.getenv("MAX_MESSAGES_PER_ROOM_MEMORY_ITEMS", "20"))
         self.openrouter_chat_model = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini")
+        self.openrouter_summary_model = os.getenv("OPENROUTER_SUMMARY_MODEL", os.getenv("OPENROUTER_MODEL", "openai/gpt-3.5-turbo")) # Added for summaries
 
         self._status_cache: Dict[str, Any] = {"value": None, "expires_at": 0.0}
         self.status_cache_ttl = int(os.getenv("AI_STATUS_TEXT_CACHE_TTL", "3600"))  # 1 hour default
+        self._last_global_presence = None  # Track last global presence state
 
+
+    async def _update_global_presence(self):
+        """
+        Sets presence: 'unavailable' on startup. 'online' if any room is active. 'unavailable' if no rooms are active (after startup).
+        Only publishes SetPresenceCommand if the state changes.
+        """
+        desired_presence: str
+
+        if self._last_global_presence is None:  # Initial startup
+            desired_presence = "unavailable"
+        else:
+            any_active = any(cfg.get('is_active_listening') for cfg in self.room_activity_config.values())
+            if any_active:
+                desired_presence = "online"
+            else:
+                desired_presence = "unavailable"  # Change to unavailable if no rooms are active
+
+        if self._last_global_presence != desired_presence:
+            self._last_global_presence = desired_presence
+            await self.bus.publish(SetPresenceCommand(presence=desired_presence))
 
     async def _handle_bot_display_name_ready(self, event: BotDisplayNameReadyEvent):
         self.bot_display_name = event.display_name
         print(f"RoomLogic: Bot display name updated to '{self.bot_display_name}'")
+        # Set presence to unavailable on startup
+        await self._update_global_presence()
 
     async def _handle_matrix_message(self, event: MatrixMessageReceivedEvent):
         room_id = event.room_id
@@ -101,9 +126,13 @@ class RoomLogicService:
                 'memory': [], 'pending_messages_for_batch': [],
                 'last_event_id_in_db_summary': initial_last_event_id_db,
                 'new_turns_since_last_summary': 0,
-                'batch_response_task': None
+                'batch_response_task': None,
+                'activation_trigger_event_id': event.triggering_event_id # Store the triggering event_id
             }
             self.room_activity_config[room_id] = config
+        else:
+            # If config exists, update the activation_trigger_event_id if this is a re-activation
+            config['activation_trigger_event_id'] = event.triggering_event_id
 
         config.update({
             'is_active_listening': True,
@@ -112,11 +141,7 @@ class RoomLogicService:
             'max_interval_no_activity_cycles': 0,
             'decay_task': asyncio.create_task(self._manage_room_decay(room_id))
         })
-
-        await self.bus.publish(SetPresenceCommand(
-            presence="online"
-        ))
-
+        await self._update_global_presence()
         print(f"RoomLogic: [{room_id}] Listening activated/reset. Mem size: {len(config['memory'])}. Last DB summary event: {config.get('last_event_id_in_db_summary')}")
 
 
@@ -167,10 +192,23 @@ class RoomLogicService:
 
     async def _handle_ai_chat_response(self, response_event: AIInferenceResponseEvent):
         room_id = response_event.original_request_payload.get("room_id")
-        if not room_id: return
+        if not room_id:
+            print("RoomLogic: Error - AIResponse missing room_id in original_request_payload")
+            return
 
         config = self.room_activity_config.get(room_id)
-        if not config: return
+        if not config:
+            print(f"RoomLogic: [{room_id}] Error - No config found for room after AIResponse")
+            return
+
+        # Ensure self.bot_display_name is a string and not None
+        if not isinstance(self.bot_display_name, str) or self.bot_display_name is None:
+            print(f"RoomLogic: [{room_id}] Error - self.bot_display_name is invalid: {self.bot_display_name}")
+            # Fallback or error handling for bot_display_name
+            # This should ideally not happen if BotDisplayNameReadyEvent works correctly.
+            current_bot_name = "ChatBot" # Fallback
+        else:
+            current_bot_name = self.bot_display_name
 
         ai_text = "Sorry, I had a problem processing that."
         if response_event.success and response_event.text_response:
@@ -179,7 +217,6 @@ class RoomLogicService:
             ai_text = f"Sorry, AI error: {response_event.error_message}"
 
         # --- Tell Gateway to stop typing ---
-        # Do this *before* sending the message for better perceived responsiveness
         await self.bus.publish(SetTypingIndicatorCommand(room_id=room_id, typing=False))
 
         await self.bus.publish(SendMatrixMessageCommand(room_id=room_id, text=ai_text))
@@ -188,26 +225,39 @@ class RoomLogicService:
         short_term_memory = config.get('memory', [])
         pending_batch_for_memory = response_event.original_request_payload.get("pending_batch_for_memory", [])
 
-        if pending_batch_for_memory:
-            # Combine user messages for memory
-            combined_user_content = "".join(f"{msg['name']}: {msg['content']}\n" for msg in pending_batch_for_memory)
-            # Get the event_id of the *last* message in the user batch for reference
-            representative_event_id = pending_batch_for_memory[-1]["event_id"]
+        representative_event_id = None # Initialize to ensure it's always defined
 
-            short_term_memory.append({
-                "role": "user",
-                "name": pending_batch_for_memory[0]["name"], # Use name from first message in batch
-                "content": combined_user_content.strip(),
-                "event_id": representative_event_id # Store last event_id of the batch
-            })
-            config['new_turns_since_last_summary'] = config.get('new_turns_since_last_summary', 0) + 1
+        if pending_batch_for_memory:
+            try:
+                # Combine user messages for memory
+                combined_user_content = "".join(f"{msg['name']}: {msg['content']}\n" for msg in pending_batch_for_memory)
+                # Get the event_id of the *last* message in the user batch for reference
+                representative_event_id = pending_batch_for_memory[-1]["event_id"]
+                user_name_for_memory = pending_batch_for_memory[0]["name"]
+
+                short_term_memory.append({
+                    "role": "user",
+                    "name": user_name_for_memory, 
+                    "content": combined_user_content.strip(),
+                    "event_id": representative_event_id 
+                })
+                config['new_turns_since_last_summary'] = config.get('new_turns_since_last_summary', 0) + 1
+            except KeyError as e:
+                print(f"RoomLogic: [{room_id}] KeyError when processing pending_batch_for_memory: {e}. Batch: {pending_batch_for_memory}")
+            except IndexError as e:
+                print(f"RoomLogic: [{room_id}] IndexError when processing pending_batch_for_memory: {e}. Batch: {pending_batch_for_memory}")
+
 
         if response_event.success and response_event.text_response:
-             short_term_memory.append({
-                "role": "assistant", "name": self.bot_display_name,
-                "content": response_event.text_response,
-                "event_id": representative_event_id # Associate AI response with the user turn it replies to
-            })
+            try:
+                short_term_memory.append({
+                    "role": "assistant", "name": current_bot_name, # Use validated current_bot_name
+                    "content": response_event.text_response,
+                    "event_id": representative_event_id # Will be None if pending_batch_for_memory was empty
+                })
+            except Exception as e:
+                print(f"RoomLogic: [{room_id}] Error appending assistant message to memory: {e}")
+
 
         # Trim memory
         while len(short_term_memory) > self.short_term_memory_items:
@@ -216,7 +266,58 @@ class RoomLogicService:
 
         # Trigger summary if needed
         if config.get('new_turns_since_last_summary', 0) >= int(os.getenv("SUMMARY_UPDATE_MESSAGE_TURNS", "7")):
-            await self.bus.publish(GenerateSummaryRequestEvent(room_id=room_id, force_update=False))
+            await self._request_ai_summary(room_id, force_update=False)
+
+
+    async def _request_ai_summary(self, room_id: str, force_update: bool = False):
+        config = self.room_activity_config.get(room_id)
+        if not config:
+            print(f"RoomLogic: [{room_id}] No config found, cannot request summary.")
+            return
+
+        short_term_memory = list(config.get('memory', []))
+        previous_summary_text, last_event_id_summarized_in_db = database.get_summary(room_id) or (None, None)
+
+        messages_for_this_summary_attempt = short_term_memory
+        
+        # Determine the event_id to anchor this summary to.
+        event_id_for_this_summary: Optional[str] = None
+        if messages_for_this_summary_attempt: # If there are new messages in memory
+            event_id_for_this_summary = messages_for_this_summary_attempt[-1].get("event_id")
+        elif force_update: # No new messages, but a forced update (e.g. deactivation, initial summary)
+            event_id_for_this_summary = last_event_id_summarized_in_db or config.get('activation_trigger_event_id')
+
+        if not event_id_for_this_summary:
+            print(f"RoomLogic: [{room_id}] Cannot request summary: No valid event_id anchor could be determined. (Force: {force_update})")
+            return
+
+        # Allow empty messages_for_this_summary_attempt if force_update is True
+        if not messages_for_this_summary_attempt and not force_update:
+            print(f"RoomLogic: [{room_id}] No new messages to summarize and not a forced update. Skipping summary.")
+            return
+
+        ai_payload = prompt_constructor.build_summary_generation_payload(
+            messages_to_summarize=messages_for_this_summary_attempt, # Can be empty if force_update
+            bot_display_name=self.bot_display_name,
+            previous_summary=previous_summary_text
+        )
+
+        # print(f"RoomLogic: [{room_id}] Summary Generation Payload for AI (model: {self.openrouter_summary_model}):\n{json.dumps(ai_payload, indent=2)}")
+
+        request_id = str(uuid.uuid4())
+        ai_request = AIInferenceRequestEvent(
+            request_id=request_id,
+            reply_to_service_event="ai_summary_response_received",
+            original_request_payload={
+                "room_id": room_id, 
+                "event_id_of_last_message_in_summary_batch": event_id_for_this_summary
+            },
+            model_name=self.openrouter_summary_model,
+            messages_payload=ai_payload
+        )
+        await self.bus.publish(ai_request)
+        config['new_turns_since_last_summary'] = 0
+        print(f"RoomLogic: [{room_id}] Requested AI summary. Event anchor: {event_id_for_this_summary}. Msgs in batch: {len(messages_for_this_summary_attempt)}. Forced: {force_update}")
 
 
     async def _manage_room_decay(self, room_id: str):
@@ -247,12 +348,8 @@ class RoomLogicService:
                                 await asyncio.wait_for(batch_task, timeout=self.batch_delay + 2.0)
                             except (asyncio.TimeoutError, asyncio.CancelledError): pass
 
-                        await self.bus.publish(GenerateSummaryRequestEvent(room_id=room_id, force_update=True))
-
-                        await self.bus.publish(SetPresenceCommand(
-                            presence="unavailable"
-                        ))
-
+                        await self._request_ai_summary(room_id, force_update=True)
+                        await self._update_global_presence()
                         break
                 else: # Activity occurred
                     config['max_interval_no_activity_cycles'] = 0
