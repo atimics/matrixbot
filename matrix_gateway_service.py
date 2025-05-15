@@ -6,7 +6,8 @@ from nio import (
     MatrixRoom,
     RoomMessageText,
     LoginResponse,
-    ProfileGetResponse
+    ProfileGetResponse,
+    RoomGetEventResponse # Added for fetching original event
 )
 from nio.exceptions import LocalProtocolError # Import specific known nio exceptions
 from dotenv import load_dotenv, set_key, find_dotenv # Modified import
@@ -18,7 +19,9 @@ from event_definitions import (
     SendMatrixMessageCommand,
     BotDisplayNameReadyEvent,
     SetTypingIndicatorCommand,
-    SetPresenceCommand
+    SetPresenceCommand,
+    ReactToMessageCommand,
+    SendReplyCommand # Added new commands
 )
 
 load_dotenv() # To get MATRIX_ configs
@@ -85,6 +88,83 @@ class MatrixGatewayService:
                 print(f"Gateway: General error sending message to {command.room_id}: {type(e).__name__} - {e}")
         else:
             print("Gateway: Cannot send message, client not initialized.")
+
+    async def _handle_react_to_message_command(self, command: ReactToMessageCommand):
+        if not self.client or not self.client.logged_in:
+            print("Gateway: Client not ready, cannot send reaction.")
+            return
+        try:
+            content = {
+                "m.relates_to": {
+                    "rel_type": "m.annotation",
+                    "event_id": command.target_event_id,
+                    "key": command.reaction_key
+                }
+            }
+            await self.client.room_send(
+                room_id=command.room_id,
+                message_type="m.reaction",
+                content=content
+            )
+            # print(f"Gateway: Sent reaction '{command.reaction_key}' to event {command.target_event_id} in {command.room_id}")
+        except Exception as e:
+            print(f"Gateway: Error sending reaction to {command.room_id}: {e}")
+
+    async def _handle_send_reply_command(self, command: SendReplyCommand):
+        if not self.client or not self.client.logged_in:
+            print("Gateway: Client not ready, cannot send reply.")
+            return
+
+        new_message_plain_text = command.text
+        final_body_for_send = new_message_plain_text # Default to new message only
+
+        try:
+            # Attempt to fetch the original event to include in the fallback
+            try:
+                original_event_response: RoomGetEventResponse = await self.client.room_get_event(
+                    command.room_id, command.reply_to_event_id
+                )
+                if original_event_response and original_event_response.event:
+                    original_event = original_event_response.event
+                    original_sender = original_event.sender
+                    original_body = getattr(original_event, 'body', None)
+
+                    if original_sender and original_body:
+                        # Create a quote of the original message
+                        # Ensure original_body is a string
+                        original_body_str = str(original_body)
+                        original_body_lines = original_body_str.splitlines()
+                        quoted_original_body = "\n".join([f"> {line}" for line in original_body_lines])
+                        final_body_for_send = f"{quoted_original_body}\n\n{new_message_plain_text}"
+                    else:
+                        print(f"Gateway: Original event {command.reply_to_event_id} fetched but lacks sender or body for fallback.")
+                else:
+                    print(f"Gateway: Failed to fetch details of original event {command.reply_to_event_id} for fallback reply. Response: {original_event_response}")
+            except Exception as e:
+                print(f"Gateway: Unexpected error fetching event {command.reply_to_event_id} for reply: {type(e).__name__} - {e}")
+
+            # HTML version of the new message content
+            html_body_content = markdown.markdown(new_message_plain_text, extensions=['nl2br', 'fenced_code', 'codehilite'])
+
+            content = {
+                "msgtype": "m.text",
+                "body": final_body_for_send,  # Plain text: quoted original + new message
+                "format": "org.matrix.custom.html",
+                "formatted_body": html_body_content,  # HTML: only the new message
+                "m.relates_to": {
+                    "m.in_reply_to": {
+                        "event_id": command.reply_to_event_id
+                    }
+                }
+            }
+
+            await self.client.room_send(
+                room_id=command.room_id,
+                message_type="m.room.message",
+                content=content
+            )
+        except Exception as e:
+            print(f"Gateway: Error sending reply to {command.room_id}: {e}")
 
     async def _handle_set_typing_command(self, command: SetTypingIndicatorCommand):
         if self.client and self.client.logged_in:
@@ -161,6 +241,8 @@ class MatrixGatewayService:
         self.client.add_event_callback(self._matrix_message_callback, RoomMessageText)
         # Subscribe to commands
         self.bus.subscribe(SendMatrixMessageCommand.model_fields['event_type'].default, self._handle_send_message_command)
+        self.bus.subscribe(ReactToMessageCommand.model_fields['event_type'].default, self._handle_react_to_message_command)
+        self.bus.subscribe(SendReplyCommand.model_fields['event_type'].default, self._handle_send_reply_command)
         self.bus.subscribe(SetTypingIndicatorCommand.model_fields['event_type'].default, self._handle_set_typing_command)
         self.bus.subscribe(SetPresenceCommand.model_fields['event_type'].default, self._handle_set_presence_command)
 

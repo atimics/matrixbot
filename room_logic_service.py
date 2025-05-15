@@ -13,7 +13,8 @@ from event_definitions import (
     MatrixMessageReceivedEvent, AIInferenceRequestEvent, AIInferenceResponseEvent,
     SendMatrixMessageCommand, ProcessMessageBatchCommand, ActivateListeningEvent,
     BotDisplayNameReadyEvent,
-    SetTypingIndicatorCommand, SetPresenceCommand
+    SetTypingIndicatorCommand, SetPresenceCommand,
+    ReactToMessageCommand, SendReplyCommand # Added tool commands
 )
 import prompt_constructor # For building AI payload
 import database # For database operations
@@ -35,6 +36,51 @@ class RoomLogicService:
         self.short_term_memory_items = int(os.getenv("MAX_MESSAGES_PER_ROOM_MEMORY_ITEMS", "20"))
         self.openrouter_chat_model = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini")
         self.openrouter_summary_model = os.getenv("OPENROUTER_SUMMARY_MODEL", os.getenv("OPENROUTER_MODEL", "openai/gpt-3.5-turbo")) # Added for summaries
+
+        self._available_tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "send_reply",
+                    "description": "Sends a textual reply message to the current room.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "text": {
+                                "type": "string",
+                                "description": "The text content of the reply message."
+                            },
+                            "reply_to_event_id": {
+                                "type": "string",
+                                "description": "The event ID of the message to reply to. This visually quotes the original message."
+                            }
+                        },
+                        "required": ["text", "reply_to_event_id"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "react_to_message",
+                    "description": "Reacts to a specific message with an emoji or text.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "target_event_id": {
+                                "type": "string",
+                                "description": "The event ID of the message to react to."
+                            },
+                            "reaction_key": {
+                                "type": "string",
+                                "description": "The reaction emoji or key (e.g., '👍', '😄')."
+                            }
+                        },
+                        "required": ["target_event_id", "reaction_key"]
+                    }
+                }
+            }
+        ]
 
         self._status_cache: Dict[str, Any] = {"value": None, "expires_at": 0.0}
         self.status_cache_ttl = int(os.getenv("AI_STATUS_TEXT_CACHE_TTL", "3600"))  # 1 hour default
@@ -171,21 +217,49 @@ class RoomLogicService:
 
         short_term_memory = config.get('memory', [])
         summary_text_for_prompt, _ = database.get_summary(room_id) or (None, None)
+        
+        # Determine the event_id of the last user message in the batch to suggest as a reply target
+        last_user_event_id_in_batch = None
+        if pending_batch:
+            last_user_event_id_in_batch = pending_batch[-1].get("event_id")
+
+
+        # Modify the system prompt or add a user message to guide the LLM about available event_ids for tools
+        # For now, we'll rely on the LLM to infer from context or we can add a specific message.
+        # Example of adding context for tool use (can be refined):
+        # tool_guidance_messages = []
+        # if last_user_event_id_in_batch:
+        #     tool_guidance_messages.append({
+        #         "role": "system", # Or a specific "tool_context" role if supported/useful
+        #         "content": f"Context for tool use: The most recent user message ID is {last_user_event_id_in_batch}. If you need to reply or react to it, use this ID."
+        #     })
 
         ai_payload = prompt_constructor.build_messages_for_ai(
-            historical_messages=list(short_term_memory),
+            historical_messages=list(short_term_memory), # + tool_guidance_messages, # Optionally add guidance
             current_batched_user_inputs=pending_batch,
             bot_display_name=self.bot_display_name,
             channel_summary=summary_text_for_prompt
+            # global_summary_text can be added here if implemented
         )
 
         request_id = str(uuid.uuid4())
+        
+        # Prepare original_request_payload with any info needed by _handle_ai_chat_response
+        # including the last_user_event_id_in_batch for potential default reply/reaction target.
+        original_payload_for_ai_response = {
+            "room_id": room_id, 
+            "pending_batch_for_memory": pending_batch,
+            "last_user_event_id_in_batch": last_user_event_id_in_batch
+        }
+
         ai_request = AIInferenceRequestEvent(
             request_id=request_id,
             reply_to_service_event="ai_chat_response_received",
-            original_request_payload={"room_id": room_id, "pending_batch_for_memory": pending_batch},
+            original_request_payload=original_payload_for_ai_response,
             model_name=self.openrouter_chat_model,
-            messages_payload=ai_payload
+            messages_payload=ai_payload,
+            tools=self._available_tools, # Pass defined tools
+            tool_choice="auto" # Let the LLM decide
         )
         await self.bus.publish(ai_request)
 
@@ -201,73 +275,131 @@ class RoomLogicService:
             print(f"RoomLogic: [{room_id}] Error - No config found for room after AIResponse")
             return
 
-        # Ensure self.bot_display_name is a string and not None
-        if not isinstance(self.bot_display_name, str) or self.bot_display_name is None:
-            print(f"RoomLogic: [{room_id}] Error - self.bot_display_name is invalid: {self.bot_display_name}")
-            # Fallback or error handling for bot_display_name
-            # This should ideally not happen if BotDisplayNameReadyEvent works correctly.
-            current_bot_name = "ChatBot" # Fallback
-        else:
-            current_bot_name = self.bot_display_name
+        current_bot_name = self.bot_display_name if isinstance(self.bot_display_name, str) else "ChatBot"
+        last_user_event_id_in_batch = response_event.original_request_payload.get("last_user_event_id_in_batch")
 
-        ai_text = "Sorry, I had a problem processing that."
-        if response_event.success and response_event.text_response:
-            ai_text = response_event.text_response
-        elif response_event.error_message:
-            ai_text = f"Sorry, AI error: {response_event.error_message}"
-
-        # --- Tell Gateway to stop typing ---
         await self.bus.publish(SetTypingIndicatorCommand(room_id=room_id, typing=False))
 
-        await self.bus.publish(SendMatrixMessageCommand(room_id=room_id, text=ai_text))
-
-        # Update short-term memory
         short_term_memory = config.get('memory', [])
         pending_batch_for_memory = response_event.original_request_payload.get("pending_batch_for_memory", [])
-
-        representative_event_id = None # Initialize to ensure it's always defined
+        representative_event_id_for_user_turn = None
 
         if pending_batch_for_memory:
             try:
-                # Combine user messages for memory
                 combined_user_content = "".join(f"{msg['name']}: {msg['content']}\n" for msg in pending_batch_for_memory)
-                # Get the event_id of the *last* message in the user batch for reference
-                representative_event_id = pending_batch_for_memory[-1]["event_id"]
+                representative_event_id_for_user_turn = pending_batch_for_memory[-1]["event_id"]
                 user_name_for_memory = pending_batch_for_memory[0]["name"]
 
                 short_term_memory.append({
                     "role": "user",
                     "name": user_name_for_memory, 
                     "content": combined_user_content.strip(),
-                    "event_id": representative_event_id 
+                    "event_id": representative_event_id_for_user_turn 
                 })
                 config['new_turns_since_last_summary'] = config.get('new_turns_since_last_summary', 0) + 1
-            except KeyError as e:
-                print(f"RoomLogic: [{room_id}] KeyError when processing pending_batch_for_memory: {e}. Batch: {pending_batch_for_memory}")
-            except IndexError as e:
-                print(f"RoomLogic: [{room_id}] IndexError when processing pending_batch_for_memory: {e}. Batch: {pending_batch_for_memory}")
+            except (KeyError, IndexError) as e:
+                print(f"RoomLogic: [{room_id}] Error processing pending_batch_for_memory for memory: {e}. Batch: {pending_batch_for_memory}")
+
+        # Add the assistant's response (text and/or tool_calls) to memory
+        assistant_message_for_memory: Dict[str, Any] = {"role": "assistant", "name": current_bot_name}
+        assistant_acted = False # Flag to track if assistant did anything (text or tool)
+
+        if response_event.success:
+            if response_event.text_response:
+                assistant_message_for_memory["content"] = response_event.text_response
+                # Publish text response to Matrix
+                await self.bus.publish(SendMatrixMessageCommand(room_id=room_id, text=response_event.text_response))
+                assistant_acted = True
+            
+            if response_event.tool_calls:
+                assistant_message_for_memory["tool_calls"] = response_event.tool_calls
+                # This assistant message (now potentially with content and tool_calls) is added ONCE.
+                # Subsequent "role": "tool" messages will provide results for these calls.
+                assistant_acted = True # Even if content is null, tool_calls mean action
+
+                # Add assistant message to memory BEFORE processing tool results
+                # This ensures the "assistant" message with "tool_calls" precedes "tool" role messages
+                if assistant_message_for_memory.get("content") or assistant_message_for_memory.get("tool_calls"):
+                    short_term_memory.append(assistant_message_for_memory)
+
+                # Process Tool Calls and add their results to memory
+                for tool_call in response_event.tool_calls:
+                    tool_name = tool_call.get("function", {}).get("name")
+                    tool_call_id = tool_call.get("id") # Required for role:tool message
+                    try:
+                        tool_args = json.loads(tool_call.get("function", {}).get("arguments", "{}"))
+                    except json.JSONDecodeError:
+                        print(f"RoomLogic: [{room_id}] Invalid JSON arguments for tool {tool_name}: {tool_call.get('function', {}).get('arguments')}")
+                        # Add a "tool" role message indicating failure for this specific tool_call_id
+                        if tool_call_id:
+                            short_term_memory.append({
+                                "role": "tool",
+                                "tool_call_id": tool_call_id,
+                                "content": f"[Tool {tool_name} execution failed: Invalid arguments]"
+                            })
+                        continue 
+
+                    tool_executed_successfully = False
+                    tool_result_content = f"[Tool {tool_name} execution failed: Unknown reason]"
+
+                    if tool_name == "send_reply":
+                        text = tool_args.get("text")
+                        reply_to_event_id = tool_args.get("reply_to_event_id") or last_user_event_id_in_batch
+                        if text and reply_to_event_id:
+                            await self.bus.publish(SendReplyCommand(room_id=room_id, text=text, reply_to_event_id=reply_to_event_id))
+                            tool_result_content = f"[Tool {tool_name} executed: Sent reply]"
+                            tool_executed_successfully = True
+                        else:
+                            print(f"RoomLogic: [{room_id}] Missing text or reply_to_event_id for send_reply tool. Args: {tool_args}")
+                            tool_result_content = f"[Tool {tool_name} failed: Missing arguments]"
+                    
+                    elif tool_name == "react_to_message":
+                        target_event_id = tool_args.get("target_event_id") or last_user_event_id_in_batch
+                        reaction_key = tool_args.get("reaction_key")
+                        if target_event_id and reaction_key:
+                            await self.bus.publish(ReactToMessageCommand(room_id=room_id, target_event_id=target_event_id, reaction_key=reaction_key))
+                            tool_result_content = f"[Tool {tool_name} executed: Sent reaction \'{reaction_key}\']"
+                            tool_executed_successfully = True
+                        else:
+                            print(f"RoomLogic: [{room_id}] Missing target_event_id or reaction_key for react_to_message. Args: {tool_args}")
+                            tool_result_content = f"[Tool {tool_name} failed: Missing arguments]"
+                    else:
+                        print(f"RoomLogic: [{room_id}] Unknown tool requested: {tool_name}")
+                        tool_result_content = f"[Tool {tool_name} failed: Unknown tool]"
+
+                    # Add "tool" role message to memory with the result
+                    if tool_call_id:
+                        short_term_memory.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call_id,
+                            # "name": tool_name, # OpenAI does not expect 'name' here, it's inferred from tool_call_id
+                            "content": tool_result_content
+                        })
+            
+            else: # No tool_calls, only text_response (or neither if LLM chose to say nothing with success=true)
+                if assistant_message_for_memory.get("content"): # If there was a text response
+                     short_term_memory.append(assistant_message_for_memory)
+                elif not assistant_acted : # Success true, but no text and no tools
+                    print(f"RoomLogic: [{room_id}] AI returned success but no text and no tool calls.")
+                    short_term_memory.append({
+                        "role": "assistant", "name": current_bot_name,
+                        "content": "[The AI chose not to send a message or use a tool in this turn.]",
+                        "event_id": representative_event_id_for_user_turn
+                    })
 
 
-        if response_event.success and response_event.text_response:
-            try:
-                short_term_memory.append({
-                    "role": "assistant", "name": current_bot_name, # Use validated current_bot_name
-                    "content": response_event.text_response,
-                    "event_id": representative_event_id # Will be None if pending_batch_for_memory was empty
-                })
-            except Exception as e:
-                print(f"RoomLogic: [{room_id}] Error appending assistant message to memory: {e}")
-
+        elif not response_event.success: # AI call failed
+            ai_text = f"Sorry, AI error: {response_event.error_message or 'Unknown error'}"
+            await self.bus.publish(SendMatrixMessageCommand(room_id=room_id, text=ai_text))
+            short_term_memory.append({"role": "assistant", "name": current_bot_name, "content": ai_text, "event_id": representative_event_id_for_user_turn})
 
         # Trim memory
         while len(short_term_memory) > self.short_term_memory_items:
             short_term_memory.pop(0)
         config['memory'] = short_term_memory
 
-        # Trigger summary if needed
         if config.get('new_turns_since_last_summary', 0) >= int(os.getenv("SUMMARY_UPDATE_MESSAGE_TURNS", "7")):
             await self._request_ai_summary(room_id, force_update=False)
-
 
     async def _request_ai_summary(self, room_id: str, force_update: bool = False):
         config = self.room_activity_config.get(room_id)
@@ -275,34 +407,37 @@ class RoomLogicService:
             print(f"RoomLogic: [{room_id}] No config found, cannot request summary.")
             return
 
-        short_term_memory = list(config.get('memory', []))
-        previous_summary_text, last_event_id_summarized_in_db = database.get_summary(room_id) or (None, None)
+        messages_for_this_summary_attempt = list(config.get('memory', []))
+        db_summary_info = database.get_summary(room_id) # Call once
+        previous_summary_text, last_event_id_summarized_in_db = db_summary_info if db_summary_info else (None, None)
 
-        messages_for_this_summary_attempt = short_term_memory
-        
-        # Determine the event_id to anchor this summary to.
-        event_id_for_this_summary: Optional[str] = None
-        if messages_for_this_summary_attempt: # If there are new messages in memory
-            event_id_for_this_summary = messages_for_this_summary_attempt[-1].get("event_id")
-        elif force_update: # No new messages, but a forced update (e.g. deactivation, initial summary)
-            event_id_for_this_summary = last_event_id_summarized_in_db or config.get('activation_trigger_event_id')
-
-        if not event_id_for_this_summary:
-            print(f"RoomLogic: [{room_id}] Cannot request summary: No valid event_id anchor could be determined. (Force: {force_update})")
-            return
-
-        # Allow empty messages_for_this_summary_attempt if force_update is True
-        if not messages_for_this_summary_attempt and not force_update:
+        # If not forcing an update, and there are no new messages in memory to summarize, skip.
+        if not force_update and not messages_for_this_summary_attempt:
             print(f"RoomLogic: [{room_id}] No new messages to summarize and not a forced update. Skipping summary.")
             return
 
+        event_id_for_this_summary: Optional[str] = None
+        # Find the latest event_id from the messages to be summarized by looking backwards.
+        for msg in reversed(messages_for_this_summary_attempt):
+            if msg.get("event_id"):
+                event_id_for_this_summary = msg.get("event_id")
+                break
+        
+        # If no event_id found in current messages, and this is a forced update, try fallbacks.
+        if not event_id_for_this_summary and force_update:
+            event_id_for_this_summary = last_event_id_summarized_in_db or config.get('activation_trigger_event_id')
+
+        # If still no anchor after all checks, we cannot proceed.
+        if not event_id_for_this_summary:
+            print(f"RoomLogic: [{room_id}] Cannot request summary: No valid event_id anchor could be determined. (Force: {force_update}, Msgs in attempt: {len(messages_for_this_summary_attempt)})")
+            return
+
+        # If we are here, a summary will be attempted.
         ai_payload = prompt_constructor.build_summary_generation_payload(
-            messages_to_summarize=messages_for_this_summary_attempt, # Can be empty if force_update
+            messages_to_summarize=messages_for_this_summary_attempt,
             bot_display_name=self.bot_display_name,
             previous_summary=previous_summary_text
         )
-
-        # print(f"RoomLogic: [{room_id}] Summary Generation Payload for AI (model: {self.openrouter_summary_model}):\n{json.dumps(ai_payload, indent=2)}")
 
         request_id = str(uuid.uuid4())
         ai_request = AIInferenceRequestEvent(
@@ -313,12 +448,13 @@ class RoomLogicService:
                 "event_id_of_last_message_in_summary_batch": event_id_for_this_summary
             },
             model_name=self.openrouter_summary_model,
-            messages_payload=ai_payload
+            messages_payload=ai_payload,
+            tools=None,
+            tool_choice=None
         )
         await self.bus.publish(ai_request)
-        config['new_turns_since_last_summary'] = 0
+        config['new_turns_since_last_summary'] = 0 # Reset counter as summary request was made
         print(f"RoomLogic: [{room_id}] Requested AI summary. Event anchor: {event_id_for_this_summary}. Msgs in batch: {len(messages_for_this_summary_attempt)}. Forced: {force_update}")
-
 
     async def _manage_room_decay(self, room_id: str):
         try:

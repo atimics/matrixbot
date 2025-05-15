@@ -28,7 +28,9 @@ class AIInferenceRequestEvent(BaseEvent):
     original_request_payload: Dict[str, Any] = {} # To carry room_id, etc.
     
     model_name: str
-    messages_payload: List[Dict[str, str]]
+    messages_payload: List[Dict[str, Any]] # Changed from List[Dict[str, str]]
+    tools: Optional[List[Dict[str, Any]]] = None # Added for tool calling
+    tool_choice: Optional[str] = None # Added for tool calling, e.g., "auto", "none", or {"type": "function", "function": {"name": "my_function"}}
 
 class AIInferenceResponseEvent(BaseEvent):
     event_type: str = "ai_inference_response"
@@ -37,6 +39,7 @@ class AIInferenceResponseEvent(BaseEvent):
     
     success: bool
     text_response: Optional[str] = None
+    tool_calls: Optional[List[Dict[str, Any]]] = None # Added for tool calling
     error_message: Optional[str] = None
 
 class ActivateListeningEvent(BaseEvent):
@@ -59,6 +62,18 @@ class SummaryGeneratedEvent(BaseEvent): # Optional, if other services need to kn
     room_id: str
     summary_text: str
     last_event_id_in_summary: str
+
+class ReactToMessageCommand(BaseEvent):
+    event_type: str = "react_to_message_command"
+    room_id: str
+    target_event_id: str
+    reaction_key: str
+
+class SendReplyCommand(BaseEvent):
+    event_type: str = "send_reply_command"
+    room_id: str
+    text: str
+    reply_to_event_id: str
 
 class BotDisplayNameReadyEvent(BaseEvent):
     event_type: str = "bot_display_name_ready"
