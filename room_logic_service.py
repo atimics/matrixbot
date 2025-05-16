@@ -29,6 +29,7 @@ load_dotenv()
 
 class RoomLogicService:
     def __init__(self, message_bus: MessageBus, bot_display_name: str = "ChatBot"):
+        """Service for managing room logic, batching, and AI interaction."""
         self.bus = message_bus
         self.bot_display_name = bot_display_name # Set by BotDisplayNameReadyEvent
         self.room_activity_config: Dict[str, Dict[str, Any]] = {}
@@ -116,8 +117,7 @@ class RoomLogicService:
 
     async def _handle_bot_display_name_ready(self, event: BotDisplayNameReadyEvent):
         self.bot_display_name = event.display_name
-        print(f"RoomLogic: Bot display name updated to '{self.bot_display_name}'")
-        # Set presence to unavailable on startup
+        logger.info(f"RoomLogic: Bot display name updated to '{self.bot_display_name}'")
         await self._update_global_presence()
 
     async def _handle_matrix_message(self, event: MatrixMessageReceivedEvent):
@@ -131,7 +131,7 @@ class RoomLogicService:
         is_mention = bool(bot_name_lower and bot_name_lower in event.body.lower())
 
         if is_mention:
-            # print(f"RoomLogic: [{room_id}] Mention detected.")
+            logger.info(f"RoomLogic: [{room_id}] Mention detected.")
             activate_event = ActivateListeningEvent(
                 room_id=room_id,
                 triggering_event_id=event.event_id
@@ -140,7 +140,7 @@ class RoomLogicService:
 
         config = self.room_activity_config.get(room_id) # Re-fetch in case it was just created
         if config and config.get('is_active_listening'):
-            # print(f"RoomLogic: [{room_id}] Actively listening. Adding message to batch.")
+            logger.info(f"RoomLogic: [{room_id}] Actively listening. Adding message to batch.")
             config['pending_messages_for_batch'].append({
                 "name": event.sender_display_name,
                 "content": event.body,
@@ -159,7 +159,7 @@ class RoomLogicService:
                 except asyncio.CancelledError:
                     pass
                 except Exception as e:
-                    print(f"RoomLogic: [{room_id}] Previous batch task raised {e} while being awaited after cancellation.")
+                    logger.error(f"RoomLogic: [{room_id}] Previous batch task raised {e} while being awaited after cancellation.")
             config['batch_response_task'] = asyncio.create_task(
                 self._delayed_batch_processing_publisher(room_id, self.batch_delay)
             )
@@ -198,18 +198,18 @@ class RoomLogicService:
             'decay_task': asyncio.create_task(self._manage_room_decay(room_id))
         })
         await self._update_global_presence()
-        print(f"RoomLogic: [{room_id}] Listening activated/reset. Mem size: {len(config['memory'])}. Last DB summary event: {config.get('last_event_id_in_db_summary')}")
+        logger.info(f"RoomLogic: [{room_id}] Listening activated/reset. Mem size: {len(config['memory'])}. Last DB summary event: {config.get('last_event_id_in_db_summary')}")
 
 
     async def _delayed_batch_processing_publisher(self, room_id: str, delay: float):
         try:
             await asyncio.sleep(delay)
             if asyncio.current_task().cancelled(): # type: ignore
-                # print(f"RoomLogic: [{room_id}] Delayed batch publisher cancelled.")
+                logger.info(f"RoomLogic: [{room_id}] Delayed batch publisher cancelled.")
                 return
             await self.bus.publish(ProcessMessageBatchCommand(room_id=room_id))
         except asyncio.CancelledError:
-            pass
+            logger.info(f"RoomLogic: [{room_id}] Delayed batch publisher cancelled by exception.")
 
 
     async def _handle_process_message_batch(self, command: ProcessMessageBatchCommand):
@@ -221,6 +221,8 @@ class RoomLogicService:
         config['pending_messages_for_batch'] = []
 
         if not pending_batch: return
+
+        logger.info(f"RoomLogic: [{room_id}] Processing message batch of size {len(pending_batch)}.")
 
         # --- Tell Gateway to start typing ---
         await self.bus.publish(SetTypingIndicatorCommand(room_id=room_id, typing=True))
@@ -278,12 +280,12 @@ class RoomLogicService:
     async def _handle_ai_chat_response(self, response_event: AIInferenceResponseEvent):
         room_id = response_event.original_request_payload.get("room_id")
         if not room_id:
-            print("RoomLogic: Error - AIResponse missing room_id in original_request_payload")
+            logger.error("RoomLogic: Error - AIResponse missing room_id in original_request_payload")
             return
 
         config = self.room_activity_config.get(room_id)
         if not config:
-            print(f"RoomLogic: [{room_id}] Error - No config found for room after AIResponse")
+            logger.error(f"RoomLogic: [{room_id}] Error - No config found for room after AIResponse")
             return
 
         current_bot_name = self.bot_display_name if isinstance(self.bot_display_name, str) else "ChatBot"
@@ -309,11 +311,9 @@ class RoomLogicService:
                 })
                 config['new_turns_since_last_summary'] = config.get('new_turns_since_last_summary', 0) + 1
             except (KeyError, IndexError) as e:
-                print(f"RoomLogic: [{room_id}] Error processing pending_batch_for_memory for memory: {e}. Batch: {pending_batch_for_memory}")
+                logger.error(f"RoomLogic: [{room_id}] Error processing pending_batch_for_memory for memory: {e}. Batch: {pending_batch_for_memory}")
 
         # Add the assistant's response (text and/or tool_calls) to memory
-        assistant_message_for_memory: Dict[str, Any] = {"role": "assistant", "name": current_bot_name}
-        assistant_acted = False # Flag to track if assistant did anything (text or tool)
 
         # --- LOGGING: Tool call handling ---
         if response_event.tool_calls:

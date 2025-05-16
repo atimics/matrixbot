@@ -1,3 +1,8 @@
+# Version pinning is highly recommended for reproducibility.
+# If using Poetry, generate this file with:
+#   poetry export -f requirements.txt --output requirements.txt --without-hashes
+# The canonical dependency source is pyproject.toml/poetry.lock.
+
 matrix-nio[e2e]
 python-dotenv
 pydantic

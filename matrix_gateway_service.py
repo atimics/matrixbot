@@ -1,5 +1,6 @@
 import asyncio
 import os
+import logging
 from typing import Optional
 from nio import (
     AsyncClient,
@@ -24,10 +25,13 @@ from event_definitions import (
     SendReplyCommand # Added new commands
 )
 
+logger = logging.getLogger(__name__)
+
 load_dotenv() # To get MATRIX_ configs
 
 class MatrixGatewayService:
     def __init__(self, message_bus: MessageBus):
+        """Service for handling Matrix gateway operations."""
         self.bus = message_bus
         self.homeserver = os.getenv("MATRIX_HOMESERVER")
         self.user_id = os.getenv("MATRIX_USER_ID") # Will be updated by .env or after login
@@ -55,17 +59,18 @@ class MatrixGatewayService:
             # Check for 429 in exception message (nio does not always raise a specific exception)
             if hasattr(e, 'status_code') and e.status_code == 429:
                 retry_after = getattr(e, 'retry_after_ms', 10000) / 1000.0  # Default 10s
-                print(f"Gateway: Got 429 response (rate limited), sleeping for {retry_after}s")
+                logger.warning(f"Gateway: Got 429 response (rate limited), sleeping for {retry_after}s")
                 self._rate_limit_until = asyncio.get_event_loop().time() + retry_after
                 await asyncio.sleep(retry_after)
                 # Optionally retry once after waiting
                 return await coro_func(*args, **kwargs)
             elif '429' in str(e):
-                print(f"Gateway: Got 429 response (rate limited), sleeping for 10s")
+                logger.warning(f"Gateway: Got 429 response (rate limited), sleeping for 10s")
                 self._rate_limit_until = asyncio.get_event_loop().time() + 10
                 await asyncio.sleep(10)
                 return await coro_func(*args, **kwargs)
             else:
+                logger.error(f"Gateway: Matrix call error: {e}")
                 raise
 
     async def _command_worker(self):
@@ -74,7 +79,7 @@ class MatrixGatewayService:
                 func, args, kwargs = await self._command_queue.get()
                 await func(*args, **kwargs)
             except Exception as e:
-                print(f"Gateway: Error in command worker: {e}")
+                logger.error(f"Gateway: Error in command worker: {e}")
             finally:
                 self._command_queue.task_done()
 
@@ -113,7 +118,7 @@ class MatrixGatewayService:
                     "formatted_body": html_body
                 }
             except Exception as e:
-                print(f"Gateway: Markdown conversion failed, sending plain text. Error: {e}")
+                logger.error(f"Gateway: Markdown conversion failed, sending plain text. Error: {e}")
                 content = {
                     "msgtype": "m.text",
                     "body": plain_text_body
@@ -127,18 +132,18 @@ class MatrixGatewayService:
                     content=content
                 )
             except (LocalProtocolError) as e:
-                print(f"Gateway: Specific nio error sending message to {command.room_id}: {type(e).__name__} - {e}")
+                logger.error(f"Gateway: Specific nio error sending message to {command.room_id}: {type(e).__name__} - {e}")
             except Exception as e:
-                print(f"Gateway: General error sending message to {command.room_id}: {type(e).__name__} - {e}")
+                logger.error(f"Gateway: General error sending message to {command.room_id}: {type(e).__name__} - {e}")
         else:
-            print("Gateway: Cannot send message, client not initialized.")
+            logger.error("Gateway: Cannot send message, client not initialized.")
 
     async def _handle_react_to_message_command(self, command: ReactToMessageCommand):
         await self._enqueue_command(self._react_to_message_impl, command)
 
     async def _react_to_message_impl(self, command: ReactToMessageCommand):
         if not self.client or not self.client.logged_in:
-            print("Gateway: Client not ready, cannot send reaction.")
+            logger.error("Gateway: Client not ready, cannot send reaction.")
             return
         try:
             content = {
@@ -155,14 +160,14 @@ class MatrixGatewayService:
                 content=content
             )
         except Exception as e:
-            print(f"Gateway: Error sending reaction to {command.room_id}: {e}")
+            logger.error(f"Gateway: Error sending reaction to {command.room_id}: {e}")
 
     async def _handle_send_reply_command(self, command: SendReplyCommand):
         await self._enqueue_command(self._send_reply_impl, command)
 
     async def _send_reply_impl(self, command: SendReplyCommand):
         if not self.client or not self.client.logged_in:
-            print("Gateway: Client not ready, cannot send reply.")
+            logger.error("Gateway: Client not ready, cannot send reply.")
             return
 
         new_message_plain_text = command.text
@@ -187,11 +192,11 @@ class MatrixGatewayService:
                         quoted_original_body = "\n".join([f"> {line}" for line in original_body_lines])
                         final_body_for_send = f"{quoted_original_body}\n\n{new_message_plain_text}"
                     else:
-                        print(f"Gateway: Original event {command.reply_to_event_id} fetched but lacks sender or body for fallback.")
+                        logger.warning(f"Gateway: Original event {command.reply_to_event_id} fetched but lacks sender or body for fallback.")
                 else:
-                    print(f"Gateway: Failed to fetch details of original event {command.reply_to_event_id} for fallback reply. Response: {original_event_response}")
+                    logger.warning(f"Gateway: Failed to fetch details of original event {command.reply_to_event_id} for fallback reply. Response: {original_event_response}")
             except Exception as e:
-                print(f"Gateway: Unexpected error fetching event {command.reply_to_event_id} for reply: {type(e).__name__} - {e}")
+                logger.error(f"Gateway: Unexpected error fetching event {command.reply_to_event_id} for reply: {type(e).__name__} - {e}")
 
             # HTML version of the new message content
             html_body_content = markdown.markdown(new_message_plain_text, extensions=['nl2br', 'fenced_code', 'codehilite'])
@@ -215,7 +220,7 @@ class MatrixGatewayService:
                 content=content
             )
         except Exception as e:
-            print(f"Gateway: Error sending reply to {command.room_id}: {e}")
+            logger.error(f"Gateway: Error sending reply to {command.room_id}: {e}")
 
     async def _handle_set_typing_command(self, command: SetTypingIndicatorCommand):
         await self._enqueue_command(self._set_typing_impl, command)
@@ -229,13 +234,13 @@ class MatrixGatewayService:
                     typing_state=command.typing,
                     timeout=command.timeout # Pass timeout from command
                 )
-                # print(f"Gateway: Typing indicator set to {command.typing} in {command.room_id}")
+                # logger.info(f"Gateway: Typing indicator set to {command.typing} in {command.room_id}")
             except LocalProtocolError as e:
-                print(f"Gateway: Failed to set typing indicator in {command.room_id} (Nio Error): {e}")
+                logger.error(f"Gateway: Failed to set typing indicator in {command.room_id} (Nio Error): {e}")
             except Exception as e:
-                print(f"Gateway: Failed to set typing indicator in {command.room_id} (Error): {e}")
+                logger.error(f"Gateway: Failed to set typing indicator in {command.room_id} (Error): {e}")
         else:
-            print(f"Gateway: Cannot set typing indicator in {command.room_id}, client not ready or not logged in.")
+            logger.error(f"Gateway: Cannot set typing indicator in {command.room_id}, client not ready or not logged in.")
 
     async def _handle_set_presence_command(self, command: SetPresenceCommand):
         await self._enqueue_command(self._set_presence_impl, command)
@@ -248,22 +253,22 @@ class MatrixGatewayService:
                     presence=command.presence,
                     status_msg=command.status_msg
                 )
-                print(f"Gateway: Presence set to {command.presence} with message '{command.status_msg}'")
+                logger.info(f"Gateway: Presence set to {command.presence} with message '{command.status_msg}'")
             except LocalProtocolError as e:
-                print(f"Gateway: Failed to set presence (Nio Error): {e}")
+                logger.error(f"Gateway: Failed to set presence (Nio Error): {e}")
             except Exception as e:
-                print(f"Gateway: Failed to set presence (Error): {e}")
+                logger.error(f"Gateway: Failed to set presence (Error): {e}")
         else:
-            print("Gateway: Cannot set presence, client not ready or not logged in.")
+            logger.error("Gateway: Cannot set presence, client not ready or not logged in.")
 
 
-    async def run(self):
-        print("MatrixGatewayService: Starting...")
+    async def run(self) -> None:
+        logger.info("MatrixGatewayService: Starting...")
         if not self.homeserver or not self.user_id: # self.user_id here is from initial .env or None
-             print("Gateway: MATRIX_HOMESERVER and MATRIX_USER_ID must be set. Exiting.")
+             logger.error("Gateway: MATRIX_HOMESERVER and MATRIX_USER_ID must be set. Exiting.")
              return
         if not self.password and not self.access_token: # self.access_token here is from initial .env or None
-            print("Gateway: Either MATRIX_PASSWORD or MATRIX_ACCESS_TOKEN must be set. Exiting.")
+            logger.error("Gateway: Either MATRIX_PASSWORD or MATRIX_ACCESS_TOKEN must be set. Exiting.")
             return
 
         # Determine the device_id to use for AsyncClient constructor
@@ -274,7 +279,7 @@ class MatrixGatewayService:
              # If using token, user_id and device_id should ideally be the ones from the session that generated the token
              # self.user_id is already loaded from MATRIX_USER_ID (potentially canonicalized and saved from previous run)
              # client_constructor_device_id uses self.persisted_device_id (saved from previous run)
-             print(f"Gateway: Initializing client with User ID {self.user_id}, Access Token, and Device ID {client_constructor_device_id}.")
+             logger.info(f"Gateway: Initializing client with User ID {self.user_id}, Access Token, and Device ID {client_constructor_device_id}.")
              self.client = AsyncClient(
                  self.homeserver,
                  self.user_id,
@@ -284,7 +289,7 @@ class MatrixGatewayService:
              )
              self.client.access_token = self.access_token # Set token after initialization
         else:
-             print(f"Gateway: Initializing client with User ID {self.user_id} for password login.")
+             logger.info(f"Gateway: Initializing client with User ID {self.user_id} for password login.")
              # For password login, device_id in constructor is a default.
              # The actual device_id will be set by the server after login.
              # The device_name for the login call itself is self.device_name_config.
@@ -308,7 +313,7 @@ class MatrixGatewayService:
         login_success = False
         try:
             if not self.client.access_token: # Only login if we don't already have a token (i.e. self.access_token was None)
-                print(f"Gateway: Attempting password login as {self.user_id}...")
+                logger.info(f"Gateway: Attempting password login as {self.user_id}...")
                 # Use self.device_name_config for the login attempt
                 login_response = await self.client.login(self.password, device_name=self.device_name_config)
 
@@ -319,8 +324,8 @@ class MatrixGatewayService:
                     self.user_id = self.client.user_id # Canonicalized user ID from server
                     actual_device_id = self.client.device_id # Actual device ID from server
 
-                    print(f"Gateway: Logged in successfully as {self.user_id} with device ID {actual_device_id}")
-                    print(f"Gateway: Saving access token, user ID, and device ID to .env file...")
+                    logger.info(f"Gateway: Logged in successfully as {self.user_id} with device ID {actual_device_id}")
+                    logger.info(f"Gateway: Saving access token, user ID, and device ID to .env file...")
                     try:
                         dotenv_path_found = find_dotenv(usecwd=True, raise_error_if_not_found=False)
                         env_file_to_write = dotenv_path_found
@@ -330,12 +335,12 @@ class MatrixGatewayService:
                             if not os.path.exists(env_file_to_write):
                                 with open(env_file_to_write, "w") as f:
                                     pass # Create empty .env
-                                print(f"Gateway: Created .env file at {env_file_to_write}")
+                                logger.info(f"Gateway: Created .env file at {env_file_to_write}")
                         
                         set_key(env_file_to_write, "MATRIX_ACCESS_TOKEN", self.access_token)
                         set_key(env_file_to_write, "MATRIX_USER_ID", self.user_id)
                         set_key(env_file_to_write, "MATRIX_DEVICE_ID", actual_device_id)
-                        print(f"Gateway: Credentials saved to {env_file_to_write}.")
+                        logger.info(f"Gateway: Credentials saved to {env_file_to_write}.")
 
                         # Update current environment variables for this running instance
                         # and internal state, so it doesn't rely on a restart to use them.
@@ -345,25 +350,25 @@ class MatrixGatewayService:
                         self.persisted_device_id = actual_device_id # Update internal state
 
                     except Exception as e:
-                        print(f"Gateway: Failed to save credentials to .env file. Error: {type(e).__name__} - {e}")
+                        logger.error(f"Gateway: Failed to save credentials to .env file. Error: {type(e).__name__} - {e}")
                 else:
-                    print(f"Gateway: Login failed. Response: {login_response}")
+                    logger.error(f"Gateway: Login failed. Response: {login_response}")
                     await self.client.close()
                     return
             else:
-                print("Gateway: Using provided access token. Verifying token...")
+                logger.info("Gateway: Using provided access token. Verifying token...")
                 # Optionally verify token with a simple API call like /account/whoami
                 try:
                    whoami_response = await self.client.whoami()
                    if whoami_response.user_id == self.user_id:
-                       print("Gateway: Access token is valid.")
+                       logger.info("Gateway: Access token is valid.")
                        login_success = True # Treat as successful login
                    else:
-                       print(f"Gateway: Access token seems invalid or for wrong user ({whoami_response.user_id} != {self.user_id}).")
+                       logger.error(f"Gateway: Access token seems invalid or for wrong user ({whoami_response.user_id} != {self.user_id}).")
                        await self.client.close()
                        return
                 except Exception as e:
-                    print(f"Gateway: Failed to verify access token. Error: {e}")
+                    logger.error(f"Gateway: Failed to verify access token. Error: {e}")
                     await self.client.close()
                     return
 
@@ -376,31 +381,31 @@ class MatrixGatewayService:
                 else:
                     localpart = self.client.user_id.split(':')[0]
                     self.bot_display_name = localpart[1:] if localpart.startswith("@") else localpart
-                print(f"Gateway: Bot display name set to '{self.bot_display_name}'")
+                logger.info(f"Gateway: Bot display name set to '{self.bot_display_name}'")
                 await self.bus.publish(BotDisplayNameReadyEvent(display_name=self.bot_display_name))
             except Exception as e:
-                print(f"Gateway: Could not fetch bot's display name, using default '{self.bot_display_name}'. Error: {type(e).__name__} - {e}")
+                logger.warning(f"Gateway: Could not fetch bot's display name, using default '{self.bot_display_name}'. Error: {type(e).__name__} - {e}")
                 await self.bus.publish(BotDisplayNameReadyEvent(display_name=self.bot_display_name)) # Publish default
 
 
             # --- Join room (remains the same) ---
             matrix_room_id_env = os.getenv("MATRIX_ROOM_ID")
             if matrix_room_id_env and "YOUR_MATRIX_ROOM_ID" not in matrix_room_id_env:
-                print(f"Gateway: Attempting to join predefined room: {matrix_room_id_env}...")
+                logger.info(f"Gateway: Attempting to join predefined room: {matrix_room_id_env}...")
                 try:
                     join_response = await self.client.join(matrix_room_id_env)
                     if hasattr(join_response, 'room_id'):
-                         print(f"Gateway: Successfully joined room: {join_response.room_id}")
+                         logger.info(f"Gateway: Successfully joined room: {join_response.room_id}")
                     else:
-                         print(f"Gateway: Failed to join room {matrix_room_id_env}. Response: {join_response}")
+                         logger.warning(f"Gateway: Failed to join room {matrix_room_id_env}. Response: {join_response}")
                 except (LocalProtocolError) as e:
                     # Handle 'already joined' specifically if needed
                     if "already in room" in str(e).lower():
-                         print(f"Gateway: Already in room {matrix_room_id_env}.")
+                         logger.info(f"Gateway: Already in room {matrix_room_id_env}.")
                     else:
-                         print(f"Gateway: Specific nio error joining room {matrix_room_id_env}: {type(e).__name__} - {e}")
+                         logger.error(f"Gateway: Specific nio error joining room {matrix_room_id_env}: {type(e).__name__} - {e}")
                 except Exception as e:
-                    print(f"Gateway: General error joining room {matrix_room_id_env}: {type(e).__name__} - {e}")
+                    logger.error(f"Gateway: General error joining room {matrix_room_id_env}: {type(e).__name__} - {e}")
 
 
             try:
@@ -408,44 +413,44 @@ class MatrixGatewayService:
                 initial_presence = "unavailable" # Or "unavailable" if you want it to start idle
                 initial_status_msg = "Initializing..." # Optional
                 await self.client.set_presence(presence=initial_presence, status_msg=initial_status_msg)
-                print(f"Gateway: Initial presence set to {initial_presence}")
+                logger.info(f"Gateway: Initial presence set to {initial_presence}")
             except Exception as e:
-                print(f"Gateway: Failed to set initial presence: {e}")
+                logger.warning(f"Gateway: Failed to set initial presence: {e}")
 
             # --- Sync loop (remains the same) ---
-            print("Gateway: Starting sync loop...")
+            logger.info("Gateway: Starting sync loop...")
             sync_task = asyncio.create_task(self.client.sync_forever(timeout=30000, full_state=True))
             stop_event_task = asyncio.create_task(self._stop_event.wait())
 
             done, pending = await asyncio.wait([sync_task, stop_event_task], return_when=asyncio.FIRST_COMPLETED)
 
             if stop_event_task in done:
-                print("Gateway: Stop event received, cancelling sync task.")
+                logger.info("Gateway: Stop event received, cancelling sync task.")
                 if not sync_task.done(): sync_task.cancel()
             elif sync_task in done:
-                print("Gateway: Sync task finished unexpectedly.")
+                logger.warning("Gateway: Sync task finished unexpectedly.")
                 try: sync_task.result()
-                except asyncio.CancelledError: print("Gateway: Sync task was cancelled.")
-                except (LocalProtocolError) as e: print(f"Gateway: Sync task failed (Matrix Sync error): {type(e).__name__} - {e}")
-                except Exception as e: print(f"Gateway: Sync task failed (general error): {type(e).__name__} - {e}")
+                except asyncio.CancelledError: logger.info("Gateway: Sync task was cancelled.")
+                except (LocalProtocolError) as e: logger.error(f"Gateway: Sync task failed (Matrix Sync error): {type(e).__name__} - {e}")
+                except Exception as e: logger.error(f"Gateway: Sync task failed (general error): {type(e).__name__} - {e}")
 
             if sync_task.cancelled() or (pending and sync_task in pending and not sync_task.done()):
                 try: await sync_task
-                except asyncio.CancelledError: print("Gateway: Sync task successfully processed cancellation.")
-                except Exception as e: print(f"Gateway: Exception awaiting cancelled sync_task: {type(e).__name__} - {e}")
+                except asyncio.CancelledError: logger.info("Gateway: Sync task successfully processed cancellation.")
+                except Exception as e: logger.error(f"Gateway: Exception awaiting cancelled sync_task: {type(e).__name__} - {e}")
 
 
         except (LocalProtocolError) as e:
-            print(f"Gateway: Matrix Sync error during initial setup: {type(e).__name__} - {e}")
+            logger.error(f"Gateway: Matrix Sync error during initial setup: {type(e).__name__} - {e}")
         except ConnectionError as e:
-            print(f"Gateway: ConnectionError during initial setup: {type(e).__name__} - {e}")
+            logger.error(f"Gateway: ConnectionError during initial setup: {type(e).__name__} - {e}")
         except Exception as e:
-            print(f"Gateway: Unexpected error in MatrixGatewayService run (setup): {type(e).__name__} - {e}")
+            logger.error(f"Gateway: Unexpected error in MatrixGatewayService run (setup): {type(e).__name__} - {e}")
         finally:
             if self.client:
                 if login_success and not self.client.logged_in and not self._stop_event.is_set():
-                     print("Gateway: Client is no longer logged in.")
-                print("Gateway: Closing Matrix client...")
+                     logger.warning("Gateway: Client is no longer logged in.")
+                logger.info("Gateway: Closing Matrix client...")
                 await self.client.close()
             if self._command_worker_task:
                 self._command_worker_task.cancel()
@@ -453,8 +458,8 @@ class MatrixGatewayService:
                     await self._command_worker_task
                 except Exception:
                     pass
-            print("MatrixGatewayService: Stopped.")
+            logger.info("MatrixGatewayService: Stopped.")
 
-    async def stop(self):
-        print("MatrixGatewayService: Stop requested.")
+    async def stop(self) -> None:
+        logger.info("MatrixGatewayService: Stop requested.")
         self._stop_event.set()
