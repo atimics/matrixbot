@@ -8,6 +8,7 @@ from matrix_gateway_service import MatrixGatewayService
 from ai_inference_service import AIInferenceService
 from room_logic_service import RoomLogicService
 from summarization_service import SummarizationService
+from ollama_inference_service import OllamaInferenceService # Add this
 import database
 from event_definitions import BotDisplayNameReadyEvent # For initial display name
 
@@ -33,11 +34,12 @@ async def main() -> None:
     # Bot display name will be set via BotDisplayNameReadyEvent
     # Matrix Gateway will fetch it and publish it. Other services subscribe.
     matrix_gateway = MatrixGatewayService(bus)
-    ai_inference = AIInferenceService(bus)
+    ai_inference = AIInferenceService(bus) # For OpenRouter
+    ollama_inference = OllamaInferenceService(bus) # For Ollama
     room_logic = RoomLogicService(bus) # Will get bot_display_name via event
     summarization = SummarizationService(bus) # Will get bot_display_name via event
     
-    services = [matrix_gateway, ai_inference, room_logic, summarization]
+    services = [matrix_gateway, ai_inference, ollama_inference, room_logic, summarization]
     
     service_tasks = []
     try:

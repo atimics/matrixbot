@@ -42,6 +42,18 @@ class AIInferenceResponseEvent(BaseEvent):
     tool_calls: Optional[List[Dict[str, Any]]] = None # Added for tool calling
     error_message: Optional[str] = None
 
+class OpenRouterInferenceRequestEvent(AIInferenceRequestEvent):
+    event_type: str = "openrouter_inference_request"
+
+class OpenRouterInferenceResponseEvent(AIInferenceResponseEvent):
+    event_type: str = "openrouter_inference_response"
+
+class OllamaInferenceRequestEvent(AIInferenceRequestEvent):
+    event_type: str = "ollama_inference_request"
+
+class OllamaInferenceResponseEvent(AIInferenceResponseEvent):
+    event_type: str = "ollama_inference_response"
+
 class ActivateListeningEvent(BaseEvent):
     event_type: str = "activate_listening_event"
     room_id: str

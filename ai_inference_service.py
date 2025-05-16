@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Tuple, Any
 from dotenv import load_dotenv
 
 from message_bus import MessageBus
-from event_definitions import AIInferenceRequestEvent, AIInferenceResponseEvent
+from event_definitions import OpenRouterInferenceRequestEvent, OpenRouterInferenceResponseEvent
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +65,7 @@ class AIInferenceService:
         finally:
             conn.close()
 
-    async def _handle_inference_request(self, request_event: AIInferenceRequestEvent) -> None:
+    async def _handle_inference_request(self, request_event: OpenRouterInferenceRequestEvent) -> None:
         """Handles incoming AI inference requests and publishes the response event."""
         tools_payload = request_event.tools
         tool_choice_payload = request_event.tool_choice if request_event.tool_choice else "auto"
@@ -78,7 +78,7 @@ class AIInferenceService:
             tools_payload,
             tool_choice_payload
         )
-        response_event = AIInferenceResponseEvent(
+        response_event = OpenRouterInferenceResponseEvent(
             request_id=request_event.request_id,
             original_request_payload=request_event.original_request_payload,
             success=success,
@@ -91,7 +91,7 @@ class AIInferenceService:
 
     async def run(self) -> None:
         logger.info("AIInferenceService: Starting...")
-        self.bus.subscribe(AIInferenceRequestEvent.model_fields['event_type'].default, self._handle_inference_request)
+        self.bus.subscribe(OpenRouterInferenceRequestEvent.model_fields['event_type'].default, self._handle_inference_request)
         await self._stop_event.wait()
         logger.info("AIInferenceService: Stopped.")
 
