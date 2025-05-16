@@ -87,7 +87,7 @@
 
 4.  **Run the bot**
     ```bash
-    python main.py
+    python main_orchestrator.py
     ```
     The bot will attempt to fetch its display name from its Matrix profile. This name is used for mentions.
 

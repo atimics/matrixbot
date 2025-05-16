@@ -7,7 +7,6 @@ import logging
 
 # Set up logger for this module
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
 
 # import aiohttp # No longer needed here for typing indicator
 
@@ -666,7 +665,7 @@ class RoomLogicService:
     async def _request_ai_summary(self, room_id: str, force_update: bool = False):
         config = self.room_activity_config.get(room_id)
         if not config:
-            print(f"RoomLogic: [{room_id}] No config found, cannot request summary.")
+            logger.warning(f"RLS: [{room_id}] No config found, cannot request summary.")
             return
 
         messages_for_this_summary_attempt = list(config.get('memory', []))
@@ -675,7 +674,7 @@ class RoomLogicService:
 
         # If not forcing an update, and there are no new messages in memory to summarize, skip.
         if not force_update and not messages_for_this_summary_attempt:
-            print(f"RoomLogic: [{room_id}] No new messages to summarize and not a forced update. Skipping summary.")
+            logger.info(f"RLS: [{room_id}] No new messages to summarize and not a forced update. Skipping summary.")
             return
 
         event_id_for_this_summary: Optional[str] = None
@@ -691,7 +690,7 @@ class RoomLogicService:
 
         # If still no anchor after all checks, we cannot proceed.
         if not event_id_for_this_summary:
-            print(f"RoomLogic: [{room_id}] Cannot request summary: No valid event_id anchor could be determined. (Force: {force_update}, Msgs in attempt: {len(messages_for_this_summary_attempt)})")
+            logger.warning(f"RLS: [{room_id}] Cannot request summary: No valid event_id anchor could be determined. (Force: {force_update}, Msgs in attempt: {len(messages_for_this_summary_attempt)})")
             return
 
         # If we are here, a summary will be attempted.
@@ -723,7 +722,7 @@ class RoomLogicService:
         )
         await self.bus.publish(ai_request)
         config['new_turns_since_last_summary'] = 0 # Reset counter as summary request was made
-        print(f"RoomLogic: [{room_id}] Requested AI summary. Event anchor: {event_id_for_this_summary}. Msgs in batch: {len(messages_for_this_summary_attempt)}. Forced: {force_update}")
+        logger.info(f"RLS: [{room_id}] Requested AI summary. Event anchor: {event_id_for_this_summary}. Msgs in batch: {len(messages_for_this_summary_attempt)}. Forced: {force_update}")
 
     async def _manage_room_decay(self, room_id: str):
         try:
@@ -744,11 +743,11 @@ class RoomLogicService:
 
                     if config['max_interval_no_activity_cycles'] >= self.inactivity_cycles:
                         config['is_active_listening'] = False
-                        print(f"RoomLogic: [{room_id}] Deactivating listening due to inactivity.")
+                        logger.info(f"RLS: [{room_id}] Deactivating listening due to inactivity.")
 
                         batch_task = config.get('batch_response_task')
                         if batch_task and not batch_task.done():
-                            print(f"RoomLogic: [{room_id}] Decay: awaiting final batch task.")
+                            logger.info(f"RLS: [{room_id}] Decay: awaiting final batch task.")
                             try:
                                 await asyncio.wait_for(batch_task, timeout=self.batch_delay + 2.0)
                             except (asyncio.TimeoutError, asyncio.CancelledError): pass
@@ -759,11 +758,11 @@ class RoomLogicService:
                 else: # Activity occurred
                     config['max_interval_no_activity_cycles'] = 0
         except asyncio.CancelledError:
-            print(f"RoomLogic: [{room_id}] Decay manager cancelled.")
+            logger.info(f"RLS: [{room_id}] Decay manager cancelled.")
 
 
     async def run(self):
-        print("RoomLogicService: Starting...")
+        logger.info("RoomLogicService: Starting...")
         self.bus.subscribe(BotDisplayNameReadyEvent.model_fields['event_type'].default, self._handle_bot_display_name_ready)
         self.bus.subscribe(MatrixMessageReceivedEvent.model_fields['event_type'].default, self._handle_matrix_message)
         self.bus.subscribe(ActivateListeningEvent.model_fields['event_type'].default, self._handle_activate_listening)
@@ -777,8 +776,8 @@ class RoomLogicService:
             if config.get('decay_task') and not config['decay_task'].done(): config['decay_task'].cancel()
             if config.get('batch_response_task') and not config['batch_response_task'].done(): config['batch_response_task'].cancel()
             # Await cancellations if necessary, or manage cleanup more robustly
-        print("RoomLogicService: Stopped.")
+        logger.info("RoomLogicService: Stopped.")
 
     async def stop(self):
-        print("RoomLogicService: Stop requested.")
+        logger.info("RoomLogicService: Stop requested.")
         self._stop_event.set()
