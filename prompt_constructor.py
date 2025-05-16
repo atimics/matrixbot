@@ -73,41 +73,56 @@ def build_messages_for_ai(
             global_summary_text
         )
         messages_for_ai.append({"role": "system", "content": system_message_content})
-        # Explicitly instruct the LLM to use the correct event_id for tool calls
         if last_user_event_id_in_batch:
             messages_for_ai.append({
                 "role": "system",
                 "content": (
-                    f"When using a tool that requires an event_id (such as replying or reacting), "
-                    f"always use this event_id: {last_user_event_id_in_batch}. Do not invent or use placeholder values. "
-                    f"If you need to reply or react, use this event_id as the argument."
+                    f"Context for tool use: If you need to reply to or react to the last user message, "
+                    f"use the event_id: {last_user_event_id_in_batch}. "
+                    f"When calling 'send_reply' or 'react_to_message', if the 'reply_to_event_id' or 'target_event_id' "
+                    f"argument refers to the most recent user message in this batch, use this ID: {last_user_event_id_in_batch}. "
+                    f"Otherwise, use the specific event_id from the conversation history if referring to an older message."
                 )
             })
 
     for msg in historical_messages:
         ai_msg: Dict[str, Any] = {"role": msg["role"]}
+        
         # Content is usually present, but can be None for assistant messages with only tool_calls
         if "content" in msg and msg["content"] is not None:
             ai_msg["content"] = msg["content"]
-        elif msg["role"] == "assistant" and not msg.get("tool_calls"):
-            ai_msg["content"] = ""  # Ensure content is at least an empty string if no tool_calls
-        if "name" in msg:
+        # If role is assistant and there are no tool_calls, ensure content is at least an empty string.
+        # If there are tool_calls, content can be None (OpenAI prefers it this way if there's no text part).
+        elif msg["role"] == "assistant":
+            if not msg.get("tool_calls"):
+                ai_msg["content"] = "" 
+            else: # Has tool_calls
+                if "content" in msg and msg["content"] is not None: # If content is explicitly provided (e.g. text + tool_call)
+                    ai_msg["content"] = msg["content"]
+                else: # No explicit content, only tool_calls
+                    ai_msg["content"] = None # Set to None as per OpenAI recommendation
+
+        if "name" in msg and msg["name"] is not None: # Ensure name is not None
             ai_msg["name"] = msg["name"]
-        # Add tool_calls for assistant messages if present
+        
         if msg["role"] == "assistant" and "tool_calls" in msg and msg["tool_calls"] is not None:
             ai_msg["tool_calls"] = msg["tool_calls"]
-            # OpenAI expects content to be null or not present if tool_calls are present and content is None
-            if ai_msg.get("content") == "" and not ("content" in msg and msg["content"] == ""):
-                if "content" in msg and msg["content"] is None:
-                    ai_msg["content"] = None
-                else:
-                    ai_msg.pop("content", None)
-        # Add tool_call_id for tool messages if present
-        if msg["role"] == "tool" and "tool_call_id" in msg:
-            ai_msg["tool_call_id"] = msg["tool_call_id"]
+            # If content became None due to tool_calls, and it wasn't explicitly set, ensure it's handled.
+            # OpenAI API states: "content is required for all messages except for messages with role assistant that have tool_calls."
+            # So if content is None and there are tool_calls, we can omit content or keep it as None.
+            # The current logic correctly sets content to None if only tool_calls are present.
+            # If content was an empty string and tool_calls are present, it should remain an empty string if that was intended.
+            # The key is that `content` should not be missing if `tool_calls` is not present for an assistant message.
+
+        if msg["role"] == "tool":
+            if "tool_call_id" in msg:
+                ai_msg["tool_call_id"] = msg["tool_call_id"]
             # Content for role:tool is mandatory. Ensure it's present.
             if "content" not in msg or msg["content"] is None:
-                ai_msg["content"] = "[Missing tool content]"
+                ai_msg["content"] = "[Tool execution result not available]" # Provide a default
+            else:
+                ai_msg["content"] = msg["content"] # Ensure content is passed if available
+
         messages_for_ai.append(ai_msg)
 
     # Combine batched user inputs if needed

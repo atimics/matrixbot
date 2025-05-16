@@ -313,117 +313,112 @@ class RoomLogicService:
             except (KeyError, IndexError) as e:
                 logger.error(f"RoomLogic: [{room_id}] Error processing pending_batch_for_memory for memory: {e}. Batch: {pending_batch_for_memory}")
 
-        # Always define assistant_message_for_memory before use
+        # Initialize assistant_message_for_memory for the current turn
         assistant_message_for_memory: Dict[str, Any] = {"role": "assistant", "name": current_bot_name}
-        assistant_acted = False
-
-        # Add the assistant's response (text and/or tool_calls) to memory
-
-        # --- LOGGING: Tool call handling ---
-        if response_event.tool_calls:
-            logger.info(f"[{room_id}] LLM tool_calls: {json.dumps(response_event.tool_calls, indent=2)}")
+        assistant_acted = False # Flag to track if assistant took any action (text or tool)
 
         if response_event.success:
+            # Populate assistant_message_for_memory with content and/or tool_calls
             if response_event.text_response:
                 assistant_message_for_memory["content"] = response_event.text_response
-                # Publish text response to Matrix
-                await self.bus.publish(SendMatrixMessageCommand(room_id=room_id, text=response_event.text_response))
                 assistant_acted = True
             
             if response_event.tool_calls:
                 assistant_message_for_memory["tool_calls"] = response_event.tool_calls
-                # This assistant message (now potentially with content and tool_calls) is added ONCE.
-                # Subsequent "role": "tool" messages will provide results for these calls.
-                assistant_acted = True # Even if content is null, tool_calls mean action
+                assistant_acted = True
+                if not response_event.text_response: # If only tool_calls, content should be None
+                    assistant_message_for_memory["content"] = None # Explicitly set to None
+            
+            # If assistant acted (sent text or used a tool), add its message to memory
+            if assistant_acted:
+                # Add a copy of the assistant's message (which might include text and/or tool_calls)
+                short_term_memory.append(dict(assistant_message_for_memory))
 
-                # Add assistant message to memory BEFORE processing tool results
-                # This ensures the "assistant" message with "tool_calls" precedes "tool" role messages
-                if assistant_message_for_memory.get("content") or assistant_message_for_memory.get("tool_calls"):
-                    short_term_memory.append(assistant_message_for_memory)
+                # If there were tool calls, process them and add their results to memory
+                if response_event.tool_calls:
+                    for tool_call in response_event.tool_calls:
+                        tool_name = tool_call.get("function", {}).get("name")
+                        tool_call_id = tool_call.get("id")
+                        tool_result_content = f"[Tool {tool_name} execution status: Unknown]" # Default
+                        # tool_executed_successfully = False # Not strictly needed here unless used for other logic
 
-                # Process Tool Calls and add their results to memory
-                for tool_call in response_event.tool_calls:
-                    tool_name = tool_call.get("function", {}).get("name")
-                    tool_call_id = tool_call.get("id")
-                    try:
-                        tool_args_raw = tool_call.get("function", {}).get("arguments", "{}")
-                        tool_args = json.loads(tool_args_raw)
-                        # --- Post-process event_id fields to replace placeholders ---
-                        if tool_name == "send_reply":
-                            reply_to_event_id = tool_args.get("reply_to_event_id")
-                            if reply_to_event_id and reply_to_event_id.startswith("$event"):
-                                tool_args["reply_to_event_id"] = last_user_event_id_in_batch
-                        elif tool_name == "react_to_message":
-                            target_event_id = tool_args.get("target_event_id")
-                            if target_event_id and target_event_id.startswith("$event"):
-                                tool_args["target_event_id"] = last_user_event_id_in_batch
-                        logger.info(f"[{room_id}] Tool call '{tool_name}' args: {tool_args}")
-                    except json.JSONDecodeError:
-                        logger.error(f"[{room_id}] Invalid JSON arguments for tool {tool_name}: {tool_call.get('function', {}).get('arguments')}")
-                        # Add a "tool" role message indicating failure for this specific tool_call_id
+                        try:
+                            tool_args_raw = tool_call.get("function", {}).get("arguments", "{}")
+                            tool_args = json.loads(tool_args_raw)
+                            
+                            # Post-process event_id fields to replace placeholders
+                            if tool_name == "send_reply":
+                                reply_to_event_id_arg = tool_args.get("reply_to_event_id")
+                                if reply_to_event_id_arg and reply_to_event_id_arg.startswith("$event"):
+                                    tool_args["reply_to_event_id"] = last_user_event_id_in_batch
+                                elif not reply_to_event_id_arg and last_user_event_id_in_batch:
+                                    logger.warning(f"[{room_id}] send_reply: LLM did not provide reply_to_event_id, using fallback: {last_user_event_id_in_batch}")
+                                    tool_args["reply_to_event_id"] = last_user_event_id_in_batch
+                            elif tool_name == "react_to_message":
+                                target_event_id_arg = tool_args.get("target_event_id")
+                                if target_event_id_arg and target_event_id_arg.startswith("$event"):
+                                    tool_args["target_event_id"] = last_user_event_id_in_batch
+                                elif not target_event_id_arg and last_user_event_id_in_batch:
+                                    logger.warning(f"[{room_id}] react_to_message: LLM did not provide target_event_id, using fallback: {last_user_event_id_in_batch}")
+                                    tool_args["target_event_id"] = last_user_event_id_in_batch
+                            logger.info(f"[{room_id}] Tool call '{tool_name}' args: {tool_args}")
+
+                            # Execute tool and get result content
+                            if tool_name == "send_reply":
+                                text = tool_args.get("text")
+                                reply_to_event_id = tool_args.get("reply_to_event_id") # Should be resolved by now
+                                if text and reply_to_event_id:
+                                    await self.bus.publish(SendReplyCommand(room_id=room_id, text=text, reply_to_event_id=reply_to_event_id))
+                                    tool_result_content = f"[Tool {tool_name} executed: Sent reply]"
+                                else:
+                                    logger.error(f"RoomLogic: [{room_id}] Missing text or reply_to_event_id for send_reply tool. Args: {tool_args}")
+                                    tool_result_content = f"[Tool {tool_name} failed: Missing arguments]"
+                            
+                            elif tool_name == "react_to_message":
+                                target_event_id = tool_args.get("target_event_id") # Should be resolved
+                                reaction_key = tool_args.get("reaction_key")
+                                if target_event_id and reaction_key:
+                                    await self.bus.publish(ReactToMessageCommand(room_id=room_id, target_event_id=target_event_id, reaction_key=reaction_key))
+                                    tool_result_content = f"[Tool {tool_name} executed: Sent reaction \'{reaction_key}\']"
+                                else:
+                                    logger.error(f"RoomLogic: [{room_id}] Missing target_event_id or reaction_key for react_to_message. Args: {tool_args}")
+                                    tool_result_content = f"[Tool {tool_name} failed: Missing arguments]"
+                            else:
+                                logger.warning(f"RoomLogic: [{room_id}] Unknown tool requested: {tool_name}")
+                                tool_result_content = f"[Tool {tool_name} failed: Unknown tool]"
+
+                        except json.JSONDecodeError:
+                            logger.error(f"[{room_id}] Invalid JSON arguments for tool {tool_name}: {tool_call.get('function', {}).get('arguments')}")
+                            tool_result_content = f"[Tool {tool_name} execution failed: Invalid arguments]"
+                        except Exception as e:
+                            logger.error(f"[{room_id}] Error processing tool {tool_name}: {e}")
+                            tool_result_content = f"[Tool {tool_name} execution failed: {e}]"
+
+
+                        # Add "tool" role message to memory with the result
                         if tool_call_id:
                             short_term_memory.append({
                                 "role": "tool",
                                 "tool_call_id": tool_call_id,
-                                "content": f"[Tool {tool_name} execution failed: Invalid arguments]"
+                                "content": tool_result_content
                             })
-                        continue 
-
-                    # Log fallback usage for event IDs
-                    if tool_name == "send_reply":
-                        text = tool_args.get("text")
-                        reply_to_event_id = tool_args.get("reply_to_event_id") or last_user_event_id_in_batch
-                        if text and reply_to_event_id:
-                            await self.bus.publish(SendReplyCommand(room_id=room_id, text=text, reply_to_event_id=reply_to_event_id))
-                            tool_result_content = f"[Tool {tool_name} executed: Sent reply]"
-                            tool_executed_successfully = True
-                        else:
-                            print(f"RoomLogic: [{room_id}] Missing text or reply_to_event_id for send_reply tool. Args: {tool_args}")
-                            tool_result_content = f"[Tool {tool_name} failed: Missing arguments]"
-                            if not reply_to_event_id:
-                                logger.warning(f"[{room_id}] send_reply: LLM did not provide reply_to_event_id, using fallback: {last_user_event_id_in_batch}")
-                    
-                    elif tool_name == "react_to_message":
-                        target_event_id = tool_args.get("target_event_id") or last_user_event_id_in_batch
-                        reaction_key = tool_args.get("reaction_key")
-                        if target_event_id and reaction_key:
-                            await self.bus.publish(ReactToMessageCommand(room_id=room_id, target_event_id=target_event_id, reaction_key=reaction_key))
-                            tool_result_content = f"[Tool {tool_name} executed: Sent reaction \'{reaction_key}\']"
-                            tool_executed_successfully = True
-                        else:
-                            print(f"RoomLogic: [{room_id}] Missing target_event_id or reaction_key for react_to_message. Args: {tool_args}")
-                            tool_result_content = f"[Tool {tool_name} failed: Missing arguments]"
-                            if not target_event_id:
-                                logger.warning(f"[{room_id}] react_to_message: LLM did not provide target_event_id, using fallback: {last_user_event_id_in_batch}")
-                    else:
-                        print(f"RoomLogic: [{room_id}] Unknown tool requested: {tool_name}")
-                        tool_result_content = f"[Tool {tool_name} failed: Unknown tool]"
-
-                    # Add "tool" role message to memory with the result
-                    if tool_call_id:
-                        short_term_memory.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call_id,
-                            # "name": tool_name, # OpenAI does not expect 'name' here, it's inferred from tool_call_id
-                            "content": tool_result_content
-                        })
             
-            else: # No tool_calls, only text_response (or neither if LLM chose to say nothing with success=true)
-                if assistant_message_for_memory.get("content"): # If there was a text response
-                     short_term_memory.append(assistant_message_for_memory)
-                elif not assistant_acted : # Success true, but no text and no tools
-                    print(f"RoomLogic: [{room_id}] AI returned success but no text and no tool calls.")
-                    short_term_memory.append({
-                        "role": "assistant", "name": current_bot_name,
-                        "content": "[The AI chose not to send a message or use a tool in this turn.]",
-                        "event_id": representative_event_id_for_user_turn
-                    })
+            elif response_event.success: # Success but no text and no tool_calls from AI
+                logger.info(f"RoomLogic: [{room_id}] AI returned success but no text and no tool calls.")
+                short_term_memory.append({
+                    "role": "assistant", "name": current_bot_name,
+                    "content": "[The AI chose not to send a message or use a tool in this turn.]",
+                    "event_id": representative_event_id_for_user_turn 
+                })
 
+            # Publish text response to Matrix if there was one (independent of tool calls)
+            if response_event.text_response:
+                await self.bus.publish(SendMatrixMessageCommand(room_id=room_id, text=response_event.text_response))
 
         elif not response_event.success: # AI call failed
-            ai_text = f"Sorry, AI error: {response_event.error_message or 'Unknown error'}"
-            await self.bus.publish(SendMatrixMessageCommand(room_id=room_id, text=ai_text))
-            short_term_memory.append({"role": "assistant", "name": current_bot_name, "content": ai_text, "event_id": representative_event_id_for_user_turn})
+            ai_error_text = f"Sorry, AI error: {response_event.error_message or 'Unknown error'}"
+            await self.bus.publish(SendMatrixMessageCommand(room_id=room_id, text=ai_error_text))
+            short_term_memory.append({"role": "assistant", "name": current_bot_name, "content": ai_error_text, "event_id": representative_event_id_for_user_turn})
 
         # Trim memory
         while len(short_term_memory) > self.short_term_memory_items:
