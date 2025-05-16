@@ -47,22 +47,35 @@ class OllamaInferenceService:
             # response['message']['tool_calls'] (if any)
             message = response.get('message', {})
             text_content = message.get('content')
-            tool_calls = message.get('tool_calls') # This will be a list of tool call dicts
+            ollama_tool_calls = message.get('tool_calls') # This is List[ollama.types.ToolCall]
 
             # Ensure tool_calls are in the expected format if present
-            formatted_tool_calls = None
-            if tool_calls:
-                # The `ollama` library returns `tool_calls` as `[{'function': {'name': '...', 'arguments': {...}}}]`.
-                # This structure is compatible enough to be passed directly.
-                # `RoomLogicService` will interpret it.
-                formatted_tool_calls = tool_calls
+            formatted_tool_calls_list = None
+            if ollama_tool_calls:
+                formatted_tool_calls_list = []
+                for tc_obj in ollama_tool_calls:
+                    # tc_obj is an ollama.types.ToolCall object.
+                    # We need to convert it to a dictionary structure that
+                    # OllamaInferenceResponseEvent and RoomLogicService expect.
+                    # Expected structure per RoomLogicService: {'function': {'name': '...', 'arguments': {...}}}
+                    if tc_obj and hasattr(tc_obj, 'function') and \
+                       hasattr(tc_obj.function, 'name') and \
+                       hasattr(tc_obj.function, 'arguments'):
+                        formatted_tool_calls_list.append({
+                            "function": {
+                                "name": tc_obj.function.name,
+                                "arguments": tc_obj.function.arguments
+                            }
+                        })
+                    else:
+                        logger.warning(f"Received unexpected tool_call structure from Ollama: {tc_obj}")
 
 
-            if not text_content and not formatted_tool_calls:
+            if not text_content and not formatted_tool_calls_list:
                 logger.warning(f"Ollama model {model_name} returned no content and no tool calls.")
                 # This might be acceptable if the model deliberately chooses to do nothing.
 
-            return True, text_content, formatted_tool_calls, None
+            return True, text_content, formatted_tool_calls_list, None
 
         except ollama.ResponseError as e:
             logger.error(f"Ollama API ResponseError for model {model_name}: {e.status_code} - {e.error}")
