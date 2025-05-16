@@ -313,6 +313,10 @@ class RoomLogicService:
             except (KeyError, IndexError) as e:
                 logger.error(f"RoomLogic: [{room_id}] Error processing pending_batch_for_memory for memory: {e}. Batch: {pending_batch_for_memory}")
 
+        # Always define assistant_message_for_memory before use
+        assistant_message_for_memory: Dict[str, Any] = {"role": "assistant", "name": current_bot_name}
+        assistant_acted = False
+
         # Add the assistant's response (text and/or tool_calls) to memory
 
         # --- LOGGING: Tool call handling ---
