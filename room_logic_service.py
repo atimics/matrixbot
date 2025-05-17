@@ -210,25 +210,36 @@ class RoomLogicService:
         )
 
         turn_request_id = str(uuid.uuid4())
-        # This payload is passed through to AIInferenceResponseEvent.original_request_payload
-        # and then to ExecuteToolRequest.original_request_payload
-        # and then to ToolExecutionResponse.original_request_payload
         original_payload_for_ai_response = {
             "room_id": room_id, 
             "pending_batch_for_memory": pending_batch,
             "last_user_event_id_in_batch": last_user_event_id_in_batch,
             "turn_request_id": turn_request_id, # Key for pending_tool_calls state
-            "requested_model_name": self.openrouter_chat_model # Model requested
-            # AIInferenceService should add actual_model_name_used and actual_llm_provider_name if different
+            # "requested_model_name" and "current_llm_provider" will be added below
         }
 
-        ai_request = AIInferenceRequestEvent(
+        model_to_use: str
+        EventClass: type[AIInferenceRequestEvent] # Base type for annotation
+        current_provider_name = self.primary_llm_provider
+
+        if current_provider_name == "ollama":
+            model_to_use = self.ollama_chat_model
+            EventClass = OllamaInferenceRequestEvent # type: ignore
+        else: # Default to openrouter
+            model_to_use = self.openrouter_chat_model
+            EventClass = OpenRouterInferenceRequestEvent # type: ignore
+
+        original_payload_for_ai_response["requested_model_name"] = model_to_use
+        original_payload_for_ai_response["current_llm_provider"] = current_provider_name
+
+        ai_request = EventClass(
             request_id=turn_request_id,
             reply_to_service_event="ai_chat_response_received",
             original_request_payload=original_payload_for_ai_response,
-            model_name=self.openrouter_chat_model, # TODO: Allow Ollama/other models
+            model_name=model_to_use,
             messages_payload=ai_payload,
-            tools=self.tool_registry.get_all_tool_definitions() # Pass available tools
+            tools=self.tool_registry.get_all_tool_definitions(),
+            tool_choice="auto" 
         )
         await self.bus.publish(ai_request)
 
@@ -285,168 +296,110 @@ class RoomLogicService:
                 assistant_acted = True
 
             if response_event.tool_calls:
-                logger.info(f"RLS: [{room_id}] LLM ({llm_provider_for_this_turn}) tool_calls: {json.dumps(response_event.tool_calls, indent=2)}")
-                assistant_message_for_memory["tool_calls"] = response_event.tool_calls
-                assistant_acted = True # Assistant acted by calling tools
+                logger.info(f"RLS: [{room_id}] LLM ({llm_provider_for_this_turn}) requested tool_calls: {json.dumps(response_event.tool_calls, indent=2)}")
 
-                # Add assistant message with tool_calls to memory BEFORE processing them.
-                # This is important for the conversation flow.
+                # Ensure all tool_calls have an ID before adding to assistant memory or processing further.
+                # This is crucial for matching tool results back to the assistant's request.
+                for tool_call_obj in response_event.tool_calls:
+                    if not tool_call_obj.get("id"):
+                        new_tool_call_id = f"toolcall_{uuid.uuid4()}"
+                        logger.warning(f"RLS: [{room_id}] Tool call from LLM missing 'id'. Generated: {new_tool_call_id} for tool '{tool_call_obj.get('function', {}).get('name')}'.")
+                        tool_call_obj["id"] = new_tool_call_id
+                
+                assistant_message_for_memory["tool_calls"] = response_event.tool_calls
+                assistant_acted = True # Assistant acted by requesting tools
+
+                # Add assistant message with tool_calls to memory BEFORE dispatching tool execution requests.
+                # The follow-up LLM call will need this message in its history.
                 if assistant_message_for_memory.get("content") or assistant_message_for_memory.get("tool_calls"):
                     # Ensure content is None if only tool_calls are present, to match OpenAI spec
                     if not assistant_message_for_memory.get("content") and assistant_message_for_memory.get("tool_calls"):
                         assistant_message_for_memory["content"] = None
                     short_term_memory.append(dict(assistant_message_for_memory)) 
 
-                pending_follow_up_llm_request = False
+                ai_turn_key = response_event.original_request_payload.get("turn_request_id")
+                if not ai_turn_key:
+                    logger.error(f"RLS: [{room_id}] AIInferenceResponseEvent missing 'turn_request_id' in original_request_payload. Cannot process tool calls reliably.")
+                    # Optionally, send an error message to the user or attempt to recover,
+                    # but for now, we'll log and might not be able to process follow-ups correctly.
+                    # This should ideally not happen if turn_request_id is always populated.
+                else:
+                    # Store state for this AI turn's tool calls, to be used by _handle_tool_execution_response
+                    self.pending_tool_calls_for_ai_turn[ai_turn_key] = {
+                        "room_id": room_id,
+                        "conversation_history_at_tool_call_time": list(short_term_memory), # Snapshot includes the assistant msg with tool_calls
+                        "expected_count": len(response_event.tool_calls),
+                        "accumulated_tool_messages_for_llm": [],
+                        "original_ai_response_payload": dict(response_event.original_request_payload), # For follow-up context
+                        "llm_provider_for_this_turn": llm_provider_for_this_turn
+                    }
 
                 for tool_call in response_event.tool_calls:
                     tool_function_data = tool_call.get("function", {})
                     tool_name = tool_function_data.get("name")
-                    tool_call_id = tool_call.get("id") or f"ollama_tool_{uuid.uuid4()}" # Ollama might not provide an ID
+                    tool_call_id = tool_call.get("id") # ID is now guaranteed by the loop above
 
-                    try:
-                        raw_arguments = tool_function_data.get("arguments", {})
-                        if isinstance(raw_arguments, str): # From OpenRouter
-                            tool_args = json.loads(raw_arguments)
-                        else: # From Ollama (already a dict)
-                            tool_args = raw_arguments
-                    except json.JSONDecodeError:
-                        logger.error(f"RLS: [{room_id}] Invalid JSON arguments for tool {tool_name}: {raw_arguments}")
-                        short_term_memory.append({
-                            "role": "tool", "tool_call_id": tool_call_id,
-                            "name": tool_name, 
-                            "content": f"[Tool {tool_name} execution failed: Invalid arguments]"
-                        })
-                        if llm_provider_for_this_turn == "ollama": pending_follow_up_llm_request = True
+                    if not tool_name or not tool_call_id:
+                        logger.error(f"RLS: [{room_id}] Tool call missing name or id after check. Skipping. Tool call: {tool_call}")
+                        # If this happens, the expected_count in pending_tool_calls_for_ai_turn might become problematic.
+                        # Consider decrementing expected_count or adding a synthetic error tool result.
+                        # For now, log and skip.
+                        if ai_turn_key and ai_turn_key in self.pending_tool_calls_for_ai_turn:
+                             self.pending_tool_calls_for_ai_turn[ai_turn_key]["expected_count"] -=1
+                             if self.pending_tool_calls_for_ai_turn[ai_turn_key]["expected_count"] == 0: # check if this was the only tool
+                                 del self.pending_tool_calls_for_ai_turn[ai_turn_key] # clean up if no tools left
                         continue
 
-                    # --- Handle the "call_openrouter_llm" tool specifically ---
-                    if tool_name == "call_openrouter_llm" and llm_provider_for_this_turn == "ollama":
-                        logger.info(f"RLS: [{room_id}] Ollama wants to call OpenRouter. Args: {tool_args}")
+                    tool_args = {}
+                    try:
+                        raw_arguments = tool_function_data.get("arguments") # Can be str or dict
+                        if raw_arguments is None:
+                            raw_arguments = "{}" # Default to empty JSON string if arguments field is missing
 
-                        or_model_name = tool_args.get("model_name") or self.openrouter_chat_model
-                        or_messages = tool_args.get("messages_payload")
-                        or_prompt = tool_args.get("prompt_text")
-
-                        if not or_messages and or_prompt:
-                            or_messages = [{"role": "user", "content": or_prompt}]
-                        elif not or_messages and not or_prompt:
-                            logger.warning(f"RLS: [{room_id}] call_openrouter_llm: Missing 'messages_payload' or 'prompt_text'.")
-                            short_term_memory.append({
-                                "role": "tool", "tool_call_id": tool_call_id, "name": tool_name,
-                                "content": f"[Tool {tool_name} failed: Missing prompt or messages_payload]"
-                            })
-                            pending_follow_up_llm_request = True
-                            continue
-                        
-                        delegated_request_id = str(uuid.uuid4())
-                        payload_for_or_response_handler = {
-                            "room_id": room_id,
-                            "original_ollama_tool_call_id": tool_call_id,
-                            "original_user_event_id": last_user_event_id_in_batch, 
-                            "ollama_conversation_memory_snapshot": list(short_term_memory) # Memory up to Ollama's tool request
-                        }
-
-                        openrouter_request = OpenRouterInferenceRequestEvent( # Explicitly OpenRouter
-                            request_id=delegated_request_id,
-                            reply_to_service_event="ollama_tool_openrouter_response_received",
-                            original_request_payload=payload_for_or_response_handler,
-                            model_name=or_model_name,
-                            messages_payload=or_messages,
-                            tools=self._available_tools, 
-                            tool_choice="auto"
-                        )
-                        await self.bus.publish(openrouter_request)
-                        logger.info(f"RLS: [{room_id}] Delegated to OpenRouter (Req ID: {delegated_request_id}) for Ollama tool call {tool_call_id}")
-                        pending_follow_up_llm_request = False # Follow-up handled by OR response handler
-                        continue # Next tool call or finish
-
-                    # --- Handle other tools (send_reply, react_to_message) ---
-                    else: 
-                        tool_result_content = f"[Tool {tool_name} execution started]"
-                        # Resolve event_id placeholders
-                        if tool_name == "send_reply":
-                            reply_to_event_id_arg = tool_args.get("reply_to_event_id")
-                            if reply_to_event_id_arg and isinstance(reply_to_event_id_arg, str) and reply_to_event_id_arg.startswith("$event"):
-                                tool_args["reply_to_event_id"] = last_user_event_id_in_batch
-                            elif not reply_to_event_id_arg and last_user_event_id_in_batch:
-                                logger.warning(f"RLS: [{room_id}] send_reply by {llm_provider_for_this_turn}: LLM did not provide reply_to_event_id, using fallback: {last_user_event_id_in_batch}")
-                                tool_args["reply_to_event_id"] = last_user_event_id_in_batch
-                        elif tool_name == "react_to_message":
-                            target_event_id_arg = tool_args.get("target_event_id")
-                            if target_event_id_arg and isinstance(target_event_id_arg, str) and target_event_id_arg.startswith("$event"):
-                                tool_args["target_event_id"] = last_user_event_id_in_batch
-                            elif not target_event_id_arg and last_user_event_id_in_batch:
-                                logger.warning(f"RLS: [{room_id}] react_to_message by {llm_provider_for_this_turn}: LLM did not provide target_event_id, using fallback: {last_user_event_id_in_batch}")
-
-                        if tool_name == "send_reply":
-                            text = tool_args.get("text")
-                            reply_to_event_id = tool_args.get("reply_to_event_id")
-                            if text and reply_to_event_id:
-                                await self.bus.publish(SendReplyCommand(room_id=room_id, text=text, reply_to_event_id=reply_to_event_id))
-                                tool_result_content = f"[Tool {tool_name} executed: Sent reply]"
-                            else: 
-                                tool_result_content = f"[Tool {tool_name} failed: Missing arguments]"
-                                logger.warning(f"RLS: [{room_id}] send_reply failed. Args: {tool_args}")
-                        elif tool_name == "react_to_message":
-                            target_event_id = tool_args.get("target_event_id")
-                            reaction_key = tool_args.get("reaction_key")
-                            if target_event_id and reaction_key:
-                                await self.bus.publish(ReactToMessageCommand(room_id=room_id, target_event_id=target_event_id, reaction_key=reaction_key))
-                                tool_result_content = f"[Tool {tool_name} executed: Sent reaction '{reaction_key}']"
-                            else: 
-                                tool_result_content = f"[Tool {tool_name} failed: Missing arguments]"
-                                logger.warning(f"RLS: [{room_id}] react_to_message failed. Args: {tool_args}")
+                        if isinstance(raw_arguments, str):
+                            tool_args = json.loads(raw_arguments)
+                        elif isinstance(raw_arguments, dict):
+                            tool_args = raw_arguments # Already a dict (e.g., from Ollama)
                         else:
-                            logger.warning(f"RLS: [{room_id}] Unknown tool requested by {llm_provider_for_this_turn}: {tool_name}")
-                            tool_result_content = f"[Tool {tool_name} failed: Unknown tool]"
+                            logger.warning(f"RLS: [{room_id}] Tool arguments for {tool_name} (call_id: {tool_call_id}) are of unexpected type: {type(raw_arguments)}. Value: {raw_arguments}. Using empty args.")
+                            tool_args = {}
+                    except json.JSONDecodeError as e:
+                        logger.error(f"RLS: [{room_id}] Invalid JSON arguments for tool {tool_name} (call_id: {tool_call_id}): {raw_arguments}. Error: {e}. Using empty args.")
+                        tool_args = {}
+                        # ToolExecutionService will receive this and should handle the error, then send a ToolExecutionResponse.
 
-                        short_term_memory.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call_id,
-                            "name": tool_name, # OpenAI requires name for role:tool if id is from assistant
-                            "content": tool_result_content
-                        })
-                        if llm_provider_for_this_turn == "ollama" or llm_provider_for_this_turn == "openrouter": # OpenRouter might also need follow-up if it uses tools
-                            pending_follow_up_llm_request = True
-                
-                # If LLM made standard tool calls (not call_openrouter_llm that defers the follow-up),
-                # we need to send another request to LLM with the tool results.
-                if pending_follow_up_llm_request:
-                    logger.info(f"RLS: [{room_id}] Sending follow-up request to {llm_provider_for_this_turn} with tool results.")
-                    follow_up_payload = prompt_constructor.build_messages_for_ai(
-                        historical_messages=list(short_term_memory),
-                        current_batched_user_inputs=[], 
-                        bot_display_name=self.bot_display_name,
-                        channel_summary=database.get_summary(room_id)[0] if database.get_summary(room_id) else None,
-                        last_user_event_id_in_batch=last_user_event_id_in_batch,
-                        include_system_prompt=False 
-                    )
-                    follow_up_request_id = str(uuid.uuid4())
-                    original_payload_for_follow_up = {
-                        "room_id": room_id,
-                        "pending_batch_for_memory": [], 
-                        "last_user_event_id_in_batch": last_user_event_id_in_batch,
-                        "current_llm_provider": llm_provider_for_this_turn,
-                        "is_follow_up_after_tool_call": True
-                    }
+                    # original_request_payload for ExecuteToolRequest is the AIInferenceResponseEvent's original_request_payload.
+                    # This is used by _handle_tool_execution_response to get the ai_turn_key and other context.
                     
-                    target_model_for_follow_up = self.ollama_chat_model if llm_provider_for_this_turn == "ollama" else self.openrouter_chat_model
-                    tools_for_follow_up = (self._available_tools or []) + ([self._openrouter_tool_definition] if llm_provider_for_this_turn == "ollama" else [])
+                    # Ensure ai_turn_key is available for conversation_history_snapshot
+                    # This check is defensive; ai_turn_key should exist if we are processing tool calls from an AI response.
+                    conversation_history_for_tool = []
+                    if ai_turn_key and ai_turn_key in self.pending_tool_calls_for_ai_turn:
+                        conversation_history_for_tool = list(self.pending_tool_calls_for_ai_turn[ai_turn_key]["conversation_history_at_tool_call_time"])
+                    else:
+                        # Fallback or log error if ai_turn_key is unexpectedly missing
+                        logger.error(f"RLS: [{room_id}] ai_turn_key missing when preparing ExecuteToolRequest. Using current short_term_memory as fallback for snapshot.")
+                        conversation_history_for_tool = list(short_term_memory)
 
-                    follow_up_request_event_class = OllamaInferenceRequestEvent if llm_provider_for_this_turn == "ollama" else OpenRouterInferenceRequestEvent
 
-                    ai_request = follow_up_request_event_class(
-                        request_id=follow_up_request_id,
-                        reply_to_service_event="ai_chat_response_received",
-                        original_request_payload=original_payload_for_follow_up,
-                        model_name=target_model_for_follow_up, 
-                        messages_payload=follow_up_payload,
-                        tools=tools_for_follow_up,
-                        tool_choice="auto"
+                    execute_tool_request = ExecuteToolRequest(
+                        room_id=room_id,
+                        tool_name=tool_name,
+                        arguments=tool_args, # Corrected field name
+                        tool_call_id=tool_call_id,
+                        original_request_payload=dict(response_event.original_request_payload),
+                        # Add missing required fields:
+                        llm_provider_info={
+                            "name": llm_provider_for_this_turn,
+                            "model": response_event.original_request_payload.get("actual_model_name_used", 
+                                     response_event.original_request_payload.get("requested_model_name"))
+                        },
+                        conversation_history_snapshot=conversation_history_for_tool,
+                        last_user_event_id=last_user_event_id_in_batch 
                     )
-                    await self.bus.publish(ai_request)
-                    # Current handler execution finishes. Bot's final text response comes from next LLM turn.
+                    await self.bus.publish(execute_tool_request)
+                    logger.info(f"RLS: [{room_id}] Published ExecuteToolRequest for tool: {tool_name}, call_id: {tool_call_id}")
+                
 
             elif not response_event.tool_calls and response_event.text_response: # Simple text response, no tools
                 # Assistant message (text only) already added to memory if assistant_acted was true.
@@ -486,87 +439,80 @@ class RoomLogicService:
         room_id = orp.get("room_id")
 
         if not ai_turn_key or not room_id:
-            print(f"RoomLogic: Received ToolExecutionResponse with missing turn_request_id or room_id. Ignoring. Payload: {orp}")
+            logger.error(f"RoomLogic: Received ToolExecutionResponse with missing turn_request_id or room_id. Ignoring. Payload: {orp}") # Changed print to logger.error
             return
 
         turn_state = self.pending_tool_calls_for_ai_turn.get(ai_turn_key)
         if not turn_state:
-            print(f"RoomLogic: [{room_id}] Received ToolExecutionResponse for unknown/completed AI turn {ai_turn_key}. Ignoring.")
+            logger.warning(f"RoomLogic: [{room_id}] Received ToolExecutionResponse for unknown/completed AI turn {ai_turn_key}. Ignoring.") # Changed print to logger.warning
             return
 
         config = self.room_activity_config.get(room_id)
         if not config: 
-            print(f"RoomLogic: [{room_id}] Config not found for tool execution response. AI Turn: {ai_turn_key}. Ignoring.")
-            # Clean up orphan state if necessary
+            logger.error(f"RoomLogic: [{room_id}] Config not found for tool execution response. AI Turn: {ai_turn_key}. Ignoring.") # Changed print to logger.error
             if ai_turn_key in self.pending_tool_calls_for_ai_turn:
                 del self.pending_tool_calls_for_ai_turn[ai_turn_key]
             return
         
         short_term_memory = config.get('memory', [])
 
-        # 1. Create and add tool message to short-term memory and turn state
         tool_message_for_llm = {
             "role": "tool",
             "tool_call_id": exec_response.original_tool_call_id,
             "name": exec_response.tool_name,
             "content": exec_response.result_for_llm_history
-            # No event_id for tool messages as per OpenAI spec
         }
         short_term_memory.append(tool_message_for_llm)
         turn_state["accumulated_tool_messages_for_llm"].append(tool_message_for_llm)
         
-        print(f"RoomLogic: [{room_id}] Tool '{exec_response.tool_name}' result processed for AI turn {ai_turn_key}.")
+        logger.info(f"RoomLogic: [{room_id}] Tool '{exec_response.tool_name}' result processed for AI turn {ai_turn_key}.") # Changed print to logger.info
 
-        # 2. Check if all tool calls for this AI turn have been processed
         if len(turn_state["accumulated_tool_messages_for_llm"]) == turn_state["expected_count"]:
-            print(f"RoomLogic: [{room_id}] All {turn_state['expected_count']} tool results received for AI turn {ai_turn_key}. Requesting follow-up LLM call.")
-            
-            # Prepare messages for the follow-up LLM call
-            # History already includes user msg, assistant msg with tool_calls. Now add tool results.
-            messages_for_follow_up = list(turn_state["conversation_history_at_tool_call_time"]) # This snapshot includes the assistant message with tool_calls
-            # The tool messages were individually added to short_term_memory already.
-            # For the follow-up, we need the history *up to* the assistant's tool_call message,
-            # then all the tool responses.
-            # The `conversation_history_at_tool_call_time` is correct as it was taken *after* assistant msg.
-            # Now, we need to ensure the `accumulated_tool_messages_for_llm` are appended to *that specific snapshot*
-            # for the AI call, not necessarily to the live `short_term_memory` if other things happened.
-            # However, `short_term_memory` was updated sequentially, so it should be fine.
-            # The prompt says: messages_payload: Will be the conversation_history_snapshot ... plus the original assistant message with its tool_calls object, PLUS all the new role: "tool" messages.
-            # `turn_state["conversation_history_at_tool_call_time"]` IS this history.
-            # And `turn_state["accumulated_tool_messages_for_llm"]` are the new tool messages.
+            logger.info(f"RoomLogic: [{room_id}] All {turn_state['expected_count']} tool results received for AI turn {ai_turn_key}. Requesting follow-up LLM call.") # Changed print to logger.info
             
             final_messages_for_follow_up = turn_state["conversation_history_at_tool_call_time"] + turn_state["accumulated_tool_messages_for_llm"]
-
             follow_up_ai_request_id = str(uuid.uuid4())
             
-            # Use original provider details for follow-up, but mark as follow-up
-            original_ai_payload = turn_state["original_ai_response_payload"]
-            follow_up_original_payload = dict(original_ai_payload) # shallow copy
+            original_ai_payload_from_initial_response = turn_state["original_ai_response_payload"]
+            follow_up_original_payload = dict(original_ai_payload_from_initial_response) 
             follow_up_original_payload["is_follow_up_after_tool_execution"] = True
             follow_up_original_payload["previous_ai_turn_id"] = ai_turn_key
-            follow_up_original_payload["turn_request_id"] = follow_up_ai_request_id # New turn_request_id for this specific request
+            follow_up_original_payload["turn_request_id"] = follow_up_ai_request_id 
 
-            # Determine model for follow-up (e.g., from original request)
-            model_for_follow_up = original_ai_payload.get("actual_model_name_used", original_ai_payload.get("requested_model_name", self.openrouter_chat_model))
+            provider_for_follow_up = turn_state.get("llm_provider_for_this_turn", self.primary_llm_provider)
+            model_for_follow_up: str
+            FollowUpEventClass: type[AIInferenceRequestEvent] # Base type for annotation
 
-            ai_follow_up_request = AIInferenceRequestEvent(
+            if provider_for_follow_up == "ollama":
+                # Use the specific model from the original request if available, else default
+                model_for_follow_up = original_ai_payload_from_initial_response.get("actual_model_name_used", 
+                                           original_ai_payload_from_initial_response.get("requested_model_name", self.ollama_chat_model))
+                FollowUpEventClass = OllamaInferenceRequestEvent # type: ignore
+            else: # Default to openrouter
+                model_for_follow_up = original_ai_payload_from_initial_response.get("actual_model_name_used", 
+                                           original_ai_payload_from_initial_response.get("requested_model_name", self.openrouter_chat_model))
+                FollowUpEventClass = OpenRouterInferenceRequestEvent # type: ignore
+
+            follow_up_original_payload["requested_model_name"] = model_for_follow_up 
+            follow_up_original_payload["current_llm_provider"] = provider_for_follow_up
+
+            ai_follow_up_request = FollowUpEventClass(
                 request_id=follow_up_ai_request_id,
-                reply_to_service_event="ai_chat_response_received", # Back to the same handler
+                reply_to_service_event="ai_chat_response_received", 
                 original_request_payload=follow_up_original_payload,
                 model_name=model_for_follow_up,
                 messages_payload=final_messages_for_follow_up,
-                tools=self.tool_registry.get_all_tool_definitions(), # LLM might call more tools
-                tool_choice="auto" # Or "none" if tools are not expected after this
+                tools=self.tool_registry.get_all_tool_definitions(), 
+                tool_choice="auto" 
             )
             await self.bus.publish(ai_follow_up_request)
             
-            del self.pending_tool_calls_for_ai_turn[ai_turn_key] # Clean up state
+            del self.pending_tool_calls_for_ai_turn[ai_turn_key] 
 
-        # Memory trimming and persistence (happens after each tool result or after follow-up is sent)
         while len(short_term_memory) > self.short_term_memory_items:
             short_term_memory.pop(0)
         config['memory'] = short_term_memory
-        # print(f"RoomLogic: [{room_id}] Memory updated after tool response. Size: {len(short_term_memory)}.")
+        # logger.info(f"RoomLogic: [{room_id}] Memory updated after tool response. Size: {len(short_term_memory)}.") # Changed print to logger.info, and commented out as it might be too verbose
 
     async def _manage_room_decay(self, room_id: str):
         try:
