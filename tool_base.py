@@ -2,6 +2,7 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional, Literal
 
+from pydantic import BaseModel
 from event_definitions import BaseEvent # Assuming BaseEvent is in event_definitions
 
 class ToolResult(BaseModel):

@@ -20,21 +20,26 @@ from event_definitions import (
     SendMatrixMessageCommand, ProcessMessageBatchCommand, ActivateListeningEvent,
     BotDisplayNameReadyEvent,
     SetTypingIndicatorCommand, SetPresenceCommand,
-    ReactToMessageCommand, SendReplyCommand # Added tool commands
+    ReactToMessageCommand, SendReplyCommand, # Added tool commands
+    ExecuteToolRequest, # Added ExecuteToolRequest
+    ToolExecutionResponse # Added ToolExecutionResponse
 )
 import prompt_constructor # For building AI payload
 import database # For database operations
+from tool_manager import ToolRegistry # Added
 
 load_dotenv()
 
 class RoomLogicService:
-    def __init__(self, message_bus: MessageBus, bot_display_name: str = "ChatBot"):
+    def __init__(self, message_bus: MessageBus, tool_registry: ToolRegistry, bot_display_name: str = "ChatBot"): # Added tool_registry
         """Service for managing room logic, batching, and AI interaction."""
         self.bus = message_bus
+        self.tool_registry = tool_registry # Store it
         self.bot_display_name = bot_display_name # Set by BotDisplayNameReadyEvent
         self.room_activity_config: Dict[str, Dict[str, Any]] = {}
         self._stop_event = asyncio.Event()
         self._service_start_time = time.time()
+        self.pending_tool_calls_for_ai_turn: Dict[str, Dict[str, Any]] = {} # Added for tool call state
 
         # Configurable values
         self.initial_interval = int(os.getenv("POLLING_INITIAL_INTERVAL", "10"))
@@ -49,86 +54,6 @@ class RoomLogicService:
         self.primary_llm_provider = os.getenv("PRIMARY_LLM_PROVIDER", "openrouter").lower()
         self.ollama_chat_model = os.getenv("OLLAMA_DEFAULT_CHAT_MODEL", "qwen3")
         self.ollama_summary_model = os.getenv("OLLAMA_DEFAULT_SUMMARY_MODEL", self.ollama_chat_model)
-
-        self._available_tools = [
-            {
-                "type": "function",
-                "function": {
-                    "name": "send_reply",
-                    "description": "Sends a textual reply message to the current room.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "text": {
-                                "type": "string",
-                                "description": "The text content of the reply message."
-                            },
-                            "reply_to_event_id": {
-                                "type": "string",
-                                "description": "The event ID of the message to reply to. This visually quotes the original message."
-                            }
-                        },
-                        "required": ["text", "reply_to_event_id"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "react_to_message",
-                    "description": "Reacts to a specific message with an emoji or text.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "target_event_id": {
-                                "type": "string",
-                                "description": "The event ID of the message to react to."
-                            },
-                            "reaction_key": {
-                                "type": "string",
-                                "description": "The reaction emoji or key (e.g., '👍', '😄')."
-                            }
-                        },
-                        "required": ["target_event_id", "reaction_key"]
-                    }
-                }
-            }
-        ]
-
-        self._openrouter_tool_definition = {
-            "type": "function",
-            "function": {
-                "name": "call_openrouter_llm",
-                "description": "Delegates a complex query or a query requiring specific capabilities to a powerful cloud-based LLM (OpenRouter). Use this for tasks that local models might struggle with or for accessing specific proprietary models.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "model_name": {
-                            "type": "string",
-                            "description": "The specific OpenRouter model to use (e.g., \'openai/gpt-4o\', \'anthropic/claude-3-opus\'). If unsure, a default powerful model will be selected."
-                        },
-                        "messages_payload": {
-                            "type": "array",
-                            "description": "The conversation history and prompt to send to the OpenRouter LLM, in OpenAI message format.",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "role": {"type": "string", "enum": ["system", "user", "assistant"]},
-                                    "content": {"type": "string"}
-                                },
-                                "required": ["role", "content"]
-                            }
-                        },
-                        "prompt_text": {
-                            "type": "string",
-                            "description": "Alternatively, provide a single prompt text. If \'messages_payload\' is given, this is ignored."
-                        }
-                        # We might also allow \'tools\' and \'tool_choice\' to be passed to OpenRouter
-                    },
-                    "required": [] # Make it flexible: either messages_payload or prompt_text
-                }
-            }
-        }
 
         self._status_cache: Dict[str, Any] = {"value": None, "expires_at": 0.0}
         self.status_cache_ttl = int(os.getenv("AI_STATUS_TEXT_CACHE_TTL", "3600"))  # 1 hour default
@@ -284,39 +209,26 @@ class RoomLogicService:
             last_user_event_id_in_batch=last_user_event_id_in_batch
         )
 
-        request_id = str(uuid.uuid4())
-        
+        turn_request_id = str(uuid.uuid4())
+        # This payload is passed through to AIInferenceResponseEvent.original_request_payload
+        # and then to ExecuteToolRequest.original_request_payload
+        # and then to ToolExecutionResponse.original_request_payload
         original_payload_for_ai_response = {
             "room_id": room_id, 
             "pending_batch_for_memory": pending_batch,
             "last_user_event_id_in_batch": last_user_event_id_in_batch,
-            "current_llm_provider": self.primary_llm_provider # Track which provider is active for this turn
+            "turn_request_id": turn_request_id, # Key for pending_tool_calls state
+            "requested_model_name": self.openrouter_chat_model # Model requested
+            # AIInferenceService should add actual_model_name_used and actual_llm_provider_name if different
         }
 
-        target_model_name: str
-        current_tools_for_llm: Optional[List[Dict[str, Any]]] = None
-        request_event_class = None # Placeholder for the specific event class
-
-        if self.primary_llm_provider == "ollama":
-            target_model_name = self.ollama_chat_model
-            # Offer the OpenRouter tool AND any existing tools (_available_tools) to Ollama
-            current_tools_for_llm = (self._available_tools or []) + [self._openrouter_tool_definition]
-            original_payload_for_ai_response["llm_service_target"] = "ollama" # For clarity
-            request_event_class = OllamaInferenceRequestEvent
-        else: # openrouter is primary
-            target_model_name = self.openrouter_chat_model
-            current_tools_for_llm = self._available_tools
-            original_payload_for_ai_response["llm_service_target"] = "openrouter"
-            request_event_class = OpenRouterInferenceRequestEvent
-
-        ai_request = request_event_class(
-            request_id=request_id,
-            reply_to_service_event="ai_chat_response_received", # Both services will publish to this
+        ai_request = AIInferenceRequestEvent(
+            request_id=turn_request_id,
+            reply_to_service_event="ai_chat_response_received",
             original_request_payload=original_payload_for_ai_response,
-            model_name=target_model_name,
-            messages_payload=ai_payload, # This is the constructed payload for the LLM
-            tools=current_tools_for_llm,
-            tool_choice="auto" # Or be more specific if needed
+            model_name=self.openrouter_chat_model, # TODO: Allow Ollama/other models
+            messages_payload=ai_payload,
+            tools=self.tool_registry.get_all_tool_definitions() # Pass available tools
         )
         await self.bus.publish(ai_request)
 
@@ -568,161 +480,93 @@ class RoomLogicService:
             short_term_memory.pop(0)
         config['memory'] = short_term_memory
 
-        # Request summary if conditions met, but not if we are in a multi-turn tool call sequence
-        # (e.g. Ollama called OR, or Ollama/OR called a regular tool and is awaiting its own follow-up)
-        is_intermediate_tool_step = response_event.original_request_payload.get("is_follow_up_after_tool_call") or \
-                                    response_event.original_request_payload.get("is_follow_up_after_delegated_tool_call") or \
-                                    (llm_provider_for_this_turn == "ollama" and any(tc.get("function",{}).get("name") == "call_openrouter_llm" for tc in (response_event.tool_calls or [])))
-        
-        if not is_intermediate_tool_step and assistant_acted: # Only consider summary if assistant took a meaningful action or completed a chain
-            if config.get('new_turns_since_last_summary', 0) >= int(os.getenv("SUMMARY_UPDATE_MESSAGE_TURNS", "7")):
-                await self._request_ai_summary(room_id, force_update=False)
+    async def _handle_tool_execution_response(self, exec_response: ToolExecutionResponse):
+        orp = exec_response.original_request_payload # This is AIInferenceResponseEvent's original_request_payload
+        ai_turn_key = orp.get("turn_request_id")
+        room_id = orp.get("room_id")
 
-    async def _handle_ollama_tool_openrouter_response(self, or_response_event: AIInferenceResponseEvent):
-        original_ollama_payload = or_response_event.original_request_payload
-        room_id = original_ollama_payload.get("room_id")
-        ollama_tool_call_id = original_ollama_payload.get("original_ollama_tool_call_id")
-        original_user_event_id = original_ollama_payload.get("original_user_event_id") # For context
-        # The memory snapshot is taken *before* Ollama's tool call that triggered OpenRouter.
-        # We need to append the result of the OpenRouter call to this snapshot.
-        ollama_memory_snapshot = original_ollama_payload.get("ollama_conversation_memory_snapshot", [])
-
-        if not room_id or not ollama_tool_call_id:
-            logger.error(f"RLS: Missing room_id or ollama_tool_call_id in OpenRouter response for Ollama. Req ID: {or_response_event.request_id}")
+        if not ai_turn_key or not room_id:
+            print(f"RoomLogic: Received ToolExecutionResponse with missing turn_request_id or room_id. Ignoring. Payload: {orp}")
             return
 
-        logger.info(f"RLS: [{room_id}] Received OpenRouter response for Ollama tool call {ollama_tool_call_id}. Success: {or_response_event.success}")
+        turn_state = self.pending_tool_calls_for_ai_turn.get(ai_turn_key)
+        if not turn_state:
+            print(f"RoomLogic: [{room_id}] Received ToolExecutionResponse for unknown/completed AI turn {ai_turn_key}. Ignoring.")
+            return
+
         config = self.room_activity_config.get(room_id)
-        if not config: return
+        if not config: 
+            print(f"RoomLogic: [{room_id}] Config not found for tool execution response. AI Turn: {ai_turn_key}. Ignoring.")
+            # Clean up orphan state if necessary
+            if ai_turn_key in self.pending_tool_calls_for_ai_turn:
+                del self.pending_tool_calls_for_ai_turn[ai_turn_key]
+            return
+        
+        short_term_memory = config.get('memory', [])
 
-        # short_term_memory = config.get('memory', []) # Use the snapshot instead of current live memory
-        current_memory_for_ollama_follow_up = list(ollama_memory_snapshot) # Start with the snapshot
-
-        tool_result_content_for_ollama: str
-
-        if or_response_event.success:
-            # Construct a single string result for Ollama, summarizing OpenRouter's actions.
-            # If OpenRouter itself used tools, those would have been handled by AIInferenceService or this handler if OR called back to RLS.
-            # For now, we assume OR gives a text response, or its tool calls are self-contained or simplified here.
-            final_or_text = or_response_event.text_response or ""
-            final_or_tool_calls_summary = ""
-            if or_response_event.tool_calls:
-                # This part needs to be careful: if OpenRouter calls *our* tools (send_reply, react_to_message),
-                # those actions would have already been performed by the main _handle_ai_chat_response (if OR was primary)
-                # or by a similar logic if AIInferenceService directly handles them.
-                # For now, just summarize that OR suggested tools.
-                final_or_tool_calls_summary = f" OpenRouter also suggested tool calls: {json.dumps(or_response_event.tool_calls)}"
-            
-            if final_or_text or final_or_tool_calls_summary:
-                tool_result_content_for_ollama = f"{final_or_text}{final_or_tool_calls_summary}".strip()
-            else:
-                tool_result_content_for_ollama = "[OpenRouter returned no text and no tool calls]"
-        else:
-            tool_result_content_for_ollama = f"[OpenRouter call failed: {or_response_event.error_message or 'Unknown error'}]"
-
-        # Add the "tool" role message (result of call_openrouter_llm) to Ollama's conversation history (the snapshot)
-        current_memory_for_ollama_follow_up.append({
+        # 1. Create and add tool message to short-term memory and turn state
+        tool_message_for_llm = {
             "role": "tool",
-            "tool_call_id": ollama_tool_call_id, 
-            # "name": "call_openrouter_llm", # Not strictly needed by OpenAI if tool_call_id is present
-            "content": tool_result_content_for_ollama
-        })
-
-        # Now, make a new request to Ollama with the updated history
-        logger.info(f"RLS: [{room_id}] Sending follow-up request to Ollama after OpenRouter tool execution.")
-        follow_up_payload = prompt_constructor.build_messages_for_ai(
-            historical_messages=current_memory_for_ollama_follow_up,
-            current_batched_user_inputs=[], 
-            bot_display_name=self.bot_display_name,
-            channel_summary=database.get_summary(room_id)[0] if database.get_summary(room_id) else None,
-            last_user_event_id_in_batch=original_user_event_id, # from the original user turn
-            include_system_prompt=False 
-        )
-
-        next_ollama_request_id = str(uuid.uuid4())
-        payload_for_final_ollama_response = {
-            "room_id": room_id,
-            "pending_batch_for_memory": [], # No new user messages for this turn
-            "last_user_event_id_in_batch": original_user_event_id,
-            "current_llm_provider": "ollama",
-            "is_follow_up_after_delegated_tool_call": True # Indicate this is the final response turn from Ollama
+            "tool_call_id": exec_response.original_tool_call_id,
+            "name": exec_response.tool_name,
+            "content": exec_response.result_for_llm_history
+            # No event_id for tool messages as per OpenAI spec
         }
-        ollama_final_request = OllamaInferenceRequestEvent( # Explicitly Ollama
-            request_id=next_ollama_request_id,
-            reply_to_service_event="ai_chat_response_received", # Back to the main handler
-            original_request_payload=payload_for_final_ollama_response,
-            model_name=self.ollama_chat_model,
-            messages_payload=follow_up_payload,
-            tools=(self._available_tools or []) + [self._openrouter_tool_definition], # Offer tools again
-            tool_choice="auto"
-        )
-        await self.bus.publish(ollama_final_request)
-        # The live short_term_memory in config will be updated by _handle_ai_chat_response when Ollama's final response comes.
-        # For now, we've used a snapshot and are sending it back to Ollama.
-        # The key is that original_user_event_id and other context is preserved.
-        config['memory'] = current_memory_for_ollama_follow_up # Persist the memory up to this point
-
-    async def _request_ai_summary(self, room_id: str, force_update: bool = False):
-        config = self.room_activity_config.get(room_id)
-        if not config:
-            logger.warning(f"RLS: [{room_id}] No config found, cannot request summary.")
-            return
-
-        messages_for_this_summary_attempt = list(config.get('memory', []))
-        db_summary_info = database.get_summary(room_id) # Call once
-        previous_summary_text, last_event_id_summarized_in_db = db_summary_info if db_summary_info else (None, None)
-
-        # If not forcing an update, and there are no new messages in memory to summarize, skip.
-        if not force_update and not messages_for_this_summary_attempt:
-            logger.info(f"RLS: [{room_id}] No new messages to summarize and not a forced update. Skipping summary.")
-            return
-
-        event_id_for_this_summary: Optional[str] = None
-        # Find the latest event_id from the messages to be summarized by looking backwards.
-        for msg in reversed(messages_for_this_summary_attempt):
-            if msg.get("event_id"):
-                event_id_for_this_summary = msg.get("event_id")
-                break
+        short_term_memory.append(tool_message_for_llm)
+        turn_state["accumulated_tool_messages_for_llm"].append(tool_message_for_llm)
         
-        # If no event_id found in current messages, and this is a forced update, try fallbacks.
-        if not event_id_for_this_summary and force_update:
-            event_id_for_this_summary = last_event_id_summarized_in_db or config.get('activation_trigger_event_id')
+        print(f"RoomLogic: [{room_id}] Tool '{exec_response.tool_name}' result processed for AI turn {ai_turn_key}.")
 
-        # If still no anchor after all checks, we cannot proceed.
-        if not event_id_for_this_summary:
-            logger.warning(f"RLS: [{room_id}] Cannot request summary: No valid event_id anchor could be determined. (Force: {force_update}, Msgs in attempt: {len(messages_for_this_summary_attempt)})")
-            return
+        # 2. Check if all tool calls for this AI turn have been processed
+        if len(turn_state["accumulated_tool_messages_for_llm"]) == turn_state["expected_count"]:
+            print(f"RoomLogic: [{room_id}] All {turn_state['expected_count']} tool results received for AI turn {ai_turn_key}. Requesting follow-up LLM call.")
+            
+            # Prepare messages for the follow-up LLM call
+            # History already includes user msg, assistant msg with tool_calls. Now add tool results.
+            messages_for_follow_up = list(turn_state["conversation_history_at_tool_call_time"]) # This snapshot includes the assistant message with tool_calls
+            # The tool messages were individually added to short_term_memory already.
+            # For the follow-up, we need the history *up to* the assistant's tool_call message,
+            # then all the tool responses.
+            # The `conversation_history_at_tool_call_time` is correct as it was taken *after* assistant msg.
+            # Now, we need to ensure the `accumulated_tool_messages_for_llm` are appended to *that specific snapshot*
+            # for the AI call, not necessarily to the live `short_term_memory` if other things happened.
+            # However, `short_term_memory` was updated sequentially, so it should be fine.
+            # The prompt says: messages_payload: Will be the conversation_history_snapshot ... plus the original assistant message with its tool_calls object, PLUS all the new role: "tool" messages.
+            # `turn_state["conversation_history_at_tool_call_time"]` IS this history.
+            # And `turn_state["accumulated_tool_messages_for_llm"]` are the new tool messages.
+            
+            final_messages_for_follow_up = turn_state["conversation_history_at_tool_call_time"] + turn_state["accumulated_tool_messages_for_llm"]
 
-        # If we are here, a summary will be attempted.
-        ai_payload = prompt_constructor.build_summary_generation_payload(
-            messages_to_summarize=messages_for_this_summary_attempt,
-            bot_display_name=self.bot_display_name,
-            previous_summary=previous_summary_text
-        )
+            follow_up_ai_request_id = str(uuid.uuid4())
+            
+            # Use original provider details for follow-up, but mark as follow-up
+            original_ai_payload = turn_state["original_ai_response_payload"]
+            follow_up_original_payload = dict(original_ai_payload) # shallow copy
+            follow_up_original_payload["is_follow_up_after_tool_execution"] = True
+            follow_up_original_payload["previous_ai_turn_id"] = ai_turn_key
+            follow_up_original_payload["turn_request_id"] = follow_up_ai_request_id # New turn_request_id for this specific request
 
-        request_id = str(uuid.uuid4())
-        
-        summary_model_to_use = self.ollama_summary_model if self.primary_llm_provider == "ollama" else self.openrouter_summary_model
-        # Determine which provider and model to use for summarization
-        # For now, let's assume summaries also follow PRIMARY_LLM_PROVIDER.
-        # This could be made more specific with a dedicated SUMMARY_LLM_PROVIDER env var if needed.
-        summary_request_event_class = OllamaInferenceRequestEvent if self.primary_llm_provider == "ollama" else OpenRouterInferenceRequestEvent
+            # Determine model for follow-up (e.g., from original request)
+            model_for_follow_up = original_ai_payload.get("actual_model_name_used", original_ai_payload.get("requested_model_name", self.openrouter_chat_model))
 
-        ai_request = summary_request_event_class(
-            request_id=request_id,
-            reply_to_service_event="ai_summary_response_received",
-            original_request_payload={
-                "room_id": room_id, 
-                "event_id_of_last_message_in_summary_batch": event_id_for_this_summary
-            },
-            model_name=summary_model_to_use, # Use the selected summary model
-            messages_payload=ai_payload,
-            tools=None,
-            tool_choice=None
-        )
-        await self.bus.publish(ai_request)
-        config['new_turns_since_last_summary'] = 0 # Reset counter as summary request was made
-        logger.info(f"RLS: [{room_id}] Requested AI summary. Event anchor: {event_id_for_this_summary}. Msgs in batch: {len(messages_for_this_summary_attempt)}. Forced: {force_update}")
+            ai_follow_up_request = AIInferenceRequestEvent(
+                request_id=follow_up_ai_request_id,
+                reply_to_service_event="ai_chat_response_received", # Back to the same handler
+                original_request_payload=follow_up_original_payload,
+                model_name=model_for_follow_up,
+                messages_payload=final_messages_for_follow_up,
+                tools=self.tool_registry.get_all_tool_definitions(), # LLM might call more tools
+                tool_choice="auto" # Or "none" if tools are not expected after this
+            )
+            await self.bus.publish(ai_follow_up_request)
+            
+            del self.pending_tool_calls_for_ai_turn[ai_turn_key] # Clean up state
+
+        # Memory trimming and persistence (happens after each tool result or after follow-up is sent)
+        while len(short_term_memory) > self.short_term_memory_items:
+            short_term_memory.pop(0)
+        config['memory'] = short_term_memory
+        # print(f"RoomLogic: [{room_id}] Memory updated after tool response. Size: {len(short_term_memory)}.")
 
     async def _manage_room_decay(self, room_id: str):
         try:
@@ -751,8 +595,17 @@ class RoomLogicService:
                             try:
                                 await asyncio.wait_for(batch_task, timeout=self.batch_delay + 2.0)
                             except (asyncio.TimeoutError, asyncio.CancelledError): pass
+                        
+                        # Instead of calling self._request_ai_summary directly,
+                        # The ManageChannelSummaryTool should be invoked by the LLM if a summary is desired upon deactivation.
+                        # For a forced summary on deactivation, this might require a specific system event or logic
+                        # if the LLM isn't expected to manage this. For now, direct call is removed.
+                        # Consider if a specific "RequestFinalSummaryCommand" should be published here, 
+                        # which the ManageChannelSummaryTool could listen for, or if LLM is solely responsible.
+                        # For now, relying on LLM to call manage_channel_summary tool with action="request_update"
+                        # if it deems a summary is needed based on conversation context before prolonged inactivity.
+                        logger.info(f"RLS: [{room_id}] Listening deactivated. Summary will be handled by LLM via tool if needed.")
 
-                        await self._request_ai_summary(room_id, force_update=True)
                         await self._update_global_presence()
                         break
                 else: # Activity occurred
@@ -768,7 +621,7 @@ class RoomLogicService:
         self.bus.subscribe(ActivateListeningEvent.model_fields['event_type'].default, self._handle_activate_listening)
         self.bus.subscribe(ProcessMessageBatchCommand.model_fields['event_type'].default, self._handle_process_message_batch)
         self.bus.subscribe("ai_chat_response_received", self._handle_ai_chat_response)
-        self.bus.subscribe("ollama_tool_openrouter_response_received", self._handle_ollama_tool_openrouter_response)
+        self.bus.subscribe(ToolExecutionResponse.model_fields['event_type'].default, self._handle_tool_execution_response) # Added
 
         await self._stop_event.wait()
         # Cleanup internal tasks

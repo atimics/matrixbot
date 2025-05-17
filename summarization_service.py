@@ -8,7 +8,9 @@ from dotenv import load_dotenv
 from message_bus import MessageBus
 from event_definitions import (
     AIInferenceRequestEvent, AIInferenceResponseEvent, 
-    SummaryGeneratedEvent, BotDisplayNameReadyEvent
+    SummaryGeneratedEvent, BotDisplayNameReadyEvent,
+    RequestAISummaryCommand, # Added
+    OllamaInferenceRequestEvent, OpenRouterInferenceRequestEvent # Added
 )
 import database 
 import prompt_constructor
@@ -23,7 +25,11 @@ class SummarizationService:
         self.bus = message_bus
         self.bot_display_name = bot_display_name
         self._stop_event = asyncio.Event()
-        self.openrouter_summary_model = os.getenv("OPENROUTER_MODEL", "openai/gpt-3.5-turbo")
+        
+        # LLM Configuration for summaries
+        self.primary_llm_provider = os.getenv("PRIMARY_LLM_PROVIDER", "openrouter").lower()
+        self.openrouter_summary_model = os.getenv("OPENROUTER_SUMMARY_MODEL", os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini"))
+        self.ollama_summary_model = os.getenv("OLLAMA_DEFAULT_SUMMARY_MODEL", os.getenv("OLLAMA_DEFAULT_CHAT_MODEL", "qwen2"))
 
     async def _handle_bot_display_name_ready(self, event: BotDisplayNameReadyEvent) -> None:
         self.bot_display_name = event.display_name
@@ -49,10 +55,80 @@ class SummarizationService:
         else:
             logger.warning(f"SummarizationSvc: [{room_id}] AI returned empty summary text.")
 
+    async def _handle_request_ai_summary_command(self, command: RequestAISummaryCommand) -> None:
+        room_id = command.room_id
+        messages_to_summarize = command.messages_to_summarize
+        force_update = command.force_update # Though ManageChannelSummaryTool might not use this directly
+
+        logger.info(f"SummarizationSvc: [{room_id}] Received RequestAISummaryCommand. Messages count: {len(messages_to_summarize)}. Force: {force_update}")
+
+        if not messages_to_summarize and not force_update:
+            logger.info(f"SummarizationSvc: [{room_id}] No messages to summarize and not a forced update. Skipping.")
+            return
+
+        previous_summary_text, _ = database.get_summary(room_id) or (None, None)
+        
+        # Determine the event_id of the last message in the batch to be summarized
+        event_id_of_last_message_in_summary_batch: Optional[str] = None
+        if messages_to_summarize:
+            for msg in reversed(messages_to_summarize):
+                if msg.get("event_id"):
+                    event_id_of_last_message_in_summary_batch = msg.get("event_id")
+                    break
+        
+        if not event_id_of_last_message_in_summary_batch:
+            # This case should ideally be handled by the tool sending the command,
+            # ensuring messages_to_summarize is not empty or providing a fallback.
+            # If ManageChannelSummaryTool sends a snapshot, it should have event_ids.
+            logger.warning(f"SummarizationSvc: [{room_id}] No event_id found in messages_to_summarize for summary request. Cannot anchor summary.")
+            # Potentially, we could try to get the latest from DB if forced, but command should provide context.
+            # For now, if no messages, and no event_id, we can't proceed reliably.
+            if not force_update: # If forced, we might allow proceeding without new messages if a previous summary exists.
+                 return
+
+
+        ai_payload = prompt_constructor.build_summary_generation_payload(
+            messages_to_summarize=messages_to_summarize,
+            bot_display_name=self.bot_display_name,
+            previous_summary=previous_summary_text
+        )
+
+        request_id = str(uuid.uuid4())
+        
+        # Determine which provider and model to use for summarization
+        summary_model_to_use: str
+        summary_request_event_class: type[AIInferenceRequestEvent]
+
+        if self.primary_llm_provider == "ollama":
+            summary_model_to_use = self.ollama_summary_model
+            summary_request_event_class = OllamaInferenceRequestEvent
+        else: # Default to openrouter
+            summary_model_to_use = self.openrouter_summary_model
+            summary_request_event_class = OpenRouterInferenceRequestEvent
+
+        original_payload_for_ai_response = {
+            "room_id": room_id,
+            "event_id_of_last_message_in_summary_batch": event_id_of_last_message_in_summary_batch,
+            "is_summary_request": True # For AIInferenceService logging/metrics if needed
+        }
+
+        ai_request = summary_request_event_class(
+            request_id=request_id,
+            reply_to_service_event="ai_summary_response_received", # Existing handler
+            original_request_payload=original_payload_for_ai_response,
+            model_name=summary_model_to_use,
+            messages_payload=ai_payload,
+            tools=None, 
+            tool_choice=None 
+        )
+        await self.bus.publish(ai_request)
+        logger.info(f"SummarizationSvc: [{room_id}] AI summary request published to {self.primary_llm_provider} ({summary_model_to_use}). Event anchor: {event_id_of_last_message_in_summary_batch}. Msgs: {len(messages_to_summarize)}")
+
     async def run(self) -> None:
         logger.info("SummarizationService: Starting...")
         self.bus.subscribe(BotDisplayNameReadyEvent.model_fields['event_type'].default, self._handle_bot_display_name_ready)
         self.bus.subscribe("ai_summary_response_received", self._handle_ai_summary_response)
+        self.bus.subscribe(RequestAISummaryCommand.model_fields['event_type'].default, self._handle_request_ai_summary_command) # Added
         await self._stop_event.wait()
         logger.info("SummarizationService: Stopped.")
 
