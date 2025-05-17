@@ -104,3 +104,35 @@ class SetPresenceCommand(BaseModel):
     presence: Literal["online", "offline", "unavailable"] # Nio uses these states
     status_msg: Optional[str] = None
     # Removed unused timeout field
+
+# --- Tool Related Event Definitions ---
+class RequestAISummaryCommand(BaseEvent):
+    """Command to request the SummarizationService to generate or update a room summary."""
+    event_type: str = "request_ai_summary_command"
+    room_id: str
+    force_update: bool = False
+    # messages_to_summarize: Optional[List[Dict[str, str]]] = None # Kept as per tool's usage
+    # Making it List[Dict[str, Any]] to align with typical message structures
+    messages_to_summarize: Optional[List[Dict[str, Any]]] = None
+
+# --- Tool Execution Events ---
+class ExecuteToolRequest(BaseEvent):
+    event_type: str = "execute_tool_request"
+    room_id: str
+    tool_name: str
+    tool_call_id: str # From the LLM's request
+    arguments: Dict[str, Any]
+    original_request_payload: Dict[str, Any] # To pass through context, e.g., from AIInferenceResponseEvent
+    llm_provider_info: Dict[str, Any] # e.g., {"name": "ollama", "model": "llama3"}
+    conversation_history_snapshot: List[Dict[str, Any]]
+    last_user_event_id: Optional[str]
+
+class ToolExecutionResponse(BaseEvent):
+    event_type: str = "tool_execution_response"
+    original_tool_call_id: str # Corresponds to ExecuteToolRequest.tool_call_id
+    tool_name: str
+    status: Literal["success", "failure", "requires_llm_followup"]
+    result_for_llm_history: str
+    error_message: Optional[str] = None
+    data_from_tool_for_followup_llm: Optional[Dict[str, Any]] = None
+    original_request_payload: Dict[str, Any] # Passed through from ExecuteToolRequest

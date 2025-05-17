@@ -9,6 +9,8 @@ from ai_inference_service import AIInferenceService
 from room_logic_service import RoomLogicService
 from summarization_service import SummarizationService
 from ollama_inference_service import OllamaInferenceService # Add this
+from tool_manager import ToolLoader, ToolRegistry # Added
+from tool_execution_service import ToolExecutionService # Added
 import database
 from event_definitions import BotDisplayNameReadyEvent # For initial display name
 
@@ -36,10 +38,23 @@ async def main() -> None:
     matrix_gateway = MatrixGatewayService(bus)
     ai_inference = AIInferenceService(bus) # For OpenRouter
     ollama_inference = OllamaInferenceService(bus) # For Ollama
-    room_logic = RoomLogicService(bus) # Will get bot_display_name via event
+
+    # Initialize Tooling Infrastructure (Phase 1)
+    tool_loader = ToolLoader() # Uses default 'available_tools/' directory
+    loaded_tools = tool_loader.load_tools()
+    tool_registry = ToolRegistry(loaded_tools)
+    logger.info(f"Orchestrator: Loaded {len(loaded_tools)} tools into registry.")
+    for tool_def in tool_registry.get_all_tool_definitions():
+        logger.info(f"Orchestrator: Registered tool - Name: {tool_def.get('function',{}).get('name')}, Desc: {tool_def.get('function',{}).get('description')}")
+
+    tool_execution_service = ToolExecutionService(bus, tool_registry)
+
+    # Pass ToolRegistry to services that need it (e.g., RoomLogicService)
+    # RoomLogicService will be modified to accept this in its __init__
+    room_logic = RoomLogicService(bus, tool_registry=tool_registry) # Modified init
     summarization = SummarizationService(bus) # Will get bot_display_name via event
     
-    services = [matrix_gateway, ai_inference, ollama_inference, room_logic, summarization]
+    services = [matrix_gateway, ai_inference, ollama_inference, room_logic, summarization, tool_execution_service] # Added tool_execution_service
     
     service_tasks = []
     try:
