@@ -1,6 +1,6 @@
 import asyncio
 import os
-import http.client
+import httpx  # Added for asynchronous HTTP calls
 import json
 import logging
 from typing import Dict, List, Optional, Tuple, Any
@@ -22,62 +22,89 @@ class AIInferenceService:
         self.site_name = os.getenv("YOUR_SITE_NAME", "MyMatrixBotSOA_AI")
         self._stop_event = asyncio.Event()
 
-    def _get_openrouter_response(
+    async def _get_openrouter_response_async(
         self,
         model_name: str,
         messages_payload: List[Dict[str, str]],
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: Optional[str] = "auto"
     ) -> Tuple[bool, Optional[str], Optional[List[Dict[str, Any]]], Optional[str]]:
-        """Sends a request to OpenRouter and returns the result."""
+        """Sends a request to OpenRouter asynchronously and returns the result."""
         if not self.api_key:
             return False, None, None, "OpenRouter API key not configured."
         if not messages_payload:
             return False, None, None, "Empty messages_payload."
-        conn = http.client.HTTPSConnection("openrouter.ai")
+
         payload_data = {"model": model_name, "messages": messages_payload}
         if tools:
             payload_data["tools"] = tools
             payload_data["tool_choice"] = tool_choice
+        
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": self.site_url, "X-Title": self.site_name,
+            "HTTP-Referer": self.site_url, 
+            "X-Title": self.site_name,
         }
-        try:
-            conn.request("POST", "/api/v1/chat/completions", json.dumps(payload_data), headers)
-            res = conn.getresponse()
-            data = res.read()
-            response_json = json.loads(data.decode("utf-8"))
-            if res.status == 200 and response_json.get("choices"):
-                message = response_json["choices"][0]["message"]
-                text_content = message.get("content")
-                tool_calls = message.get("tool_calls")
-                return True, text_content, tool_calls, None
-            else:
-                error_details = response_json.get("error", {})
-                error_message = error_details.get("message", f"Unknown error (Status: {res.status})")
-                logger.error(f"OpenRouter error ({model_name}): {res.status} - {error_message} - Resp: {response_json}")
+        
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    json=payload_data,
+                    headers=headers,
+                    timeout=30.0  # Added a timeout
+                )
+                response.raise_for_status()  # Raises an HTTPStatusError for 4XX/5XX responses
+                
+                response_json = response.json()
+                
+                if response_json.get("choices"):
+                    message = response_json["choices"][0]["message"]
+                    text_content = message.get("content")
+                    tool_calls = message.get("tool_calls")
+                    return True, text_content, tool_calls, None
+                else:
+                    # This case might be less likely if choices are always present on 200 OK
+                    error_details = response_json.get("error", {})
+                    error_message = error_details.get("message", "Unknown error (No choices in response)")
+                    logger.error(f"OpenRouter error ({model_name}): No choices in response - Resp: {response_json}")
+                    return False, None, None, error_message
+
+            except httpx.HTTPStatusError as e:
+                error_message = f"HTTP error: {e.response.status_code} - {e.response.text}"
+                try:
+                    # Attempt to parse more specific error from response body
+                    error_json = e.response.json()
+                    if error_json and "error" in error_json and "message" in error_json["error"]:
+                        error_message = error_json["error"]["message"]
+                except json.JSONDecodeError:
+                    pass  # Stick with the text version if JSON parsing fails
+                logger.error(f"OpenRouter HTTPStatusError ({model_name}): {e.response.status_code} - {error_message} - Full Response: {e.response.text}")
                 return False, None, None, error_message
-        except Exception as e:
-            logger.error(f"Exception connecting to OpenRouter ({model_name}): {e}")
-            return False, None, None, str(e)
-        finally:
-            conn.close()
+            except httpx.RequestError as e:  # Catches network errors, timeouts, etc.
+                logger.error(f"Exception connecting to OpenRouter ({model_name}) with httpx: {type(e).__name__} - {e}")
+                return False, None, None, f"RequestError: {str(e)}"
+            except json.JSONDecodeError as e:  # If response is not valid JSON
+                logger.error(f"Failed to decode JSON response from OpenRouter ({model_name}): {e}")
+                return False, None, None, f"JSONDecodeError: {str(e)}"
+            except Exception as e:  # Catch-all for other unexpected errors
+                logger.error(f"Unexpected exception in _get_openrouter_response_async ({model_name}): {type(e).__name__} - {e}")
+                return False, None, None, f"Unexpected error: {str(e)}"
 
     async def _handle_inference_request(self, request_event: OpenRouterInferenceRequestEvent) -> None:
         """Handles incoming AI inference requests and publishes the response event."""
         tools_payload = request_event.tools
         tool_choice_payload = request_event.tool_choice if request_event.tool_choice else "auto"
-        loop = asyncio.get_event_loop()
-        success, text_response, tool_calls, error_message = await loop.run_in_executor(
-            None,
-            self._get_openrouter_response,
+        
+        # No longer need loop.run_in_executor as _get_openrouter_response_async is now async
+        success, text_response, tool_calls, error_message = await self._get_openrouter_response_async(
             request_event.model_name,
             request_event.messages_payload,
             tools_payload,
             tool_choice_payload
         )
+        
         response_event = OpenRouterInferenceResponseEvent(
             request_id=request_event.request_id,
             original_request_payload=request_event.original_request_payload,

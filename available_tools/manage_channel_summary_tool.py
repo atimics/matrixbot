@@ -17,17 +17,19 @@ class RequestAISummaryCommand(BaseEvent):
 # Assuming database.py has a get_summary function
 # This might need to be adjusted if database.py is not in the same directory or path
 # For now, we assume it can be imported directly if it's in the Python path.
-try:
-    import database
-except ImportError:
-    # This is a fallback if direct import fails, 
-    # depending on project structure, a more robust import might be needed.
-    logging.warning("ManageChannelSummaryTool: Could not import 'database' module directly.")
-    # A mock or dummy database object could be used for linting/type-checking if needed
-    class MockDB:
-        def get_summary(self, room_id: str) -> Optional[tuple[Optional[str], Optional[str]]]:
-            return None, None
-    database = MockDB()
+# try:
+#     import database
+# except ImportError:
+#     # This is a fallback if direct import fails, 
+#     # depending on project structure, a more robust import might be needed.
+#     logging.warning("ManageChannelSummaryTool: Could not import 'database' module directly.")
+#     # A mock or dummy database object could be used for linting/type-checking if needed
+#     class MockDB:
+#         def get_summary(self, room_id: str) -> Optional[tuple[Optional[str], Optional[str]]]:
+#             return None, None
+#     database = MockDB()
+
+import database # Use absolute import assuming root is in PYTHONPATH
 
 logger = logging.getLogger(__name__)
 

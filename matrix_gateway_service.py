@@ -55,26 +55,45 @@ class MatrixGatewayService:
             sleep_duration = self._rate_limit_until - now
             logger.info(f"Gateway: Rate limit active. Sleeping for {sleep_duration:.3f}s until {self._rate_limit_until:.3f}.")
             await asyncio.sleep(sleep_duration)
-            logger.info(f"Gateway: Finished rate limit sleep. Proceeding with Matrix call for {coro_func.__name__}.")
+            # logger.info(f"Gateway: Finished rate limit sleep. Proceeding with Matrix call for {coro_func.__name__}.") # Redundant log
+        
+        default_retry_sec = 10.0 # Define a default retry period
+
         try:
             return await coro_func(*args, **kwargs)
         except Exception as e:
-            # Check for 429 in exception message (nio does not always raise a specific exception)
+            retry_after_seconds = default_retry_sec
+            is_rate_limit_error = False
+
+            # Prefer specific status code check if available
             if hasattr(e, 'status_code') and e.status_code == 429:
-                retry_after = getattr(e, 'retry_after_ms', 10000) / 1000.0  # Default 10s
-                logger.warning(f"Gateway: Got 429 response (rate limited), sleeping for {retry_after}s")
-                self._rate_limit_until = asyncio.get_event_loop().time() + retry_after
-                await asyncio.sleep(retry_after)
-                # Optionally retry once after waiting
-                return await coro_func(*args, **kwargs)
-            elif '429' in str(e):
-                logger.warning(f"Gateway: Got 429 response (rate limited), sleeping for 10s")
-                self._rate_limit_until = asyncio.get_event_loop().time() + 10
-                await asyncio.sleep(10)
-                return await coro_func(*args, **kwargs)
+                is_rate_limit_error = True
+                # nio might provide retry_after_ms in the exception object for M_LIMIT_EXCEEDED errors
+                # This attribute name comes from nio.responses.ErrorResponse.retry_after_ms
+                retry_after_ms = getattr(e, 'retry_after_ms', None)
+                if retry_after_ms is not None:
+                    retry_after_seconds = retry_after_ms / 1000.0
+                    logger.warning(f"Gateway: Got 429 response (rate limited). Parsed Retry-After: {retry_after_seconds:.3f}s from exception attribute.")
+                else:
+                    # If retry_after_ms is not on the exception, check if the raw response might have it (nio specific)
+                    # This part is speculative as nio might not expose raw response headers easily on all exceptions.
+                    # For now, we'll rely on retry_after_ms or the default.
+                    logger.warning(f"Gateway: Got 429 response (rate limited). No explicit Retry-After in exception. Using default {default_retry_sec}s.")
+            elif '429' in str(e) or (hasattr(e, 'message') and isinstance(e.message, str) and 'M_LIMIT_EXCEEDED' in e.message):
+                # Fallback if status_code attribute isn't present but error message indicates rate limiting
+                is_rate_limit_error = True
+                logger.warning(f"Gateway: Got 429-like response (rate limited by string match). Using default {default_retry_sec}s. Error: {e}")
+
+            if is_rate_limit_error:
+                self._rate_limit_until = asyncio.get_event_loop().time() + retry_after_seconds
+                logger.info(f"Gateway: Rate limit triggered. Will wait for {retry_after_seconds:.3f}s. Next attempt after {self._rate_limit_until:.3f}.")
+                await asyncio.sleep(retry_after_seconds)
+                logger.info(f"Gateway: Finished rate limit sleep. Retrying Matrix call for {coro_func.__name__}...")
+                # Retry the call once after waiting
+                return await coro_func(*args, **kwargs) # This could raise again if still rate limited or another error occurs
             else:
-                logger.error(f"Gateway: Matrix call error: {e}")
-                raise
+                logger.error(f"Gateway: Matrix call error (not a 429 rate limit): {type(e).__name__} - {e}")
+                raise # Re-raise non-429 errors
 
     async def _command_worker(self):
         while not self._stop_event.is_set():

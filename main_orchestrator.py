@@ -69,9 +69,18 @@ async def main() -> None:
             done, pending = await asyncio.wait(service_tasks, return_when=asyncio.FIRST_COMPLETED)
             # If any task finishes (e.g. MatrixGateway sync error), it will trigger shutdown sequence.
             logger.warning(f"Orchestrator: A service task completed. Done: {len(done)}, Pending: {len(pending)}")
+            # If a task fails, log the exception and request shutdown of other services
             for task in done:
                 try:
-                    task.result() # Raise exception if task failed
+                    # This will re-raise the exception if the task failed
+                    task.result() 
+                    # If no exception, it means the task completed normally (e.g. service stopped via its own logic)
+                    # Find the service name associated with this task
+                    # service_name = next((name for name, t in service_tasks.items() if t == task), "Unknown Service")
+                    # logger.info(f"Orchestrator: {service_name} task completed normally.") # Replaced print with logger
+                except asyncio.CancelledError:
+                    service_name = next((name for name, t in service_tasks.items() if t == task), "Unknown Service")
+                    logger.info(f"Orchestrator: {service_name} task was cancelled.")
                 except Exception as e:
                     logger.error(f"Orchestrator: Service task exited with error: {e}")
             
