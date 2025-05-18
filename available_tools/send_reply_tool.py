@@ -1,8 +1,11 @@
-\
 from typing import Dict, Any, List, Optional
+import json
+import logging
 
 from tool_base import AbstractTool, ToolResult
 from event_definitions import SendReplyCommand
+
+logger = logging.getLogger(__name__)
 
 class SendReplyTool(AbstractTool):
     """Tool to send a reply message to the current room."""
@@ -33,14 +36,24 @@ class SendReplyTool(AbstractTool):
     async def execute(
         self,
         room_id: str,
-        arguments: Dict[str, Any],
+        arguments: Dict[str, Any], # Changed type hint from str to Dict[str, Any]
         tool_call_id: Optional[str],
         llm_provider_info: Dict[str, Any],
         conversation_history_snapshot: List[Dict[str, Any]],
         last_user_event_id: Optional[str]
     ) -> ToolResult:
-        text = arguments.get("text")
-        reply_to_event_id_arg = arguments.get("reply_to_event_id")
+        logger.info(f"SendReplyTool: Executing in room {room_id} with args: {arguments}")
+        # Remove JSON parsing as arguments are already a dict
+        # try:
+        #     parsed_arguments = json.loads(arguments)
+        # except json.JSONDecodeError as e:
+        #     logger.error(f"SendReplyTool: Failed to parse arguments JSON: {arguments}. Error: {e}")
+        #     return ToolResult(status="failure", error_message=f"Invalid arguments format: {e}", result_for_llm_history=f"[Tool Error: send_reply failed to parse arguments: {e}]")
+
+        parsed_arguments = arguments # Use arguments directly
+
+        text = parsed_arguments.get("text")
+        reply_to_event_id_arg = parsed_arguments.get("reply_to_event_id")
 
         resolved_reply_to_event_id = reply_to_event_id_arg
         if reply_to_event_id_arg == "$event:last_user_message" and last_user_event_id:

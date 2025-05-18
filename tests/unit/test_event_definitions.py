@@ -255,6 +255,7 @@ def test_execute_tool_request_valid():
 def test_tool_execution_response_success():
     event = ToolExecutionResponse(
         original_tool_call_id="tc1",
+        tool_name="test_tool", # Added
         status="success",
         result_for_llm_history="Tool ran okay", # Changed from result_text
         commands_to_publish=[],
@@ -267,6 +268,7 @@ def test_tool_execution_response_success():
 def test_tool_execution_response_failure():
     event = ToolExecutionResponse(
         original_tool_call_id="tc1",
+        tool_name="test_tool", # Added
         status="failure",
         error_message="Tool broke",
         result_for_llm_history="", # Added required field
@@ -279,6 +281,7 @@ def test_tool_execution_response_failure():
 def test_tool_execution_response_requires_followup():
     event = ToolExecutionResponse(
         original_tool_call_id="tc1",
+        tool_name="test_tool", # Added
         status="requires_llm_followup",
         data_from_tool_for_followup_llm={"key": "value"},
         result_for_llm_history="Follow up needed", # Added required field

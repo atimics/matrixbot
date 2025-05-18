@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Optional # Added Optional
 
 from message_bus import MessageBus
 from tool_manager import ToolRegistry
@@ -16,36 +16,47 @@ class ToolExecutionService:
         self.tool_registry = tool_registry
         self._stop_event = asyncio.Event()
 
-    async def _handle_execute_tool_request(self, request_event: ExecuteToolRequest) -> None:
-        logger.info(f"ToolExecSvc: Received request to execute tool '{request_event.tool_name}' with call ID '{request_event.tool_call_id}' for room '{request_event.room_id}'")
-        tool = self.tool_registry.get_tool(request_event.tool_name)
+    async def _handle_execute_tool_request(self, event: ExecuteToolRequest):
+        # The event.tool_call object (ToolCall Pydantic model) contains the id and function details.
+        # event.tool_call.id
+        # event.tool_call.function.name
+        # event.tool_call.function.arguments (this is a string, needs parsing)
+
+        tool_name = event.tool_call.function.name # Correctly access tool name
+        tool_call_id = event.tool_call.id
+        arguments_str = event.tool_call.function.arguments
+
+        logger.info(f"TES: Received ExecuteToolRequest for tool: {tool_name}, call_id: {tool_call_id}")
+
+        logger.info(f"ToolExecSvc: Received request to execute tool '{tool_name}' with call ID '{tool_call_id}' for room '{event.room_id}'")
+        tool = self.tool_registry.get_tool(tool_name)
 
         if not tool:
-            logger.error(f"ToolExecSvc: Tool '{request_event.tool_name}' not found in registry.")
+            logger.error(f"ToolExecSvc: Tool '{tool_name}' not found in registry.")
             tool_response = ToolExecutionResponse(
-                original_tool_call_id=request_event.tool_call_id,
-                tool_name=request_event.tool_name,
+                original_tool_call_id=tool_call_id,
+                tool_name=tool_name,
                 status="failure",
-                result_for_llm_history=f"[Error: Tool '{request_event.tool_name}' not found]",
-                error_message=f"Tool '{request_event.tool_name}' not found",
-                original_request_payload=request_event.original_request_payload
+                result_for_llm_history=f"[Error: Tool '{tool_name}' not found]",
+                error_message=f"Tool '{tool_name}' not found",
+                original_request_payload=event.original_request_payload
             )
             await self.bus.publish(tool_response)
             return
 
         try:
             tool_result: ToolResult = await tool.execute(
-                room_id=request_event.room_id,
-                arguments=request_event.arguments,
-                tool_call_id=request_event.tool_call_id,
+                room_id=event.room_id,
+                arguments=event.tool_call.function.arguments, # Corrected: Access arguments from tool_call.function
+                tool_call_id=tool_call_id,
                 llm_provider_info={
-                    **request_event.llm_provider_info,
+                    **event.llm_provider_info,
                     # Pass the original_request_payload from the ExecuteToolRequest itself
                     # so that tools like DelegateToOpenRouterTool can forward it if they delegate work.
-                    "original_execute_tool_request_payload": request_event.original_request_payload
+                    "original_execute_tool_request_payload": event.original_request_payload
                 },
-                conversation_history_snapshot=request_event.conversation_history_snapshot,
-                last_user_event_id=request_event.last_user_event_id
+                conversation_history_snapshot=event.conversation_history_snapshot,
+                last_user_event_id=event.last_user_event_id
             )
 
             if tool_result.commands_to_publish:
@@ -53,35 +64,35 @@ class ToolExecutionService:
                     if isinstance(command, BaseEvent): # Ensure it's a BaseEvent before publishing
                         await self.bus.publish(command)
                     else:
-                        logger.warning(f"ToolExecSvc: Tool '{request_event.tool_name}' tried to publish non-event: {command}")
+                        logger.warning(f"ToolExecSvc: Tool '{tool_name}' tried to publish non-event: {command}")
             
             # If the tool requires a followup (like DelegateToOpenRouterTool), 
             # we don't publish a ToolExecutionResponse immediately.
             # It will be published by the handler for the delegated task's response.
             if tool_result.status != "requires_llm_followup":
                 tool_response = ToolExecutionResponse(
-                    original_tool_call_id=request_event.tool_call_id,
-                    tool_name=request_event.tool_name,
+                    original_tool_call_id=tool_call_id,
+                    tool_name=tool_name, # Populate tool_name
                     status=tool_result.status,
                     result_for_llm_history=tool_result.result_for_llm_history,
                     error_message=tool_result.error_message,
                     data_from_tool_for_followup_llm=tool_result.data_for_followup_llm,
-                    original_request_payload=request_event.original_request_payload
+                    original_request_payload=event.original_request_payload
                 )
                 await self.bus.publish(tool_response)
-                logger.info(f"ToolExecSvc: Finished executing tool '{request_event.tool_name}' (Call ID: {request_event.tool_call_id}). Status: {tool_result.status}")
+                logger.info(f"ToolExecSvc: Finished executing tool '{tool_name}' (Call ID: {tool_call_id}). Status: {tool_result.status}")
             else:
-                logger.info(f"ToolExecSvc: Tool '{request_event.tool_name}' (Call ID: {request_event.tool_call_id}) requires followup. Awaiting delegated task response.")
+                logger.info(f"ToolExecSvc: Tool '{tool_name}' (Call ID: {tool_call_id}) requires followup. Awaiting delegated task response.")
 
         except Exception as e:
-            logger.error(f"ToolExecSvc: Exception during execution of tool '{request_event.tool_name}': {e}", exc_info=True)
+            logger.error(f"ToolExecSvc: Exception during execution of tool '{tool_name}': {e}", exc_info=True)
             error_response = ToolExecutionResponse(
-                original_tool_call_id=request_event.tool_call_id,
-                tool_name=request_event.tool_name,
+                original_tool_call_id=tool_call_id,
+                tool_name=tool_name, # Populate tool_name
                 status="failure",
-                result_for_llm_history=f"[Error executing tool '{request_event.tool_name}': {e}]",
+                result_for_llm_history=f"[Error executing tool '{tool_name}': {e}]",
                 error_message=str(e),
-                original_request_payload=request_event.original_request_payload
+                original_request_payload=event.original_request_payload
             )
             await self.bus.publish(error_response)
 
@@ -144,7 +155,7 @@ class ToolExecutionService:
 
         final_tool_response = ToolExecutionResponse(
             original_tool_call_id=original_tool_call_id,
-            tool_name="call_openrouter_llm", # The name of the tool that was originally called
+            tool_name="call_openrouter_llm", # Populate tool_name (specific for delegated calls)
             status=final_status,
             result_for_llm_history=result_for_llm,
             error_message=error_msg,

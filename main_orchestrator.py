@@ -52,8 +52,8 @@ async def main() -> None:
 
     # Pass ToolRegistry to services that need it (e.g., RoomLogicService)
     # RoomLogicService will be modified to accept this in its __init__
-    room_logic = RoomLogicService(bus, tool_registry=tool_registry) # Modified init
-    summarization = SummarizationService(bus) # Pass db_path here as well
+    room_logic = RoomLogicService(bus, tool_registry=tool_registry, db_path=db_path) # Modified init, added db_path
+    summarization = SummarizationService(bus) # Pass db_path here as well # MODIFIED: Removed db_path
     
     services = [matrix_gateway, ai_inference, ollama_inference, room_logic, summarization, tool_execution_service] # Added tool_execution_service
     

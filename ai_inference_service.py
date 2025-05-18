@@ -35,7 +35,39 @@ class AIInferenceService:
         if not messages_payload:
             return False, None, None, "Empty messages_payload."
 
-        payload_data = {"model": model_name, "messages": messages_payload}
+        # Preprocess messages_payload to ensure ToolCall objects are JSON serializable
+        processed_messages_payload = []
+        for message in messages_payload:
+            if message.get("role") == "assistant" and "tool_calls" in message and message["tool_calls"] is not None:
+                processed_tool_calls = []
+                for tc in message["tool_calls"]:
+                    # Ensure tc is a dictionary, as it might be a Pydantic model (ToolCall)
+                    tc_dict = tc if isinstance(tc, dict) else tc.model_dump(mode='json')
+                    
+                    function_data = tc_dict.get("function", {})
+                    arguments_data = function_data.get("arguments")
+
+                    # Ensure arguments are a JSON string for OpenRouter
+                    if isinstance(arguments_data, dict):
+                        stringified_arguments = json.dumps(arguments_data)
+                    elif arguments_data is None: # Handle null arguments
+                        stringified_arguments = json.dumps({}) # Or an empty string, depending on API expectation
+                    else: # Assumed to be a string already or other primitive
+                        stringified_arguments = str(arguments_data)
+
+                    processed_tool_calls.append({
+                        "id": tc_dict.get("id"),
+                        "type": tc_dict.get("type"),
+                        "function": {
+                            "name": function_data.get("name"),
+                            "arguments": stringified_arguments # Ensure arguments are stringified JSON
+                        }
+                    })
+                processed_messages_payload.append({**message, "tool_calls": processed_tool_calls})
+            else:
+                processed_messages_payload.append(message)
+
+        payload_data = {"model": model_name, "messages": processed_messages_payload}
         if tools:
             payload_data["tools"] = tools
             payload_data["tool_choice"] = tool_choice
@@ -110,13 +142,26 @@ class AIInferenceService:
             parsed_tool_calls = []
             for tc_data in tool_calls_data:
                 function_data = tc_data.get("function", {})
+                arguments_data = function_data.get("arguments")
+                parsed_arguments = None
+                if isinstance(arguments_data, str):
+                    try:
+                        parsed_arguments = json.loads(arguments_data)
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to parse tool call arguments JSON: {arguments_data} - Error: {e}")
+                        # Keep arguments as string if parsing fails, or handle error as appropriate
+                        parsed_arguments = arguments_data 
+                else:
+                    # If arguments are already a dict (or other type), use as is
+                    parsed_arguments = arguments_data
+
                 parsed_tool_calls.append(
                     ToolCall(
                         id=tc_data.get("id"),
                         type=tc_data.get("type"),
                         function=ToolFunction(
                             name=function_data.get("name"),
-                            arguments=function_data.get("arguments")
+                            arguments=parsed_arguments # Use parsed arguments
                         )
                     )
                 )

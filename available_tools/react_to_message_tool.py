@@ -60,7 +60,7 @@ class ReactToMessageTool(AbstractTool):
 
         react_command = ReactToMessageCommand(
             room_id=room_id,
-            target_event_id=resolved_target_event_id,
+            event_id_to_react_to=resolved_target_event_id, # Changed from target_event_id
             reaction_key=reaction_key
         )
         return ToolResult(

@@ -49,7 +49,7 @@ class AIInferenceRequestEvent(BaseEvent):
 # These were mentioned as potentially missing in the test plan.
 class ToolFunction(BaseModel):
     name: str
-    arguments: str
+    arguments: Any # Changed from str to Any
 
 class ToolCall(BaseModel): # Defined based on test_event_definitions.py usage
     id: str
@@ -225,7 +225,7 @@ class ToolRoleMessage(BaseModel): # Defined based on test_event_definitions.py
 class ToolExecutionResponse(BaseEvent):
     event_type: str = Field("tool_execution_response", frozen=True)
     original_tool_call_id: str 
-    # tool_name: str # Field from definition, test implies it can be derived or is part of original_request_payload
+    tool_name: str # Added tool_name field
     status: Literal["success", "failure", "requires_llm_followup"]
     # result_text: str # Field from test, maps to result_for_llm_history
     result_for_llm_history: str # Field from definition

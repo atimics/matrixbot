@@ -8,7 +8,8 @@ from nio import (
     RoomMessageText,
     LoginResponse,
     ProfileGetResponse,
-    RoomGetEventResponse # Added for fetching original event
+    RoomGetEventResponse, # Added for fetching original event
+    RoomGetEventError # Import RoomGetEventError
 )
 from nio.exceptions import LocalProtocolError # Import specific known nio exceptions
 from dotenv import load_dotenv, set_key, find_dotenv # Modified import
@@ -116,7 +117,7 @@ class MatrixGatewayService:
 
         msg_event = MatrixMessageReceivedEvent(
             room_id=room.room_id,
-            event_id=event.event_id,
+            event_id_matrix=event.event_id, # Corrected field name
             sender_id=event.sender,
             sender_display_name=sender_display_name,
             body=event.body.strip(),
@@ -171,7 +172,7 @@ class MatrixGatewayService:
             content = {
                 "m.relates_to": {
                     "rel_type": "m.annotation",
-                    "event_id": command.target_event_id,
+                    "event_id": command.event_id_to_react_to, # Changed from command.target_event_id
                     "key": command.reaction_key
                 }
             }
@@ -198,10 +199,11 @@ class MatrixGatewayService:
         try:
             # Attempt to fetch the original event to include in the fallback
             try:
-                original_event_response: RoomGetEventResponse = await self.client.room_get_event(
+                original_event_response = await self.client.room_get_event(
                     command.room_id, command.reply_to_event_id
                 )
-                if original_event_response and original_event_response.event:
+                # Check if the response is successful and has the event
+                if isinstance(original_event_response, RoomGetEventResponse) and original_event_response.event:
                     original_event = original_event_response.event
                     original_sender = original_event.sender
                     original_body = getattr(original_event, 'body', None)
@@ -472,8 +474,15 @@ class MatrixGatewayService:
             if self.client:
                 if login_success and not self.client.logged_in and not self._stop_event.is_set():
                      logger.warning("Gateway: Client is no longer logged in.")
-                logger.info("Gateway: Closing Matrix client...")
-                await self.client.close()
+                logger.info("Gateway: Closing Matrix client session...")
+                # nio.AsyncClient does not have a .close() method.
+                # Stopping the sync loop (via _stop_event) and optionally logging out is the way.
+                if self.client.logged_in:
+                    try:
+                        await self.client.logout()
+                        logger.info("Gateway: Client logged out.")
+                    except Exception as e:
+                        logger.error(f"Gateway: Error during client logout: {e}")
             if self._command_worker_task:
                 self._command_worker_task.cancel()
                 try:

@@ -131,7 +131,7 @@ async def test_handle_openrouter_inference_request_success_tool_calls(
     assert isinstance(tool_call, ToolCall) # Changed to ToolCall
     assert tool_call.id == "call_abc" 
     assert tool_call.function.name == "get_weather"
-    assert tool_call.function.arguments == "{\"location\": \"Paris\"}"
+    assert tool_call.function.arguments == {"location": "Paris"} # Changed to expect a dict
 
 @pytest.mark.asyncio
 async def test_handle_openrouter_inference_request_api_error(
@@ -266,5 +266,5 @@ async def test_service_subscribes_to_openrouter_requests_on_run(
         # mock_handler.assert_called_once_with(test_event)
 
         # Stop the service
-        ai_service.stop()
+        await ai_service.stop() # Added await
         await run_task # Ensure the run task completes

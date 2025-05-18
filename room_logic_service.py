@@ -4,6 +4,7 @@ import os
 import uuid
 import json # Added for logging AI payload
 import logging
+import datetime # Add this import
 
 # Set up logger for this module
 logger = logging.getLogger(__name__)
@@ -22,7 +23,8 @@ from event_definitions import (
     SetTypingIndicatorCommand, SetPresenceCommand,
     ReactToMessageCommand, SendReplyCommand, # Added tool commands
     ExecuteToolRequest, # Added ExecuteToolRequest
-    ToolExecutionResponse # Added ToolExecutionResponse
+    ToolExecutionResponse, # Added ToolExecutionResponse
+    BatchedUserMessage # Add this import
 )
 import prompt_constructor # For building AI payload
 import database # For database operations
@@ -31,14 +33,15 @@ from tool_manager import ToolRegistry # Added
 load_dotenv()
 
 class RoomLogicService:
-    def __init__(self, message_bus: MessageBus, tool_registry: ToolRegistry, bot_display_name: str = "ChatBot"): # Added tool_registry
+    def __init__(self, message_bus: MessageBus, tool_registry: ToolRegistry, db_path: str, bot_display_name: str = "ChatBot"): # Added db_path
         """Service for managing room logic, batching, and AI interaction."""
         self.bus = message_bus
         self.tool_registry = tool_registry # Store it
+        self.db_path = db_path # Store db_path
         self.bot_display_name = bot_display_name # Set by BotDisplayNameReadyEvent
         self.room_activity_config: Dict[str, Dict[str, Any]] = {}
         self._stop_event = asyncio.Event()
-        self._service_start_time = time.time()
+        self._service_start_time = datetime.datetime.now(datetime.timezone.utc) # Changed to datetime object
         self.pending_tool_calls_for_ai_turn: Dict[str, Dict[str, Any]] = {} # Added for tool call state
 
         # Configurable values
@@ -90,7 +93,7 @@ class RoomLogicService:
         if hasattr(event, 'timestamp') and event.timestamp < self._service_start_time:
             return
         room_id = event.room_id
-        config = self.room_activity_config.get(room_id)
+        # config = self.room_activity_config.get(room_id) # Moved down, not needed before mention check
 
         bot_name_lower = self.bot_display_name.lower()
         is_mention = bool(bot_name_lower and bot_name_lower in event.body.lower())
@@ -99,7 +102,7 @@ class RoomLogicService:
             logger.info(f"RoomLogic: [{room_id}] Mention detected.")
             activate_event = ActivateListeningEvent(
                 room_id=room_id,
-                triggering_event_id=event.event_id,
+                activation_message_event_id=event.event_id_matrix, # Corrected field name and source
                 triggering_sender_display_name=event.sender_display_name,
                 triggering_message_body=event.body
             )
@@ -112,7 +115,7 @@ class RoomLogicService:
             config['pending_messages_for_batch'].append({
                 "name": event.sender_display_name,
                 "content": event.body,
-                "event_id": event.event_id
+                "event_id": event.event_id_matrix # Changed from event.event_id
             })
             config['last_message_timestamp'] = time.time()
             config['current_interval'] = self.initial_interval # Reset decay polling
@@ -143,7 +146,7 @@ class RoomLogicService:
             config['batch_response_task'].cancel() # Cancel any pending batch from previous active period
 
         if not config:
-            db_summary_info = database.get_summary(room_id) # Assuming database.py is available
+            db_summary_info = database.get_summary(self.db_path, room_id) # Added self.db_path
             initial_last_event_id_db = db_summary_info[1] if db_summary_info else None
 
             config = {
@@ -151,12 +154,12 @@ class RoomLogicService:
                 'last_event_id_in_db_summary': initial_last_event_id_db,
                 'new_turns_since_last_summary': 0,
                 'batch_response_task': None,
-                'activation_trigger_event_id': event.triggering_event_id # Store the triggering event_id
+                'activation_trigger_event_id': event.activation_message_event_id # Store the triggering event_id
             }
             self.room_activity_config[room_id] = config
         else:
             # If config exists, update the activation_trigger_event_id if this is a re-activation
-            config['activation_trigger_event_id'] = event.triggering_event_id
+            config['activation_trigger_event_id'] = event.activation_message_event_id
 
         config.update({
             'is_active_listening': True,
@@ -172,7 +175,7 @@ class RoomLogicService:
             config['pending_messages_for_batch'].append({
                 "name": event.triggering_sender_display_name,
                 "content": event.triggering_message_body,
-                "event_id": event.triggering_event_id
+                "event_id": event.activation_message_event_id
             })
             # Ensure batch processing is scheduled for this message
             old_batch_task = config.get('batch_response_task')
@@ -194,9 +197,45 @@ class RoomLogicService:
             if asyncio.current_task().cancelled(): # type: ignore
                 logger.info(f"RoomLogic: [{room_id}] Delayed batch publisher cancelled.")
                 return
-            await self.bus.publish(ProcessMessageBatchCommand(room_id=room_id))
+
+            config = self.room_activity_config.get(room_id)
+            if not config:
+                logger.warning(f"RoomLogic: [{room_id}] Config not found in _delayed_batch_processing_publisher. Cannot send batch.")
+                return
+
+            pending_messages = config.get('pending_messages_for_batch', [])
+            if not pending_messages:
+                logger.info(f"RoomLogic: [{room_id}] No pending messages in _delayed_batch_processing_publisher. Nothing to send.")
+                return
+
+            # Convert pending_messages to BatchedUserMessage instances
+            # Assuming pending_messages are dicts like: {"name": sender_display_name, "content": body, "event_id": event_id}
+            # BatchedUserMessage expects: {"user_id": str, "content": str, "event_id": str}
+            # We'll use "name" as "user_id" for now, though this might need refinement if a more persistent user_id is available.
+            messages_to_batch: List[BatchedUserMessage] = []
+            for msg_data in pending_messages:
+                try:
+                    messages_to_batch.append(BatchedUserMessage(
+                        user_id=msg_data.get("name", "Unknown User"), # Using 'name' as 'user_id'
+                        content=msg_data.get("content", ""),
+                        event_id=msg_data.get("event_id", "")
+                    ))
+                except Exception as e:
+                    logger.error(f"RoomLogic: [{room_id}] Error converting message to BatchedUserMessage: {msg_data}. Error: {e}")
+                    continue # Skip malformed messages
+
+            if not messages_to_batch:
+                logger.info(f"RoomLogic: [{room_id}] No valid messages to batch after conversion. Nothing to send.")
+                return
+
+            await self.bus.publish(ProcessMessageBatchCommand(room_id=room_id, messages_in_batch=messages_to_batch))
+            # The handler _handle_process_message_batch is responsible for clearing config['pending_messages_for_batch']
+            # This ensures messages are only cleared if the command is successfully published and then processed.
+
         except asyncio.CancelledError:
             logger.info(f"RoomLogic: [{room_id}] Delayed batch publisher cancelled by exception.")
+        except Exception as e:
+            logger.error(f"RoomLogic: [{room_id}] Unexpected error in _delayed_batch_processing_publisher: {e}", exc_info=True)
 
 
     async def _handle_process_message_batch(self, command: ProcessMessageBatchCommand):
@@ -204,28 +243,50 @@ class RoomLogicService:
         config = self.room_activity_config.get(room_id)
         if not config or not config.get('is_active_listening'): return
 
-        pending_batch = list(config.get('pending_messages_for_batch', []))
+        # The command now carries the messages.
+        # We should use command.messages_in_batch instead of config['pending_messages_for_batch']
+        # And clear the config's pending_messages_for_batch as it's now been "picked up" by this command.
+
+        # It's important to clear the original source of these messages from the config
+        # to prevent reprocessing if another trigger occurs before this handler completes fully.
+        # However, the messages for AI processing are now directly from the command.
+        pending_batch_from_command = command.messages_in_batch
+        
+        # Clear the config's list as these messages are now being processed.
         config['pending_messages_for_batch'] = []
 
-        if not pending_batch: return
 
-        logger.info(f"RoomLogic: [{room_id}] Processing message batch of size {len(pending_batch)}.")
+        if not pending_batch_from_command:
+            logger.info(f"RoomLogic: [{room_id}] ProcessMessageBatchCommand received with no messages. Nothing to process.")
+            return
+
+        logger.info(f"RoomLogic: [{room_id}] Processing message batch of size {len(pending_batch_from_command)} from command.")
 
         # --- Tell Gateway to start typing ---
         await self.bus.publish(SetTypingIndicatorCommand(room_id=room_id, typing=True))
 
         short_term_memory = config.get('memory', [])
-        summary_text_for_prompt, _ = database.get_summary(room_id) or (None, None)
-        
-        # Determine the event_id of the last user message in the batch to suggest as a reply target
+        summary_text_for_prompt, _ = database.get_summary(self.db_path, room_id) or (None, None)
+
         last_user_event_id_in_batch = None
-        if pending_batch:
-            last_user_event_id_in_batch = pending_batch[-1].get("event_id")
+        # Convert BatchedUserMessage back to the dict format expected by build_messages_for_ai
+        # and also for adding to memory later.
+        # build_messages_for_ai expects: List[Dict[str, str]] where dicts are {"name": ..., "content": ..., "event_id": ...}
+        processed_pending_batch_for_ai: List[Dict[str, str]] = []
+        for bum in pending_batch_from_command:
+            processed_pending_batch_for_ai.append({
+                "name": bum.user_id, # Map back from user_id to name
+                "content": bum.content,
+                "event_id": bum.event_id
+            })
+        
+        if processed_pending_batch_for_ai:
+            last_user_event_id_in_batch = processed_pending_batch_for_ai[-1].get("event_id")
 
 
         ai_payload = prompt_constructor.build_messages_for_ai(
-            historical_messages=list(short_term_memory), 
-            current_batched_user_inputs=pending_batch,
+            historical_messages=list(short_term_memory),
+            current_batched_user_inputs=processed_pending_batch_for_ai, # Use the converted batch
             bot_display_name=self.bot_display_name,
             channel_summary=summary_text_for_prompt,
             last_user_event_id_in_batch=last_user_event_id_in_batch
@@ -233,11 +294,10 @@ class RoomLogicService:
 
         turn_request_id = str(uuid.uuid4())
         original_payload_for_ai_response = {
-            "room_id": room_id, 
-            "pending_batch_for_memory": pending_batch,
+            "room_id": room_id,
+            "pending_batch_for_memory": processed_pending_batch_for_ai, # Use the converted batch for memory
             "last_user_event_id_in_batch": last_user_event_id_in_batch,
-            "turn_request_id": turn_request_id, # Key for pending_tool_calls state
-            # "requested_model_name" and "current_llm_provider" will be added below
+            "turn_request_id": turn_request_id,
         }
 
         model_to_use: str
@@ -311,13 +371,19 @@ class RoomLogicService:
             should_send_text_response_directly = bool(text_response_content) 
 
             if text_response_content and response_event.tool_calls:
-                for tool_call in response_event.tool_calls:
-                    function_data = tool_call.get("function", {})
+                # Convert ToolCall objects to JSON-serializable dicts for logging
+                tool_calls_for_logging = [tc.model_dump(mode='json') for tc in response_event.tool_calls]
+                logger.info(f"RLS: [{room_id}] LLM ({llm_provider_for_this_turn}) requested tool_calls: {json.dumps(tool_calls_for_logging, indent=2)}")
+
+                for tool_call_model in response_event.tool_calls: # tool_call_model is a ToolCall Pydantic object
+                    function_data = tool_call_model.function # Access as attribute
                     try:
-                        arguments_str = function_data.get("arguments", "{}")
+                        # arguments_str = function_data.get("arguments", "{}") # Original
+                        arguments_str = function_data.arguments if function_data else "{}"
                         arguments = json.loads(arguments_str)
-                        if arguments.get("text") == text_response_content:
-                            logger.info(f"RLS: [{room_id}] Suppressing direct sending of text_response as it matches tool's text.")
+                        # if arguments.get("text") == text_response_content: # Original
+                        if arguments.get("text") == text_response_content and tool_call_model.function.name == "send_reply":
+                            logger.info(f"RLS: [{room_id}] Suppressing direct sending of text_response as it matches send_reply tool's text.")
                             should_send_text_response_directly = False
                             break 
                     except json.JSONDecodeError:
@@ -336,13 +402,26 @@ class RoomLogicService:
                 assistant_acted = True
             
             if response_event.tool_calls:
-                logger.info(f"RLS: [{room_id}] LLM ({llm_provider_for_this_turn}) requested tool_calls: {json.dumps(response_event.tool_calls, indent=2)}")
+                # Correctly serialize for logging
+                tool_calls_for_logging = [tc.model_dump(mode='json') for tc in response_event.tool_calls]
+                logger.info(f"RLS: [{room_id}] LLM ({llm_provider_for_this_turn}) requested tool_calls: {json.dumps(tool_calls_for_logging, indent=2)}")
 
-                for tool_call_obj in response_event.tool_calls:
-                    if not tool_call_obj.get("id"):
-                        new_tool_call_id = f"toolcall_{uuid.uuid4()}"
-                        logger.warning(f"RLS: [{room_id}] Tool call from LLM missing 'id'. Generated: {new_tool_call_id} for tool '{tool_call_obj.get('function', {}).get('name')}'.")
-                        tool_call_obj["id"] = new_tool_call_id
+                for tool_call_model in response_event.tool_calls: # tool_call_model is a ToolCall Pydantic object
+                    # Ensure 'id' is present. ToolCall model requires it, so it should be there.
+                    # The original code generated an ID if missing, assuming tool_call was a dict.
+                    # If ToolCall objects are guaranteed to have an ID by their creator, this check might be simplified.
+                    # For now, log an error if a ToolCall model somehow lacks an ID.
+                    if not tool_call_model.id:
+                        # This case should ideally not happen if ToolCall models are validated upon creation.
+                        # If it can, the ID generation should be here or upstream.
+                        # For now, log an error if a ToolCall model somehow lacks an ID.
+                        logger.error(f"RLS: [{room_id}] Tool call from LLM is missing 'id'. Skipping. Tool: {tool_call_model.model_dump_json()}")
+                        # Potentially decrement expected_count for pending_tool_calls_for_ai_turn
+                        if ai_turn_key and ai_turn_key in self.pending_tool_calls_for_ai_turn:
+                            self.pending_tool_calls_for_ai_turn[ai_turn_key]["expected_count"] -= 1
+                            if self.pending_tool_calls_for_ai_turn[ai_turn_key]["expected_count"] <= 0:
+                                del self.pending_tool_calls_for_ai_turn[ai_turn_key]
+                        continue
                 
                 assistant_message_for_memory["tool_calls"] = response_event.tool_calls
                 if not assistant_message_for_memory.get("content"): # If no text part (e.g. it was suppressed or never there)
@@ -380,46 +459,40 @@ class RoomLogicService:
                 # This was previously inside the tool_calls block but should be outside to cover all cases of assistant action.
                 # Moved to after tool_calls block.
 
-                for tool_call in response_event.tool_calls:
-                    tool_function_data = tool_call.get("function", {})
-                    tool_name = tool_function_data.get("name")
-                    tool_call_id = tool_call.get("id") 
+                for tool_call_model in response_event.tool_calls:
+                    # If ToolCall model guarantees these, checks might be simpler.
+                    # ToolCall.id is required. ToolCall.function is required. ToolFunction.name is required. ToolFunction.arguments is required string.
 
-                    if not tool_name or not tool_call_id:
-                        logger.error(f"RLS: [{room_id}] Tool call missing name or id after check. Skipping. Tool call: {tool_call}")
+                    if not tool_call_model.id or not tool_call_model.function or not tool_call_model.function.name:
+                        logger.error(f"RLS: [{room_id}] Invalid ToolCall object received. Skipping. Tool call: {tool_call_model.model_dump_json(indent=2)}")
                         if ai_turn_key and ai_turn_key in self.pending_tool_calls_for_ai_turn:
                              self.pending_tool_calls_for_ai_turn[ai_turn_key]["expected_count"] -=1
                              if self.pending_tool_calls_for_ai_turn[ai_turn_key]["expected_count"] <= 0: 
                                  del self.pending_tool_calls_for_ai_turn[ai_turn_key] 
                         continue
-
-                    tool_args = {}
-                    try:
-                        raw_arguments = tool_function_data.get("arguments")
-                        if raw_arguments is None: raw_arguments = "{}"
-                        if isinstance(raw_arguments, str): tool_args = json.loads(raw_arguments)
-                        elif isinstance(raw_arguments, dict): tool_args = raw_arguments
-                        else:
-                            logger.warning(f"RLS: [{room_id}] Tool arguments for {tool_name} (call_id: {tool_call_id}) are of unexpected type: {type(raw_arguments)}. Using empty args.")
-                            tool_args = {}
-                    except json.JSONDecodeError as e:
-                        logger.error(f"RLS: [{room_id}] Invalid JSON arguments for tool {tool_name} (call_id: {tool_call_id}): {raw_arguments}. Error: {e}. Using empty args.")
-                        tool_args = {}
                     
+                    # Arguments are part of the tool_call_model.function.arguments (as a string)
+                    # ToolExecutionService will need to parse them if it receives the ToolCall object.
+                    # The ExecuteToolRequest takes the full tool_call_model.
+
                     conversation_history_for_tool_execution_context = []
                     if ai_turn_key and ai_turn_key in self.pending_tool_calls_for_ai_turn:
                         # This snapshot is what the LLM will see on follow-up, it includes the current assistant message with tool calls
                         conversation_history_for_tool_execution_context = list(self.pending_tool_calls_for_ai_turn[ai_turn_key]["conversation_history_at_tool_call_time"])
                     else:
                         logger.error(f"RLS: [{room_id}] ai_turn_key missing when preparing ExecuteToolRequest. Using current short_term_memory + assistant_message as fallback.")
-                        conversation_history_for_tool_execution_context = list(short_term_memory) + [dict(assistant_message_for_memory)]
+                        # Ensure assistant_message_for_memory is a dict that HistoricalMessage can parse
+                        cloned_assistant_message = dict(assistant_message_for_memory)
+                        if cloned_assistant_message.get("tool_calls") and isinstance(cloned_assistant_message["tool_calls"], list):
+                            # Ensure tool_calls within are also appropriate for HistoricalMessage (i.e., ToolCall objects)
+                            # This should be fine as assistant_message_for_memory["tool_calls"] = response_event.tool_calls (List[ToolCall])
+                            pass
+                        conversation_history_for_tool_execution_context = list(short_term_memory) + [cloned_assistant_message]
 
 
                     execute_tool_request = ExecuteToolRequest(
                         room_id=room_id,
-                        tool_name=tool_name,
-                        arguments=tool_args, 
-                        tool_call_id=tool_call_id,
+                        tool_call=tool_call_model, # Pass the ToolCall Pydantic model directly
                         original_request_payload=dict(response_event.original_request_payload),
                         llm_provider_info={
                             "name": llm_provider_for_this_turn,
@@ -430,7 +503,7 @@ class RoomLogicService:
                         last_user_event_id=last_user_event_id_in_batch 
                     )
                     await self.bus.publish(execute_tool_request)
-                    logger.info(f"RLS: [{room_id}] Published ExecuteToolRequest for tool: {tool_name}, call_id: {tool_call_id}")
+                    logger.info(f"RLS: [{room_id}] Published ExecuteToolRequest for tool: {tool_call_model.function.name}, call_id: {tool_call_model.id}")
             
             # Add assistant's complete message (text and/or tool_calls) to memory
             # This should happen if the assistant acted (sent text, called tools, or both)
@@ -491,7 +564,7 @@ class RoomLogicService:
         short_term_memory.append(tool_message_for_llm)
         turn_state["accumulated_tool_messages_for_llm"].append(tool_message_for_llm)
         
-        logger.info(f"RoomLogic: [{room_id}] Tool '{exec_response.tool_name}' result processed for AI turn {ai_turn_key}.") # Changed print to logger.info
+        logger.info(f"RoomLogic: [{room_id}] Tool '{exec_response.tool_name}' result processed for AI turn {ai_turn_key}.") # Corrected: Use exec_response.tool_name
 
         if len(turn_state["accumulated_tool_messages_for_llm"]) == turn_state["expected_count"]:
             logger.info(f"RoomLogic: [{room_id}] All {turn_state['expected_count']} tool results received for AI turn {ai_turn_key}. Requesting follow-up LLM call.") # Changed print to logger.info
