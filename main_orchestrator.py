@@ -26,8 +26,9 @@ async def main() -> None:
     load_dotenv()
     logger.info("Orchestrator: Starting bot services...")
 
-    # Initialize database
-    database.initialize_database()
+    # Define and Initialize database path
+    db_path = os.getenv("DATABASE_PATH", "matrix_bot_soa.db")
+    database.initialize_database(db_path)
 
     # Initialize Message Bus
     bus = MessageBus()
@@ -52,7 +53,7 @@ async def main() -> None:
     # Pass ToolRegistry to services that need it (e.g., RoomLogicService)
     # RoomLogicService will be modified to accept this in its __init__
     room_logic = RoomLogicService(bus, tool_registry=tool_registry) # Modified init
-    summarization = SummarizationService(bus) # Will get bot_display_name via event
+    summarization = SummarizationService(bus) # Pass db_path here as well
     
     services = [matrix_gateway, ai_inference, ollama_inference, room_logic, summarization, tool_execution_service] # Added tool_execution_service
     
