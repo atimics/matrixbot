@@ -58,6 +58,8 @@ class ActivateListeningEvent(BaseEvent):
     event_type: str = "activate_listening_event"
     room_id: str
     triggering_event_id: str # The event_id of the message that triggered activation
+    triggering_sender_display_name: Optional[str] = None
+    triggering_message_body: Optional[str] = None
 
 class ProcessMessageBatchCommand(BaseEvent):
     event_type: str = "process_message_batch_command"
