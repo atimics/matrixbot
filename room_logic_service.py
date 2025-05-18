@@ -459,7 +459,6 @@ class RoomLogicService:
         tool_message_for_llm = {
             "role": "tool",
             "tool_call_id": exec_response.original_tool_call_id,
-            "name": exec_response.tool_name,
             "content": exec_response.result_for_llm_history
         }
         short_term_memory.append(tool_message_for_llm)
@@ -481,17 +480,16 @@ class RoomLogicService:
 
             provider_for_follow_up = turn_state.get("llm_provider_for_this_turn", self.primary_llm_provider)
             model_for_follow_up: str
-            FollowUpEventClass: type[AIInferenceRequestEvent] # Base type for annotation
+            FollowUpEventClass: type[AIInferenceRequestEvent]
 
             if provider_for_follow_up == "ollama":
-                # Use the specific model from the original request if available, else default
                 model_for_follow_up = original_ai_payload_from_initial_response.get("actual_model_name_used", 
                                            original_ai_payload_from_initial_response.get("requested_model_name", self.ollama_chat_model))
-                FollowUpEventClass = OllamaInferenceRequestEvent # type: ignore
+                FollowUpEventClass = OllamaInferenceRequestEvent
             else: # Default to openrouter
                 model_for_follow_up = original_ai_payload_from_initial_response.get("actual_model_name_used", 
                                            original_ai_payload_from_initial_response.get("requested_model_name", self.openrouter_chat_model))
-                FollowUpEventClass = OpenRouterInferenceRequestEvent # type: ignore
+                FollowUpEventClass = OpenRouterInferenceRequestEvent
 
             follow_up_original_payload["requested_model_name"] = model_for_follow_up 
             follow_up_original_payload["current_llm_provider"] = provider_for_follow_up
