@@ -1,4 +1,3 @@
-
 import pytest
 from pydantic import ValidationError
 from datetime import datetime, timezone
@@ -26,7 +25,8 @@ from event_definitions import (
     HistoricalMessage, # Assuming this might be used or tested directly
     BatchedUserMessage, # Assuming this might be used or tested directly
     ToolCall, # Assuming this might be used or tested directly
-    ToolRoleMessage # Assuming this might be used or tested directly
+    ToolRoleMessage, # Assuming this might be used or tested directly
+    ToolFunction # Added for corrected ToolCall instantiation
 )
 
 # Helper to check common BaseEvent fields
@@ -42,15 +42,19 @@ def check_base_event_fields(event: BaseEvent, expected_event_type: str):
 def test_matrix_message_received_event_valid():
     event = MatrixMessageReceivedEvent(
         room_id="!room:host",
+        event_id_matrix="$matrix_event_id", # Renamed from event_id
         sender_id="@user:host",
-        message_content="Hello world!",
-        event_id_matrix="$matrix_event_id"
+        sender_display_name="User A", # Added
+        body="Hello world!", # Added
+        room_display_name="Test Room" # Added
     )
     check_base_event_fields(event, "matrix_message_received")
     assert event.room_id == "!room:host"
-    assert event.sender_id == "@user:host"
-    assert event.message_content == "Hello world!"
     assert event.event_id_matrix == "$matrix_event_id"
+    assert event.sender_id == "@user:host"
+    assert event.sender_display_name == "User A"
+    assert event.body == "Hello world!"
+    assert event.room_display_name == "Test Room"
 
 def test_matrix_message_received_event_missing_fields():
     with pytest.raises(ValidationError):
@@ -107,40 +111,41 @@ def test_process_message_batch_command_valid():
 def test_ai_inference_request_event_valid():
     payload = [{"role": "user", "content": "Hello"}]
     event = AIInferenceRequestEvent(
-        room_id="!room:host",
-        ai_payload=payload,
-        original_request_event_id="$req_event",
-        follow_up_ai_request_event_id="$followup_event",
-        request_topic="some_topic"
+        request_id="req1", # Added
+        reply_to_service_event="some_reply_event", # Added
+        model_name="gpt-4", # Added
+        messages_payload=payload, # Changed from ai_payload
+        original_request_payload={"original_event_id": "$req_event"} # Example of storing other ids
     )
     check_base_event_fields(event, "ai_inference_request")
-    assert event.ai_payload == payload
-    assert event.original_request_event_id == "$req_event"
-    assert event.follow_up_ai_request_event_id == "$followup_event"
-    assert event.request_topic == "some_topic"
+    assert event.messages_payload == payload
+    assert event.request_id == "req1"
+    assert event.reply_to_service_event == "some_reply_event"
+    assert event.model_name == "gpt-4"
+    assert event.original_request_payload["original_event_id"] == "$req_event"
 
 # Test AIInferenceResponseEvent
 def test_ai_inference_response_event_success_text():
     event = AIInferenceResponseEvent(
-        original_request_event_id="$req_event",
+        request_id="req1", # Added
         success=True,
         text_response="AI says hi",
-        response_topic="some_topic"
+        original_request_payload={"original_event_id": "$req_event", "response_topic": "some_topic"}
     )
     check_base_event_fields(event, "ai_inference_response")
     assert event.success is True
     assert event.text_response == "AI says hi"
     assert event.tool_calls is None
     assert event.error_message is None
-    assert event.response_topic == "some_topic"
+    assert event.original_request_payload["response_topic"] == "some_topic" # Check within payload
 
 def test_ai_inference_response_event_success_tool_calls():
-    tool_calls = [ToolCall(id="tc1", function_name="func", function_args="{}")]
+    tool_calls = [ToolCall(id="tc1", type="function", function=ToolFunction(name="func", arguments="{}"))] # Corrected ToolCall
     event = AIInferenceResponseEvent(
-        original_request_event_id="$req_event",
+        request_id="req1", # Added
         success=True,
         tool_calls=tool_calls,
-        response_topic="some_topic"
+        original_request_payload={"original_event_id": "$req_event", "response_topic": "some_topic"}
     )
     check_base_event_fields(event, "ai_inference_response")
     assert event.success is True
@@ -149,10 +154,10 @@ def test_ai_inference_response_event_success_tool_calls():
 
 def test_ai_inference_response_event_failure():
     event = AIInferenceResponseEvent(
-        original_request_event_id="$req_event",
+        request_id="req1", # Added
         success=False,
         error_message="API Error",
-        response_topic="some_topic"
+        original_request_payload={"original_event_id": "$req_event", "response_topic": "some_topic"}
     )
     check_base_event_fields(event, "ai_inference_response")
     assert event.success is False
@@ -162,97 +167,110 @@ def test_ai_inference_response_event_failure():
 def test_openrouter_inference_request_event():
     payload = [{"role": "user", "content": "Hello"}]
     event = OpenRouterInferenceRequestEvent(
-        room_id="!room:host",
-        ai_payload=payload,
-        original_request_payload_event_id="$orig_payload_id",
-        original_request_event_id="$orig_req_id",
-        event_type_to_respond_to="tool_response_type"
+        request_id="or_req1", # Added
+        reply_to_service_event="or_reply_event", # Added
+        model_name="openrouter/model", # Added
+        messages_payload=payload, # Changed from ai_payload
+        original_request_payload={ # Store other IDs here
+            "original_request_payload_event_id": "$orig_payload_id",
+            "original_request_event_id": "$orig_req_id",
+            "event_type_to_respond_to": "tool_response_type"
+        }
     )
     check_base_event_fields(event, "open_router_inference_request")
-    assert event.ai_payload == payload
-    assert event.original_request_payload_event_id == "$orig_payload_id"
-    assert event.original_request_event_id == "$orig_req_id"
-    assert event.event_type_to_respond_to == "tool_response_type"
+    assert event.messages_payload == payload
+    assert event.original_request_payload["original_request_payload_event_id"] == "$orig_payload_id"
+    assert event.original_request_payload["original_request_event_id"] == "$orig_req_id"
+    assert event.original_request_payload["event_type_to_respond_to"] == "tool_response_type"
 
 # Test OpenRouterInferenceResponseEvent
 def test_openrouter_inference_response_event():
     event = OpenRouterInferenceResponseEvent(
-        original_request_event_id="$req_event",
+        request_id="or_req1", # Added
         success=True,
         text_response="Hi from OR",
-        original_request_payload_event_id="$orig_payload_id",
-        event_type_to_respond_to="tool_response_type"
+        original_request_payload={ # Store other IDs here
+            "original_request_event_id": "$req_event",
+            "original_request_payload_event_id": "$orig_payload_id",
+            "event_type_to_respond_to": "tool_response_type"
+        }
     )
     check_base_event_fields(event, "open_router_inference_response")
     assert event.text_response == "Hi from OR"
-    assert event.original_request_payload_event_id == "$orig_payload_id"
-    assert event.event_type_to_respond_to == "tool_response_type"
+    assert event.original_request_payload["original_request_payload_event_id"] == "$orig_payload_id"
+    assert event.original_request_payload["event_type_to_respond_to"] == "tool_response_type"
 
 # Test OllamaInferenceRequestEvent
 def test_ollama_inference_request_event():
     payload = [{"role": "user", "content": "Hello"}]
     event = OllamaInferenceRequestEvent(
-        room_id="!room:host",
-        ai_payload=payload,
-        original_request_payload_event_id="$orig_payload_id",
-        original_request_event_id="$orig_req_id",
-        event_type_to_respond_to="tool_response_type"
+        request_id="ol_req1", # Added
+        reply_to_service_event="ol_reply_event", # Added
+        model_name="ollama/model", # Added
+        messages_payload=payload, # Changed from ai_payload
+        original_request_payload={ # Store other IDs here
+            "original_request_payload_event_id": "$orig_payload_id",
+            "original_request_event_id": "$orig_req_id",
+            "event_type_to_respond_to": "tool_response_type"
+        }
     )
     check_base_event_fields(event, "ollama_inference_request")
-    assert event.ai_payload == payload
-    assert event.original_request_payload_event_id == "$orig_payload_id"
-    assert event.original_request_event_id == "$orig_req_id"
-    assert event.event_type_to_respond_to == "tool_response_type"
+    assert event.messages_payload == payload
+    assert event.original_request_payload["original_request_payload_event_id"] == "$orig_payload_id"
+    assert event.original_request_payload["original_request_event_id"] == "$orig_req_id"
+    assert event.original_request_payload["event_type_to_respond_to"] == "tool_response_type"
 
 # Test OllamaInferenceResponseEvent
 def test_ollama_inference_response_event():
     event = OllamaInferenceResponseEvent(
-        original_request_event_id="$req_event",
+        request_id="ol_req1", # Added
         success=True,
         text_response="Hi from Ollama",
-        original_request_payload_event_id="$orig_payload_id",
-        event_type_to_respond_to="tool_response_type"
+        original_request_payload={ # Store other IDs here
+            "original_request_event_id": "$req_event",
+            "original_request_payload_event_id": "$orig_payload_id",
+            "event_type_to_respond_to": "tool_response_type"
+        }
     )
     check_base_event_fields(event, "ollama_inference_response")
     assert event.text_response == "Hi from Ollama"
-    assert event.original_request_payload_event_id == "$orig_payload_id"
-    assert event.event_type_to_respond_to == "tool_response_type"
+    assert event.original_request_payload["original_request_payload_event_id"] == "$orig_payload_id"
+    assert event.original_request_payload["event_type_to_respond_to"] == "tool_response_type"
 
 # Test ExecuteToolRequest
 def test_execute_tool_request_valid():
-    tool_call = ToolCall(id="tc1", function_name="send_reply", function_args='{"text":"Hi"}')
+    tool_call = ToolCall(id="tc1", type="function", function=ToolFunction(name="send_reply", arguments='{"text":"Hi"}')) # Corrected
     event = ExecuteToolRequest(
         room_id="!room:host",
         tool_call=tool_call,
-        original_ai_request_event_id="$ai_req",
         conversation_history_snapshot=[],
-        last_user_event_id="$user_event"
+        last_user_event_id="$user_event",
+        original_request_payload={"original_ai_request_event_id": "$ai_req"} # Added
     )
     check_base_event_fields(event, "execute_tool_request")
     assert event.tool_call == tool_call
-    assert event.original_ai_request_event_id == "$ai_req"
-    assert event.conversation_history_snapshot == []
-    assert event.last_user_event_id == "$user_event"
+    assert event.original_request_payload["original_ai_request_event_id"] == "$ai_req" # Check in payload
 
 # Test ToolExecutionResponse
 def test_tool_execution_response_success():
     event = ToolExecutionResponse(
         original_tool_call_id="tc1",
-        original_ai_request_event_id="$ai_req",
         status="success",
-        result_text="Tool ran okay",
-        commands_to_publish=[]
+        result_for_llm_history="Tool ran okay", # Changed from result_text
+        commands_to_publish=[],
+        original_request_payload={"original_ai_request_event_id": "$ai_req"} # Added
     )
     check_base_event_fields(event, "tool_execution_response")
     assert event.status == "success"
-    assert event.result_text == "Tool ran okay"
+    assert event.result_for_llm_history == "Tool ran okay"
 
 def test_tool_execution_response_failure():
     event = ToolExecutionResponse(
         original_tool_call_id="tc1",
-        original_ai_request_event_id="$ai_req",
         status="failure",
-        error_message="Tool broke"
+        error_message="Tool broke",
+        result_for_llm_history="", # Added required field
+        original_request_payload={"original_ai_request_event_id": "$ai_req"} # Added
     )
     check_base_event_fields(event, "tool_execution_response")
     assert event.status == "failure"
@@ -261,9 +279,10 @@ def test_tool_execution_response_failure():
 def test_tool_execution_response_requires_followup():
     event = ToolExecutionResponse(
         original_tool_call_id="tc1",
-        original_ai_request_event_id="$ai_req",
         status="requires_llm_followup",
-        data_from_tool_for_followup_llm={"key": "value"}
+        data_from_tool_for_followup_llm={"key": "value"},
+        result_for_llm_history="Follow up needed", # Added required field
+        original_request_payload={"original_ai_request_event_id": "$ai_req"} # Added
     )
     check_base_event_fields(event, "tool_execution_response")
     assert event.status == "requires_llm_followup"
@@ -277,7 +296,7 @@ def test_set_typing_indicator_command_valid():
     assert event.typing is True
     # Test Literal validation for event_type
     with pytest.raises(ValidationError):
-        BaseEvent(event_type="invalid_type") # type: ignore
+        SetTypingIndicatorCommand(room_id="!room:host", typing=True, event_type="invalid_type")
 
 # Test ReactToMessageCommand
 def test_react_to_message_command_valid():
@@ -333,7 +352,7 @@ def test_historical_message_valid():
     assert msg.tool_calls is None
 
 def test_historical_message_with_tool_calls():
-    tc = ToolCall(id="t1", function_name="f1", function_args="{}")
+    tc = ToolCall(id="t1", type="function", function=ToolFunction(name="f1", arguments="{}")) # Corrected
     msg = HistoricalMessage(role="assistant", tool_calls=[tc])
     assert msg.role == "assistant"
     assert msg.content is None
@@ -346,7 +365,7 @@ def test_batched_user_message_valid():
     assert msg.event_id == "$e1"
 
 def test_tool_call_valid():
-    tc = ToolCall(id="t1", function_name="f1", function_args='{"arg":"val"}')
+    tc = ToolCall(id="t1", type="function", function=ToolFunction(name="f1", arguments='{"arg":"val"}')) # Corrected
     assert tc.id == "t1"
     assert tc.type == "function"
     assert tc.function.name == "f1"

@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Tuple, Any
 from dotenv import load_dotenv
 
 from message_bus import MessageBus
-from event_definitions import OpenRouterInferenceRequestEvent, OpenRouterInferenceResponseEvent
+from event_definitions import OpenRouterInferenceRequestEvent, OpenRouterInferenceResponseEvent, ToolCall, ToolFunction  # Added ToolCall, ToolFunction
 
 logger = logging.getLogger(__name__)
 
@@ -98,27 +98,44 @@ class AIInferenceService:
         tool_choice_payload = request_event.tool_choice if request_event.tool_choice else "auto"
         
         # No longer need loop.run_in_executor as _get_openrouter_response_async is now async
-        success, text_response, tool_calls, error_message = await self._get_openrouter_response_async(
+        success, text_response, tool_calls_data, error_message = await self._get_openrouter_response_async(
             request_event.model_name,
             request_event.messages_payload,
             tools_payload,
             tool_choice_payload
         )
         
+        parsed_tool_calls: Optional[List[ToolCall]] = None
+        if tool_calls_data:
+            parsed_tool_calls = []
+            for tc_data in tool_calls_data:
+                function_data = tc_data.get("function", {})
+                parsed_tool_calls.append(
+                    ToolCall(
+                        id=tc_data.get("id"),
+                        type=tc_data.get("type"),
+                        function=ToolFunction(
+                            name=function_data.get("name"),
+                            arguments=function_data.get("arguments")
+                        )
+                    )
+                )
+
         response_event = OpenRouterInferenceResponseEvent(
             request_id=request_event.request_id,
             original_request_payload=request_event.original_request_payload,
             success=success,
             text_response=text_response,
-            tool_calls=tool_calls,
-            error_message=error_message
+            tool_calls=parsed_tool_calls,  # Use parsed Pydantic models
+            error_message=error_message,
+            event_type=request_event.reply_to_service_event  # Pass event_type here
         )
-        response_event.event_type = request_event.reply_to_service_event
         await self.bus.publish(response_event)
 
     async def run(self) -> None:
         logger.info("AIInferenceService: Starting...")
-        self.bus.subscribe(OpenRouterInferenceRequestEvent.model_fields['event_type'].default, self._handle_inference_request)
+        # Access default from model_fields for subscription
+        self.bus.subscribe(OpenRouterInferenceRequestEvent.model_fields['event_type'].default, self._handle_inference_request)  # Removed await
         await self._stop_event.wait()
         logger.info("AIInferenceService: Stopped.")
 

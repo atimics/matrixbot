@@ -1,6 +1,7 @@
 import pytest
 import pytest_asyncio # Import the decorator
 import asyncio
+import datetime # Add this import
 from unittest.mock import MagicMock, AsyncMock, patch
 
 from message_bus import MessageBus
@@ -88,7 +89,7 @@ async def test_listener_receives_correct_event_object(message_bus_instance: Mess
 
     assert received_event is specific_event
     assert received_event.event_type == "specific_event_type_check"
-    assert isinstance(received_event.timestamp, float)
+    assert isinstance(received_event.timestamp, datetime.datetime)
 
 @pytest.mark.asyncio
 async def test_shutdown_stops_listeners(message_bus_instance: MessageBus):
