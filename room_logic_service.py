@@ -284,10 +284,9 @@ class RoomLogicService:
 
         short_term_memory = config.get('memory', [])
         pending_batch_for_memory = response_event.original_request_payload.get("pending_batch_for_memory", [])
-        representative_event_id_for_user_turn = None # Will be the event_id of the last message in user batch
+        representative_event_id_for_user_turn = None 
 
-        # Add user messages from the processed batch to memory
-        if not response_event.original_request_payload.get("is_follow_up_after_tool_call") and \
+        if not response_event.original_request_payload.get("is_follow_up_after_tool_execution") and \
            not response_event.original_request_payload.get("is_follow_up_after_delegated_tool_call") and \
            pending_batch_for_memory:
             try:
@@ -307,21 +306,38 @@ class RoomLogicService:
 
         llm_provider_for_this_turn = response_event.original_request_payload.get("current_llm_provider", "openrouter")
 
-        assistant_message_for_memory: Dict[str, Any] = {"role": "assistant", "name": current_bot_name}
-        assistant_acted = False
-
         if response_event.success:
-            if response_event.text_response:
-                assistant_message_for_memory["content"] = response_event.text_response
-                # Send text response immediately if it exists
-                await self.bus.publish(SendMatrixMessageCommand(room_id=room_id, text=response_event.text_response))
-                assistant_acted = True
+            text_response_content = response_event.text_response 
+            should_send_text_response_directly = bool(text_response_content) 
 
+            if text_response_content and response_event.tool_calls:
+                for tool_call in response_event.tool_calls:
+                    function_data = tool_call.get("function", {})
+                    try:
+                        arguments_str = function_data.get("arguments", "{}")
+                        arguments = json.loads(arguments_str)
+                        if arguments.get("text") == text_response_content:
+                            logger.info(f"RLS: [{room_id}] Suppressing direct sending of text_response as it matches tool's text.")
+                            should_send_text_response_directly = False
+                            break 
+                    except json.JSONDecodeError:
+                        logger.warning(f"RLS: [{room_id}] Failed to parse arguments for tool call while checking for duplicates: {arguments_str}")
+                    except Exception as e:
+                            logger.error(f"RLS: [{room_id}] Error comparing text_response to args: {e}", exc_info=True)
+
+            assistant_message_for_memory: Dict[str, Any] = {"role": "assistant", "name": current_bot_name}
+            assistant_acted = False
+
+            if text_response_content: 
+                assistant_message_for_memory["content"] = text_response_content
+
+            if should_send_text_response_directly: 
+                await self.bus.publish(SendMatrixMessageCommand(room_id=room_id, text=text_response_content))
+                assistant_acted = True
+            
             if response_event.tool_calls:
                 logger.info(f"RLS: [{room_id}] LLM ({llm_provider_for_this_turn}) requested tool_calls: {json.dumps(response_event.tool_calls, indent=2)}")
 
-                # Ensure all tool_calls have an ID before adding to assistant memory or processing further.
-                # This is crucial for matching tool results back to the assistant's request.
                 for tool_call_obj in response_event.tool_calls:
                     if not tool_call_obj.get("id"):
                         new_tool_call_id = f"toolcall_{uuid.uuid4()}"
@@ -329,128 +345,117 @@ class RoomLogicService:
                         tool_call_obj["id"] = new_tool_call_id
                 
                 assistant_message_for_memory["tool_calls"] = response_event.tool_calls
-                assistant_acted = True # Assistant acted by requesting tools
+                if not assistant_message_for_memory.get("content"): # If no text part (e.g. it was suppressed or never there)
+                    assistant_message_for_memory["content"] = None # Ensure content is None if only tool_calls
+
+                assistant_acted = True 
 
                 # Add assistant message with tool_calls to memory BEFORE dispatching tool execution requests.
-                # The follow-up LLM call will need this message in its history.
-                if assistant_message_for_memory.get("content") or assistant_message_for_memory.get("tool_calls"):
-                    # Ensure content is None if only tool_calls are present, to match OpenAI spec
-                    if not assistant_message_for_memory.get("content") and assistant_message_for_memory.get("tool_calls"):
-                        assistant_message_for_memory["content"] = None
-                    short_term_memory.append(dict(assistant_message_for_memory)) 
+                # This is done here to ensure the conversation_history_at_tool_call_time is accurate.
+                # The 'if assistant_message_for_memory.get("content") or assistant_message_for_memory.get("tool_calls")'
+                # check below will handle adding it.
 
                 ai_turn_key = response_event.original_request_payload.get("turn_request_id")
                 if not ai_turn_key:
-                    logger.error(f"RLS: [{room_id}] AIInferenceResponseEvent missing 'turn_request_id' in original_request_payload. Cannot process tool calls reliably.")
-                    # Optionally, send an error message to the user or attempt to recover,
-                    # but for now, we'll log and might not be able to process follow-ups correctly.
-                    # This should ideally not happen if turn_request_id is always populated.
+                    logger.error(f"RLS: [{room_id}] AIInferenceResponseEvent missing 'turn_request_id'. Cannot process tool calls reliably.")
                 else:
-                    # Store state for this AI turn's tool calls, to be used by _handle_tool_execution_response
+                    # Temporarily remove the assistant message if it was just added, to rebuild history correctly for this specific point.
+                    # This is a bit tricky: short_term_memory should reflect history *before* this assistant turn's tool_calls message.
+                    # So, we build assistant_message_for_memory, then use a snapshot of short_term_memory *before* adding it.
+                    # Then, after setting up pending_tool_calls_for_ai_turn, we add assistant_message_for_memory.
+
+                    history_snapshot_for_tools = list(short_term_memory) # History *before* this assistant's message
+
                     self.pending_tool_calls_for_ai_turn[ai_turn_key] = {
                         "room_id": room_id,
-                        "conversation_history_at_tool_call_time": list(short_term_memory), # Snapshot includes the assistant msg with tool_calls
+                        # Use history_snapshot_for_tools, then append assistant_message_for_memory to it for the *actual* history sent to LLM for follow-up
+                        "conversation_history_at_tool_call_time": history_snapshot_for_tools + [dict(assistant_message_for_memory)],
                         "expected_count": len(response_event.tool_calls),
                         "accumulated_tool_messages_for_llm": [],
-                        "original_ai_response_payload": dict(response_event.original_request_payload), # For follow-up context
+                        "original_ai_response_payload": dict(response_event.original_request_payload),
                         "llm_provider_for_this_turn": llm_provider_for_this_turn
                     }
+                
+                # Now, add the assistant's message (which might include text and tool_calls) to the main short_term_memory
+                # This was previously inside the tool_calls block but should be outside to cover all cases of assistant action.
+                # Moved to after tool_calls block.
 
                 for tool_call in response_event.tool_calls:
                     tool_function_data = tool_call.get("function", {})
                     tool_name = tool_function_data.get("name")
-                    tool_call_id = tool_call.get("id") # ID is now guaranteed by the loop above
+                    tool_call_id = tool_call.get("id") 
 
                     if not tool_name or not tool_call_id:
                         logger.error(f"RLS: [{room_id}] Tool call missing name or id after check. Skipping. Tool call: {tool_call}")
-                        # If this happens, the expected_count in pending_tool_calls_for_ai_turn might become problematic.
-                        # Consider decrementing expected_count or adding a synthetic error tool result.
-                        # For now, log and skip.
                         if ai_turn_key and ai_turn_key in self.pending_tool_calls_for_ai_turn:
                              self.pending_tool_calls_for_ai_turn[ai_turn_key]["expected_count"] -=1
-                             if self.pending_tool_calls_for_ai_turn[ai_turn_key]["expected_count"] == 0: # check if this was the only tool
-                                 del self.pending_tool_calls_for_ai_turn[ai_turn_key] # clean up if no tools left
+                             if self.pending_tool_calls_for_ai_turn[ai_turn_key]["expected_count"] <= 0: 
+                                 del self.pending_tool_calls_for_ai_turn[ai_turn_key] 
                         continue
 
                     tool_args = {}
                     try:
-                        raw_arguments = tool_function_data.get("arguments") # Can be str or dict
-                        if raw_arguments is None:
-                            raw_arguments = "{}" # Default to empty JSON string if arguments field is missing
-
-                        if isinstance(raw_arguments, str):
-                            tool_args = json.loads(raw_arguments)
-                        elif isinstance(raw_arguments, dict):
-                            tool_args = raw_arguments # Already a dict (e.g., from Ollama)
+                        raw_arguments = tool_function_data.get("arguments")
+                        if raw_arguments is None: raw_arguments = "{}"
+                        if isinstance(raw_arguments, str): tool_args = json.loads(raw_arguments)
+                        elif isinstance(raw_arguments, dict): tool_args = raw_arguments
                         else:
-                            logger.warning(f"RLS: [{room_id}] Tool arguments for {tool_name} (call_id: {tool_call_id}) are of unexpected type: {type(raw_arguments)}. Value: {raw_arguments}. Using empty args.")
+                            logger.warning(f"RLS: [{room_id}] Tool arguments for {tool_name} (call_id: {tool_call_id}) are of unexpected type: {type(raw_arguments)}. Using empty args.")
                             tool_args = {}
                     except json.JSONDecodeError as e:
                         logger.error(f"RLS: [{room_id}] Invalid JSON arguments for tool {tool_name} (call_id: {tool_call_id}): {raw_arguments}. Error: {e}. Using empty args.")
                         tool_args = {}
-                        # ToolExecutionService will receive this and should handle the error, then send a ToolExecutionResponse.
-
-                    # original_request_payload for ExecuteToolRequest is the AIInferenceResponseEvent's original_request_payload.
-                    # This is used by _handle_tool_execution_response to get the ai_turn_key and other context.
                     
-                    # Ensure ai_turn_key is available for conversation_history_snapshot
-                    # This check is defensive; ai_turn_key should exist if we are processing tool calls from an AI response.
-                    conversation_history_for_tool = []
+                    conversation_history_for_tool_execution_context = []
                     if ai_turn_key and ai_turn_key in self.pending_tool_calls_for_ai_turn:
-                        conversation_history_for_tool = list(self.pending_tool_calls_for_ai_turn[ai_turn_key]["conversation_history_at_tool_call_time"])
+                        # This snapshot is what the LLM will see on follow-up, it includes the current assistant message with tool calls
+                        conversation_history_for_tool_execution_context = list(self.pending_tool_calls_for_ai_turn[ai_turn_key]["conversation_history_at_tool_call_time"])
                     else:
-                        # Fallback or log error if ai_turn_key is unexpectedly missing
-                        logger.error(f"RLS: [{room_id}] ai_turn_key missing when preparing ExecuteToolRequest. Using current short_term_memory as fallback for snapshot.")
-                        conversation_history_for_tool = list(short_term_memory)
+                        logger.error(f"RLS: [{room_id}] ai_turn_key missing when preparing ExecuteToolRequest. Using current short_term_memory + assistant_message as fallback.")
+                        conversation_history_for_tool_execution_context = list(short_term_memory) + [dict(assistant_message_for_memory)]
 
 
                     execute_tool_request = ExecuteToolRequest(
                         room_id=room_id,
                         tool_name=tool_name,
-                        arguments=tool_args, # Corrected field name
+                        arguments=tool_args, 
                         tool_call_id=tool_call_id,
                         original_request_payload=dict(response_event.original_request_payload),
-                        # Add missing required fields:
                         llm_provider_info={
                             "name": llm_provider_for_this_turn,
                             "model": response_event.original_request_payload.get("actual_model_name_used", 
                                      response_event.original_request_payload.get("requested_model_name"))
                         },
-                        conversation_history_snapshot=conversation_history_for_tool,
+                        conversation_history_snapshot=conversation_history_for_tool_execution_context,
                         last_user_event_id=last_user_event_id_in_batch 
                     )
                     await self.bus.publish(execute_tool_request)
                     logger.info(f"RLS: [{room_id}] Published ExecuteToolRequest for tool: {tool_name}, call_id: {tool_call_id}")
-                
-
-            elif not response_event.tool_calls and response_event.text_response: # Simple text response, no tools
-                # Assistant message (text only) already added to memory if assistant_acted was true.
-                # If assistant_acted was false (e.g. error in AI service before producing text), this won't run.
-                # If assistant_acted is true, and text_response is present, it means it was already added.
-                # This case is for when there is ONLY a text response and NO tool calls.
-                # The initial assistant_message_for_memory would have content, and assistant_acted would be true.
-                # We need to ensure it's added to memory if it hasn't been (e.g. if it was a direct text response).
-                if not assistant_message_for_memory.get("tool_calls") and assistant_message_for_memory.get("content"):
-                    # Check if it's already the last message to avoid duplicates if already added
-                    if not short_term_memory or short_term_memory[-1] != assistant_message_for_memory:
-                         short_term_memory.append(dict(assistant_message_for_memory))
             
-            # If assistant_acted is false at this point, it means AI success but no text and no tools.
-            # This is unusual but possible. Log it. Memory update handled by initial check.
+            # Add assistant's complete message (text and/or tool_calls) to memory
+            # This should happen if the assistant acted (sent text, called tools, or both)
+            if assistant_acted: # assistant_acted is true if text was sent OR if tool_calls were made
+                # Ensure content is None if only tool_calls are present and no actual text_response_content
+                if not text_response_content and assistant_message_for_memory.get("tool_calls"):
+                    assistant_message_for_memory["content"] = None
+                
+                # Only add to memory if there's something to add (content or tool_calls)
+                if assistant_message_for_memory.get("content") is not None or assistant_message_for_memory.get("tool_calls"):
+                    # Avoid duplicate if already added by a more specific path (though current logic should prevent this)
+                    if not short_term_memory or short_term_memory[-1] != assistant_message_for_memory:
+                        short_term_memory.append(dict(assistant_message_for_memory))
+            
             if not assistant_acted:
                  logger.info(f"RLS: [{room_id}] AI ({llm_provider_for_this_turn}) reported success but produced no text and no tool calls.")
-                 # Add a placeholder to memory if nothing else was added for assistant turn
                  if not short_term_memory or short_term_memory[-1]["role"] != "assistant":
                     short_term_memory.append({"role": "assistant", "name": current_bot_name, "content": "[AI chose to do nothing this turn]"})
 
-
-        elif not response_event.success: # AI call failed
+        elif not response_event.success: 
             ai_error_text = f"Sorry, AI error: {response_event.error_message or 'Unknown error'}"
             await self.bus.publish(SendMatrixMessageCommand(room_id=room_id, text=ai_error_text))
             short_term_memory.append({"role": "assistant", "name": current_bot_name, "content": ai_error_text, "event_id": representative_event_id_for_user_turn})
-            assistant_acted = True # Considered an action (informing user of error)
+            assistant_acted = True 
 
-        # Trim memory
         while len(short_term_memory) > self.short_term_memory_items:
             short_term_memory.pop(0)
         config['memory'] = short_term_memory
