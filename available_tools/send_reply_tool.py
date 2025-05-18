@@ -40,7 +40,8 @@ class SendReplyTool(AbstractTool):
         tool_call_id: Optional[str],
         llm_provider_info: Dict[str, Any],
         conversation_history_snapshot: List[Dict[str, Any]],
-        last_user_event_id: Optional[str]
+        last_user_event_id: Optional[str],
+        db_path: Optional[str] = None # Added to accept db_path
     ) -> ToolResult:
         logger.info(f"SendReplyTool: Executing in room {room_id} with args: {arguments}")
         # Remove JSON parsing as arguments are already a dict

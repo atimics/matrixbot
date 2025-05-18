@@ -53,7 +53,7 @@ class SummarizationService:
             await self.bus.publish(SummaryGeneratedEvent(
                 room_id=room_id, 
                 summary_text=summary_text,
-                last_event_id_in_summary=event_id_last_msg
+                last_event_id_summarized=event_id_last_msg
             ))
         elif not response_event.success:
             logger.error(f"SummarizationSvc: [{room_id}] Failed to generate summary. Error: {response_event.error_message}")
@@ -77,10 +77,17 @@ class SummarizationService:
         event_id_of_last_message_in_summary_batch: Optional[str] = None
         if messages_to_summarize:
             for msg in reversed(messages_to_summarize):
-                if msg.get("event_id"):
-                    event_id_of_last_message_in_summary_batch = msg.get("event_id")
+                # messages_to_summarize contains HistoricalMessage objects
+                if msg.event_id: # Direct attribute access
+                    event_id_of_last_message_in_summary_batch = msg.event_id
                     break
         
+        if not event_id_of_last_message_in_summary_batch and command.last_event_id_in_messages:
+            # Fallback to the event_id provided in the command itself if not found in messages
+            event_id_of_last_message_in_summary_batch = command.last_event_id_in_messages
+            logger.info(f"SummarizationSvc: [{room_id}] Using last_event_id_in_messages from command as fallback: {event_id_of_last_message_in_summary_batch}")
+
+
         if not event_id_of_last_message_in_summary_batch:
             # This case should ideally be handled by the tool sending the command,
             # ensuring messages_to_summarize is not empty or providing a fallback.

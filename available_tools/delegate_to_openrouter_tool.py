@@ -66,7 +66,8 @@ class DelegateToOpenRouterTool(AbstractTool):
         tool_call_id: Optional[str],
         llm_provider_info: Dict[str, Any],
         conversation_history_snapshot: List[Dict[str, Any]],
-        last_user_event_id: Optional[str]
+        last_user_event_id: Optional[str],
+        db_path: Optional[str] = None # Added to accept db_path
     ) -> ToolResult:
         logger.info(f"DelegateToOpenRouterTool: Executing for room {room_id}, call_id {tool_call_id}")
 

@@ -11,9 +11,10 @@ from available_tools.delegate_to_openrouter_tool import DELEGATED_OPENROUTER_RES
 logger = logging.getLogger(__name__)
 
 class ToolExecutionService:
-    def __init__(self, message_bus: MessageBus, tool_registry: ToolRegistry):
+    def __init__(self, message_bus: MessageBus, tool_registry: ToolRegistry, db_path: str = "matrix_bot_soa.db"):
         self.bus = message_bus
         self.tool_registry = tool_registry
+        self.db_path = db_path
         self._stop_event = asyncio.Event()
 
     async def _handle_execute_tool_request(self, event: ExecuteToolRequest):
@@ -47,6 +48,7 @@ class ToolExecutionService:
         try:
             tool_result: ToolResult = await tool.execute(
                 room_id=event.room_id,
+                db_path=self.db_path,
                 arguments=event.tool_call.function.arguments, # Corrected: Access arguments from tool_call.function
                 tool_call_id=tool_call_id,
                 llm_provider_info={

@@ -36,7 +36,8 @@ class ReactToMessageTool(AbstractTool):
         tool_call_id: Optional[str],
         llm_provider_info: Dict[str, Any],
         conversation_history_snapshot: List[Dict[str, Any]],
-        last_user_event_id: Optional[str]
+        last_user_event_id: Optional[str],
+        db_path: Optional[str] = None # Added to accept db_path
     ) -> ToolResult:
         target_event_id_arg = arguments.get("target_event_id")
         reaction_key = arguments.get("reaction_key")

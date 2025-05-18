@@ -98,13 +98,21 @@ class MatrixGatewayService:
 
     async def _command_worker(self):
         while not self._stop_event.is_set():
+            item_retrieved = False
             try:
                 func, args, kwargs = await self._command_queue.get()
+                item_retrieved = True # Mark that an item was successfully retrieved
                 await func(*args, **kwargs)
+            except asyncio.CancelledError:
+                logger.info("Gateway: Command worker task cancelled during get().")
+                # If cancelled during get(), item_retrieved remains False
+                break # Exit loop if worker is cancelled
             except Exception as e:
                 logger.error(f"Gateway: Error in command worker: {e}")
+                # If an error occurs after get() but during func execution, item_retrieved is True
             finally:
-                self._command_queue.task_done()
+                if item_retrieved: # Only call task_done if an item was processed or attempted
+                    self._command_queue.task_done()
 
     async def _enqueue_command(self, func, *args, **kwargs):
         await self._command_queue.put((func, args, kwargs))

@@ -3,61 +3,35 @@ import os
 from typing import Dict, Any, List, Optional
 
 from tool_base import AbstractTool, ToolResult
-from event_definitions import BaseEvent # Assuming RequestAISummaryCommand will be a BaseEvent
-# We need to define RequestAISummaryCommand in event_definitions.py
-# For now, let's create a placeholder or assume it exists.
-
-# Placeholder for the command, proper definition should be in event_definitions.py
-class RequestAISummaryCommand(BaseEvent):
-    event_type: str = "request_ai_summary_command"
-    room_id: str
-    force_update: bool = False
-    messages_to_summarize: Optional[List[Dict[str, Any]]] = None # Changed from List[str]
-
-# Assuming database.py has a get_summary function
-# This might need to be adjusted if database.py is not in the same directory or path
-# For now, we assume it can be imported directly if it's in the Python path.
-# try:
-#     import database
-# except ImportError:
-#     # This is a fallback if direct import fails, 
-#     # depending on project structure, a more robust import might be needed.
-#     logging.warning("ManageChannelSummaryTool: Could not import 'database' module directly.")
-#     # A mock or dummy database object could be used for linting/type-checking if needed
-#     class MockDB:
-#         def get_summary(self, room_id: str) -> Optional[tuple[Optional[str], Optional[str]]]:
-#             return None, None
-#     database = MockDB()
+from event_definitions import RequestAISummaryCommand, HistoricalMessage # Updated imports
 
 import database # Use absolute import assuming root is in PYTHONPATH
 
 logger = logging.getLogger(__name__)
 
 class ManageChannelSummaryTool(AbstractTool):
-    """Manages the persistent summary of the current conversation channel."""
+    """Tool to manage channel summaries, either by requesting an update or fetching the current one."""
 
     def get_definition(self) -> Dict[str, Any]:
         return {
             "type": "function",
             "function": {
                 "name": "manage_channel_summary",
-                "description": "Manages the persistent summary of the current conversation channel. Use 'request_update' to ask for the summary to be updated with recent conversation. Use 'get_current' to retrieve the latest saved summary.",
+                "description": "Manages the summary for the current channel. Can request an AI-generated update or fetch the existing summary.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "action": {
-                            "type": "string", 
+                            "type": "string",
                             "enum": ["request_update", "get_current"],
                             "description": "The action to perform: 'request_update' to trigger a new summary generation, or 'get_current' to fetch the existing one."
                         },
-                        # room_id is implicitly available to the execute method, so not needed as an LLM param.
-                        # However, the spec asks for it. Let's keep it for now.
-                        "room_id": {
+                        "room_id": { # Optional: LLM might provide it, but tool should use context room_id
                             "type": "string",
-                            "description": "The ID of the room for which to manage the summary. This should match the current room."
+                            "description": "Optional: The ID of the room for which to manage the summary. If provided, it should match the current room context."
                         }
                     },
-                    "required": ["action", "room_id"]
+                    "required": ["action"]
                 }
             }
         }
@@ -65,6 +39,7 @@ class ManageChannelSummaryTool(AbstractTool):
     async def execute(
         self,
         room_id: str, # This is the actual room_id from the context
+        db_path: str, # Injected by ToolExecutionService
         arguments: Dict[str, Any],
         tool_call_id: Optional[str],
         llm_provider_info: Dict[str, Any],
@@ -72,20 +47,36 @@ class ManageChannelSummaryTool(AbstractTool):
         last_user_event_id: Optional[str]
     ) -> ToolResult:
         action = arguments.get("action")
-        llm_provided_room_id = arguments.get("room_id")
-
-        # Optional: Validate llm_provided_room_id against the context room_id
-        if llm_provided_room_id and llm_provided_room_id != room_id:
-            logger.warning(f"ManageChannelSummaryTool: LLM provided room_id '{llm_provided_room_id}' does not match context room_id '{room_id}'. Using context room_id.")
-            # Decide if this is a failure or just a warning. For now, proceed with context room_id.
+        # llm_provided_room_id = arguments.get("room_id") # Can be logged or validated if needed
 
         if action == "request_update":
-            # The conversation_history_snapshot is the most up-to-date history available to the tool.
-            # This is what should be summarized.
+            messages_for_summary_cmd: List[HistoricalMessage] = []
+            last_event_id_in_snapshot: Optional[str] = None
+            for msg_obj in conversation_history_snapshot: # Changed variable name for clarity
+                try:
+                    hist_msg: HistoricalMessage
+                    if isinstance(msg_obj, HistoricalMessage):
+                        hist_msg = msg_obj
+                    else:
+                        # Ensure msg_obj is a dict before attempting to unpack it
+                        if not isinstance(msg_obj, dict):
+                            logger.warning(f"ManageChannelSummaryTool: Skipping non-dict message: {type(msg_obj)}")
+                            continue
+                        hist_msg = HistoricalMessage(**msg_obj)
+                    
+                    messages_for_summary_cmd.append(hist_msg)
+
+                    # Access event_id directly from the HistoricalMessage object
+                    if hist_msg.role == "user" and hasattr(hist_msg, 'event_id') and hist_msg.event_id:
+                        last_event_id_in_snapshot = hist_msg.event_id
+                except Exception as e:
+                    logger.warning(f"ManageChannelSummaryTool: Could not convert or process message: {msg_obj}. Error: {e}")
+            
             summary_command = RequestAISummaryCommand(
                 room_id=room_id, 
-                force_update=True, # LLM explicitly requested an update
-                messages_to_summarize=conversation_history_snapshot
+                force_update=True, 
+                messages_to_summarize=messages_for_summary_cmd,
+                last_event_id_in_messages=last_event_id_in_snapshot or last_user_event_id # Fallback
             )
             return ToolResult(
                 status="success",
@@ -94,23 +85,29 @@ class ManageChannelSummaryTool(AbstractTool):
             )
         elif action == "get_current":
             try:
-                summary_text, _ = database.get_summary(room_id) # Assuming get_summary returns (text, last_event_id) or (None, None)
+                summary_tuple = database.get_summary(db_path, room_id) # Use injected db_path
+                summary_text = summary_tuple[0] if summary_tuple else None
             except Exception as e:
                 logger.error(f"ManageChannelSummaryTool: Error calling database.get_summary for room {room_id}: {e}")
                 return ToolResult(
                     status="failure",
-                    result_for_llm_history=f"[Tool manage_channel_summary(action=get_current) failed: Error accessing summary data.]",
-                    error_message=f"Failed to retrieve summary from database: {e}"
+                    result_for_llm_history=f"[Tool manage_channel_summary(action=get_current) failed: Error accessing database for room {room_id}.]",
+                    error_message=f"Database error fetching summary for room {room_id}: {str(e)}"
                 )
             
-            return ToolResult(
-                status="success",
-                result_for_llm_history=f"[Tool manage_channel_summary(action=get_current) executed: Current channel summary is: '{summary_text or 'Not available'}']"
-                # No data_for_followup_llm needed here, the summary is in the history.
-            )
+            if summary_text:
+                return ToolResult(
+                    status="success",
+                    result_for_llm_history=f"[Tool manage_channel_summary(action=get_current) executed: Current channel summary is: '{summary_text}']"
+                )
+            else:
+                return ToolResult(
+                    status="success",
+                    result_for_llm_history="[Tool manage_channel_summary(action=get_current) executed: Current channel summary is: 'Not available']"
+                )
         else:
             return ToolResult(
                 status="failure",
-                result_for_llm_history=f"[Tool manage_channel_summary failed: Invalid action '{action}'. Must be 'request_update' or 'get_current'.]",
-                error_message=f"Invalid action specified: {action}. Allowed actions are 'request_update' or 'get_current'."
+                result_for_llm_history=f"[Tool manage_channel_summary failed: Invalid action '{action}']",
+                error_message=f"Invalid action specified: {action}. Must be 'request_update' or 'get_current'."
             )

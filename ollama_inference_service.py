@@ -119,5 +119,5 @@ class OllamaInferenceService:
         logger.info("OllamaInferenceService: Stop requested.")
         self._stop_event.set()
         if self._client:
-            await self._client.close()
+            await self._client.aclose() # Changed from close() to aclose()
         logger.info("OllamaInferenceService: Ollama client closed.")

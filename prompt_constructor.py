@@ -58,7 +58,7 @@ def get_formatted_system_prompt(
     )
 
 def build_messages_for_ai(
-    historical_messages: List[Dict[str, Any]],
+    historical_messages: List[Any], # Allow both dict and HistoricalMessage
     current_batched_user_inputs: List[Dict[str, str]],
     bot_display_name: str,
     channel_summary: Optional[str] = None,
@@ -69,6 +69,7 @@ def build_messages_for_ai(
     """
     Builds the message list for the AI, including system prompt, historical messages, and current user input.
     Handles OpenAI tool call message structure quirks and ensures event_id context is provided.
+    Accepts historical_messages as a list of either dictionaries or HistoricalMessage objects.
     """
     messages_for_ai: List[Dict[str, Any]] = []
     if include_system_prompt:
@@ -90,43 +91,39 @@ def build_messages_for_ai(
                 )
             })
 
-    for msg in historical_messages:
-        ai_msg: Dict[str, Any] = {"role": msg["role"]}
-        
-        # Content is usually present, but can be None for assistant messages with only tool_calls
-        if "content" in msg and msg["content"] is not None:
-            ai_msg["content"] = msg["content"]
-        # If role is assistant and there are no tool_calls, ensure content is at least an empty string.
-        # If there are tool_calls, content can be None (OpenAI prefers it this way if there's no text part).
-        elif msg["role"] == "assistant":
-            if not msg.get("tool_calls"):
-                ai_msg["content"] = "" 
-            else: # Has tool_calls
-                if "content" in msg and msg["content"] is not None: # If content is explicitly provided (e.g. text + tool_call)
-                    ai_msg["content"] = msg["content"]
-                else: # No explicit content, only tool_calls
-                    ai_msg["content"] = None # Set to None as per OpenAI recommendation
+    for msg_item in historical_messages:
+        role = getattr(msg_item, 'role', msg_item.get('role') if isinstance(msg_item, dict) else None)
+        content = getattr(msg_item, 'content', msg_item.get('content') if isinstance(msg_item, dict) else None)
+        name = getattr(msg_item, 'name', msg_item.get('name') if isinstance(msg_item, dict) else None)
+        tool_calls = getattr(msg_item, 'tool_calls', msg_item.get('tool_calls') if isinstance(msg_item, dict) else None)
+        tool_call_id = getattr(msg_item, 'tool_call_id', msg_item.get('tool_call_id') if isinstance(msg_item, dict) else None)
 
-        if "name" in msg and msg["name"] is not None: # Ensure name is not None
-            ai_msg["name"] = msg["name"]
-        
-        if msg["role"] == "assistant" and "tool_calls" in msg and msg["tool_calls"] is not None:
-            ai_msg["tool_calls"] = msg["tool_calls"]
-            # If content became None due to tool_calls, and it wasn't explicitly set, ensure it's handled.
-            # OpenAI API states: "content is required for all messages except for messages with role assistant that have tool_calls."
-            # So if content is None and there are tool_calls, we can omit content or keep it as None.
-            # The current logic correctly sets content to None if only tool_calls are present.
-            # If content was an empty string and tool_calls are present, it should remain an empty string if that was intended.
-            # The key is that `content` should not be missing if `tool_calls` is not present for an assistant message.
+        if role is None:
+            logger.warning(f"Skipping message due to missing role: {msg_item}")
+            continue
 
-        if msg["role"] == "tool":
-            if "tool_call_id" in msg:
-                ai_msg["tool_call_id"] = msg["tool_call_id"]
-            # Content for role:tool is mandatory. Ensure it's present.
-            if "content" not in msg or msg["content"] is None:
-                ai_msg["content"] = "[Tool execution result not available]" # Provide a default
+        ai_msg: Dict[str, Any] = {"role": role}
+
+        if content is not None:
+            ai_msg["content"] = content
+        elif role == "assistant":
+            if not tool_calls:
+                ai_msg["content"] = ""
             else:
-                ai_msg["content"] = msg["content"] # Ensure content is passed if available
+                ai_msg["content"] = None # OpenAI prefers None if only tool_calls
+
+        if name is not None:
+            ai_msg["name"] = name
+        
+        if role == "assistant" and tool_calls is not None:
+            ai_msg["tool_calls"] = tool_calls
+        
+        if role == "tool":
+            if tool_call_id is not None:
+                ai_msg["tool_call_id"] = tool_call_id
+            if content is None: # Content for role:tool is mandatory
+                ai_msg["content"] = "[Tool execution result not available]"
+            # else content is already set
 
         messages_for_ai.append(ai_msg)
 
@@ -158,14 +155,46 @@ SUMMARY_GENERATION_PROMPT_TEMPLATE = (
 PREVIOUS_SUMMARY_CONTEXT_TEMPLATE = "A previous summary of the conversation up to this point was:\n{previous_summary}\n---\nBased on this, summarize the *new* messages that follow.\n"
 
 def build_summary_generation_payload(
-    messages_to_summarize: List[Dict[str, str]],
+    messages_to_summarize: List[Any], # Changed type hint to List[Any] for flexibility
     bot_display_name: str,
     previous_summary: Optional[str] = None
 ) -> List[Dict[str, str]]:
     """
     Builds the prompt for the AI to generate a summary, including previous summary context if available.
+    Handles both dict and HistoricalMessage objects in messages_to_summarize.
     """
-    transcript = "".join(f"{msg['name']}: {msg['content']}\n" for msg in messages_to_summarize)
+    transcript_parts = []
+    for msg in messages_to_summarize:
+        # HistoricalMessage objects have 'role' and 'content'. 'name' might not always be present
+        # or relevant for all roles in the context of summarization.
+        # We'll prioritize 'name' if available (e.g., for user/assistant messages),
+        # otherwise, use the role.
+        # Content is the primary part of the message for summarization.
+        
+        role = getattr(msg, 'role', msg.get('role') if isinstance(msg, dict) else 'unknown')
+        name_attribute = getattr(msg, 'name', msg.get('name') if isinstance(msg, dict) else None)
+        
+        # Prefer name if available, otherwise use role as the identifier.
+        # For system messages, 'name' might be None.
+        identifier = name_attribute if name_attribute else role.capitalize()
+
+        content = getattr(msg, 'content', msg.get('content') if isinstance(msg, dict) else '')
+
+        # Avoid adding empty or None content to the transcript
+        if content and content.strip():
+            transcript_parts.append(f"{identifier}: {content}\n")
+        elif role == "assistant" and hasattr(msg, 'tool_calls') and getattr(msg, 'tool_calls'):
+            # Include a placeholder for tool calls if content is empty
+            tool_calls = getattr(msg, 'tool_calls')
+            # Create a simplified representation of tool calls
+            tool_call_summary = []
+            for tc in tool_calls:
+                func_name = getattr(getattr(tc, 'function', None), 'name', 'unknown_function')
+                tool_call_summary.append(f"call to {func_name}")
+            if tool_call_summary:
+                transcript_parts.append(f"{identifier}: [Used tool(s): {', '.join(tool_call_summary)}]\n")
+
+    transcript = "".join(transcript_parts)
     previous_summary_context_text = PREVIOUS_SUMMARY_CONTEXT_TEMPLATE.format(previous_summary=previous_summary) if previous_summary else ""
     prompt_content = SUMMARY_GENERATION_PROMPT_TEMPLATE.format(
         bot_name=bot_display_name,

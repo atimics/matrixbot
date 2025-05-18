@@ -38,9 +38,10 @@ class AIInferenceService:
         # Preprocess messages_payload to ensure ToolCall objects are JSON serializable
         processed_messages_payload = []
         for message in messages_payload:
-            if message.get("role") == "assistant" and "tool_calls" in message and message["tool_calls"] is not None:
+            new_message = message.copy() # Work on a copy
+            if new_message.get("role") == "assistant" and "tool_calls" in new_message and new_message["tool_calls"] is not None:
                 processed_tool_calls = []
-                for tc in message["tool_calls"]:
+                for tc in new_message["tool_calls"]:
                     # Ensure tc is a dictionary, as it might be a Pydantic model (ToolCall)
                     tc_dict = tc if isinstance(tc, dict) else tc.model_dump(mode='json')
                     
@@ -48,11 +49,11 @@ class AIInferenceService:
                     arguments_data = function_data.get("arguments")
 
                     # Ensure arguments are a JSON string for OpenRouter
-                    if isinstance(arguments_data, dict):
+                    if isinstance(arguments_data, dict) or isinstance(arguments_data, list): # Added list
                         stringified_arguments = json.dumps(arguments_data)
-                    elif arguments_data is None: # Handle null arguments
-                        stringified_arguments = json.dumps({}) # Or an empty string, depending on API expectation
-                    else: # Assumed to be a string already or other primitive
+                    elif arguments_data is None: 
+                        stringified_arguments = json.dumps({}) 
+                    else: 
                         stringified_arguments = str(arguments_data)
 
                     processed_tool_calls.append({
@@ -60,12 +61,16 @@ class AIInferenceService:
                         "type": tc_dict.get("type"),
                         "function": {
                             "name": function_data.get("name"),
-                            "arguments": stringified_arguments # Ensure arguments are stringified JSON
+                            "arguments": stringified_arguments
                         }
                     })
-                processed_messages_payload.append({**message, "tool_calls": processed_tool_calls})
-            else:
-                processed_messages_payload.append(message)
+                new_message["tool_calls"] = processed_tool_calls
+                # Explicitly set content to None if only tool_calls are present and content is not already set (or is empty string)
+                # This is a safeguard; primary logic for this should be upstream when message is created.
+                if not new_message.get("content"): # If content is None or empty string
+                    new_message["content"] = None
+            
+            processed_messages_payload.append(new_message)
 
         payload_data = {"model": model_name, "messages": processed_messages_payload}
         if tools:
@@ -180,7 +185,7 @@ class AIInferenceService:
     async def run(self) -> None:
         logger.info("AIInferenceService: Starting...")
         # Access default from model_fields for subscription
-        self.bus.subscribe(OpenRouterInferenceRequestEvent.model_fields['event_type'].default, self._handle_inference_request)  # Removed await
+        self.bus.subscribe(OpenRouterInferenceRequestEvent.model_fields['event_type'].default, self._handle_inference_request)
         await self._stop_event.wait()
         logger.info("AIInferenceService: Stopped.")
 
