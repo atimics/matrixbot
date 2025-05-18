@@ -99,9 +99,12 @@ class RoomLogicService:
             logger.info(f"RoomLogic: [{room_id}] Mention detected.")
             activate_event = ActivateListeningEvent(
                 room_id=room_id,
-                triggering_event_id=event.event_id
+                triggering_event_id=event.event_id,
+                triggering_sender_display_name=event.sender_display_name,
+                triggering_message_body=event.body
             )
             await self.bus.publish(activate_event)
+            return # The _handle_activate_listening will handle adding this message if needed
 
         config = self.room_activity_config.get(room_id) # Re-fetch in case it was just created
         if config and config.get('is_active_listening'):
@@ -162,6 +165,25 @@ class RoomLogicService:
             'max_interval_no_activity_cycles': 0,
             'decay_task': asyncio.create_task(self._manage_room_decay(room_id))
         })
+
+        # If activation was triggered by a message, add it to the batch and schedule processing
+        if event.triggering_message_body and event.triggering_sender_display_name:
+            logger.info(f"RoomLogic: [{room_id}] Activation by message. Adding triggering message to batch.")
+            config['pending_messages_for_batch'].append({
+                "name": event.triggering_sender_display_name,
+                "content": event.triggering_message_body,
+                "event_id": event.triggering_event_id
+            })
+            # Ensure batch processing is scheduled for this message
+            old_batch_task = config.get('batch_response_task')
+            if old_batch_task and not old_batch_task.done():
+                old_batch_task.cancel()
+                try: await old_batch_task
+                except asyncio.CancelledError: pass
+            config['batch_response_task'] = asyncio.create_task(
+                self._delayed_batch_processing_publisher(room_id, self.batch_delay)
+            )
+
         await self._update_global_presence()
         logger.info(f"RoomLogic: [{room_id}] Listening activated/reset. Mem size: {len(config['memory'])}. Last DB summary event: {config.get('last_event_id_in_db_summary')}")
 

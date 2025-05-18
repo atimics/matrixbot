@@ -52,7 +52,10 @@ class MatrixGatewayService:
         # Wait if we are currently rate limited
         now = asyncio.get_event_loop().time()
         if self._rate_limit_until > now:
-            await asyncio.sleep(self._rate_limit_until - now)
+            sleep_duration = self._rate_limit_until - now
+            logger.info(f"Gateway: Rate limit active. Sleeping for {sleep_duration:.3f}s until {self._rate_limit_until:.3f}.")
+            await asyncio.sleep(sleep_duration)
+            logger.info(f"Gateway: Finished rate limit sleep. Proceeding with Matrix call for {coro_func.__name__}.")
         try:
             return await coro_func(*args, **kwargs)
         except Exception as e:
