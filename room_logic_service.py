@@ -417,4 +417,182 @@ class RoomLogicService:
 
                     self.pending_tool_calls_for_ai_turn[ai_turn_key] = {
                         "room_id": room_id,
-                        "conversation_history_at_tool_call_time": history_snapshot_for
+                        "conversation_history_at_tool_call_time": history_snapshot_for_tools
+                    }
+
+                # Publish tool calls
+                for tool_call in tool_calls_from_llm:
+                    await self.bus.publish(ExecuteToolRequest(
+                        room_id=room_id,
+                        tool_call=tool_call,
+                        turn_request_id=ai_turn_key
+                    ))
+
+            # II. If no tool calls, handle text response
+            elif text_response_content:
+                assistant_acted_this_turn = True
+                assistant_message_for_memory["content"] = text_response_content
+                await self.bus.publish(SendReplyCommand(
+                    room_id=room_id,
+                    text=text_response_content,
+                    reply_to_event_id=last_user_event_id_in_batch
+                ))
+
+        # If assistant acted, add to memory
+        if assistant_acted_this_turn:
+            short_term_memory.append(assistant_message_for_memory)
+            if len(short_term_memory) > self.short_term_memory_items:
+                short_term_memory.pop(0)  # Maintain memory size limit
+
+        # Update the room's memory in the config
+        config['memory'] = short_term_memory
+
+        # Check if a summary is needed
+        if config.get('new_turns_since_last_summary', 0) >= self.short_term_memory_items:
+            await self._generate_and_store_summary(room_id)
+
+    async def _generate_and_store_summary(self, room_id: str):
+        config = self.room_activity_config.get(room_id)
+        if not config:
+            logger.error(f"RLS: [{room_id}] Error - No config found for room in _generate_and_store_summary")
+            return
+
+        short_term_memory = config.get('memory', [])
+        if not short_term_memory:
+            logger.info(f"RLS: [{room_id}] No short term memory to summarize.")
+            return
+
+        summary_payload = prompt_constructor.build_summary_payload(short_term_memory)
+        turn_request_id = str(uuid.uuid4())
+
+        model_to_use: str
+        EventClass: type[AIInferenceRequestEvent] # Base type for annotation
+        current_provider_name = self.primary_llm_provider
+
+        if current_provider_name == "ollama":
+            model_to_use = self.ollama_summary_model
+            EventClass = OllamaInferenceRequestEvent # type: ignore
+        else: # Default to openrouter
+            model_to_use = self.openrouter_summary_model
+            EventClass = OpenRouterInferenceRequestEvent # type: ignore
+
+        summary_request = EventClass(
+            request_id=turn_request_id,
+            reply_to_service_event="ai_summary_response_received",
+            original_request_payload={"room_id": room_id},
+            model_name=model_to_use,
+            messages_payload=summary_payload,
+            tools=[],  # No tools needed for summary
+            tool_choice="none"
+        )
+        await self.bus.publish(summary_request)
+
+    async def _handle_ai_summary_response(self, response_event: AIInferenceResponseEvent):
+        room_id = response_event.original_request_payload.get("room_id")
+        if not room_id:
+            logger.error("RLS: Error - AIResponse missing room_id in original_request_payload")
+            return
+
+        config = self.room_activity_config.get(room_id)
+        if not config:
+            logger.error(f"RLS: [{room_id}] Error - No config found for room after AIResponse")
+            return
+
+        if response_event.success:
+            summary_text = response_event.text_response
+            if summary_text:
+                last_event_id_in_summary = config['memory'][-1]["event_id"] if config['memory'] else None
+                database.store_summary(self.db_path, room_id, summary_text, last_event_id_in_summary)
+                config['new_turns_since_last_summary'] = 0
+                logger.info(f"RLS: [{room_id}] Summary stored successfully.")
+            else:
+                logger.warning(f"RLS: [{room_id}] AIResponse for summary was successful but no text was returned.")
+        else:
+            logger.error(f"RLS: [{room_id}] AIResponse for summary failed. Error: {response_event.error_message}")
+
+    async def _manage_room_decay(self, room_id: str):
+        config = self.room_activity_config.get(room_id)
+        if not config:
+            logger.error(f"RLS: [{room_id}] Error - No config found for room in _manage_room_decay")
+            return
+
+        while config.get('is_active_listening'):
+            await asyncio.sleep(config['current_interval'])
+            if not config.get('is_active_listening'):
+                break
+
+            time_since_last_message = time.time() - config['last_message_timestamp']
+            if time_since_last_message >= config['current_interval']:
+                config['max_interval_no_activity_cycles'] += 1
+                if config['max_interval_no_activity_cycles'] >= self.inactivity_cycles:
+                    config['is_active_listening'] = False
+                    await self._update_global_presence()
+                    logger.info(f"RLS: [{room_id}] Listening deactivated due to inactivity.")
+                    break
+
+            config['current_interval'] = min(config['current_interval'] * 2, self.max_interval)
+
+    async def _handle_tool_execution_response(self, response: ToolExecutionResponse):
+        room_id = response.room_id
+        turn_request_id = response.turn_request_id
+        tool_response = response.tool_response
+
+        if not room_id or not turn_request_id:
+            logger.error("RLS: Error - ToolExecutionResponse missing room_id or turn_request_id")
+            return
+
+        config = self.room_activity_config.get(room_id)
+        if not config:
+            logger.error(f"RLS: [{room_id}] Error - No config found for room after ToolExecutionResponse")
+            return
+
+        pending_tool_call_info = self.pending_tool_calls_for_ai_turn.get(turn_request_id)
+        if not pending_tool_call_info:
+            logger.error(f"RLS: [{room_id}] Error - No pending tool call info found for turn_request_id: {turn_request_id}")
+            return
+
+        # Update tool states in the room's config
+        tool_states = config.get('tool_states', {})
+        tool_states[tool_response.tool_name] = tool_response.tool_output
+        config['tool_states'] = tool_states
+
+        # Prepare follow-up AI request with updated tool states
+        follow_up_payload = prompt_constructor.build_follow_up_payload(
+            pending_tool_call_info['conversation_history_at_tool_call_time'],
+            tool_response
+        )
+
+        follow_up_request = AIInferenceRequestEvent(
+            request_id=str(uuid.uuid4()),
+            reply_to_service_event="ai_chat_response_received",
+            original_request_payload={
+                "room_id": room_id,
+                "is_follow_up_after_tool_execution": True,
+                "turn_request_id": turn_request_id
+            },
+            model_name=self.openrouter_chat_model,
+            messages_payload=follow_up_payload,
+            tools=self.tool_registry.get_all_tool_definitions(),
+            tool_choice="auto"
+        )
+        await self.bus.publish(follow_up_request)
+
+    async def run(self):
+        """Main run loop for the service, subscribing to events."""
+        self.bus.subscribe(MatrixMessageReceivedEvent, self._handle_matrix_message)
+        self.bus.subscribe(ActivateListeningEvent, self._handle_activate_listening)
+        self.bus.subscribe(ProcessMessageBatchCommand, self._handle_process_message_batch)
+        self.bus.subscribe(AIInferenceResponseEvent, self._handle_ai_chat_response) # Removed filter_event_type and await
+        self.bus.subscribe(AIInferenceResponseEvent, self._handle_ai_summary_response) # Removed filter_event_type and await
+        self.bus.subscribe(BotDisplayNameReadyEvent, self._handle_bot_display_name_ready)
+        self.bus.subscribe(ToolExecutionResponse, self._handle_tool_execution_response)
+        # Keep the service running until a stop is requested
+        await self._stop_event.wait()
+
+    async def stop(self):
+        """Stops the service."""
+        logger.info("RoomLogicService: Stop requested.")
+        self._stop_event.set()
+        # Unsubscribe from all events
+        await self.bus.shutdown() # Replaced unsubscribe_all with shutdown
+        logger.info("RoomLogicService: Unsubscribed from all events.")
