@@ -1,6 +1,7 @@
 import asyncio
 import os
 import logging
+import json # ADDED
 from typing import Optional
 from nio import (
     AsyncClient,
@@ -9,7 +10,9 @@ from nio import (
     LoginResponse,
     ProfileGetResponse,
     RoomGetEventResponse, # Added for fetching original event
-    RoomGetEventError # Import RoomGetEventError
+    RoomGetEventError, # Import RoomGetEventError
+    WhoamiResponse, # Added
+    WhoamiError # Added
 )
 from nio.exceptions import LocalProtocolError # Import specific known nio exceptions
 from dotenv import load_dotenv, set_key, find_dotenv # Modified import
@@ -200,53 +203,58 @@ class MatrixGatewayService:
         await self._enqueue_command(self._send_reply_impl, command)
 
     async def _send_reply_impl(self, command: SendReplyCommand):
+        logger.info(f"Gateway: Attempting to send reply for command: {command.event_id}, Room: {command.room_id}, ReplyTo: {command.reply_to_event_id}, Text: '{command.text[:75]}...'") # MODIFIED for more text and info
         if not self.client or not self.client.logged_in:
-            logger.error("Gateway: Client not ready, cannot send reply.")
+            logger.error(f"Gateway: Client not ready for SendReplyCommand {command.event_id}, cannot send reply.") # ADDED command event_id
             return
 
         new_message_plain_text = command.text
-        final_body_for_send = new_message_plain_text # Default to new message only
+        final_body_for_send = new_message_plain_text
+        original_event_text_for_fallback_html = "" # ADDED for clarity
 
         try:
-            # Attempt to fetch the original event to include in the fallback
+            logger.debug(f"Gateway [ReplyCmd:{command.event_id}]: Fetching original event {command.reply_to_event_id} for reply context in room {command.room_id}.") # ADDED command event_id and room
             try:
                 original_event_response = await self.client.room_get_event(
                     command.room_id, command.reply_to_event_id
                 )
-                # Check if the response is successful and has the event
                 if isinstance(original_event_response, RoomGetEventResponse) and original_event_response.event:
                     original_event = original_event_response.event
                     original_sender = original_event.sender
                     original_body = getattr(original_event, 'body', None)
+                    logger.debug(f"Gateway [ReplyCmd:{command.event_id}]: Original event fetched. Sender: {original_sender}, Body is present: {original_body is not None}") # ADDED command event_id
 
                     if original_sender and original_body:
-                        # Create a quote of the original message
-                        # Ensure original_body is a string
                         original_body_str = str(original_body)
                         original_body_lines = original_body_str.splitlines()
                         quoted_original_body = "\n".join([f"> {line}" for line in original_body_lines])
                         final_body_for_send = f"{quoted_original_body}\n\n{new_message_plain_text}"
+                        original_event_html = markdown.markdown(original_body_str, extensions=['nl2br'])
+                        original_event_text_for_fallback_html = f"<mx-reply><blockquote><a href=\"https://matrix.to/#/{command.room_id}/{command.reply_to_event_id}\">In reply to</a> <a href=\"https://matrix.to/#/{original_event.sender}\">{original_event.sender}</a>:<br>{original_event_html}</blockquote></mx-reply>"
+                        logger.debug(f"Gateway [ReplyCmd:{command.event_id}]: Prepared quoted body and HTML fallback for reply.") # ADDED command event_id
                     else:
-                        logger.warning(f"Gateway: Original event {command.reply_to_event_id} fetched but lacks sender or body for fallback.")
+                        logger.warning(f"Gateway [ReplyCmd:{command.event_id}]: Original event {command.reply_to_event_id} fetched but lacks sender or body for fallback quote.")
+                elif isinstance(original_event_response, RoomGetEventError):
+                    logger.warning(f"Gateway [ReplyCmd:{command.event_id}]: Failed to fetch original event {command.reply_to_event_id} (RoomGetEventError). Error: {original_event_response.message}, Status: {original_event_response.status_code}")
                 else:
-                    logger.warning(f"Gateway: Failed to fetch details of original event {command.reply_to_event_id} for fallback reply. Response: {original_event_response}")
+                    logger.warning(f"Gateway [ReplyCmd:{command.event_id}]: Failed to fetch details of original event {command.reply_to_event_id} for fallback reply. Response: {original_event_response}")
             except Exception as e:
-                logger.error(f"Gateway: Unexpected error fetching event {command.reply_to_event_id} for reply: {type(e).__name__} - {e}")
+                logger.error(f"Gateway [ReplyCmd:{command.event_id}]: Unexpected error fetching event {command.reply_to_event_id} for reply: {type(e).__name__} - {e}", exc_info=True)
 
-            # HTML version of the new message content
             html_body_content = markdown.markdown(new_message_plain_text, extensions=['nl2br', 'fenced_code', 'codehilite'])
 
             content = {
                 "msgtype": "m.text",
-                "body": final_body_for_send,  # Plain text: quoted original + new message
+                "body": final_body_for_send,
                 "format": "org.matrix.custom.html",
-                "formatted_body": html_body_content,  # HTML: only the new message
+                "formatted_body": f"{original_event_text_for_fallback_html}{html_body_content}",
                 "m.relates_to": {
                     "m.in_reply_to": {
                         "event_id": command.reply_to_event_id
                     }
                 }
             }
+            logger.debug(f"Gateway [ReplyCmd:{command.event_id}]: Prepared content for room_send: {json.dumps(content)}") # ADDED json.dumps for better readability
 
             await self._rate_limited_matrix_call(
                 self.client.room_send,
@@ -254,8 +262,9 @@ class MatrixGatewayService:
                 message_type="m.room.message",
                 content=content
             )
+            logger.info(f"Gateway [ReplyCmd:{command.event_id}]: Reply successfully sent to room {command.room_id} in reply to {command.reply_to_event_id}. Text: '{command.text[:75]}...'")
         except Exception as e:
-            logger.error(f"Gateway: Error sending reply to {command.room_id}: {e}")
+            logger.error(f"Gateway [ReplyCmd:{command.event_id}]: Error sending reply to {command.room_id} (ReplyTo: {command.reply_to_event_id}): {type(e).__name__} - {e}", exc_info=True)
 
     async def _handle_set_typing_command(self, command: SetTypingIndicatorCommand):
         await self._enqueue_command(self._set_typing_impl, command)
@@ -394,18 +403,23 @@ class MatrixGatewayService:
                 logger.info("Gateway: Using provided access token. Verifying token...")
                 # Optionally verify token with a simple API call like /account/whoami
                 try:
-                   whoami_response = await self.client.whoami()
-                   if whoami_response.user_id == self.user_id:
-                       logger.info("Gateway: Access token is valid.")
-                       login_success = True # Treat as successful login
+                   whoami_response = await self.client.whoami() # Returns WhoamiResponse or WhoamiError
+                   if isinstance(whoami_response, WhoamiResponse):
+                       if whoami_response.user_id == self.user_id:
+                           logger.info("Gateway: Access token is valid.")
+                           login_success = True # Treat as successful login
+                       else:
+                           logger.error(f"Gateway: Access token seems invalid or for wrong user (response: {whoami_response.user_id}, expected: {self.user_id}).")
+                           return # Exit run method, finally block will handle cleanup
+                   elif isinstance(whoami_response, WhoamiError):
+                       logger.error(f"Gateway: Failed to verify access token. Whoami check failed with WhoamiError: {getattr(whoami_response, 'message', 'Unknown WhoamiError')}")
+                       return # Exit run method, finally block will handle cleanup
                    else:
-                       logger.error(f"Gateway: Access token seems invalid or for wrong user ({whoami_response.user_id} != {self.user_id}).")
-                       await self.client.close()
-                       return
+                       logger.error(f"Gateway: Failed to verify access token. Unexpected whoami response type: {type(whoami_response)}. Response: {whoami_response}")
+                       return # Exit run method, finally block will handle cleanup
                 except Exception as e:
-                    logger.error(f"Gateway: Failed to verify access token. Error: {e}")
-                    await self.client.close()
-                    return
+                    logger.error(f"Gateway: Exception during access token verification: {type(e).__name__} - {e}")
+                    return # Exit run method, finally block will handle cleanup
 
 
             # --- Fetch display name (remains the same) ---

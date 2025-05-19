@@ -17,7 +17,7 @@ class OllamaInferenceService:
         self.api_url = os.getenv("OLLAMA_API_URL", "http://localhost:11434")
         # OLLAMA_KEEP_ALIVE is handled by the ollama library itself if passed during chat/generate
         # self.keep_alive = os.getenv("OLLAMA_KEEP_ALIVE", "5m")
-        self._client = ollama.AsyncClient(host=self.api_url)
+        self._client = ollama.AsyncClient(host=self.api_url) # This is an httpx.AsyncClient
         self._stop_event = asyncio.Event()
         logger.info(f"OllamaInferenceService initialized with API URL: {self.api_url}")
 
@@ -118,12 +118,20 @@ class OllamaInferenceService:
     async def run(self):
         logger.info("OllamaInferenceService: Starting...")
         self.bus.subscribe(OllamaInferenceRequestEvent.model_fields['event_type'].default, self._handle_inference_request)
-        await self._stop_event.wait()
+        
+        try:
+            await self._stop_event.wait()
+        finally:
+            logger.info("OllamaInferenceService: Stop event received, cleaning up...")
+            if self._client: # self._client is an ollama.AsyncClient
+                try:
+                    await self._client.close() # Use the ollama.AsyncClient's close() method
+                    logger.info("OllamaInferenceService: Ollama client session closed.")
+                except Exception as e:
+                    logger.error(f"OllamaInferenceService: Error closing Ollama client session: {e}")
         logger.info("OllamaInferenceService: Stopped.")
 
     async def stop(self):
         logger.info("OllamaInferenceService: Stop requested.")
         self._stop_event.set()
-        if self._client:
-            await self._client.close() # Corrected from aclose()
-        logger.info("OllamaInferenceService: Ollama client closed.") # Corrected log message
+        # The run method's finally block will now handle client closing.

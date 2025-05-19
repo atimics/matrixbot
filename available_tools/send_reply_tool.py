@@ -3,7 +3,7 @@ import json
 import logging
 
 from tool_base import AbstractTool, ToolResult
-from event_definitions import SendMatrixMessageCommand # Changed from SendReplyCommand
+from event_definitions import SendReplyCommand # Changed from SendMatrixMessageCommand
 
 logger = logging.getLogger(__name__)
 
@@ -80,8 +80,8 @@ class SendReplyTool(AbstractTool):
                     error_message="Cannot resolve $event:last_user_message, last_user_event_id is not available."
                 )
 
-        # Use SendMatrixMessageCommand as expected by tests
-        send_command = SendMatrixMessageCommand(
+        # Use SendReplyCommand as it's specifically for replies
+        send_command = SendReplyCommand(
             room_id=room_id,
             text=text,
             reply_to_event_id=resolved_reply_to_event_id

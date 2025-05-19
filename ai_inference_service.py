@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Tuple, Any
 from dotenv import load_dotenv
 
 from message_bus import MessageBus
-from event_definitions import OpenRouterInferenceRequestEvent, OpenRouterInferenceResponseEvent, ToolCall, ToolFunction  # Added ToolCall, ToolFunction
+from event_definitions import OpenRouterInferenceRequestEvent, AIInferenceResponseEvent, ToolCall, ToolFunction, OpenRouterInferenceResponseEvent  # MODIFIED import
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +95,7 @@ class AIInferenceService:
                 response.raise_for_status()  # Raises an HTTPStatusError for 4XX/5XX responses
                 
                 response_json = response.json()
+                logger.info(f"AIS: OpenRouter raw response data: {response_json}") # ADDED
                 
                 if response_json.get("choices"):
                     message = response_json["choices"][0]["message"]
@@ -134,7 +135,6 @@ class AIInferenceService:
         tools_payload = request_event.tools
         tool_choice_payload = request_event.tool_choice if request_event.tool_choice else "auto"
         
-        # No longer need loop.run_in_executor as _get_openrouter_response_async is now async
         success, text_response, tool_calls_data, error_message = await self._get_openrouter_response_async(
             request_event.model_name,
             request_event.messages_payload,
@@ -154,10 +154,8 @@ class AIInferenceService:
                         parsed_arguments = json.loads(arguments_data)
                     except json.JSONDecodeError as e:
                         logger.error(f"Failed to parse tool call arguments JSON: {arguments_data} - Error: {e}")
-                        # Keep arguments as string if parsing fails, or handle error as appropriate
                         parsed_arguments = arguments_data 
                 else:
-                    # If arguments are already a dict (or other type), use as is
                     parsed_arguments = arguments_data
 
                 parsed_tool_calls.append(
@@ -166,20 +164,29 @@ class AIInferenceService:
                         type=tc_data.get("type"),
                         function=ToolFunction(
                             name=function_data.get("name"),
-                            arguments=parsed_arguments # Use parsed arguments
+                            arguments=parsed_arguments
                         )
                     )
                 )
 
-        response_event = OpenRouterInferenceResponseEvent(
+        # Determine the correct response event type
+        ResponseEventClass = AIInferenceResponseEvent # Default
+        if isinstance(request_event, OpenRouterInferenceRequestEvent):
+            ResponseEventClass = OpenRouterInferenceResponseEvent
+        # Add other specific request types here if needed, e.g.:
+        # elif isinstance(request_event, OllamaInferenceRequestEvent):
+        #     ResponseEventClass = OllamaInferenceResponseEvent
+
+        response_event = ResponseEventClass(
             request_id=request_event.request_id,
             original_request_payload=request_event.original_request_payload,
             success=success,
             text_response=text_response,
-            tool_calls=parsed_tool_calls,  # Use parsed Pydantic models
+            tool_calls=parsed_tool_calls,
             error_message=error_message,
-            event_type=request_event.reply_to_service_event  # Pass event_type here
+            response_topic=request_event.reply_to_service_event
         )
+        logger.info(f"AIS: Publishing {ResponseEventClass.__name__} for request {request_event.request_id}. Success: {success}, EventTypeForBus: {response_event.event_type}, ResponseTopicForHandler: {response_event.response_topic}") # MODIFIED logging
         await self.bus.publish(response_event)
 
     async def run(self) -> None:

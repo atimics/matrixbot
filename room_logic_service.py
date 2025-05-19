@@ -18,6 +18,7 @@ from message_bus import MessageBus
 from event_definitions import (
     MatrixMessageReceivedEvent, AIInferenceRequestEvent, AIInferenceResponseEvent,
     OpenRouterInferenceRequestEvent, OllamaInferenceRequestEvent, # Added specific request events
+    OpenRouterInferenceResponseEvent, OllamaInferenceResponseEvent, # ADDED specific response events
     SendMatrixMessageCommand, ProcessMessageBatchCommand, ActivateListeningEvent,
     BotDisplayNameReadyEvent,
     SetTypingIndicatorCommand, SetPresenceCommand,
@@ -340,6 +341,9 @@ class RoomLogicService:
 
 
     async def _handle_ai_chat_response(self, response_event: AIInferenceResponseEvent): # Renamed from _handle_ai_inference_response
+        # Use response_topic for filtering instead of original_request_payload
+        if response_event.response_topic != "ai_chat_response_received": # MODIFIED
+            return
         room_id = response_event.original_request_payload.get("room_id")
         if not room_id:
             logger.error("RLS: Error - AIResponse missing room_id in original_request_payload")
@@ -350,9 +354,11 @@ class RoomLogicService:
             logger.error(f"RLS: [{room_id}] Error - No config found for room after AIResponse")
             return
 
+        logger.info(f"RLS: [{room_id}] Received AI chat response. Request ID: {response_event.request_id}, Success: {response_event.success}")
+
         current_bot_name = self.bot_display_name if isinstance(self.bot_display_name, str) else "ChatBot"
         last_user_event_id_in_batch = response_event.original_request_payload.get("last_user_event_id_in_batch")
-
+        # Ensure bot typing indicator is turned off
         await self.bus.publish(SetTypingIndicatorCommand(room_id=room_id, typing=False))
 
         short_term_memory = config.get('memory', [])
@@ -377,15 +383,22 @@ class RoomLogicService:
                 logger.error(f"RLS: [{room_id}] Error processing pending_batch_for_memory for memory: {e}. Batch: {pending_batch_for_memory}")
 
         llm_provider_for_this_turn = response_event.original_request_payload.get("current_llm_provider", "openrouter")
+        # Define llm_provider_details here
+        llm_provider_details = {
+            "provider_name": llm_provider_for_this_turn,
+            "model_name": response_event.original_request_payload.get("requested_model_name")
+        }
         assistant_message_for_memory: Dict[str, Any] = {"role": "assistant", "name": current_bot_name}
         assistant_acted_this_turn = False
 
         if response_event.success:
             text_response_content = response_event.text_response
             tool_calls_from_llm = response_event.tool_calls
+            logger.info(f"RLS: [{room_id}] AI Response Details - Text: '{text_response_content}', Tool Calls: {tool_calls_from_llm}")
 
             # I. Prioritize Tool Calls
             if tool_calls_from_llm: # Check if tool_calls is present and not empty
+                logger.info(f"RLS: [{room_id}] Processing tool calls: {tool_calls_from_llm}")
                 assistant_acted_this_turn = True
                 if text_response_content:
                     logger.warning(f"RLS: [{room_id}] LLM provided both text_response ('{text_response_content}') and tool_calls. Prioritizing tool_calls. Direct text will be ignored.")
@@ -412,31 +425,53 @@ class RoomLogicService:
                 if not ai_turn_key:
                     logger.error(f"RLS: [{room_id}] AIInferenceResponseEvent missing 'turn_request_id'. Cannot process tool calls reliably.")
                 else:
+                    # Snapshot history *before* this assistant's tool-calling message is added.
                     history_snapshot_for_tools = list(short_term_memory)
-                    current_assistant_turn_message_dict = dict(assistant_message_for_memory)
-
+                    
+                    # Store information needed for follow-up after ALL tools complete
                     self.pending_tool_calls_for_ai_turn[ai_turn_key] = {
                         "room_id": room_id,
-                        "conversation_history_at_tool_call_time": history_snapshot_for_tools
+                        "conversation_history_at_tool_call_time": history_snapshot_for_tools,
+                        "assistant_message_with_tool_calls": dict(assistant_message_for_memory), # Store the full assistant message
+                        "expected_tool_call_ids": [tc.id for tc in tool_calls_from_llm],
+                        "received_tool_responses": [], # To store ToolExecutionResponse objects
+                        "original_ai_response_payload": response_event.original_request_payload # For model, provider, etc.
                     }
+                    logger.info(f"RLS: [{room_id}] Stored pending tool call info for turn_request_id: {ai_turn_key} with {len(tool_calls_from_llm)} expected tools.")
 
-                # Publish tool calls
-                for tool_call in tool_calls_from_llm:
-                    await self.bus.publish(ExecuteToolRequest(
-                        room_id=room_id,
-                        tool_call=tool_call,
-                        turn_request_id=ai_turn_key
-                    ))
+                    # Publish tool calls
+                    for tool_call in tool_calls_from_llm:
+                        execute_request = ExecuteToolRequest(
+                            room_id=room_id,
+                            tool_call=tool_call,
+                            original_request_payload=response_event.original_request_payload,
+                            llm_provider_info=llm_provider_details,
+                            conversation_history_snapshot=history_snapshot_for_tools,
+                            last_user_event_id=last_user_event_id_in_batch
+                        )
+                        logger.info(f"RLS: [{room_id}] Publishing ExecuteToolRequest for tool {tool_call.function.name} (Call ID: {tool_call.id}), Request ID: {execute_request.event_id}") # ADDED
+                        await self.bus.publish(execute_request)
 
             # II. If no tool calls, handle text response
             elif text_response_content:
+                logger.info(f"RLS: [{room_id}] Processing text response: '{text_response_content}'")
                 assistant_acted_this_turn = True
                 assistant_message_for_memory["content"] = text_response_content
-                await self.bus.publish(SendReplyCommand(
-                    room_id=room_id,
-                    text=text_response_content,
-                    reply_to_event_id=last_user_event_id_in_batch
-                ))
+                if last_user_event_id_in_batch: # Check if there is an event to reply to
+                    await self.bus.publish(SendReplyCommand(
+                        room_id=room_id,
+                        text=text_response_content,
+                        reply_to_event_id=last_user_event_id_in_batch
+                    ))
+                else: # Otherwise, send a regular message
+                    await self.bus.publish(SendMatrixMessageCommand(
+                        room_id=room_id,
+                        text=text_response_content
+                    ))
+            else:
+                logger.warning(f"RLS: [{room_id}] AI response was successful but had no text content and no tool calls.")
+        else:
+            logger.error(f"RLS: [{room_id}] AI response was not successful. Error: {response_event.error_message}")
 
         # If assistant acted, add to memory
         if assistant_acted_this_turn:
@@ -488,6 +523,9 @@ class RoomLogicService:
         await self.bus.publish(summary_request)
 
     async def _handle_ai_summary_response(self, response_event: AIInferenceResponseEvent):
+        # Use response_topic for filtering instead of original_request_payload
+        if response_event.response_topic != "ai_summary_response_received": # MODIFIED
+            return
         room_id = response_event.original_request_payload.get("room_id")
         if not room_id:
             logger.error("RLS: Error - AIResponse missing room_id in original_request_payload")
@@ -533,60 +571,134 @@ class RoomLogicService:
             config['current_interval'] = min(config['current_interval'] * 2, self.max_interval)
 
     async def _handle_tool_execution_response(self, response: ToolExecutionResponse):
-        room_id = response.room_id
-        turn_request_id = response.turn_request_id
-        tool_response = response.tool_response
+        # Access room_id and turn_request_id from the original_request_payload of the ToolExecutionResponse
+        # This original_request_payload was set by RoomLogicService when creating the ExecuteToolRequest,
+        # and it originated from the AIInferenceResponseEvent.
+        turn_request_id = response.original_request_payload.get("turn_request_id")
+        room_id = response.original_request_payload.get("room_id")
 
-        if not room_id or not turn_request_id:
-            logger.error("RLS: Error - ToolExecutionResponse missing room_id or turn_request_id")
+        if not turn_request_id: # room_id might be absent if turn_request_id is, so check turn_request_id first
+            logger.error(f"RLS: Error - ToolExecutionResponse missing 'turn_request_id' in original_request_payload. Payload: {response.original_request_payload}")
             return
+        if not room_id: # Check room_id separately
+             logger.error(f"RLS: Error - ToolExecutionResponse missing 'room_id' in original_request_payload (turn_request_id: {turn_request_id}). Payload: {response.original_request_payload}")
+             return
 
         config = self.room_activity_config.get(room_id)
         if not config:
             logger.error(f"RLS: [{room_id}] Error - No config found for room after ToolExecutionResponse")
             return
 
-        pending_tool_call_info = self.pending_tool_calls_for_ai_turn.get(turn_request_id)
-        if not pending_tool_call_info:
-            logger.error(f"RLS: [{room_id}] Error - No pending tool call info found for turn_request_id: {turn_request_id}")
+        pending_turn_info = self.pending_tool_calls_for_ai_turn.get(turn_request_id)
+        if not pending_turn_info:
+            logger.error(f"RLS: [{room_id}] Error - No pending tool call info found for turn_request_id: {turn_request_id}. This might happen if a tool responds very late or if there's a state mismatch.")
             return
 
-        # Update tool states in the room's config
+        # Store this tool's response
+        pending_turn_info["received_tool_responses"].append(response)
+        logger.info(f"RLS: [{room_id}] Received tool response for {response.tool_name} (ID: {response.original_tool_call_id}) for turn {turn_request_id}. ({len(pending_turn_info['received_tool_responses'])}/{len(pending_turn_info['expected_tool_call_ids'])})")
+
+        # Update tool states in the room's config (can be done for each tool as it completes)
         tool_states = config.get('tool_states', {})
-        tool_states[tool_response.tool_name] = tool_response.tool_output
+        tool_states[response.tool_name] = response.result_for_llm_history 
         config['tool_states'] = tool_states
 
-        # Prepare follow-up AI request with updated tool states
-        follow_up_payload = prompt_constructor.build_follow_up_payload(
-            pending_tool_call_info['conversation_history_at_tool_call_time'],
-            tool_response
+        # Check if all expected tool calls for this turn have responded
+        if len(pending_turn_info["received_tool_responses"]) < len(pending_turn_info["expected_tool_call_ids"]):
+            logger.info(f"RLS: [{room_id}] Still waiting for more tool responses for turn {turn_request_id}. Not making follow-up AI call yet.")
+            return # Not all tools have responded yet
+
+        logger.info(f"RLS: [{room_id}] All expected tools for turn {turn_request_id} have responded. Preparing follow-up AI call.")
+
+        # All tools for this turn have responded. Proceed with follow-up.
+        history_at_tool_call_time = pending_turn_info['conversation_history_at_tool_call_time']
+        assistant_message_with_tool_calls = pending_turn_info['assistant_message_with_tool_calls']
+        
+        augmented_history = list(history_at_tool_call_time) # Start with history before assistant's tool-calling message
+        augmented_history.append(assistant_message_with_tool_calls) # Add the assistant's message that initiated the tool calls
+        
+        # Add all tool results to the history
+        for tool_exec_response in pending_turn_info["received_tool_responses"]:
+            tool_message_for_history = {
+                "role": "tool",
+                "tool_call_id": tool_exec_response.original_tool_call_id,
+                "content": tool_exec_response.result_for_llm_history
+            }
+            augmented_history.append(tool_message_for_history)
+
+        original_ai_payload_from_first_call = pending_turn_info["original_ai_response_payload"]
+        current_user_ids_in_context = original_ai_payload_from_first_call.get("current_user_ids_in_context", [])
+        
+        # Fetch current channel summary for the follow-up prompt
+        current_channel_summary, _ = database.get_summary(self.db_path, room_id) or (None, None)
+
+        follow_up_payload = prompt_constructor.build_messages_for_ai(
+            historical_messages=augmented_history,
+            current_batched_user_inputs=[], 
+            bot_display_name=self.bot_display_name,
+            db_path=self.db_path,
+            channel_summary=current_channel_summary,
+            tool_states=config.get('tool_states'),
+            current_user_ids_in_context=current_user_ids_in_context,
+            last_user_event_id_in_batch=None 
         )
 
-        follow_up_request = AIInferenceRequestEvent(
-            request_id=str(uuid.uuid4()),
+        # Clean up the pending tool call info for this turn_request_id
+        if turn_request_id in self.pending_tool_calls_for_ai_turn:
+            del self.pending_tool_calls_for_ai_turn[turn_request_id]
+            logger.info(f"RLS: [{room_id}] Cleared pending tool call info for turn_request_id: {turn_request_id} after all tools processed.")
+
+        follow_up_model_name = original_ai_payload_from_first_call.get("requested_model_name", self.openrouter_chat_model)
+        follow_up_provider = original_ai_payload_from_first_call.get("current_llm_provider", self.primary_llm_provider)
+
+        FollowUpEventClass: type[AIInferenceRequestEvent]
+        if follow_up_provider == "ollama":
+            FollowUpEventClass = OllamaInferenceRequestEvent # type: ignore
+        else:
+            FollowUpEventClass = OpenRouterInferenceRequestEvent # type: ignore
+
+        new_original_payload_for_follow_up = {
+            "room_id": room_id,
+            "is_follow_up_after_tool_execution": True,
+            "turn_request_id": turn_request_id, 
+            "requested_model_name": follow_up_model_name,
+            "current_llm_provider": follow_up_provider,
+            "current_user_ids_in_context": current_user_ids_in_context 
+        }
+
+        follow_up_request = FollowUpEventClass(
+            request_id=str(uuid.uuid4()), 
             reply_to_service_event="ai_chat_response_received",
-            original_request_payload={
-                "room_id": room_id,
-                "is_follow_up_after_tool_execution": True,
-                "turn_request_id": turn_request_id
-            },
-            model_name=self.openrouter_chat_model,
+            original_request_payload=new_original_payload_for_follow_up,
+            model_name=follow_up_model_name,
             messages_payload=follow_up_payload,
             tools=self.tool_registry.get_all_tool_definitions(),
             tool_choice="auto"
         )
         await self.bus.publish(follow_up_request)
+        logger.info(f"RLS: [{room_id}] Published follow-up AI request for turn {turn_request_id} after processing all tool responses.")
 
     async def run(self):
         """Main run loop for the service, subscribing to events."""
-        self.bus.subscribe(MatrixMessageReceivedEvent, self._handle_matrix_message)
-        self.bus.subscribe(ActivateListeningEvent, self._handle_activate_listening)
-        self.bus.subscribe(ProcessMessageBatchCommand, self._handle_process_message_batch)
-        self.bus.subscribe(AIInferenceResponseEvent, self._handle_ai_chat_response) # Removed filter_event_type and await
-        self.bus.subscribe(AIInferenceResponseEvent, self._handle_ai_summary_response) # Removed filter_event_type and await
-        self.bus.subscribe(BotDisplayNameReadyEvent, self._handle_bot_display_name_ready)
-        self.bus.subscribe(ToolExecutionResponse, self._handle_tool_execution_response)
-        # Keep the service running until a stop is requested
+        self.bus.subscribe(MatrixMessageReceivedEvent.model_fields['event_type'].default, self._handle_matrix_message)
+        self.bus.subscribe(ActivateListeningEvent.model_fields['event_type'].default, self._handle_activate_listening)
+        self.bus.subscribe(ProcessMessageBatchCommand.model_fields['event_type'].default, self._handle_process_message_batch)
+        
+        # Subscribe to specific AI response events for chat
+        self.bus.subscribe(OpenRouterInferenceResponseEvent.model_fields['event_type'].default, self._handle_ai_chat_response)
+        self.bus.subscribe(OllamaInferenceResponseEvent.model_fields['event_type'].default, self._handle_ai_chat_response)
+        # Fallback for generic AIInferenceResponseEvent if any are still published directly (should be rare for chat)
+        self.bus.subscribe(AIInferenceResponseEvent.model_fields['event_type'].default, self._handle_ai_chat_response)
+
+        # Subscribe to specific AI response events for summary
+        self.bus.subscribe(OpenRouterInferenceResponseEvent.model_fields['event_type'].default, self._handle_ai_summary_response)
+        self.bus.subscribe(OllamaInferenceResponseEvent.model_fields['event_type'].default, self._handle_ai_summary_response)
+        # Fallback for generic AIInferenceResponseEvent for summaries (should be rare)
+        self.bus.subscribe(AIInferenceResponseEvent.model_fields['event_type'].default, self._handle_ai_summary_response)
+
+        self.bus.subscribe(BotDisplayNameReadyEvent.model_fields['event_type'].default, self._handle_bot_display_name_ready)
+        self.bus.subscribe(ToolExecutionResponse.model_fields['event_type'].default, self._handle_tool_execution_response)
+        
         await self._stop_event.wait()
 
     async def stop(self):

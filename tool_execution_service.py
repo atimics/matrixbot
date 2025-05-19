@@ -27,9 +27,8 @@ class ToolExecutionService:
         tool_call_id = event.tool_call.id
         arguments_str = event.tool_call.function.arguments
 
-        logger.info(f"TES: Received ExecuteToolRequest for tool: {tool_name}, call_id: {tool_call_id}")
+        logger.info(f"TES: Received ExecuteToolRequest for tool: {tool_name}, Tool Call ID: {tool_call_id}, Event ID: {event.event_id}. Args: {arguments_str}") # MODIFIED
 
-        logger.info(f"ToolExecSvc: Received request to execute tool '{tool_name}' with call ID '{tool_call_id}' for room '{event.room_id}'")
         tool = self.tool_registry.get_tool(tool_name)
 
         if not tool:
@@ -62,11 +61,12 @@ class ToolExecutionService:
             )
 
             if tool_result.commands_to_publish:
-                for command in tool_result.commands_to_publish:
-                    if isinstance(command, BaseEvent): # Ensure it's a BaseEvent before publishing
-                        await self.bus.publish(command)
+                for command_to_publish in tool_result.commands_to_publish: # MODIFIED variable name for clarity
+                    if isinstance(command_to_publish, BaseEvent):
+                        logger.info(f"TES: Publishing command from tool {tool_name}: {command_to_publish.event_type} (Event ID: {command_to_publish.event_id}) for Tool Call ID: {tool_call_id}") # ADDED
+                        await self.bus.publish(command_to_publish)
                     else:
-                        logger.warning(f"ToolExecSvc: Tool '{tool_name}' tried to publish non-event: {command}")
+                        logger.warning(f"ToolExecSvc: Tool '{tool_name}' (Tool Call ID: {tool_call_id}) tried to publish non-event: {command_to_publish}") # MODIFIED
             
             # If the tool requires a followup (like DelegateToOpenRouterTool), 
             # we don't publish a ToolExecutionResponse immediately.
