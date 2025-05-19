@@ -3,7 +3,7 @@ import json
 import logging
 
 from tool_base import AbstractTool, ToolResult
-from event_definitions import SendReplyCommand
+from event_definitions import SendMatrixMessageCommand # Changed from SendReplyCommand
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ class SendReplyTool(AbstractTool):
     async def execute(
         self,
         room_id: str,
-        arguments: Dict[str, Any], # Changed type hint from str to Dict[str, Any]
+        arguments: Dict[str, Any], # Ensure this is Dict[str, Any]
         tool_call_id: Optional[str],
         llm_provider_info: Dict[str, Any],
         conversation_history_snapshot: List[Dict[str, Any]],
@@ -44,42 +44,50 @@ class SendReplyTool(AbstractTool):
         db_path: Optional[str] = None # Added to accept db_path
     ) -> ToolResult:
         logger.info(f"SendReplyTool: Executing in room {room_id} with args: {arguments}")
-        # Remove JSON parsing as arguments are already a dict
-        # try:
-        #     parsed_arguments = json.loads(arguments)
-        # except json.JSONDecodeError as e:
-        #     logger.error(f"SendReplyTool: Failed to parse arguments JSON: {arguments}. Error: {e}")
-        #     return ToolResult(status="failure", error_message=f"Invalid arguments format: {e}", result_for_llm_history=f"[Tool Error: send_reply failed to parse arguments: {e}]")
+        
+        text = arguments.get("text")
+        reply_to_event_id_arg = arguments.get("reply_to_event_id")
 
-        parsed_arguments = arguments # Use arguments directly
+        if text is None: # Check for None explicitly
+            return ToolResult(
+                status="failure",
+                result_for_llm_history="[Tool send_reply failed: Missing text argument.]",
+                error_message="Missing required argument: text"
+            )
 
-        text = parsed_arguments.get("text")
-        reply_to_event_id_arg = parsed_arguments.get("reply_to_event_id")
+        if not text: # Check for empty string
+            return ToolResult(
+                status="failure",
+                result_for_llm_history="[Tool send_reply failed: Text argument cannot be empty.]",
+                error_message="Text argument cannot be empty."
+            )
+
+        if not reply_to_event_id_arg:
+            return ToolResult(
+                status="failure",
+                result_for_llm_history="[Tool send_reply failed: Missing reply_to_event_id argument.]",
+                error_message="Missing required argument: reply_to_event_id"
+            )
 
         resolved_reply_to_event_id = reply_to_event_id_arg
-        if reply_to_event_id_arg == "$event:last_user_message" and last_user_event_id:
-            resolved_reply_to_event_id = last_user_event_id
-        elif reply_to_event_id_arg == "$event:last_user_message" and not last_user_event_id:
-            return ToolResult(
-                status="failure",
-                result_for_llm_history="[Tool send_reply failed: LLM requested reply to last user message, but no last_user_event_id was available in context.]",
-                error_message="Cannot reply to $event:last_user_message; context for last_user_event_id is missing."
-            )
+        if reply_to_event_id_arg == "$event:last_user_message":
+            if last_user_event_id:
+                resolved_reply_to_event_id = last_user_event_id
+            else:
+                return ToolResult(
+                    status="failure",
+                    result_for_llm_history="[Tool send_reply failed: LLM requested reply to last user message, but no last_user_event_id was available in context.]",
+                    error_message="Cannot resolve $event:last_user_message, last_user_event_id is not available."
+                )
 
-        if not text or not resolved_reply_to_event_id:
-            return ToolResult(
-                status="failure",
-                result_for_llm_history=f"[Tool send_reply failed: Missing required arguments. Provided: text='{text}', reply_to_event_id='{resolved_reply_to_event_id}']",
-                error_message="Missing 'text' or 'reply_to_event_id' argument for send_reply tool."
-            )
-
-        send_command = SendReplyCommand(
+        # Use SendMatrixMessageCommand as expected by tests
+        send_command = SendMatrixMessageCommand(
             room_id=room_id,
             text=text,
             reply_to_event_id=resolved_reply_to_event_id
         )
         return ToolResult(
             status="success",
-            result_for_llm_history="[Tool send_reply executed: Reply message queued.]",
+            result_for_llm_history=f"Reply '{text}' sent to event '{resolved_reply_to_event_id}'.",
             commands_to_publish=[send_command]
         )

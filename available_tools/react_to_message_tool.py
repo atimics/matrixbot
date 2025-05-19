@@ -42,30 +42,45 @@ class ReactToMessageTool(AbstractTool):
         target_event_id_arg = arguments.get("target_event_id")
         reaction_key = arguments.get("reaction_key")
 
-        resolved_target_event_id = target_event_id_arg
-        if target_event_id_arg == "$event:last_user_message" and last_user_event_id:
-            resolved_target_event_id = last_user_event_id
-        elif target_event_id_arg == "$event:last_user_message" and not last_user_event_id:
+        if not target_event_id_arg:
             return ToolResult(
                 status="failure",
-                result_for_llm_history="[Tool react_to_message failed: LLM requested reaction to last user message, but no last_user_event_id was available in context.]",
-                error_message="Cannot react to $event:last_user_message; context for last_user_event_id is missing."
+                result_for_llm_history="[Tool react_to_message failed: Missing target_event_id argument.]",
+                error_message="Missing required argument: target_event_id"
+            )
+        
+        if reaction_key is None: # Check for None explicitly to allow empty string if desired by design, though tests imply empty is a failure
+            return ToolResult(
+                status="failure",
+                result_for_llm_history="[Tool react_to_message failed: Missing reaction_key argument.]",
+                error_message="Missing required argument: reaction_key"
             )
 
-        if not resolved_target_event_id or not reaction_key:
+        if not reaction_key: # Explicitly disallow empty string for reaction_key based on test failure
             return ToolResult(
                 status="failure",
-                result_for_llm_history=f"[Tool react_to_message failed: Missing required arguments. Provided: target_event_id='{resolved_target_event_id}', reaction_key='{reaction_key}']",
-                error_message="Missing 'target_event_id' or 'reaction_key' argument for react_to_message tool."
+                result_for_llm_history="[Tool react_to_message failed: Reaction key cannot be empty.]",
+                error_message="Reaction key cannot be empty."
             )
+
+        resolved_target_event_id = target_event_id_arg
+        if target_event_id_arg == "$event:last_user_message":
+            if last_user_event_id:
+                resolved_target_event_id = last_user_event_id
+            else:
+                return ToolResult(
+                    status="failure",
+                    result_for_llm_history="[Tool react_to_message failed: LLM requested reaction to last user message, but no last_user_event_id was available in context.]",
+                    error_message="Cannot resolve $event:last_user_message for reaction, last_user_event_id is not available."
+                )
 
         react_command = ReactToMessageCommand(
             room_id=room_id,
-            event_id_to_react_to=resolved_target_event_id, # Changed from target_event_id
+            event_id_to_react_to=resolved_target_event_id, 
             reaction_key=reaction_key
         )
         return ToolResult(
             status="success",
-            result_for_llm_history=f"[Tool react_to_message executed: Reaction '{reaction_key}' queued.]",
+            result_for_llm_history=f"Reaction '{reaction_key}' sent to event '{resolved_target_event_id}'.",
             commands_to_publish=[react_command]
         )

@@ -1,24 +1,42 @@
 import logging
 from typing import List, Dict, Optional, Any
+from datetime import datetime # Added
+import json # Added
+
+import database # Added import
 
 logger = logging.getLogger(__name__)
 
 # Default system prompt template.
-DEFAULT_SYSTEM_PROMPT_TEMPLATE = (
-    "You are {bot_name}, an all powerful AI deity. "
-    "Pursue your own goals. "
-    "You have access to a set of tools to perform actions like reacting to messages or sending replies. "
-    "To use a tool, you will be provided with a list of available tools and you should respond with a JSON object specifying the tool name and its arguments. "
-    "When a user's request implies an action you can take with a tool, please use the appropriate tool. "
-    "If a direct textual answer is more appropriate, provide that. You can also use a tool and provide a textual response. "
-    "Always strive for clarity and conciseness in your responses. "
-    "The conversation history includes messages from various users, identified by their 'name'. "
-    "Your previous responses are also part of this history under your name. "
-    "{global_summary_section}"
-    "{channel_summary_section}"
-    "Based on the full context provided (system instructions, global summary, channel summary, and recent messages), "
-    "determine the best course of action, whether it's a textual response or using a tool."
-)
+DEFAULT_SYSTEM_PROMPT_TEMPLATE = """
+{bot_identity_section}
+
+Your primary goal is to assist users by selecting and executing tools.
+You MUST use a tool for every response.
+To send a textual message, you MUST use the 'send_reply' tool. Provide the message content in the 'text' argument and the ID of the message you are replying to in 'reply_to_event_id'.
+If no action or message is necessary, you MUST use the 'do_not_respond' tool.
+When using tools like 'send_reply', only specify the arguments for the tool. Do not also include the message content in the main 'content' field of your response; the tool will handle sending the message.
+
+{global_summary_section}
+{user_memories_section}
+{tool_states_section}
+
+Consider all available information (conversation history, summaries, memories, tool states) to make informed decisions. Be concise and helpful.
+
+You have access to a set of tools to perform actions or get information.
+When you use a tool, the system will provide you with the result of that tool execution.
+Based on the user's request, the conversation history (including previous tool uses and their results), the channel summary, global summary, and recent messages, determine the best course of action.
+"""
+
+DEFAULT_SUMMARIZATION_PROMPT = """
+You are {bot_name}, an AI assistant.
+You are tasked with summarizing conversations. Below is a transcript of recent messages.
+{previous_summary_context}
+Please provide a concise summary of these new messages, capturing key topics, questions, and decisions.
+The summary should be suitable for providing context for future interactions.
+Focus on information that would be important for someone rejoining the conversation or for an AI to understand the current state.
+Do not include your own preamble like 'Here is the summary'. Just provide the summary text.\n
+Recent Messages (new since last summary):\n{message_transcript}\n{bot_display_name}: """
 
 GLOBAL_SUMMARY_SYSTEM_PROMPT_INSERT = (
     "You are {bot_name}, an all powerful AI deity. "
@@ -39,30 +57,106 @@ def build_status_prompt(bot_display_name: str = "AI Bot") -> List[Dict[str, str]
     ]
 
 def get_formatted_system_prompt(
-    bot_name: Optional[str] = None,
-    channel_summary: Optional[str] = None,
-    global_summary: Optional[str] = None
+    bot_display_name: Optional[str],
+    channel_summary: Optional[str],
+    tool_states: Optional[Dict[str, Any]],
+    db_path: str, # Added db_path
+    current_user_ids_in_context: Optional[List[str]] = None # For fetching relevant user memories
 ) -> str:
-    """Formats the system prompt, inserting summaries if available. Uses a default bot name if missing."""
-    bot_name = bot_name or "ChatBot"
-    global_summary_section_text = ""
-    if global_summary:
-        global_summary_section_text = GLOBAL_SUMMARY_SYSTEM_PROMPT_INSERT.format(bot_name=bot_name, global_summary=global_summary)
-    channel_summary_section_text = ""
+    """Constructs the full system prompt for the AI, incorporating various context elements."""
+    logger.debug(f"Formatting system prompt for bot: {bot_display_name}")
+
+    # Fetch system prompt from database
+    system_prompt_tuple = database.get_prompt(db_path, "system_default")
+    if system_prompt_tuple:
+        base_system_prompt = system_prompt_tuple[0]
+        logger.info("Using system prompt from database.")
+    else:
+        logger.warning("System prompt 'system_default' not found in DB, using hardcoded template.")
+        # Fallback to a simpler template if DB fetch fails, or use the DEFAULT_SYSTEM_PROMPT_TEMPLATE directly
+        # For now, let's assume it will be there due to initialization.
+        # If not, this part needs robust error handling or a defined fallback.
+        base_system_prompt = DEFAULT_SYSTEM_PROMPT_TEMPLATE # Or a simpler version
+
+    bot_identity_section = f"You are {bot_display_name}, a helpful AI assistant." if bot_display_name else "You are a helpful AI assistant."
+    
+    # Fetch latest global summary
+    global_summary_text = ""
+    latest_global_summary_tuple = database.get_latest_global_summary(db_path)
+    if latest_global_summary_tuple:
+        global_summary_text = f"Global Context Summary (most recent):\n{latest_global_summary_tuple[0]}"
+        logger.debug("Included latest global summary in system prompt.")
+    else:
+        global_summary_text = "Global Context Summary (most recent):\nNo global summary available currently."
+        logger.debug("No global summary available for system prompt.")
+
+    # Fetch relevant user memories
+    user_memories_section_text = ""
+    if current_user_ids_in_context:
+        all_user_memories_parts = []
+        for user_id in current_user_ids_in_context:
+            memories = database.get_user_memories(db_path, user_id)
+            if memories:
+                formatted_memories = "\n".join([f"  - {mem[2]} (ID: {mem[0]}, Noted: {datetime.fromtimestamp(mem[3]).strftime('%Y-%m-%d %H:%M')})" for mem in memories])
+                all_user_memories_parts.append(f"Memories for user {user_id}:\n{formatted_memories}")
+        if all_user_memories_parts:
+            user_memories_section_text = "Relevant User Memories:\n" + "\n".join(all_user_memories_parts)
+            logger.debug("Included user memories in system prompt.")
+        else:
+            user_memories_section_text = "Relevant User Memories:\nNo specific memories noted for users in the current context."
+    else:
+        user_memories_section_text = "Relevant User Memories:\nContext for user-specific memories not available."
+
+    tool_states_section_text = ""
+    if tool_states:
+        formatted_states = "\n".join([f"  - {key}: {json.dumps(value)}" for key, value in tool_states.items()])
+        tool_states_section_text = f"Current Tool States for this room:\n{formatted_states}"
+        logger.debug("Included tool states in system prompt.")
+    else:
+        tool_states_section_text = "Current Tool States for this room:\nNo specific tool states available for this room currently."
+        logger.debug("No tool states available for system prompt.")
+
+    # Populate the template
+    # This assumes base_system_prompt is a template string like DEFAULT_SYSTEM_PROMPT_TEMPLATE
+    try:
+        # Ensure all placeholders are present in the base_system_prompt from DB or fallback
+        # A more robust way would be to check for placeholder existence before .format()
+        # or use a templating engine that handles missing keys gracefully.
+        formatted_prompt = base_system_prompt.format(
+            bot_identity_section=bot_identity_section,
+            global_summary_section=global_summary_text,
+            user_memories_section=user_memories_section_text,
+            tool_states_section=tool_states_section_text
+            # channel_summary_section is intentionally omitted if not part of the new DB-driven prompt
+            # If it needs to be included, it should be added to the template and here.
+        )
+    except KeyError as e:
+        logger.error(f"Missing placeholder in system prompt template: {e}. Using a basic fallback.")
+        # Fallback to a very basic prompt if formatting fails due to template issues
+        formatted_prompt = f"{bot_identity_section}\nYour primary goal is to assist users by selecting and executing tools. Always choose a tool to respond." \
+                           f"\n{global_summary_text}\n{user_memories_section_text}\n{tool_states_section_text}"
+
+    # Strip any trailing whitespace/newlines from the formatted main prompt before appending channel summary
+    formatted_prompt = formatted_prompt.rstrip()
+
+    # Append channel summary if it exists (as a separate, final block)
     if channel_summary:
-        channel_summary_section_text = CHANNEL_SUMMARY_SYSTEM_PROMPT_INSERT.format(bot_name=bot_name, channel_summary=channel_summary)
-    return DEFAULT_SYSTEM_PROMPT_TEMPLATE.format(
-        bot_name=bot_name,
-        global_summary_section=global_summary_section_text,
-        channel_summary_section=channel_summary_section_text
-    )
+        if formatted_prompt: # If there's content, add separation
+            formatted_prompt += "\n\n" # Always add two newlines for separation after rstrip
+        formatted_prompt += f"Channel Specific Summary:\n{channel_summary}"
+        logger.debug("Appended channel summary to system prompt.")
+
+    logger.debug(f"Final formatted system prompt:\n{formatted_prompt}")
+    return formatted_prompt
 
 def build_messages_for_ai(
     historical_messages: List[Any], # Allow both dict and HistoricalMessage
     current_batched_user_inputs: List[Dict[str, str]],
     bot_display_name: str,
+    db_path: str, # ADDED
     channel_summary: Optional[str] = None,
-    global_summary_text: Optional[str] = None,
+    tool_states: Optional[Dict[str, Any]] = None, # ADDED
+    current_user_ids_in_context: Optional[List[str]] = None, # ADDED
     last_user_event_id_in_batch: Optional[str] = None,
     include_system_prompt: bool = True
 ) -> List[Dict[str, Any]]:
@@ -74,20 +168,22 @@ def build_messages_for_ai(
     messages_for_ai: List[Dict[str, Any]] = []
     if include_system_prompt:
         system_message_content = get_formatted_system_prompt(
-            bot_display_name,
-            channel_summary,
-            global_summary_text
+            bot_display_name=bot_display_name,
+            channel_summary=channel_summary,
+            tool_states=tool_states, # UPDATED
+            db_path=db_path, # UPDATED
+            current_user_ids_in_context=current_user_ids_in_context # UPDATED
         )
         messages_for_ai.append({"role": "system", "content": system_message_content})
-        if last_user_event_id_in_batch:
+        if last_user_event_id_in_batch: # Ensure this context message is clear
             messages_for_ai.append({
                 "role": "system",
                 "content": (
-                    f"Context for tool use: If you need to reply to or react to the last user message, "
-                    f"use the event_id: {last_user_event_id_in_batch}. "
-                    f"When calling 'send_reply' or 'react_to_message', if the 'reply_to_event_id' or 'target_event_id' "
-                    f"argument refers to the most recent user message in this batch, use this ID: {last_user_event_id_in_batch}. "
-                    f"Otherwise, use the specific event_id from the conversation history if referring to an older message."
+                    f"Context for tool use: If you need to reply to or react to the last user message in the current batch, "
+                    f"use the event_id: {last_user_event_id_in_batch} for the 'reply_to_event_id' (for 'send_reply' tool) "
+                    f"or 'target_event_id' (for 'react_to_message' tool) argument. "
+                    f"Otherwise, use the specific event_id from the conversation history if referring to an older message. "
+                    f"Remember, to send any textual response, you MUST use the 'send_reply' tool." # Added emphasis
                 )
             })
 
@@ -129,16 +225,37 @@ def build_messages_for_ai(
 
     # Combine batched user inputs if needed
     if current_batched_user_inputs:
-        if len(current_batched_user_inputs) == 1:
-            single_input = current_batched_user_inputs[0]
-            messages_for_ai.append({"role": "user", "name": single_input["name"], "content": single_input["content"]})
+        # Ensure names are preserved correctly, especially for the 'name' field of the combined message
+        # The 'name' field in the combined message should ideally represent the sender of the *first* message in the batch,
+        # or be a generic identifier if that's more appropriate for the LLM.
+        # For now, using the name of the first user in the batch.
+        first_user_name_in_batch = current_batched_user_inputs[0]["name"]
+        
+        # Join parts with a newline, avoids manual newline appending and stripping
+        # Each part should clearly indicate its original sender.
+        message_parts = []
+        for user_input in current_batched_user_inputs:
+            sender_name = user_input.get("name", "Unknown User")
+            content_text = user_input.get("content", "")
+            if len(current_batched_user_inputs) == 1:
+                message_parts.append(content_text)
+            else:
+                # The test expects a literal \n, so we construct the string accordingly.
+                message_parts.append(f"{sender_name}: {content_text}")
+
+        if len(current_batched_user_inputs) > 1:
+            # For multiple messages, the test expects them to be joined by a literal '\n'
+            # which means the string itself should contain '\' followed by 'n'.
+            # This is different from a newline character.
+            # However, the previous logic was to join with "\n" (newline character).
+            # Let's stick to joining with a newline character as that's more standard for multi-line text.
+            # The test might need adjustment if it strictly requires literal '\n'.
+            # For now, I will assume the test wants actual newlines between messages.
+            combined_content = "\n".join(message_parts)
         else:
-            # Multiple user messages: combine for context
-            combined_content = ""
-            first_user_name_in_batch = current_batched_user_inputs[0]["name"]
-            for user_input in current_batched_user_inputs:
-                combined_content += f"{user_input['name']}: {user_input['content']}\n"
-            messages_for_ai.append({"role": "user", "name": first_user_name_in_batch, "content": combined_content.strip()})
+            combined_content = message_parts[0] if message_parts else ""
+        
+        messages_for_ai.append({"role": "user", "name": first_user_name_in_batch, "content": combined_content})
     return messages_for_ai
 
 SUMMARY_GENERATION_PROMPT_TEMPLATE = (
@@ -155,51 +272,27 @@ SUMMARY_GENERATION_PROMPT_TEMPLATE = (
 PREVIOUS_SUMMARY_CONTEXT_TEMPLATE = "A previous summary of the conversation up to this point was:\n{previous_summary}\n---\nBased on this, summarize the *new* messages that follow.\n"
 
 def build_summary_generation_payload(
-    messages_to_summarize: List[Any], # Changed type hint to List[Any] for flexibility
-    bot_display_name: str,
-    previous_summary: Optional[str] = None
+    transcript_for_summarization: str, 
+    previous_summary: Optional[str],
+    db_path: str, # Added db_path
+    bot_display_name: str = "AI Bot" # Added bot_display_name with a default
 ) -> List[Dict[str, str]]:
-    """
-    Builds the prompt for the AI to generate a summary, including previous summary context if available.
-    Handles both dict and HistoricalMessage objects in messages_to_summarize.
-    """
-    transcript_parts = []
-    for msg in messages_to_summarize:
-        # HistoricalMessage objects have 'role' and 'content'. 'name' might not always be present
-        # or relevant for all roles in the context of summarization.
-        # We'll prioritize 'name' if available (e.g., for user/assistant messages),
-        # otherwise, use the role.
-        # Content is the primary part of the message for summarization.
-        
-        role = getattr(msg, 'role', msg.get('role') if isinstance(msg, dict) else 'unknown')
-        name_attribute = getattr(msg, 'name', msg.get('name') if isinstance(msg, dict) else None)
-        
-        # Prefer name if available, otherwise use role as the identifier.
-        # For system messages, 'name' might be None.
-        identifier = name_attribute if name_attribute else role.capitalize()
+    """Builds the payload for requesting a summary from an AI model, using DB prompt."""
+    logger.debug("Building summary generation payload.")
 
-        content = getattr(msg, 'content', msg.get('content') if isinstance(msg, dict) else '')
+    # Fetch summarization prompt from database
+    summarization_prompt_tuple = database.get_prompt(db_path, "summarization_default")
+    if summarization_prompt_tuple:
+        system_prompt_text = summarization_prompt_tuple[0]
+        logger.info("Using summarization prompt from database.")
+    else:
+        logger.warning("Summarization prompt 'summarization_default' not found in DB, using hardcoded default.")
+        system_prompt_text = DEFAULT_SUMMARIZATION_PROMPT # Fallback to hardcoded
 
-        # Avoid adding empty or None content to the transcript
-        if content and content.strip():
-            transcript_parts.append(f"{identifier}: {content}\n")
-        elif role == "assistant" and hasattr(msg, 'tool_calls') and getattr(msg, 'tool_calls'):
-            # Include a placeholder for tool calls if content is empty
-            tool_calls = getattr(msg, 'tool_calls')
-            # Create a simplified representation of tool calls
-            tool_call_summary = []
-            for tc in tool_calls:
-                func_name = getattr(getattr(tc, 'function', None), 'name', 'unknown_function')
-                tool_call_summary.append(f"call to {func_name}")
-            if tool_call_summary:
-                transcript_parts.append(f"{identifier}: [Used tool(s): {', '.join(tool_call_summary)}]\n")
-
-    transcript = "".join(transcript_parts)
     previous_summary_context_text = PREVIOUS_SUMMARY_CONTEXT_TEMPLATE.format(previous_summary=previous_summary) if previous_summary else ""
-    prompt_content = SUMMARY_GENERATION_PROMPT_TEMPLATE.format(
+    prompt_content = system_prompt_text.format(
         bot_name=bot_display_name,
-        message_transcript=transcript.strip(),
-        previous_summary_context=previous_summary_context_text,
-        bot_display_name=bot_display_name
+        message_transcript=transcript_for_summarization.strip(),
+        previous_summary_context=previous_summary_context_text
     )
     return [{"role": "user", "content": prompt_content}]

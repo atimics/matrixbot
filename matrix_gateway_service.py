@@ -118,7 +118,10 @@ class MatrixGatewayService:
         await self._command_queue.put((func, args, kwargs))
 
     async def _matrix_message_callback(self, room: MatrixRoom, event: RoomMessageText):
-        if not self.client or event.sender == self.client.user_id:
+        # If client is not initialized or if the sender is the bot itself, ignore.
+        if not self.client or event.sender == self.client.user_id: # Ensure self.client.user_id is the correct bot user ID
+            if self.client and event.sender == self.client.user_id:
+                logger.info(f"Gateway: Ignoring own message from {event.sender} in room {room.room_id}")
             return
 
         sender_display_name = room.user_name(event.sender) or event.sender

@@ -15,7 +15,7 @@ class ToolLoader:
         self.tools_directory = tools_directory
         if not os.path.exists(self.tools_directory):
             os.makedirs(self.tools_directory)
-            logger.info(f"Created tools directory: {self.tools_directory}")
+            logger.info(f"Created tools directory: {self.tools_directory}") # Ensure this logger is captured by caplog
 
     def load_tools(self) -> List[AbstractTool]:
         """Scans the tools directory, imports modules, and instantiates tool classes."""
@@ -43,8 +43,14 @@ class ToolLoader:
                                     logger.error(f"Error instantiating tool {name} from {filename}: {e}")
                     else:
                         logger.warning(f"Could not create spec for module {module_name} at {file_path}")
+                except ImportError as e: # Catch ImportError specifically
+                    logger.error(f"Error importing tool module {module_name} from {file_path}: {e}")
                 except Exception as e:
-                    logger.error(f"Error loading module {module_name} from {file_path}: {e}")
+                    # Check if the exception is an ImportError and log it more specifically if so
+                    if isinstance(e, ImportError):
+                        logger.error(f"Error importing tool module {module_name} from {file_path} (caught in general Exception): {e}")
+                    else:
+                        logger.error(f"Error loading module {module_name} from {file_path}: {e}")
         return loaded_tools
 
 class ToolRegistry:

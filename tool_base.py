@@ -10,6 +10,14 @@ class ToolResult(BaseModel):
     commands_to_publish: Optional[List[BaseEvent]] = None
     error_message: Optional[str] = None
     data_for_followup_llm: Optional[Dict[str, Any]] = None
+    state_updates: Optional[Dict[str, Any]] = None
+
+class ToolParameter(BaseModel):
+    name: str
+    type: str
+    description: str
+    required: bool = False
+    enum: Optional[list] = None
 
 class AbstractTool(ABC):
     """Abstract base class for all tools."""
@@ -30,7 +38,8 @@ class AbstractTool(ABC):
         tool_call_id: Optional[str],
         llm_provider_info: Dict[str, Any],
         conversation_history_snapshot: List[Dict[str, Any]],
-        last_user_event_id: Optional[str]
+        last_user_event_id: Optional[str],
+        db_path: Optional[str] = None
     ) -> ToolResult:
         """
         Executes the tool's logic.
@@ -42,6 +51,7 @@ class AbstractTool(ABC):
             llm_provider_info: Information about the LLM that initiated the call.
             conversation_history_snapshot: A read-only copy of the current conversation history.
             last_user_event_id: The event ID of the latest user message in the processed batch.
+            db_path: Optional path to the database file.
 
         Returns:
             A ToolResult object detailing the outcome of the execution.

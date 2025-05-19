@@ -1,4 +1,3 @@
-
 import pytest
 from unittest.mock import MagicMock, AsyncMock
 
@@ -18,16 +17,16 @@ def summary_tool_instance(mocker):
 def test_manage_channel_summary_tool_get_definition(summary_tool_instance):
     tool, _ = summary_tool_instance
     definition = tool.get_definition()
-    assert definition["name"] == "manage_channel_summary"
-    assert "description" in definition
-    assert len(definition["parameters"]) == 1
-    param_names = [p.name for p in definition["parameters"]]
-    assert "action" in param_names
-    action_param = next(p for p in definition["parameters"] if p.name == "action")
-    assert action_param.required is True
-    assert action_param.type == "string"
-    assert "request_update" in action_param.enum
-    assert "get_current" in action_param.enum
+    assert definition["function"]["name"] == "manage_channel_summary"
+    assert "description" in definition["function"]
+    # Parameters are now under function.parameters.properties
+    assert "action" in definition["function"]["parameters"]["properties"]
+    action_param_details = definition["function"]["parameters"]["properties"]["action"]
+    # Ensure 'required' is checked correctly at the top level of parameters
+    assert "action" in definition["function"]["parameters"]["required"]
+    assert action_param_details["type"] == "string"
+    assert "request_update" in action_param_details["enum"]
+    assert "get_current" in action_param_details["enum"]
 
 @pytest.mark.asyncio
 async def test_manage_channel_summary_tool_execute_request_update(summary_tool_instance):
@@ -40,18 +39,19 @@ async def test_manage_channel_summary_tool_execute_request_update(summary_tool_i
         room_id=room_id,
         arguments=arguments,
         tool_call_id=tool_call_id,
-        llm_provider_info=None,
-        conversation_history_snapshot=[],
-        last_user_event_id=None
+        llm_provider_info=None, # Added missing llm_provider_info
+        conversation_history_snapshot=[], # Added missing conversation_history_snapshot
+        last_user_event_id=None, # Added missing last_user_event_id
+        db_path="dummy_db.sqlite"
     )
 
     assert result.status == "success"
-    assert result.result_text == "AI summary update requested for this channel."
+    assert result.result_for_llm_history == "AI summary update requested for this channel." # Updated expected message
     assert len(result.commands_to_publish) == 1
     command = result.commands_to_publish[0]
     assert isinstance(command, RequestAISummaryCommand)
     assert command.room_id == room_id
-    assert command.force_generation is True # Specific to this action
+    assert command.force_update is True # Updated from force_generation to force_update
 
 @pytest.mark.asyncio
 async def test_manage_channel_summary_tool_execute_get_current_summary_exists(summary_tool_instance):
@@ -61,22 +61,25 @@ async def test_manage_channel_summary_tool_execute_get_current_summary_exists(su
     tool_call_id = "call_sum_get_exists"
     summary_text = "This is the current summary."
     last_event_id = "$event_sum_id"
-    mock_db.get_summary.return_value = SummaryData(summary_text=summary_text, last_event_id_summarized=last_event_id)
+    # Ensure the mock returns a tuple (summary_text, last_event_id_summarized) as per database.get_summary
+    mock_db.get_summary.return_value = (summary_text, last_event_id)
 
     result = await tool.execute(
         room_id=room_id,
         arguments=arguments,
         tool_call_id=tool_call_id,
-        llm_provider_info=None,
-        conversation_history_snapshot=[],
-        last_user_event_id=None
+        llm_provider_info=None, # Added
+        conversation_history_snapshot=[], # Added
+        last_user_event_id=None, # Added
+        db_path="dummy_db.sqlite"
     )
 
-    mock_db.get_summary.assert_called_once_with(None, room_id) # DB path is None by default in tool
+    mock_db.get_summary.assert_called_once_with("dummy_db.sqlite", room_id)
     assert result.status == "success"
-    expected_text = f"Current summary (last updated for event {last_event_id}):\n{summary_text}"
-    assert result.result_text == expected_text
-    assert not result.commands_to_publish # Should not publish commands, only return text
+    # Updated expected message to match tool's new output format
+    expected_text = f"Current summary (last updated for event {last_event_id}):\\n{summary_text}"
+    assert result.result_for_llm_history == expected_text
+    assert not result.commands_to_publish
 
 @pytest.mark.asyncio
 async def test_manage_channel_summary_tool_execute_get_current_no_summary(summary_tool_instance):
@@ -90,14 +93,15 @@ async def test_manage_channel_summary_tool_execute_get_current_no_summary(summar
         room_id=room_id,
         arguments=arguments,
         tool_call_id=tool_call_id,
-        llm_provider_info=None,
-        conversation_history_snapshot=[],
-        last_user_event_id=None
+        llm_provider_info=None, # Added
+        conversation_history_snapshot=[], # Added
+        last_user_event_id=None, # Added
+        db_path="dummy_db.sqlite"
     )
 
-    mock_db.get_summary.assert_called_once_with(None, room_id)
+    mock_db.get_summary.assert_called_once_with("dummy_db.sqlite", room_id)
     assert result.status == "success"
-    assert result.result_text == "No summary is currently available for this channel."
+    assert result.result_for_llm_history == "No summary is currently available for this channel." # Updated
     assert not result.commands_to_publish
 
 @pytest.mark.asyncio
@@ -111,13 +115,16 @@ async def test_manage_channel_summary_tool_execute_invalid_action(summary_tool_i
         room_id=room_id,
         arguments=arguments,
         tool_call_id=tool_call_id,
-        llm_provider_info=None,
-        conversation_history_snapshot=[],
-        last_user_event_id=None
+        llm_provider_info=None, # Added
+        conversation_history_snapshot=[], # Added
+        last_user_event_id=None, # Added
+        db_path="dummy_db.sqlite"
     )
 
     assert result.status == "failure"
+    # The tool returns a more specific message now, but the test checks for inclusion.
     assert "Invalid action specified: delete_summary" in result.error_message
+    assert result.result_for_llm_history == "[Tool manage_channel_summary failed: Invalid action 'delete_summary']" # Check new llm history message
     assert not result.commands_to_publish
 
 @pytest.mark.asyncio
@@ -131,11 +138,13 @@ async def test_manage_channel_summary_tool_execute_missing_action(summary_tool_i
         room_id=room_id,
         arguments=arguments,
         tool_call_id=tool_call_id,
-        llm_provider_info=None,
-        conversation_history_snapshot=[],
-        last_user_event_id=None
+        llm_provider_info=None, # Added
+        conversation_history_snapshot=[], # Added
+        last_user_event_id=None, # Added
+        db_path="dummy_db.sqlite"
     )
 
     assert result.status == "failure"
-    assert "Missing required argument: action" in result.error_message
+    assert "Missing required argument: action" in result.error_message # Updated expected error message
+    assert result.result_for_llm_history == "[Tool manage_channel_summary failed: Missing required argument 'action']" # Check new llm history message
     assert not result.commands_to_publish

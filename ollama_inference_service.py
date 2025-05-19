@@ -3,6 +3,7 @@ import asyncio
 import os
 import logging
 import ollama
+import uuid # Added import for uuid
 from typing import Dict, List, Optional, Tuple, Any
 
 from message_bus import MessageBus
@@ -57,18 +58,23 @@ class OllamaInferenceService:
                     # tc_obj is an ollama.types.ToolCall object.
                     # We need to convert it to a dictionary structure that
                     # OllamaInferenceResponseEvent and RoomLogicService expect.
-                    # Expected structure per RoomLogicService: {'function': {'name': '...', 'arguments': {...}}}
+                    # Expected structure per RoomLogicService: {'id': '...', 'type': 'function', 'function': {'name': '...', 'arguments': {...}}}
                     if tc_obj and hasattr(tc_obj, 'function') and \
                        hasattr(tc_obj.function, 'name') and \
                        hasattr(tc_obj.function, 'arguments'):
+                        # The tc_obj from Ollama library might not have an 'id' or 'type' field directly.
+                        # We need to construct a ToolCall Pydantic model or a dict matching its structure.
+                        # For simplicity, creating a dict that matches event_definitions.ToolCall structure.
+                        # A random ID can be generated if not provided by Ollama's tc_obj.
+                        tool_call_id = f"ollama_tool_{uuid.uuid4()}" # Generate an ID
                         formatted_tool_calls_list.append({
+                            "id": tool_call_id, # Added ID
+                            "type": "function", # Assuming type is always function
                             "function": {
                                 "name": tc_obj.function.name,
-                                "arguments": tc_obj.function.arguments
+                                "arguments": tc_obj.function.arguments # This should be a dict
                             }
                         })
-                    else:
-                        logger.warning(f"Received unexpected tool_call structure from Ollama: {tc_obj}")
 
 
             if not text_content and not formatted_tool_calls_list:
@@ -119,5 +125,5 @@ class OllamaInferenceService:
         logger.info("OllamaInferenceService: Stop requested.")
         self._stop_event.set()
         if self._client:
-            await self._client.aclose() # Changed from close() to aclose()
-        logger.info("OllamaInferenceService: Ollama client closed.")
+            await self._client.close() # Corrected from aclose()
+        logger.info("OllamaInferenceService: Ollama client closed.") # Corrected log message

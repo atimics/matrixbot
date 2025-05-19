@@ -4,6 +4,7 @@ from typing import Dict, Any, List, Optional
 
 from tool_base import AbstractTool, ToolResult
 from event_definitions import RequestAISummaryCommand, HistoricalMessage # Updated imports
+from database import SummaryData # Import SummaryData
 
 import database # Use absolute import assuming root is in PYTHONPATH
 
@@ -39,6 +40,7 @@ class ManageChannelSummaryTool(AbstractTool):
     async def execute(
         self,
         room_id: str, # This is the actual room_id from the context
+        *, # Make subsequent arguments keyword-only
         db_path: str, # Injected by ToolExecutionService
         arguments: Dict[str, Any],
         tool_call_id: Optional[str],
@@ -48,6 +50,13 @@ class ManageChannelSummaryTool(AbstractTool):
     ) -> ToolResult:
         action = arguments.get("action")
         # llm_provided_room_id = arguments.get("room_id") # Can be logged or validated if needed
+
+        if not action:
+            return ToolResult(
+                status="failure",
+                result_for_llm_history="[Tool manage_channel_summary failed: Missing required argument 'action']",
+                error_message="Missing required argument: action"
+            )
 
         if action == "request_update":
             messages_for_summary_cmd: List[HistoricalMessage] = []
@@ -74,19 +83,19 @@ class ManageChannelSummaryTool(AbstractTool):
             
             summary_command = RequestAISummaryCommand(
                 room_id=room_id, 
-                force_update=True, 
+                force_update=True, # Changed from force_generation to force_update
                 messages_to_summarize=messages_for_summary_cmd,
                 last_event_id_in_messages=last_event_id_in_snapshot or last_user_event_id # Fallback
             )
             return ToolResult(
                 status="success",
-                result_for_llm_history="[Tool manage_channel_summary(action=request_update) executed: Channel summary update requested. This will be processed asynchronously.]",
+                result_for_llm_history="AI summary update requested for this channel.",
                 commands_to_publish=[summary_command]
             )
         elif action == "get_current":
             try:
-                summary_tuple = database.get_summary(db_path, room_id) # Use injected db_path
-                summary_text = summary_tuple[0] if summary_tuple else None
+                # database.get_summary returns a tuple: (summary_text, last_event_id_summarized) or None
+                summary_details_tuple = database.get_summary(db_path, room_id) # Use injected db_path
             except Exception as e:
                 logger.error(f"ManageChannelSummaryTool: Error calling database.get_summary for room {room_id}: {e}")
                 return ToolResult(
@@ -95,15 +104,17 @@ class ManageChannelSummaryTool(AbstractTool):
                     error_message=f"Database error fetching summary for room {room_id}: {str(e)}"
                 )
             
-            if summary_text:
+            if summary_details_tuple:
+                summary_text, last_event_id_summarized = summary_details_tuple
+                # Use SummaryData fields
                 return ToolResult(
                     status="success",
-                    result_for_llm_history=f"[Tool manage_channel_summary(action=get_current) executed: Current channel summary is: '{summary_text}']"
+                    result_for_llm_history=f"Current summary (last updated for event {last_event_id_summarized}):\\n{summary_text}"
                 )
             else:
                 return ToolResult(
                     status="success",
-                    result_for_llm_history="[Tool manage_channel_summary(action=get_current) executed: Current channel summary is: 'Not available']"
+                    result_for_llm_history="No summary is currently available for this channel."
                 )
         else:
             return ToolResult(

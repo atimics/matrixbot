@@ -15,3 +15,5 @@ markdown
 ollama
 httpx # Added for asynchronous HTTP requests
 pytest-asyncio
+pytest
+pytest-mock # Added for mocker fixture
