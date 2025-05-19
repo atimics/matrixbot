@@ -584,6 +584,27 @@ class RoomLogicService:
             config['current_interval'] = min(config['current_interval'] * 2, self.max_interval)
 
     async def _handle_tool_execution_response(self, response: ToolExecutionResponse):
+        # Determine if the original AI response was *only* tool calls and had no direct text for the user.
+        # ai_response_had_only_tool_calls_and_no_text_for_user = (
+        #     original_ai_response_event.text_content is None or original_ai_response_event.text_content.strip() == ""
+        # ) and bool(original_ai_response_event.tool_calls)
+
+        # # Check if the only tool call was a "simple output tool" (e.g., send_reply, react_to_message)
+        # is_simple_output_tool_only = False
+        # if original_ai_response_event.tool_calls and len(original_ai_response_event.tool_calls) == 1:
+        #     tool_name = original_ai_response_event.tool_calls[0].function.name
+        #     if tool_name in [\"send_reply\", \"react_to_message\", \"do_not_respond\"]:\n        #         is_simple_output_tool_only = True
+
+        # # If the AI only called a simple output tool (like send_reply) and it succeeded,
+        # # and there was no other text from the AI, we might not need a follow-up AI call.
+        # # The conversation can naturally proceed to the next user message.
+        # if ai_response_had_only_tool_calls_and_no_text_for_user and is_simple_output_tool_only and tool_response_event.status == "success":
+        #     logger.info(f"RLS: [{room_id}] Original AI response was effectively just a {tool_response_event.tool_name} tool call. Skipping follow-up AI call for turn {turn_request_id}.")
+        #     self._clear_pending_tool_info(room_id, turn_request_id, "Follow-up skipped for simple output tool.")
+        #     return # No further AI call needed for this turn.
+
+        # If we are here, it means a follow-up AI call is needed.
+
         # Access room_id and turn_request_id from the original_request_payload of the ToolExecutionResponse
         # This original_request_payload was set by RoomLogicService when creating the ExecuteToolRequest,
         # and it originated from the AIInferenceResponseEvent.
@@ -596,6 +617,8 @@ class RoomLogicService:
         if not room_id: # Check room_id separately
              logger.error(f"RLS: Error - ToolExecutionResponse missing 'room_id' in original_request_payload (turn_request_id: {turn_request_id}). Payload: {response.original_request_payload}")
              return
+
+        logger.info(f"RLS: [{room_id}] Proceeding to make a follow-up AI call for turn {turn_request_id} after tool execution.") # MOVED HERE
 
         config = self.room_activity_config.get(room_id)
         if not config:
@@ -626,7 +649,7 @@ class RoomLogicService:
 
         history_at_tool_call_time = pending_turn_info['conversation_history_at_tool_call_time']
         assistant_message_with_tool_calls = pending_turn_info['assistant_message_with_tool_calls']
-        
+
         # Prepare history for the follow-up AI call
         augmented_history_for_follow_up = list(history_at_tool_call_time) 
         augmented_history_for_follow_up.append(dict(assistant_message_with_tool_calls)) # Use a copy
@@ -660,6 +683,7 @@ class RoomLogicService:
                 "content": tool_message_content_for_llm
             }
             augmented_history_for_follow_up.append(tool_message_for_history_and_memory)
+
             # Add to actual short-term memory.
             # The assistant's message (that called the tools) is already in memory from _handle_ai_chat_response.
             # We only need to add these tool responses here.
@@ -667,64 +691,23 @@ class RoomLogicService:
         
         # After appending all tool messages, apply memory size limit to short_term_memory_list
         while len(short_term_memory_list) > self.short_term_memory_items:
-            short_term_memory_list.pop(0)
-        config['memory'] = short_term_memory_list # Ensure the config reflects the (potentially) trimmed list
-        
-        # --- Check if we should skip the follow-up AI call ---
-        should_skip_follow_up_ai_call = False
-        # original_tool_call_pydantic_objects are the Pydantic models from the assistant_message_with_tool_calls
-        if len(original_tool_call_pydantic_objects) == 1:
-            single_tool_call = original_tool_call_pydantic_objects[0]
-            if single_tool_call.function.name == "send_reply":
-                # Check if the assistant's original message content was empty or essentially part of the send_reply
-                original_content = assistant_message_with_tool_calls.get("content")
-                
-                send_reply_args_text = None
-                try:
-                    reply_args_raw = single_tool_call.function.arguments
-                    reply_args_dict = {}
-                    if isinstance(reply_args_raw, str):
-                        try:
-                            reply_args_dict = json.loads(reply_args_raw)
-                        except json.JSONDecodeError as jde:
-                            logger.warning(f"RLS: [{room_id}] JSONDecodeError parsing send_reply args string: '{reply_args_raw}'. Error: {jde}")
-                            reply_args_dict = {} # Default to empty if parsing fails
-                    elif isinstance(reply_args_raw, dict):
-                        reply_args_dict = reply_args_raw
-                    # else: it's some other type, reply_args_dict remains {}
-                    
-                    send_reply_args_text = reply_args_dict.get("text")
-                except Exception as e:
-                    logger.warning(f"RLS: [{room_id}] Could not parse args for send_reply in skip_follow_up check: {e}")
+            short_term_memory_list.pop(0)  # Maintain memory size limit
+        config['memory'] = short_term_memory_list  # Ensure the config reflects the (potentially) trimmed list
 
-                if not original_content or original_content == send_reply_args_text:
-                    logger.info(f"RLS: [{room_id}] Original AI response was effectively just a send_reply tool call. Skipping follow-up AI call for turn {turn_request_id}.")
-                    should_skip_follow_up_ai_call = True
-        
-        # Clean up the pending tool call info for this turn_request_id (do this regardless of skip)
-        if turn_request_id in self.pending_tool_calls_for_ai_turn:
-            del self.pending_tool_calls_for_ai_turn[turn_request_id]
-            logger.info(f"RLS: [{room_id}] Cleared pending tool call info for turn_request_id: {turn_request_id} after all tools processed.")
-
-        if should_skip_follow_up_ai_call:
-            logger.info(f"RLS: [{room_id}] Follow-up AI call skipped as per logic for turn {turn_request_id}.")
-            # Typing indicator should have been turned off by _handle_ai_chat_response.
-            return # Exit before publishing follow-up request
-        
         # Now, prepare and publish the follow-up AI request using augmented_history_for_follow_up
         original_ai_payload_from_first_call = pending_turn_info["original_ai_response_payload"]
         current_user_ids_in_context = original_ai_payload_from_first_call.get("current_user_ids_in_context", [])
         current_channel_summary, _ = database.get_summary(self.db_path, room_id) or (None, None)
 
         follow_up_payload = prompt_constructor.build_messages_for_ai(
-            historical_messages=augmented_history_for_follow_up, # Use the history built in this block
-            current_batched_user_inputs=[], 
+            historical_messages=augmented_history_for_follow_up,  # Use the history built in this block
+            current_batched_user_inputs=[],
             bot_display_name=self.bot_display_name,
             db_path=self.db_path,
             channel_summary=current_channel_summary,
             tool_states=config.get('tool_states'),
             current_user_ids_in_context=current_user_ids_in_context,
-            last_user_event_id_in_batch=None 
+            last_user_event_id_in_batch=None
         )
 
         # Clean up the pending tool call info for this turn_request_id
@@ -737,21 +720,21 @@ class RoomLogicService:
 
         FollowUpEventClass: type[AIInferenceRequestEvent]
         if follow_up_provider == "ollama":
-            FollowUpEventClass = OllamaInferenceRequestEvent # type: ignore
+            FollowUpEventClass = OllamaInferenceRequestEvent  # type: ignore
         else:
-            FollowUpEventClass = OpenRouterInferenceRequestEvent # type: ignore
+            FollowUpEventClass = OpenRouterInferenceRequestEvent  # type: ignore
 
         new_original_payload_for_follow_up = {
             "room_id": room_id,
             "is_follow_up_after_tool_execution": True,
-            "turn_request_id": turn_request_id, 
+            "turn_request_id": turn_request_id,
             "requested_model_name": follow_up_model_name,
             "current_llm_provider": follow_up_provider,
-            "current_user_ids_in_context": current_user_ids_in_context 
+            "current_user_ids_in_context": current_user_ids_in_context
         }
 
         follow_up_request = FollowUpEventClass(
-            request_id=str(uuid.uuid4()), 
+            request_id=str(uuid.uuid4()),
             reply_to_service_event="ai_chat_response_received",
             original_request_payload=new_original_payload_for_follow_up,
             model_name=follow_up_model_name,
@@ -784,8 +767,7 @@ class RoomLogicService:
         # Similar to chat responses, removed generic subscription to avoid double calls.
         self.bus.subscribe(OpenRouterInferenceResponseEvent.model_fields['event_type'].default, self._handle_ai_summary_response)
         self.bus.subscribe(OllamaInferenceResponseEvent.model_fields['event_type'].default, self._handle_ai_summary_response)
-        # If other specific summary response events exist, they should be subscribed here.
-
+    
         # Fallback subscriptions for truly generic AIInferenceResponseEvents,
         # only if they are not instances of the more specific types handled above
         # and require these handlers. The internal topic check in the handlers is crucial.
@@ -796,8 +778,6 @@ class RoomLogicService:
         # If a truly generic AIInferenceResponseEvent (that is not OpenRouter or Ollama) needs to be handled
         # for chat or summary, separate logic or a more sophisticated subscription mechanism might be needed.
         # Based on current usage, specific events are published by AIInferenceService.
-        # self.bus.subscribe(AIInferenceResponseEvent.model_fields['event_type'].default, self._handle_ai_chat_response) # REMOVED
-        # self.bus.subscribe(AIInferenceResponseEvent.model_fields['event_type'].default, self._handle_ai_summary_response) # REMOVED
         
         self.bus.subscribe(BotDisplayNameReadyEvent.model_fields['event_type'].default, self._handle_bot_display_name_ready)
         self.bus.subscribe(ToolExecutionResponse.model_fields['event_type'].default, self._handle_tool_execution_response)
