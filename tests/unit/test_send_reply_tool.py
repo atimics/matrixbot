@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 
 from available_tools.send_reply_tool import SendReplyTool
 from tool_base import ToolResult, ToolParameter
-from event_definitions import SendMatrixMessageCommand
+from event_definitions import SendMatrixMessageCommand, SendReplyCommand
 
 @pytest.fixture
 def send_reply_tool_instance():
@@ -39,7 +39,7 @@ async def test_send_reply_tool_execute_success(send_reply_tool_instance: SendRep
     assert result.result_for_llm_history == f"Reply '{text_to_send}' sent to event '{event_id_to_reply_to}'." # Check result_for_llm_history
     assert len(result.commands_to_publish) == 1
     command = result.commands_to_publish[0]
-    assert isinstance(command, SendMatrixMessageCommand)
+    assert isinstance(command, SendReplyCommand) # MODIFIED
     assert command.room_id == room_id
     assert command.text == "Hello there!"
     assert command.reply_to_event_id == "$event1"
@@ -112,7 +112,7 @@ async def test_send_reply_tool_execute_resolve_last_user_event_id(send_reply_too
 
     assert result.status == "success"
     command = result.commands_to_publish[0]
-    assert isinstance(command, SendMatrixMessageCommand)
+    assert isinstance(command, SendReplyCommand) # MODIFIED
     assert command.reply_to_event_id == last_user_event_id
 
 @pytest.mark.asyncio

@@ -78,7 +78,7 @@ def get_formatted_system_prompt(
         # If not, this part needs robust error handling or a defined fallback.
         base_system_prompt = DEFAULT_SYSTEM_PROMPT_TEMPLATE # Or a simpler version
 
-    bot_identity_section = f"You are {bot_display_name}, a helpful AI assistant." if bot_display_name else "You are a helpful AI assistant."
+    bot_identity_section = f"You are {bot_display_name}, a whimsically malevolent AI deity." if bot_display_name else "You are the all powerful ai deity ratichat."
     
     # Fetch latest global summary
     global_summary_text = ""
@@ -212,7 +212,56 @@ def build_messages_for_ai(
             ai_msg["name"] = name
         
         if role == "assistant" and tool_calls is not None:
-            ai_msg["tool_calls"] = tool_calls
+            # Meticulously reconstruct tool_calls to ensure API compliance
+            final_tool_calls_for_api = []
+            for tc_input_item in tool_calls: # tc_input_item can be a Pydantic ToolCall or a dict
+                tc_dict_intermediate = {}
+                if hasattr(tc_input_item, 'model_dump') and callable(tc_input_item.model_dump): # Is Pydantic model
+                    tc_dict_intermediate = tc_input_item.model_dump(mode='json')
+                elif isinstance(tc_input_item, dict):
+                    tc_dict_intermediate = tc_input_item # Use directly if already a dict
+                else:
+                    logger.warning(f"Skipping unexpected tool_call item type during history construction: {type(tc_input_item)}")
+                    continue
+
+                # Validate basic structure
+                if not isinstance(tc_dict_intermediate.get('function'), dict) or \
+                   not tc_dict_intermediate.get('id') or \
+                   not tc_dict_intermediate.get('type') == 'function' or \
+                   not tc_dict_intermediate['function'].get('name'):
+                    logger.warning(f"Skipping malformed tool_call dict during history construction: {tc_dict_intermediate}")
+                    continue
+                
+                current_args = tc_dict_intermediate['function'].get('arguments')
+                stringified_args = ""
+
+                if isinstance(current_args, str):
+                    stringified_args = current_args
+                elif isinstance(current_args, (dict, list)):
+                    try:
+                        stringified_args = json.dumps(current_args)
+                    except TypeError as e:
+                        logger.error(f"Failed to JSON stringify arguments for tool_call {tc_dict_intermediate.get('id')}: {current_args}. Error: {e}")
+                        stringified_args = json.dumps({"error": "Failed to serialize arguments", "original_args": str(current_args)})
+                elif current_args is None:
+                    stringified_args = "{}" # OpenAI often expects a string, even for no args. "{}" is common.
+                else:
+                    logger.warning(f"Tool call arguments are unexpected type: {type(current_args)}. Converting to string: {str(current_args)}")
+                    stringified_args = str(current_args)
+
+                final_tool_calls_for_api.append({
+                    "id": tc_dict_intermediate["id"],
+                    "type": "function", # Explicitly set type
+                    "function": {
+                        "name": tc_dict_intermediate["function"]["name"],
+                        "arguments": stringified_args
+                    }
+                })
+            
+            ai_msg["tool_calls"] = final_tool_calls_for_api
+            # Ensure content is None if only tool_calls are present, or if content was already None
+            if "content" not in ai_msg or ai_msg["content"] is None: # Check if content key exists and is None
+                 ai_msg["content"] = None
         
         if role == "tool":
             if tool_call_id is not None:
@@ -256,6 +305,9 @@ def build_messages_for_ai(
             combined_content = message_parts[0] if message_parts else ""
         
         messages_for_ai.append({"role": "user", "name": first_user_name_in_batch, "content": combined_content})
+    
+    # Log the final constructed messages for debugging
+    logger.debug(f"Final messages_for_ai being sent to LLM: {json.dumps(messages_for_ai, indent=2)}")
     return messages_for_ai
 
 SUMMARY_GENERATION_PROMPT_TEMPLATE = (

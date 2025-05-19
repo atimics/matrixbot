@@ -127,7 +127,10 @@ class ToolExecutionService:
             # The `data_for_followup_llm` will carry this text response back.
             data_for_llm_followup = {
                 "text_response_from_openrouter": or_response_event.text_response,
-                "tool_calls_from_openrouter": or_response_event.tool_calls 
+                "tool_calls_from_openrouter": [
+                    tc.model_dump(mode='json') if hasattr(tc, 'model_dump') else tc 
+                    for tc in or_response_event.tool_calls
+                ] if or_response_event.tool_calls else None
             }
             if or_response_event.tool_calls:
                 logger.warning(f"ToolExecSvc: OpenRouter (delegated call for {original_tool_call_id}) itself returned tool_calls: {or_response_event.tool_calls}. These are passed in data_for_followup_llm but not directly executed by ToolExecutionService at this step.")

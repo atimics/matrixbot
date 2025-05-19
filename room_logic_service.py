@@ -364,9 +364,22 @@ class RoomLogicService:
         short_term_memory = config.get('memory', [])
         pending_batch_for_memory = response_event.original_request_payload.get("pending_batch_for_memory", [])
         
-        if not response_event.original_request_payload.get("is_follow_up_after_tool_execution") and \
-           not response_event.original_request_payload.get("is_follow_up_after_delegated_tool_call") and \
+        # --- Logging for debugging user message addition to memory ---
+        is_follow_up = response_event.original_request_payload.get("is_follow_up_after_tool_execution")
+        is_delegated_follow_up = response_event.original_request_payload.get("is_follow_up_after_delegated_tool_call")
+        turn_req_id_for_debug = response_event.original_request_payload.get("turn_request_id", "N/A")
+        logger.debug(f"RLS: [{room_id}] In _handle_ai_chat_response for turn_request_id: {turn_req_id_for_debug}.")
+        logger.debug(f"RLS: [{room_id}]   is_follow_up_after_tool_execution: {is_follow_up}")
+        logger.debug(f"RLS: [{room_id}]   is_follow_up_after_delegated_tool_call: {is_delegated_follow_up}")
+        logger.debug(f"RLS: [{room_id}]   pending_batch_for_memory is present: {bool(pending_batch_for_memory)}")
+        if pending_batch_for_memory:
+            logger.debug(f"RLS: [{room_id}]   First item in pending_batch_for_memory: {pending_batch_for_memory[0] if pending_batch_for_memory else 'Empty'}")
+        # --- End logging for debugging ---
+
+        if not is_follow_up and \
+           not is_delegated_follow_up and \
            pending_batch_for_memory:
+            logger.info(f"RLS: [{room_id}] Adding user messages from pending_batch_for_memory to short_term_memory for turn_request_id: {turn_req_id_for_debug}.") # MODIFIED to INFO for visibility
             try:
                 combined_user_content = "".join(f"{msg['name']}: {msg['content']}\n" for msg in pending_batch_for_memory)
                 representative_event_id_for_user_turn = pending_batch_for_memory[-1]["event_id"]
@@ -608,32 +621,103 @@ class RoomLogicService:
             logger.info(f"RLS: [{room_id}] Still waiting for more tool responses for turn {turn_request_id}. Not making follow-up AI call yet.")
             return # Not all tools have responded yet
 
-        logger.info(f"RLS: [{room_id}] All expected tools for turn {turn_request_id} have responded. Preparing follow-up AI call.")
+        # All tools for this turn have responded. Proceed with follow-up and memory update.
+        logger.info(f"RLS: [{room_id}] All expected tools for turn {turn_request_id} have responded. Preparing follow-up AI call and updating memory.")
 
-        # All tools for this turn have responded. Proceed with follow-up.
         history_at_tool_call_time = pending_turn_info['conversation_history_at_tool_call_time']
         assistant_message_with_tool_calls = pending_turn_info['assistant_message_with_tool_calls']
         
-        augmented_history = list(history_at_tool_call_time) # Start with history before assistant's tool-calling message
-        augmented_history.append(assistant_message_with_tool_calls) # Add the assistant's message that initiated the tool calls
+        # Prepare history for the follow-up AI call
+        augmented_history_for_follow_up = list(history_at_tool_call_time) 
+        augmented_history_for_follow_up.append(dict(assistant_message_with_tool_calls)) # Use a copy
         
-        # Add all tool results to the history
-        for tool_exec_response in pending_turn_info["received_tool_responses"]:
-            tool_message_for_history = {
-                "role": "tool",
-                "tool_call_id": tool_exec_response.original_tool_call_id,
-                "content": tool_exec_response.result_for_llm_history
-            }
-            augmented_history.append(tool_message_for_history)
+        original_tool_call_pydantic_objects = assistant_message_with_tool_calls.get("tool_calls", [])
+        responses_dict = {resp.original_tool_call_id: resp for resp in pending_turn_info["received_tool_responses"]}
 
+        # Defensive logging for this specific turn completion
+        assistant_tool_call_ids = [tc.id for tc in original_tool_call_pydantic_objects]
+        received_tool_call_ids = list(responses_dict.keys())
+        logger.debug(f"RLS: [{room_id}] Finalizing turn {turn_request_id}. Tool call IDs in assistant message: {assistant_tool_call_ids}")
+        logger.debug(f"RLS: [{room_id}] Finalizing turn {turn_request_id}. Tool call IDs with responses: {received_tool_call_ids}")
+
+        # Get a direct reference to the short-term memory list for modification
+        short_term_memory_list = config.get('memory', [])
+
+        for original_tc_obj in original_tool_call_pydantic_objects:
+            tool_id = original_tc_obj.id 
+            tool_exec_response = responses_dict.get(tool_id)
+            
+            tool_message_content_for_llm: str
+            if tool_exec_response:
+                tool_message_content_for_llm = tool_exec_response.result_for_llm_history
+            else:
+                logger.error(f"RLS: [{room_id}] Critical: Missing tool response for expected tool_call_id: {tool_id} when building follow-up history for turn {turn_request_id}. Adding placeholder.")
+                tool_message_content_for_llm = f"[Error: Tool response for tool_call_id '{tool_id}' was not found or not recorded before follow-up. The tool may have failed silently, been skipped, or an internal error occurred.]"
+            
+            tool_message_for_history_and_memory = {
+                "role": "tool",
+                "tool_call_id": tool_id, 
+                "content": tool_message_content_for_llm
+            }
+            augmented_history_for_follow_up.append(tool_message_for_history_and_memory)
+            # Add to actual short-term memory.
+            # The assistant's message (that called the tools) is already in memory from _handle_ai_chat_response.
+            # We only need to add these tool responses here.
+            short_term_memory_list.append(tool_message_for_history_and_memory)
+        
+        # After appending all tool messages, apply memory size limit to short_term_memory_list
+        while len(short_term_memory_list) > self.short_term_memory_items:
+            short_term_memory_list.pop(0)
+        config['memory'] = short_term_memory_list # Ensure the config reflects the (potentially) trimmed list
+        
+        # --- Check if we should skip the follow-up AI call ---
+        should_skip_follow_up_ai_call = False
+        # original_tool_call_pydantic_objects are the Pydantic models from the assistant_message_with_tool_calls
+        if len(original_tool_call_pydantic_objects) == 1:
+            single_tool_call = original_tool_call_pydantic_objects[0]
+            if single_tool_call.function.name == "send_reply":
+                # Check if the assistant's original message content was empty or essentially part of the send_reply
+                original_content = assistant_message_with_tool_calls.get("content")
+                
+                send_reply_args_text = None
+                try:
+                    reply_args_raw = single_tool_call.function.arguments
+                    reply_args_dict = {}
+                    if isinstance(reply_args_raw, str):
+                        try:
+                            reply_args_dict = json.loads(reply_args_raw)
+                        except json.JSONDecodeError as jde:
+                            logger.warning(f"RLS: [{room_id}] JSONDecodeError parsing send_reply args string: '{reply_args_raw}'. Error: {jde}")
+                            reply_args_dict = {} # Default to empty if parsing fails
+                    elif isinstance(reply_args_raw, dict):
+                        reply_args_dict = reply_args_raw
+                    # else: it's some other type, reply_args_dict remains {}
+                    
+                    send_reply_args_text = reply_args_dict.get("text")
+                except Exception as e:
+                    logger.warning(f"RLS: [{room_id}] Could not parse args for send_reply in skip_follow_up check: {e}")
+
+                if not original_content or original_content == send_reply_args_text:
+                    logger.info(f"RLS: [{room_id}] Original AI response was effectively just a send_reply tool call. Skipping follow-up AI call for turn {turn_request_id}.")
+                    should_skip_follow_up_ai_call = True
+        
+        # Clean up the pending tool call info for this turn_request_id (do this regardless of skip)
+        if turn_request_id in self.pending_tool_calls_for_ai_turn:
+            del self.pending_tool_calls_for_ai_turn[turn_request_id]
+            logger.info(f"RLS: [{room_id}] Cleared pending tool call info for turn_request_id: {turn_request_id} after all tools processed.")
+
+        if should_skip_follow_up_ai_call:
+            logger.info(f"RLS: [{room_id}] Follow-up AI call skipped as per logic for turn {turn_request_id}.")
+            # Typing indicator should have been turned off by _handle_ai_chat_response.
+            return # Exit before publishing follow-up request
+        
+        # Now, prepare and publish the follow-up AI request using augmented_history_for_follow_up
         original_ai_payload_from_first_call = pending_turn_info["original_ai_response_payload"]
         current_user_ids_in_context = original_ai_payload_from_first_call.get("current_user_ids_in_context", [])
-        
-        # Fetch current channel summary for the follow-up prompt
         current_channel_summary, _ = database.get_summary(self.db_path, room_id) or (None, None)
 
         follow_up_payload = prompt_constructor.build_messages_for_ai(
-            historical_messages=augmented_history,
+            historical_messages=augmented_history_for_follow_up, # Use the history built in this block
             current_batched_user_inputs=[], 
             bot_display_name=self.bot_display_name,
             db_path=self.db_path,
@@ -684,18 +768,37 @@ class RoomLogicService:
         self.bus.subscribe(ActivateListeningEvent.model_fields['event_type'].default, self._handle_activate_listening)
         self.bus.subscribe(ProcessMessageBatchCommand.model_fields['event_type'].default, self._handle_process_message_batch)
         
-        # Subscribe to specific AI response events for chat
+        # Subscribe to specific AI response events for chat.
+        # The _handle_ai_chat_response method itself checks response_event.response_topic.
+        # By subscribing to specific event types, we ensure the handler gets the correctly typed event.
+        # We remove the subscription to the generic AIInferenceResponseEvent for this handler
+        # to prevent double calls if the message bus delivers an event to handlers for both
+        # its specific type and its base type.
         self.bus.subscribe(OpenRouterInferenceResponseEvent.model_fields['event_type'].default, self._handle_ai_chat_response)
         self.bus.subscribe(OllamaInferenceResponseEvent.model_fields['event_type'].default, self._handle_ai_chat_response)
-        # Fallback for generic AIInferenceResponseEvent if any are still published directly (should be rare for chat)
-        self.bus.subscribe(AIInferenceResponseEvent.model_fields['event_type'].default, self._handle_ai_chat_response)
+        # If other specific chat response events exist, they should be subscribed here.
+        # A generic AIInferenceResponseEvent for chat, if not covered by specific types, would need careful handling
+        # or a separate handler if it implies different processing. For now, assuming specific types cover chat.
 
-        # Subscribe to specific AI response events for summary
+        # Subscribe to specific AI response events for summary.
+        # Similar to chat responses, removed generic subscription to avoid double calls.
         self.bus.subscribe(OpenRouterInferenceResponseEvent.model_fields['event_type'].default, self._handle_ai_summary_response)
         self.bus.subscribe(OllamaInferenceResponseEvent.model_fields['event_type'].default, self._handle_ai_summary_response)
-        # Fallback for generic AIInferenceResponseEvent for summaries (should be rare)
-        self.bus.subscribe(AIInferenceResponseEvent.model_fields['event_type'].default, self._handle_ai_summary_response)
+        # If other specific summary response events exist, they should be subscribed here.
 
+        # Fallback subscriptions for truly generic AIInferenceResponseEvents,
+        # only if they are not instances of the more specific types handled above
+        # and require these handlers. The internal topic check in the handlers is crucial.
+        # However, to definitively prevent double calls from the bus, it's better to ensure
+        # that an event type isn't matched by multiple subscriptions leading to the same handler.
+        # For now, we rely on the specific subscriptions and the internal topic checks.
+        # The original generic subscriptions are removed to prevent the bus from causing double calls.
+        # If a truly generic AIInferenceResponseEvent (that is not OpenRouter or Ollama) needs to be handled
+        # for chat or summary, separate logic or a more sophisticated subscription mechanism might be needed.
+        # Based on current usage, specific events are published by AIInferenceService.
+        # self.bus.subscribe(AIInferenceResponseEvent.model_fields['event_type'].default, self._handle_ai_chat_response) # REMOVED
+        # self.bus.subscribe(AIInferenceResponseEvent.model_fields['event_type'].default, self._handle_ai_summary_response) # REMOVED
+        
         self.bus.subscribe(BotDisplayNameReadyEvent.model_fields['event_type'].default, self._handle_bot_display_name_ready)
         self.bus.subscribe(ToolExecutionResponse.model_fields['event_type'].default, self._handle_tool_execution_response)
         
@@ -705,6 +808,7 @@ class RoomLogicService:
         """Stops the service."""
         logger.info("RoomLogicService: Stop requested.")
         self._stop_event.set()
+        
         # Unsubscribe from all events
         await self.bus.shutdown() # Replaced unsubscribe_all with shutdown
         logger.info("RoomLogicService: Unsubscribed from all events.")
