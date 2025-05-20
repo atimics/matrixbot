@@ -21,7 +21,7 @@ class MatrixGatewayService:
         self.homeserver = os.getenv("MATRIX_HOMESERVER")
         self.user_id = os.getenv("MATRIX_USER_ID")
         self.password = os.getenv("MATRIX_PASSWORD")
-        self.device_name = os.getenv("DEVICE_NAME", "NioChatBotSOA_Gateway")
+        self.device_name = os.getenv("DEVICE_NAME", "NioChatBotSOA-Gateway")
         self.client: Optional[AsyncClient] = None
         self.bot_display_name: Optional[str] = "ChatBot" # Default
         self._stop_event = asyncio.Event()
