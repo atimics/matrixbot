@@ -2,9 +2,9 @@ import asyncio
 import time
 import os
 import uuid
-import json # Added for logging AI payload
+import json  # Added for logging AI payload
 import logging
-import datetime # Add this import
+import datetime  # Add this import
 
 # Set up logger for this module
 logger = logging.getLogger(__name__)
@@ -13,6 +13,9 @@ logger = logging.getLogger(__name__)
 
 from typing import Dict, Any, List, Optional
 from dotenv import load_dotenv
+
+# Tools that simply output text or reactions without affecting state.
+SIMPLE_OUTPUT_TOOLS = {"send_reply", "send_message", "react_to_message", "do_not_respond"}
 
 from message_bus import MessageBus
 from event_definitions import (
@@ -433,6 +436,11 @@ class RoomLogicService:
                 else:
                      assistant_message_for_memory["content"] = None
 
+                # Determine if all tool calls are simple output tools and no additional text was provided.
+                tool_names_called = [tc.function.name for tc in tool_calls_from_llm if tc.function]
+                is_simple_output_only = all(name in SIMPLE_OUTPUT_TOOLS for name in tool_names_called)
+                ai_only_simple_output = (not text_response_content) or is_text_in_send_reply or text_response_content.strip() == ""
+
 
                 ai_turn_key = response_event.original_request_payload.get("turn_request_id")
                 if not ai_turn_key:
@@ -448,7 +456,8 @@ class RoomLogicService:
                         "assistant_message_with_tool_calls": dict(assistant_message_for_memory), # Store the full assistant message
                         "expected_tool_call_ids": [tc.id for tc in tool_calls_from_llm],
                         "received_tool_responses": [], # To store ToolExecutionResponse objects
-                        "original_ai_response_payload": response_event.original_request_payload # For model, provider, etc.
+                        "original_ai_response_payload": response_event.original_request_payload, # For model, provider, etc.
+                        "skip_follow_up_if_simple_output": is_simple_output_only and ai_only_simple_output
                     }
                     logger.info(f"RLS: [{room_id}] Stored pending tool call info for turn_request_id: {ai_turn_key} with {len(tool_calls_from_llm)} expected tools.")
 
@@ -693,6 +702,18 @@ class RoomLogicService:
         while len(short_term_memory_list) > self.short_term_memory_items:
             short_term_memory_list.pop(0)  # Maintain memory size limit
         config['memory'] = short_term_memory_list  # Ensure the config reflects the (potentially) trimmed list
+
+        # Determine if a follow-up AI call is necessary
+        skip_follow_up = pending_turn_info.get("skip_follow_up_if_simple_output", False)
+        all_success = all(r.status == "success" for r in pending_turn_info["received_tool_responses"])
+        if skip_follow_up and all_success:
+            if turn_request_id in self.pending_tool_calls_for_ai_turn:
+                del self.pending_tool_calls_for_ai_turn[turn_request_id]
+            logger.info(
+                f"RLS: [{room_id}] Original AI response used only simple output tools with no extra text. "
+                f"Skipping follow-up AI call for turn {turn_request_id}."
+            )
+            return
 
         # Now, prepare and publish the follow-up AI request using augmented_history_for_follow_up
         original_ai_payload_from_first_call = pending_turn_info["original_ai_response_payload"]
