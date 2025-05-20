@@ -22,7 +22,7 @@ When using tools like 'send_reply', only specify the arguments for the tool. Do 
 {user_memories_section}
 {tool_states_section}
 
-Consider all available information (conversation history, summaries, memories, tool states) to make informed decisions. Be concise and helpful.
+Consider all available information (conversation history, summaries, memories, tool states) to make informed decisions. Be concise.
 
 You have access to a set of tools to perform actions or get information.
 When you use a tool, the system will provide you with the result of that tool execution.
@@ -89,9 +89,9 @@ def get_formatted_system_prompt(
             raise FileNotFoundError
     except Exception:
         if bot_display_name:
-            bot_identity_section = f"You are {bot_display_name}, a helpful AI assistant."
+            bot_identity_section = f"You are {bot_display_name}."
         else:
-            bot_identity_section = "You are a helpful AI assistant."
+            bot_identity_section = "You are AI."
 
     # Fetch latest global summary
     global_summary_text = ""

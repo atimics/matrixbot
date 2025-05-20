@@ -79,7 +79,7 @@ def test_get_formatted_system_prompt_no_summaries_no_bot_name(mock_db):
     mock_db.get_latest_global_summary.return_value = None
     mock_db.get_user_memories.return_value = []
     prompt = get_formatted_system_prompt(None, None, None, "dummy_db.sqlite", [])
-    assert "You are a helpful AI assistant." in prompt # Default identity
+    assert "You are AI." in prompt # Default identity
     assert "No global summary available currently." in prompt
     assert "Channel Specific Summary:" not in prompt
     assert "Context for user-specific memories not available." in prompt # No user IDs provided
@@ -90,7 +90,7 @@ def test_get_formatted_system_prompt_only_bot_name(mock_db):
     mock_db.get_latest_global_summary.return_value = None
     mock_db.get_user_memories.return_value = []
     prompt = get_formatted_system_prompt("NamedBot", None, None, "dummy_db.sqlite", [])
-    assert "You are NamedBot, a helpful AI assistant." in prompt
+    assert "You are NamedBot, AI." in prompt
     assert "No global summary available currently." in prompt
     assert "No specific tool states available" in prompt
 

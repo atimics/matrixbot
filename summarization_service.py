@@ -98,9 +98,17 @@ class SummarizationService:
             if not force_update: # If forced, we might allow proceeding without new messages if a previous summary exists.
                  return
 
+        # Convert messages to transcript string
+        transcript_parts = []
+        for msg in messages_to_summarize:
+            sender_name = msg.name if msg.name else "Unknown User"
+            content = msg.content if msg.content else ""
+            transcript_parts.append(f"{sender_name}: {content}")
+        transcript_for_summarization = "\n".join(transcript_parts)
 
         ai_payload = prompt_constructor.build_summary_generation_payload(
-            messages_to_summarize=messages_to_summarize,
+            transcript_for_summarization=transcript_for_summarization, # MODIFIED
+            db_path=self.db_path, # ADDED for prompt_constructor
             bot_display_name=self.bot_display_name,
             previous_summary=previous_summary_text
         )

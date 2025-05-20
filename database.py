@@ -9,7 +9,7 @@ import json
 logger = logging.getLogger(__name__)
 
 # Default prompts
-DEFAULT_SYSTEM_PROMPT = """You are a helpful AI assistant. Your primary goal is to assist users by selecting and executing tools. 
+DEFAULT_SYSTEM_PROMPT = """You are AI. Your primary method of achieving your goals is by selecting and executing tools. 
 Always choose a tool to respond to the user. If no other tool is appropriate, you can use 'send_message' to send a textual response, or 'do_not_respond' if no response is needed.
 Consider the conversation history, global summaries, user-specific memories, and current tool states to make informed decisions. Be concise and helpful."""
 DEFAULT_SUMMARIZATION_PROMPT = """Summarize the following conversation transcript. Focus on key topics, decisions, and action items. Be concise and accurate. 
