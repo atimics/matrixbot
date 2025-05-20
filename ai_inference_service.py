@@ -84,7 +84,7 @@ class AIInferenceService:
 
     async def run(self):
         print("AIInferenceService: Starting...")
-        self.bus.subscribe(AIInferenceRequestEvent.model_fields['event_type'].default, self._handle_inference_request)
+        self.bus.subscribe(AIInferenceRequestEvent.get_event_type(), self._handle_inference_request)
         await self._stop_event.wait() # Keep running until stop is called
         print("AIInferenceService: Stopped.")
 
