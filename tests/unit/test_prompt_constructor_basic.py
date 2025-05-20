@@ -6,6 +6,7 @@ def test_system_prompt_included():
         historical_messages=[],
         current_batched_user_inputs=[],
         bot_display_name="TestBot",
+        db_path="dummy.db",
         include_system_prompt=True,
     )
     assert messages[0]["role"] == "system"
@@ -17,6 +18,7 @@ def test_system_prompt_excluded():
         historical_messages=[],
         current_batched_user_inputs=[],
         bot_display_name="TestBot",
+        db_path="dummy.db",
         include_system_prompt=False,
     )
     assert messages == []
@@ -30,6 +32,7 @@ def test_combined_user_inputs():
             {"name": "bob", "content": "Hi"},
         ],
         bot_display_name="TestBot",
+        db_path="dummy.db",
     )
     user_msg = messages[-1]
     assert user_msg["role"] == "user"
@@ -44,6 +47,7 @@ def test_channel_summary_inserted():
         historical_messages=[],
         current_batched_user_inputs=[],
         bot_display_name="TestBot",
+        db_path="dummy.db",
         channel_summary=summary_text,
     )
     system_msg_content = messages[0]["content"]

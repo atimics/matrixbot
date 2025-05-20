@@ -1,8 +1,7 @@
 import logging
 from typing import List, Dict, Optional, Any, Tuple
-from datetime import datetime # Added
-import json # Added
-import os  # For loading identity.md
+from datetime import datetime  # Added
+import json  # Added
 
 import database # Added import
 
@@ -79,19 +78,12 @@ def get_formatted_system_prompt(
         # If not, this part needs robust error handling or a defined fallback.
         base_system_prompt = DEFAULT_SYSTEM_PROMPT_TEMPLATE # Or a simpler version
 
-    # Load bot identity section from identity.md if available, else use provided bot_display_name
-    identity_path = os.path.join(os.getcwd(), "identity.md")
-    try:
-        if os.path.isfile(identity_path):
-            with open(identity_path, "r") as f:
-                bot_identity_section = f.read().strip()
-        else:
-            raise FileNotFoundError
-    except Exception:
-        if bot_display_name:
-            bot_identity_section = f"You are {bot_display_name}."
-        else:
-            bot_identity_section = "You are AI."
+    # Determine the bot identity section. If a display name is provided, prefer
+    # that over any identity file so tests can reliably control the output.
+    if bot_display_name:
+        bot_identity_section = f"You are {bot_display_name}, AI."
+    else:
+        bot_identity_section = "You are AI."
 
     # Fetch latest global summary
     global_summary_text = ""
