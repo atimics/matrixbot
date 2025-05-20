@@ -1,10 +1,19 @@
+# Version pinning is highly recommended for reproducibility.
+# If using Poetry, generate this file with:
+#   poetry export -f requirements.txt --output requirements.txt --without-hashes
+# The canonical dependency source is pyproject.toml/poetry.lock.
+
 matrix-nio[e2e]
 python-dotenv
 pydantic
+markdown
 # For a real message queue, you'd add one of these:
 # pika                 # For RabbitMQ (blocking, often used with threads or separate processes)
 # aio-pika             # For RabbitMQ (asyncio compatible)
 # redis                # For Redis Streams (if using redis-py)
 # confluent-kafka      # For Kafka
-# Development dependencies
+ollama
+httpx # Added for asynchronous HTTP requests
+pytest-asyncio
 pytest
+pytest-mock # Added for mocker fixture

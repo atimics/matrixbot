@@ -1,5 +1,4 @@
 FROM mcr.microsoft.com/devcontainers/base:jammy
-# FROM mcr.microsoft.com/devcontainers/base:jammy 
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG USER=vscode
@@ -29,7 +28,6 @@ RUN DEBIAN_FRONTEND=noninteractive \
 USER $USER
 ARG HOME="/home/$USER"
 ARG PYTHON_VERSION=3.10
-# ARG PYTHON_VERSION=3.10
 
 ENV PYENV_ROOT="${HOME}/.pyenv"
 ENV PATH="${PYENV_ROOT}/shims:${PYENV_ROOT}/bin:${HOME}/.local/bin:$PATH"
