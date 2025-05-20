@@ -6,3 +6,5 @@ pydantic
 # aio-pika             # For RabbitMQ (asyncio compatible)
 # redis                # For Redis Streams (if using redis-py)
 # confluent-kafka      # For Kafka
+# Development dependencies
+pytest
