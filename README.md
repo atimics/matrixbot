@@ -38,11 +38,11 @@ A modern, async Matrix chatbot that uses OpenRouter for AI-powered responses. Bu
     -   `YOUR_SITE_URL`: (Optional) For OpenRouter API headers.
     -   `YOUR_SITE_NAME`: (Optional) For OpenRouter API headers.
 
-    See `main.py` and `.env.example` for other optional polling and memory configuration variables.
+    See `main_orchestrator.py` and `.env.example` for other optional polling and memory configuration variables.
 
 4.  **Run the bot**
     ```bash
-    python main.py
+    python main_orchestrator.py
     ```
     The bot will attempt to fetch its display name from its Matrix profile. This name is used for mentions.
 
