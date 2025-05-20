@@ -32,7 +32,7 @@ class AIInferenceRequestEvent(BaseEvent):
     event_type: str = "ai_inference_request"
     request_id: str # For correlating responses
     reply_to_service_event: str # Event type the original requester is waiting for
-    original_request_payload: Dict[str, Any] = {} # To carry room_id, etc.
+    original_request_payload: Dict[str, Any] = Field(default_factory=dict) # To carry room_id, etc.
     
     model_name: str
     messages_payload: List[Dict[str, str]]
@@ -40,7 +40,7 @@ class AIInferenceRequestEvent(BaseEvent):
 class AIInferenceResponseEvent(BaseEvent):
     event_type: str = "ai_inference_response"
     request_id: str # Correlates to AIInferenceRequestEvent
-    original_request_payload: Dict[str, Any] = {} # Passed through from request
+    original_request_payload: Dict[str, Any] = Field(default_factory=dict) # Passed through from request
     
     success: bool
     text_response: Optional[str] = None
