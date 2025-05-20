@@ -252,10 +252,10 @@ class RoomLogicService:
 
     async def run(self):
         print("RoomLogicService: Starting...")
-        self.bus.subscribe(BotDisplayNameReadyEvent.model_fields['event_type'].default, self._handle_bot_display_name_ready)
-        self.bus.subscribe(MatrixMessageReceivedEvent.model_fields['event_type'].default, self._handle_matrix_message)
-        self.bus.subscribe(ActivateListeningEvent.model_fields['event_type'].default, self._handle_activate_listening)
-        self.bus.subscribe(ProcessMessageBatchCommand.model_fields['event_type'].default, self._handle_process_message_batch)
+        self.bus.subscribe(BotDisplayNameReadyEvent.get_event_type(), self._handle_bot_display_name_ready)
+        self.bus.subscribe(MatrixMessageReceivedEvent.get_event_type(), self._handle_matrix_message)
+        self.bus.subscribe(ActivateListeningEvent.get_event_type(), self._handle_activate_listening)
+        self.bus.subscribe(ProcessMessageBatchCommand.get_event_type(), self._handle_process_message_batch)
         # For AI responses specific to chat
         self.bus.subscribe("ai_chat_response_received", self._handle_ai_chat_response) 
         

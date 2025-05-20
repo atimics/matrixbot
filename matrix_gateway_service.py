@@ -66,7 +66,7 @@ class MatrixGatewayService:
 
         self.client = AsyncClient(self.homeserver, self.user_id)
         self.client.add_event_callback(self._matrix_message_callback, RoomMessageText)
-        self.bus.subscribe(SendMatrixMessageCommand.model_fields['event_type'].default, self._handle_send_message_command)
+        self.bus.subscribe(SendMatrixMessageCommand.get_event_type(), self._handle_send_message_command)
 
         try:
             print(f"Gateway: Attempting login as {self.user_id}...")

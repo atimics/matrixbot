@@ -7,6 +7,13 @@ class BaseEvent(BaseModel):
     event_type: str = Field(..., description="The type of the event")
     timestamp: float = Field(default_factory=time.time, description="Event creation timestamp")
 
+    @classmethod
+    def get_event_type(cls) -> str:
+        """Return the default event type for this class."""
+        if hasattr(cls, "model_fields"):
+            return cls.model_fields["event_type"].default  # type: ignore[attr-defined]
+        return cls.__fields__["event_type"].default  # type: ignore[attr-defined]
+
 class MatrixMessageReceivedEvent(BaseEvent):
     event_type: str = "matrix_message_received"
     room_id: str

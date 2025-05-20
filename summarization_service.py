@@ -98,7 +98,7 @@ class SummarizationService:
 
     async def run(self):
         print("SummarizationService: Starting...")
-        self.bus.subscribe(BotDisplayNameReadyEvent.model_fields['event_type'].default, self._handle_bot_display_name_ready)
+        self.bus.subscribe(BotDisplayNameReadyEvent.get_event_type(), self._handle_bot_display_name_ready)
         # This service listens for AIInferenceResponseEvents that were intended for it (summary results)
         self.bus.subscribe("ai_summary_response_received", self._handle_ai_summary_response)
         # GenerateSummaryRequestEvent is now handled by RoomLogicService, which then makes an AIInferenceRequest.
