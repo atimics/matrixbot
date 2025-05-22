@@ -26,6 +26,13 @@
     *   Asynchronous architecture using `asyncio`.
     *   Modular design with a message bus for inter-service communication.
 
+## Architecture Overview
+
+The bot is composed of small, single-responsibility services that communicate
+through an in-process message bus.  Each service runs asynchronously and reacts
+to events from the bus.  This approach keeps the code base easy to extend and
+encourages loose coupling between components.
+
 ## Why Choose This Bot?
 
 *   **Flexibility:** Choose between cloud-based AI for cutting-edge performance or local AI for privacy and control. The hybrid mode offers a unique balance.
@@ -145,6 +152,9 @@ This hybrid approach offers unparalleled flexibility, allowing you to primarily 
 
 ## Security
 -   Never commit your actual `.env` file or credentials to version control. The `.gitignore` file should prevent this.
+
+## Future Improvements
+See [FUTURE_IMPROVEMENTS.md](FUTURE_IMPROVEMENTS.md) for upcoming ideas and proposals.
 
 ## License
 MIT
