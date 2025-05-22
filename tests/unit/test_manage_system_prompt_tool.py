@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from available_tools.manage_system_prompt_tool import ManageSystemPromptTool
 from tool_base import ToolResult
@@ -18,9 +18,9 @@ def test_manage_system_prompt_tool_get_definition(manage_system_prompt_tool_inst
     assert "action" in definition["function"]["parameters"]["required"]
 
 @pytest.mark.asyncio
-@patch('available_tools.manage_system_prompt_tool.database', new_callable=AsyncMock) # Mock database module used by the tool
+@patch('available_tools.manage_system_prompt_tool.database', new_callable=MagicMock) # Mock database module used by the tool
 async def test_manage_system_prompt_tool_get_current_success(mock_db, manage_system_prompt_tool_instance: ManageSystemPromptTool):
-    mock_db.get_prompt = AsyncMock(return_value=("Current system prompt", None)) # Simulate DB returning a prompt
+    mock_db.get_prompt = MagicMock(return_value=("Current system prompt", None)) # Simulate DB returning a prompt
     room_id = "!test_room:matrix.org"
     arguments = {"action": "get_current"}
     db_path_param = "dummy_db_path.db"
@@ -36,9 +36,9 @@ async def test_manage_system_prompt_tool_get_current_success(mock_db, manage_sys
     assert not result.commands_to_publish
 
 @pytest.mark.asyncio
-@patch('available_tools.manage_system_prompt_tool.database', new_callable=AsyncMock)
+@patch('available_tools.manage_system_prompt_tool.database', new_callable=MagicMock)
 async def test_manage_system_prompt_tool_get_current_not_found(mock_db, manage_system_prompt_tool_instance: ManageSystemPromptTool):
-    mock_db.get_prompt = AsyncMock(return_value=(None, None)) # Simulate DB returning no prompt
+    mock_db.get_prompt = MagicMock(return_value=(None, None)) # Simulate DB returning no prompt
     arguments = {"action": "get_current"}
     db_path_param = "dummy_db_path.db"
 
@@ -52,9 +52,9 @@ async def test_manage_system_prompt_tool_get_current_not_found(mock_db, manage_s
     mock_db.get_prompt.assert_called_once_with(db_path_param, "system_default")
 
 @pytest.mark.asyncio
-@patch('available_tools.manage_system_prompt_tool.database', new_callable=AsyncMock)
+@patch('available_tools.manage_system_prompt_tool.database', new_callable=MagicMock)
 async def test_manage_system_prompt_tool_update_success(mock_db, manage_system_prompt_tool_instance: ManageSystemPromptTool):
-    mock_db.update_prompt = AsyncMock() # No return value needed for update
+    mock_db.update_prompt = MagicMock() # No return value needed for update
     new_prompt = "This is the new system prompt."
     arguments = {"action": "update", "new_prompt_text": new_prompt}
     db_path_param = "dummy_db_path.db"
@@ -102,7 +102,7 @@ async def test_manage_system_prompt_tool_invalid_action(manage_system_prompt_too
     assert "Invalid action specified: delete. Must be 'get_current' or 'update'." in result.error_message
 
 @pytest.mark.asyncio
-@patch('available_tools.manage_system_prompt_tool.database', new_callable=AsyncMock)
+@patch('available_tools.manage_system_prompt_tool.database', new_callable=MagicMock)
 async def test_manage_system_prompt_tool_db_exception_on_get(mock_db, manage_system_prompt_tool_instance: ManageSystemPromptTool):
     mock_db.get_prompt.side_effect = Exception("DB error on get")
     arguments = {"action": "get_current"}
@@ -117,7 +117,7 @@ async def test_manage_system_prompt_tool_db_exception_on_get(mock_db, manage_sys
     assert "DB error on get" in result.error_message
 
 @pytest.mark.asyncio
-@patch('available_tools.manage_system_prompt_tool.database', new_callable=AsyncMock)
+@patch('available_tools.manage_system_prompt_tool.database', new_callable=MagicMock)
 async def test_manage_system_prompt_tool_db_exception_on_update(mock_db, manage_system_prompt_tool_instance: ManageSystemPromptTool):
     mock_db.update_prompt.side_effect = Exception("DB error on update")
     arguments = {"action": "update", "new_prompt_text": "test"}
