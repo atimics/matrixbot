@@ -1,17 +1,23 @@
 import logging
 import os
+import asyncio
 from typing import Dict, Any, List, Optional
 
+from pydantic import BaseModel, ValidationError
 from tool_base import AbstractTool, ToolResult
-from event_definitions import RequestAISummaryCommand, HistoricalMessage # Updated imports
-from database import SummaryData # Import SummaryData
+from event_definitions import RequestAISummaryCommand, HistoricalMessage  # Updated imports
+from database import SummaryData  # Import SummaryData
 
-import database # Use absolute import assuming root is in PYTHONPATH
+import database  # Use absolute import assuming root is in PYTHONPATH
 
 logger = logging.getLogger(__name__)
 
 class ManageChannelSummaryTool(AbstractTool):
     """Tool to manage channel summaries, either by requesting an update or fetching the current one."""
+
+    class ArgsModel(BaseModel):
+        action: str
+        room_id: Optional[str] = None
 
     def get_definition(self) -> Dict[str, Any]:
         return {
@@ -48,15 +54,17 @@ class ManageChannelSummaryTool(AbstractTool):
         conversation_history_snapshot: List[Dict[str, Any]],
         last_user_event_id: Optional[str]
     ) -> ToolResult:
-        action = arguments.get("action")
-        # llm_provided_room_id = arguments.get("room_id") # Can be logged or validated if needed
-
-        if not action:
+        try:
+            args = self.ArgsModel(**arguments)
+        except ValidationError as ve:
+            logger.warning(f"ManageChannelSummaryTool: Argument validation failed: {ve}")
             return ToolResult(
                 status="failure",
-                result_for_llm_history="[Tool manage_channel_summary failed: Missing required argument 'action']",
-                error_message="Missing required argument: action"
+                result_for_llm_history="[Tool manage_channel_summary failed: Invalid arguments]",
+                error_message="Invalid arguments provided to manage_channel_summary",
             )
+
+        action = args.action
 
         if action == "request_update":
             messages_for_summary_cmd: List[HistoricalMessage] = []
@@ -95,7 +103,7 @@ class ManageChannelSummaryTool(AbstractTool):
         elif action == "get_current":
             try:
                 # database.get_summary returns a tuple: (summary_text, last_event_id_summarized) or None
-                summary_details_tuple = database.get_summary(db_path, room_id) # Use injected db_path
+                summary_details_tuple = await asyncio.to_thread(database.get_summary, db_path, room_id)
             except Exception as e:
                 logger.error(f"ManageChannelSummaryTool: Error calling database.get_summary for room {room_id}: {e}")
                 return ToolResult(

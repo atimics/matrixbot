@@ -145,6 +145,6 @@ async def test_manage_channel_summary_tool_execute_missing_action(summary_tool_i
     )
 
     assert result.status == "failure"
-    assert "Missing required argument: action" in result.error_message # Updated expected error message
-    assert result.result_for_llm_history == "[Tool manage_channel_summary failed: Missing required argument 'action']" # Check new llm history message
+    assert "Invalid arguments" in result.result_for_llm_history
+    assert "Invalid arguments" in result.error_message
     assert not result.commands_to_publish

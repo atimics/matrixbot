@@ -1,13 +1,19 @@
 import logging
+import asyncio
 from typing import Dict, Any, List, Optional
 
+from pydantic import BaseModel, ValidationError
 from tool_base import AbstractTool, ToolResult
-import database # Assuming database.py is in the PYTHONPATH
+import database  # Assuming database.py is in the PYTHONPATH
 
 logger = logging.getLogger(__name__)
 
 class ManageSummarizationPromptTool(AbstractTool):
     """Manages the AI's summarization prompt. Allows fetching or updating it."""
+
+    class ArgsModel(BaseModel):
+        action: str
+        new_prompt_text: Optional[str] = None
 
     def get_definition(self) -> Dict[str, Any]:
         return {
@@ -43,8 +49,18 @@ class ManageSummarizationPromptTool(AbstractTool):
         last_user_event_id: Optional[str],
         db_path: Optional[str] = None
     ) -> ToolResult:
-        action = arguments.get("action")
-        new_prompt_text = arguments.get("new_prompt_text")
+        try:
+            args = self.ArgsModel(**arguments)
+        except ValidationError as ve:
+            logger.warning(f"ManageSummarizationPromptTool: Argument validation failed: {ve}")
+            return ToolResult(
+                status="failure",
+                result_for_llm_history=f"[Tool {self.get_definition()['function']['name']} failed: Invalid arguments.]",
+                error_message="Invalid arguments provided to manage_summarization_prompt"
+            )
+
+        action = args.action
+        new_prompt_text = args.new_prompt_text
         prompt_name = "summarization_default"
 
         if not db_path:
@@ -57,7 +73,7 @@ class ManageSummarizationPromptTool(AbstractTool):
 
         try:
             if action == "get_current":
-                current_prompt_tuple = database.get_prompt(db_path, prompt_name)
+                current_prompt_tuple = await asyncio.to_thread(database.get_prompt, db_path, prompt_name)
                 if current_prompt_tuple:
                     current_prompt = current_prompt_tuple[0]
                     logger.info(f"ManageSummarizationPromptTool: Fetched summarization prompt '{prompt_name}'.")
@@ -79,7 +95,7 @@ class ManageSummarizationPromptTool(AbstractTool):
                         result_for_llm_history=f"[Tool {self.get_definition()['function']['name']}(action=update) failed: Missing 'new_prompt_text' argument.]",
                         error_message="Missing required argument: new_prompt_text for action 'update'"
                     )
-                database.update_prompt(db_path, prompt_name, new_prompt_text)
+                await asyncio.to_thread(database.update_prompt, db_path, prompt_name, new_prompt_text)
                 logger.info(f"ManageSummarizationPromptTool: Updated summarization prompt '{prompt_name}'.")
                 return ToolResult(
                     status="success",

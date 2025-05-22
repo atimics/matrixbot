@@ -1,13 +1,19 @@
 import logging
+import asyncio
 from typing import Dict, Any, List, Optional
 
+from pydantic import BaseModel, ValidationError
 from tool_base import AbstractTool, ToolResult
-import database # Assuming database.py is in the PYTHONPATH
+import database  # Assuming database.py is in the PYTHONPATH
 
 logger = logging.getLogger(__name__)
 
 class ManageSystemPromptTool(AbstractTool):
     """Manages the AI's core system prompt. Allows fetching or updating it."""
+
+    class ArgsModel(BaseModel):
+        action: str
+        new_prompt_text: Optional[str] = None
 
     def get_definition(self) -> Dict[str, Any]:
         return {
@@ -43,8 +49,18 @@ class ManageSystemPromptTool(AbstractTool):
         last_user_event_id: Optional[str],
         db_path: Optional[str] = None
     ) -> ToolResult:
-        action = arguments.get("action")
-        new_prompt_text = arguments.get("new_prompt_text")
+        try:
+            args = self.ArgsModel(**arguments)
+        except ValidationError as ve:
+            logger.warning(f"ManageSystemPromptTool: Argument validation failed: {ve}")
+            return ToolResult(
+                status="failure",
+                result_for_llm_history="[Tool manage_system_prompt failed: Invalid arguments.]",
+                error_message="Invalid arguments provided to manage_system_prompt"
+            )
+
+        action = args.action
+        new_prompt_text = args.new_prompt_text
 
         if not db_path:
             logger.error("ManageSystemPromptTool: db_path is not configured.")
@@ -57,7 +73,7 @@ class ManageSystemPromptTool(AbstractTool):
         try:
             if action == "get_current":
                 prompt_name = "system_default"
-                current_prompt_tuple = await database.get_prompt(db_path, prompt_name)
+                current_prompt_tuple = await asyncio.to_thread(database.get_prompt, db_path, prompt_name)
                 # Check if the prompt exists and has content
                 if current_prompt_tuple and current_prompt_tuple[0] is not None:
                     current_prompt = current_prompt_tuple[0]
@@ -81,7 +97,7 @@ class ManageSystemPromptTool(AbstractTool):
                         error_message="Missing required argument: new_prompt_text for action 'update'"
                     )
                 prompt_name = "system_default"
-                await database.update_prompt(db_path, prompt_name, new_prompt_text)
+                await asyncio.to_thread(database.update_prompt, db_path, prompt_name, new_prompt_text)
                 logger.info(f"ManageSystemPromptTool: Updated system prompt '{prompt_name}'.")
                 return ToolResult(
                     status="success",
