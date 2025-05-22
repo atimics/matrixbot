@@ -22,6 +22,8 @@ from event_definitions import (
     RequestAISummaryCommand,
     SummaryGeneratedEvent,
     BotDisplayNameReadyEvent,
+    MatrixImageReceivedEvent,
+    ImageCaptionGeneratedEvent,
     HistoricalMessage, # Assuming this might be used or tested directly
     BatchedUserMessage, # Assuming this might be used or tested directly
     ToolCall, # Assuming this might be used or tested directly
@@ -59,6 +61,25 @@ def test_matrix_message_received_event_valid():
 def test_matrix_message_received_event_missing_fields():
     with pytest.raises(ValidationError):
         MatrixMessageReceivedEvent(room_id="!room:host")
+
+# Test MatrixImageReceivedEvent
+def test_matrix_image_received_event_valid():
+    event = MatrixImageReceivedEvent(
+        room_id="!room:host",
+        event_id_matrix="$img_event",
+        sender_id="@user:host",
+        sender_display_name="User A",
+        image_url="mxc://server/id",
+        body="optional alt",
+        room_display_name="Test Room",
+    )
+    check_base_event_fields(event, "matrix_image_received")
+    assert event.image_url == "mxc://server/id"
+    assert event.body == "optional alt"
+
+def test_matrix_image_received_event_missing_fields():
+    with pytest.raises(ValidationError):
+        MatrixImageReceivedEvent(room_id="!room:host")
 
 # Test SendMatrixMessageCommand
 def test_send_matrix_message_command_valid():
@@ -337,6 +358,17 @@ def test_bot_display_name_ready_event_valid():
     event = BotDisplayNameReadyEvent(display_name="MyBot")
     check_base_event_fields(event, "bot_display_name_ready")
     assert event.display_name == "MyBot"
+
+# Test ImageCaptionGeneratedEvent
+def test_image_caption_generated_event_valid():
+    event = ImageCaptionGeneratedEvent(
+        room_id="!room:host",
+        caption_text="a cat",
+        original_event_id="$img1",
+    )
+    check_base_event_fields(event, "image_caption_generated")
+    assert event.caption_text == "a cat"
+    assert event.original_event_id == "$img1"
 
 # Test default timestamp generation and awareness
 def test_base_event_timestamp_defaults():
