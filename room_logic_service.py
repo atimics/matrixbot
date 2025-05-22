@@ -703,10 +703,20 @@ class RoomLogicService:
             short_term_memory_list.pop(0)  # Maintain memory size limit
         config['memory'] = short_term_memory_list  # Ensure the config reflects the (potentially) trimmed list
 
-        # Determine if a follow-up AI call is necessary
+        # Determine if a follow-up AI call is necessary. Recompute a safeguard
+        # here in case the flag was not stored correctly when the AI response
+        # was first handled.
         skip_follow_up = pending_turn_info.get("skip_follow_up_if_simple_output", False)
-        all_success = all(r.status == "success" for r in pending_turn_info["received_tool_responses"])
-        if skip_follow_up and all_success:
+        assistant_content = assistant_message_with_tool_calls.get("content")
+        tool_names = [tc.function.name for tc in original_tool_call_pydantic_objects if tc.function]
+        dynamic_simple_output = (
+            all(name in SIMPLE_OUTPUT_TOOLS for name in tool_names)
+            and (not assistant_content or str(assistant_content).strip() == "")
+        )
+
+        if (skip_follow_up or dynamic_simple_output) and all(
+            r.status == "success" for r in pending_turn_info["received_tool_responses"]
+        ):
             if turn_request_id in self.pending_tool_calls_for_ai_turn:
                 del self.pending_tool_calls_for_ai_turn[turn_request_id]
             logger.info(
