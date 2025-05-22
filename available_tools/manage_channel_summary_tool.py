@@ -1,6 +1,5 @@
 import logging
 import os
-import asyncio
 from typing import Dict, Any, List, Optional
 
 from pydantic import BaseModel, ValidationError
@@ -102,8 +101,7 @@ class ManageChannelSummaryTool(AbstractTool):
             )
         elif action == "get_current":
             try:
-                # database.get_summary returns a tuple: (summary_text, last_event_id_summarized) or None
-                summary_details_tuple = await asyncio.to_thread(database.get_summary, db_path, room_id)
+                summary_details_tuple = await database.get_summary(db_path, room_id)
             except Exception as e:
                 logger.error(f"ManageChannelSummaryTool: Error calling database.get_summary for room {room_id}: {e}")
                 return ToolResult(

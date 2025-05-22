@@ -2,7 +2,7 @@ import asyncio
 import os
 import logging
 import json # ADDED
-from typing import Optional
+from typing import Optional, Dict, Any
 from nio import (
     AsyncClient,
     MatrixRoom,
@@ -29,6 +29,8 @@ from event_definitions import (
     SetPresenceCommand,
     ReactToMessageCommand,
     SendReplyCommand # Added new commands
+    , RequestMatrixRoomInfoCommand,
+    MatrixRoomInfoResponseEvent
 )
 
 logger = logging.getLogger(__name__)
@@ -283,6 +285,38 @@ class MatrixGatewayService:
         except Exception as e:
             logger.error(f"Gateway [ReplyCmd:{command.event_id}]: Error sending reply to {command.room_id} (ReplyTo: {command.reply_to_event_id}): {type(e).__name__} - {e}", exc_info=True)
 
+    async def _handle_request_room_info(self, command: RequestMatrixRoomInfoCommand):
+        info: Dict[str, Any] = {}
+        success = True
+        error_msg = None
+        if not self.client:
+            success = False
+            error_msg = "Matrix client not ready"
+        else:
+            try:
+                if "name" in command.aspects:
+                    resp = await self.client.room_get_state_event(command.room_id, "m.room.name", "")
+                    if hasattr(resp, "name"):
+                        info["name"] = resp.name
+                if "topic" in command.aspects:
+                    resp = await self.client.room_get_state_event(command.room_id, "m.room.topic", "")
+                    if hasattr(resp, "topic"):
+                        info["topic"] = resp.topic
+                if "members" in command.aspects:
+                    members = await self.client.joined_members(command.room_id)
+                    info["members"] = list(members.members.keys()) if hasattr(members, "members") else []
+            except Exception as e:
+                success = False
+                error_msg = str(e)
+        await self.bus.publish(MatrixRoomInfoResponseEvent(
+            room_id=command.room_id,
+            info=info,
+            original_request_event_id=command.event_id,
+            original_tool_call_id=command.original_tool_call_id,
+            success=success,
+            error_message=error_msg
+        ))
+
     async def _handle_set_typing_command(self, command: SetTypingIndicatorCommand):
         await self._enqueue_command(self._set_typing_impl, command)
 
@@ -369,6 +403,7 @@ class MatrixGatewayService:
         self.bus.subscribe(SendReplyCommand.model_fields['event_type'].default, self._handle_send_reply_command)
         self.bus.subscribe(SetTypingIndicatorCommand.model_fields['event_type'].default, self._handle_set_typing_command)
         self.bus.subscribe(SetPresenceCommand.model_fields['event_type'].default, self._handle_set_presence_command)
+        self.bus.subscribe(RequestMatrixRoomInfoCommand.model_fields['event_type'].default, self._handle_request_room_info)
 
         self._command_worker_task = asyncio.create_task(self._command_worker())
 

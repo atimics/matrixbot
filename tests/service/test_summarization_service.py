@@ -16,8 +16,8 @@ from event_definitions import (
 
 
 @pytest.mark.asyncio
-@patch('summarization_service.database.initialize_database')
-@patch('summarization_service.database.update_summary')
+@patch('summarization_service.database.initialize_database', new_callable=AsyncMock)
+@patch('summarization_service.database.update_summary', new_callable=AsyncMock)
 async def test_handle_ai_summary_response_success(mock_update, mock_init_db):
     bus = AsyncMock(spec=MessageBus)
     bus.publish = AsyncMock()
@@ -46,8 +46,8 @@ async def test_handle_ai_summary_response_success(mock_update, mock_init_db):
 
 
 @pytest.mark.asyncio
-@patch('summarization_service.database.initialize_database')
-@patch('summarization_service.database.update_summary')
+@patch('summarization_service.database.initialize_database', new_callable=AsyncMock)
+@patch('summarization_service.database.update_summary', new_callable=AsyncMock)
 async def test_handle_ai_summary_response_missing_info(mock_update, mock_init_db):
     bus = AsyncMock(spec=MessageBus)
     bus.publish = AsyncMock()
@@ -68,9 +68,9 @@ async def test_handle_ai_summary_response_missing_info(mock_update, mock_init_db
 
 
 @pytest.mark.asyncio
-@patch('summarization_service.database.initialize_database')
-@patch('summarization_service.database.get_summary', return_value=(None, None))
-@patch('summarization_service.prompt_constructor.build_summary_generation_payload', return_value=[{"role": "user", "content": "payload"}])
+@patch('summarization_service.database.initialize_database', new_callable=AsyncMock)
+@patch('summarization_service.database.get_summary', new_callable=AsyncMock, return_value=(None, None))
+@patch('summarization_service.prompt_constructor.build_summary_generation_payload', new_callable=AsyncMock, return_value=[{"role": "user", "content": "payload"}])
 @patch('summarization_service.uuid.uuid4', return_value="uuid123")
 async def test_handle_request_ai_summary_command_openrouter(mock_uuid, mock_build, mock_get_summary, mock_init_db):
     bus = AsyncMock(spec=MessageBus)
@@ -98,9 +98,9 @@ async def test_handle_request_ai_summary_command_openrouter(mock_uuid, mock_buil
 
 
 @pytest.mark.asyncio
-@patch('summarization_service.database.initialize_database')
-@patch('summarization_service.database.get_summary', return_value=(None, None))
-@patch('summarization_service.prompt_constructor.build_summary_generation_payload', return_value=[{"role": "user", "content": "payload"}])
+@patch('summarization_service.database.initialize_database', new_callable=AsyncMock)
+@patch('summarization_service.database.get_summary', new_callable=AsyncMock, return_value=(None, None))
+@patch('summarization_service.prompt_constructor.build_summary_generation_payload', new_callable=AsyncMock, return_value=[{"role": "user", "content": "payload"}])
 @patch('summarization_service.uuid.uuid4', return_value="uuid456")
 async def test_handle_request_ai_summary_command_ollama(mock_uuid, mock_build, mock_get_summary, mock_init_db):
     bus = AsyncMock(spec=MessageBus)

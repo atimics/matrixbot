@@ -48,7 +48,7 @@ class SummarizationService:
             return
         if response_event.success and response_event.text_response and response_event.text_response.strip():
             summary_text = response_event.text_response
-            await asyncio.to_thread(database.update_summary, self.db_path, room_id, summary_text, event_id_last_msg)
+            await database.update_summary(self.db_path, room_id, summary_text, event_id_last_msg)
             logger.info(f"SummarizationSvc: [{room_id}] DB summary updated. Last event: {event_id_last_msg}. Len: {len(summary_text)}")
             await self.bus.publish(SummaryGeneratedEvent(
                 room_id=room_id, 
@@ -71,7 +71,7 @@ class SummarizationService:
             logger.info(f"SummarizationSvc: [{room_id}] No messages to summarize and not a forced update. Skipping.")
             return
 
-        previous_summary_text, _ = await asyncio.to_thread(database.get_summary, self.db_path, room_id) or (None, None)
+        previous_summary_text, _ = await database.get_summary(self.db_path, room_id) or (None, None)
         
         # Determine the event_id of the last message in the batch to be summarized
         event_id_of_last_message_in_summary_batch: Optional[str] = None
@@ -106,7 +106,7 @@ class SummarizationService:
             transcript_parts.append(f"{sender_name}: {content}")
         transcript_for_summarization = "\n".join(transcript_parts)
 
-        ai_payload = prompt_constructor.build_summary_generation_payload(
+        ai_payload = await prompt_constructor.build_summary_generation_payload(
             transcript_for_summarization=transcript_for_summarization, # MODIFIED
             db_path=self.db_path, # ADDED for prompt_constructor
             bot_display_name=self.bot_display_name,

@@ -10,6 +10,7 @@ from database import SummaryData
 def summary_tool_instance(mocker):
     # Mock the database dependency for this tool
     mock_db = MagicMock()
+    mock_db.get_summary = AsyncMock()
     # Patch the database module where ManageChannelSummaryTool will import it from
     mocker.patch('available_tools.manage_channel_summary_tool.database', mock_db)
     return ManageChannelSummaryTool(), mock_db

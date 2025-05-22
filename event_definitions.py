@@ -224,6 +224,24 @@ class RequestAISummaryCommand(BaseEvent):
     last_event_id_in_messages: Optional[str] = None
 
 
+class RequestMatrixRoomInfoCommand(BaseEvent):
+    event_type: str = Field("request_matrix_room_info_command", frozen=True)
+    room_id: str
+    aspects: List[str]
+    response_event_topic: str
+    original_tool_call_id: str
+
+
+class MatrixRoomInfoResponseEvent(BaseEvent):
+    event_type: str = Field("matrix_room_info_response_event", frozen=True)
+    room_id: str
+    info: Dict[str, Any]
+    original_request_event_id: str
+    original_tool_call_id: str
+    success: bool
+    error_message: Optional[str] = None
+
+
 # --- Tool Execution Events ---
 class ExecuteToolRequest(BaseEvent):
     event_type: str = Field("execute_tool_request", frozen=True)
