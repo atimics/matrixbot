@@ -101,7 +101,7 @@ class SummarizationService:
         # Convert messages to transcript string
         transcript_parts = []
         for msg in messages_to_summarize:
-            sender_name = msg.name if msg.name else "Unknown User"
+            sender_name = getattr(msg, "name", None) or "Unknown User"
             content = msg.content if msg.content else ""
             transcript_parts.append(f"{sender_name}: {content}")
         transcript_for_summarization = "\n".join(transcript_parts)
