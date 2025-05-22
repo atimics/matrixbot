@@ -7,6 +7,7 @@ from nio import (
     AsyncClient,
     MatrixRoom,
     RoomMessageText,
+    RoomMessageImage,
     LoginResponse,
     ProfileGetResponse,
     RoomGetEventResponse, # Added for fetching original event
@@ -21,6 +22,7 @@ import markdown
 from message_bus import MessageBus
 from event_definitions import (
     MatrixMessageReceivedEvent,
+    MatrixImageReceivedEvent,
     SendMatrixMessageCommand,
     BotDisplayNameReadyEvent,
     SetTypingIndicatorCommand,
@@ -138,6 +140,21 @@ class MatrixGatewayService:
             room_display_name=room.display_name
         )
         await self.bus.publish(msg_event)
+
+    async def _matrix_image_callback(self, room: MatrixRoom, event: RoomMessageImage):
+        if not self.client or event.sender == self.client.user_id:
+            return
+        sender_display_name = room.user_name(event.sender) or event.sender
+        img_event = MatrixImageReceivedEvent(
+            room_id=room.room_id,
+            event_id_matrix=event.event_id,
+            sender_id=event.sender,
+            sender_display_name=sender_display_name,
+            image_url=event.url,
+            body=event.body,
+            room_display_name=room.display_name,
+        )
+        await self.bus.publish(img_event)
 
     async def _handle_send_message_command(self, command: SendMatrixMessageCommand):
         await self._enqueue_command(self._send_message_impl, command)
@@ -345,6 +362,7 @@ class MatrixGatewayService:
              )
 
         self.client.add_event_callback(self._matrix_message_callback, RoomMessageText)
+        self.client.add_event_callback(self._matrix_image_callback, RoomMessageImage)
         # Subscribe to commands
         self.bus.subscribe(SendMatrixMessageCommand.model_fields['event_type'].default, self._handle_send_message_command)
         self.bus.subscribe(ReactToMessageCommand.model_fields['event_type'].default, self._handle_react_to_message_command)
