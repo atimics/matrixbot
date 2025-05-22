@@ -1,5 +1,4 @@
 import logging
-import asyncio
 from typing import Dict, Any, List, Optional
 
 from pydantic import BaseModel, ValidationError
@@ -73,7 +72,7 @@ class ManageSystemPromptTool(AbstractTool):
         try:
             if action == "get_current":
                 prompt_name = "system_default"
-                current_prompt_tuple = await asyncio.to_thread(database.get_prompt, db_path, prompt_name)
+                current_prompt_tuple = await database.get_prompt(db_path, prompt_name)
                 # Check if the prompt exists and has content
                 if current_prompt_tuple and current_prompt_tuple[0] is not None:
                     current_prompt = current_prompt_tuple[0]
@@ -97,7 +96,7 @@ class ManageSystemPromptTool(AbstractTool):
                         error_message="Missing required argument: new_prompt_text for action 'update'"
                     )
                 prompt_name = "system_default"
-                await asyncio.to_thread(database.update_prompt, db_path, prompt_name, new_prompt_text)
+                await database.update_prompt(db_path, prompt_name, new_prompt_text)
                 logger.info(f"ManageSystemPromptTool: Updated system prompt '{prompt_name}'.")
                 return ToolResult(
                     status="success",

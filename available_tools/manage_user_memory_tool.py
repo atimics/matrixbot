@@ -1,5 +1,4 @@
 import logging
-import asyncio
 from typing import Dict, Any, List, Optional
 from datetime import datetime # Ensure datetime is imported
 from pydantic import BaseModel, ValidationError
@@ -101,7 +100,7 @@ class ManageUserMemoryTool(AbstractTool):
                         result_for_llm_history=f"[Tool {tool_name}(action=add) failed: Missing 'memory_text' argument.]",
                         error_message="Missing required argument: memory_text for action 'add'"
                     )
-                await asyncio.to_thread(database.add_user_memory, db_path, user_id, memory_text)
+                await database.add_user_memory(db_path, user_id, memory_text)
                 logger.info(f"{tool_name}: Added memory for user '{user_id}'.")
                 state_updates = {f"{tool_name}.last_action": f"Added memory for {user_id}"}
                 return ToolResult(
@@ -110,7 +109,7 @@ class ManageUserMemoryTool(AbstractTool):
                     state_updates=state_updates
                 )
             elif action == "get" or action == "list": # 'get' and 'list' are functionally the same for this tool
-                memories = await asyncio.to_thread(database.get_user_memories, db_path, user_id)
+                memories = await database.get_user_memories(db_path, user_id)
                 if memories:
                     # Corrected timestamp formatting
                     formatted_memories = "\n".join([f"- ID {mem[0]}: {mem[2]} (Noted: {datetime.fromtimestamp(mem[3]).strftime('%Y-%m-%d %H:%M')})" for mem in memories])
@@ -132,7 +131,7 @@ class ManageUserMemoryTool(AbstractTool):
                         result_for_llm_history=f"[Tool {tool_name}(action=delete) failed: Missing 'memory_id' argument.]",
                         error_message="Missing required argument: memory_id for action 'delete'"
                     )
-                await asyncio.to_thread(database.delete_user_memory, db_path, memory_id)
+                await database.delete_user_memory(db_path, memory_id)
                 logger.info(f"{tool_name}: Deleted memory with ID '{memory_id}' for user '{user_id}'.")
                 state_updates = {f"{tool_name}.last_action": f"Deleted memory ID {memory_id} for {user_id}"}
                 return ToolResult(

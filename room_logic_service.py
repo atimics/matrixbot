@@ -150,7 +150,7 @@ class RoomLogicService:
             config['batch_response_task'].cancel() # Cancel any pending batch from previous active period
 
         if not config:
-            db_summary_info = await asyncio.to_thread(database.get_summary, self.db_path, room_id)  # non-blocking
+            db_summary_info = await database.get_summary(self.db_path, room_id)
             initial_last_event_id_db = db_summary_info[1] if db_summary_info else None
 
             config = {
@@ -270,7 +270,7 @@ class RoomLogicService:
         await self.bus.publish(SetTypingIndicatorCommand(room_id=room_id, typing=True))
 
         short_term_memory = config.get('memory', [])
-        summary_text_for_prompt, _ = await asyncio.to_thread(database.get_summary, self.db_path, room_id) or (None, None)
+        summary_text_for_prompt, _ = await database.get_summary(self.db_path, room_id) or (None, None)
 
         last_user_event_id_in_batch = None
         # Convert BatchedUserMessage back to the dict format expected by build_messages_for_ai
@@ -298,7 +298,7 @@ class RoomLogicService:
         tool_states_for_prompt: Optional[Dict[str, Any]] = config.get('tool_states')
 
 
-        ai_payload = prompt_constructor.build_messages_for_ai(
+        ai_payload = await prompt_constructor.build_messages_for_ai(
             historical_messages=list(short_term_memory),
             current_batched_user_inputs=processed_pending_batch_for_ai, # Use the converted batch
             bot_display_name=self.bot_display_name,
@@ -562,7 +562,7 @@ class RoomLogicService:
             summary_text = response_event.text_response
             if summary_text:
                 last_event_id_in_summary = config['memory'][-1]["event_id"] if config['memory'] else None
-                await asyncio.to_thread(database.update_summary, self.db_path, room_id, summary_text, last_event_id_in_summary)
+                await database.update_summary(self.db_path, room_id, summary_text, last_event_id_in_summary)
                 config['new_turns_since_last_summary'] = 0
                 logger.info(f"RLS: [{room_id}] Summary stored successfully.")
             else:
@@ -728,9 +728,9 @@ class RoomLogicService:
         # Now, prepare and publish the follow-up AI request using augmented_history_for_follow_up
         original_ai_payload_from_first_call = pending_turn_info["original_ai_response_payload"]
         current_user_ids_in_context = original_ai_payload_from_first_call.get("current_user_ids_in_context", [])
-        current_channel_summary, _ = await asyncio.to_thread(database.get_summary, self.db_path, room_id) or (None, None)
+        current_channel_summary, _ = await database.get_summary(self.db_path, room_id) or (None, None)
 
-        follow_up_payload = prompt_constructor.build_messages_for_ai(
+        follow_up_payload = await prompt_constructor.build_messages_for_ai(
             historical_messages=augmented_history_for_follow_up,  # Use the history built in this block
             current_batched_user_inputs=[],
             bot_display_name=self.bot_display_name,

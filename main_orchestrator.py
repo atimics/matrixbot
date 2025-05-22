@@ -29,7 +29,7 @@ async def main() -> None:
 
     # Define and Initialize database path
     db_path = os.getenv("DATABASE_PATH", "matrix_bot_soa.db")
-    database.initialize_database(db_path)
+    await database.initialize_database(db_path)
 
     # Initialize Message Bus
     bus = MessageBus()

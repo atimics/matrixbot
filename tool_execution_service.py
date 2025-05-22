@@ -1,11 +1,12 @@
 import asyncio
 import logging
-from typing import Dict, Any, Optional # Added Optional
+import json
+from typing import Dict, Any, Optional
 
 from message_bus import MessageBus
 from tool_manager import ToolRegistry
 from tool_base import ToolResult # Assuming ToolResult is in tool_base
-from event_definitions import ExecuteToolRequest, ToolExecutionResponse, BaseEvent, OpenRouterInferenceResponseEvent # Added OpenRouterInferenceResponseEvent
+from event_definitions import ExecuteToolRequest, ToolExecutionResponse, BaseEvent, OpenRouterInferenceResponseEvent, MatrixRoomInfoResponseEvent
 from available_tools.delegate_to_openrouter_tool import DELEGATED_OPENROUTER_RESPONSE_EVENT_TYPE # Import the constant
 
 logger = logging.getLogger(__name__)
@@ -25,7 +26,16 @@ class ToolExecutionService:
 
         tool_name = event.tool_call.function.name # Correctly access tool name
         tool_call_id = event.tool_call.id
-        arguments_str = event.tool_call.function.arguments
+        arguments_input = event.tool_call.function.arguments
+        if isinstance(arguments_input, str):
+            try:
+                parsed_args = json.loads(arguments_input)
+            except Exception:
+                parsed_args = {}
+        elif isinstance(arguments_input, dict):
+            parsed_args = arguments_input
+        else:
+            parsed_args = {}
 
         logger.info(f"TES: Received ExecuteToolRequest for tool: {tool_name}, Tool Call ID: {tool_call_id}, Event ID: {event.event_id}. Args: {arguments_str}") # MODIFIED
 
@@ -48,7 +58,7 @@ class ToolExecutionService:
             tool_result: ToolResult = await tool.execute(
                 room_id=event.room_id,
                 db_path=self.db_path,
-                arguments=event.tool_call.function.arguments, # Corrected: Access arguments from tool_call.function
+                arguments=parsed_args,
                 tool_call_id=tool_call_id,
                 llm_provider_info={
                     **event.llm_provider_info,
@@ -170,12 +180,24 @@ class ToolExecutionService:
         await self.bus.publish(final_tool_response)
         logger.info(f"ToolExecSvc: Published final ToolExecutionResponse for delegated call_openrouter_llm (Original Call ID: {original_tool_call_id}). Status: {final_status}")
 
+    async def _handle_room_info_response(self, event: MatrixRoomInfoResponseEvent) -> None:
+        tool_response = ToolExecutionResponse(
+            original_tool_call_id=event.original_tool_call_id,
+            tool_name="get_room_info",
+            status="success" if event.success else "failure",
+            result_for_llm_history=str(event.info) if event.success else f"[Failed to fetch room info: {event.error_message}]",
+            error_message=event.error_message,
+            original_request_payload={"room_id": event.room_id}
+        )
+        await self.bus.publish(tool_response)
+
     async def run(self) -> None:
         logger.info("ToolExecutionService: Starting...")
         self.bus.subscribe(ExecuteToolRequest.model_fields['event_type'].default, self._handle_execute_tool_request)
         # Subscribe to the specific event type that OpenRouterInferenceService will publish to
         # when a response for a DelegateToOpenRouterTool call is ready.
         self.bus.subscribe(DELEGATED_OPENROUTER_RESPONSE_EVENT_TYPE, self._handle_delegated_openrouter_response)
+        self.bus.subscribe(MatrixRoomInfoResponseEvent.model_fields['event_type'].default, self._handle_room_info_response)
         await self._stop_event.wait()
         logger.info("ToolExecutionService: Stopped.")
 

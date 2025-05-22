@@ -56,7 +56,7 @@ def build_status_prompt(bot_display_name: str = "AI Bot") -> List[Dict[str, str]
         {"role": "system", "content": f"You are an AI assistant named {bot_display_name}. Generate a short, friendly status message summarizing your readiness to help in chat. Keep it under 10 words."}
     ]
 
-def get_formatted_system_prompt(
+async def get_formatted_system_prompt(
     bot_display_name: Optional[str],
     channel_summary: Optional[str],
     tool_states: Optional[Dict[str, Any]],
@@ -67,7 +67,7 @@ def get_formatted_system_prompt(
     logger.debug(f"Formatting system prompt for bot: {bot_display_name}")
 
     # Fetch system prompt from database
-    system_prompt_tuple = database.get_prompt(db_path, "system_default")
+    system_prompt_tuple = await database.get_prompt(db_path, "system_default")
     if system_prompt_tuple:
         base_system_prompt = system_prompt_tuple[0]
         logger.info("Using system prompt from database.")
@@ -87,7 +87,7 @@ def get_formatted_system_prompt(
 
     # Fetch latest global summary
     global_summary_text = ""
-    latest_global_summary_tuple = database.get_latest_global_summary(db_path)
+    latest_global_summary_tuple = await database.get_latest_global_summary(db_path)
     if latest_global_summary_tuple:
         global_summary_text = f"Global Context Summary (most recent):\n{latest_global_summary_tuple[0]}"
         logger.debug("Included latest global summary in system prompt.")
@@ -100,7 +100,7 @@ def get_formatted_system_prompt(
     if current_user_ids_in_context:
         all_user_memories_parts = []
         for user_id in current_user_ids_in_context:
-            memories = database.get_user_memories(db_path, user_id)
+            memories = await database.get_user_memories(db_path, user_id)
             if memories:
                 formatted_memories = "\n".join([f"  - {mem[2]} (ID: {mem[0]}, Noted: {datetime.fromtimestamp(mem[3]).strftime('%Y-%m-%d %H:%M')})" for mem in memories])
                 all_user_memories_parts.append(f"Memories for user {user_id}:\n{formatted_memories}")
@@ -154,7 +154,7 @@ def get_formatted_system_prompt(
     logger.debug(f"Final formatted system prompt:\n{formatted_prompt}")
     return formatted_prompt
 
-def build_messages_for_ai(
+async def build_messages_for_ai(
     historical_messages: List[Any], # Allow both dict and HistoricalMessage
     current_batched_user_inputs: List[Dict[str, str]],
     bot_display_name: str,
@@ -172,7 +172,7 @@ def build_messages_for_ai(
     """
     messages_for_ai: List[Dict[str, Any]] = []
     if include_system_prompt:
-        system_message_content = get_formatted_system_prompt(
+        system_message_content = await get_formatted_system_prompt(
             bot_display_name=bot_display_name,
             channel_summary=channel_summary,
             tool_states=tool_states, # UPDATED
@@ -328,7 +328,7 @@ SUMMARY_GENERATION_PROMPT_TEMPLATE = (
 )
 PREVIOUS_SUMMARY_CONTEXT_TEMPLATE = "A previous summary of the conversation up to this point was:\n{previous_summary}\n---\nBased on this, summarize the *new* messages that follow.\n"
 
-def build_summary_generation_payload(
+async def build_summary_generation_payload(
     transcript_for_summarization: str, 
     previous_summary: Optional[str],
     db_path: str, # Added db_path
@@ -338,7 +338,7 @@ def build_summary_generation_payload(
     logger.debug("Building summary generation payload.")
 
     # Fetch summarization prompt from database
-    summarization_prompt_tuple = database.get_prompt(db_path, "summarization_default")
+    summarization_prompt_tuple = await database.get_prompt(db_path, "summarization_default")
     if summarization_prompt_tuple:
         system_prompt_text = summarization_prompt_tuple[0]
         logger.info("Using summarization prompt from database.")
