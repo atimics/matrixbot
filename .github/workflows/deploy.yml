@@ -1,0 +1,23 @@
+name: Deploy to Mac mini
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install dependencies
+        run: |
+          pip3 install -r requirements.txt
+      - name: Restart the bot
+        run: |
+          pkill -f main_orchestrator.py || true
+          nohup python3 main_orchestrator.py > bot.log 2>&1 &
+
