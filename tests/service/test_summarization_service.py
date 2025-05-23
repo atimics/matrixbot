@@ -32,6 +32,7 @@ async def test_handle_ai_summary_response_success(mock_update, mock_init_db):
         success=True,
         text_response="summary text",
         tool_calls=None,
+        response_topic="ai_summary_response_received",
     )
 
     await service._handle_ai_summary_response(event)
@@ -59,6 +60,7 @@ async def test_handle_ai_summary_response_missing_info(mock_update, mock_init_db
         success=True,
         text_response="summary",
         tool_calls=None,
+        response_topic="ai_summary_response_received",
     )
 
     await service._handle_ai_summary_response(event)

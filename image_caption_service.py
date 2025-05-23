@@ -21,7 +21,21 @@ class ImageCaptionService:
     def __init__(self, message_bus: MessageBus):
         self.bus = message_bus
         self.openrouter_vision_model = os.getenv("OPENROUTER_VISION_MODEL", "openai/gpt-4o")
+        self.matrix_homeserver = os.getenv("MATRIX_HOMESERVER")
         self._stop_event = asyncio.Event()
+
+    def _convert_mxc_to_http(self, mxc_url: str) -> str:
+        """Convert an MXC URI to an HTTP download URL if possible."""
+        if not mxc_url.startswith("mxc://") or not self.matrix_homeserver:
+            return mxc_url
+        try:
+            server_and_media = mxc_url[6:]
+            server, media_id = server_and_media.split("/", 1)
+            base = self.matrix_homeserver.rstrip("/")
+            return f"{base}/_matrix/media/v3/download/{server}/{media_id}"
+        except ValueError:
+            logger.warning(f"ImageCaptionService: Failed to parse MXC URL '{mxc_url}'.")
+            return mxc_url
 
     async def _handle_image_message(self, event: MatrixImageReceivedEvent) -> None:
         messages_payload: List[Dict[str, Any]] = [
@@ -29,7 +43,7 @@ class ImageCaptionService:
                 "role": "user",
                 "content": [
                     {"type": "text", "text": "Describe this image."},
-                    {"type": "image_url", "image_url": {"url": event.image_url}},
+                    {"type": "image_url", "image_url": {"url": self._convert_mxc_to_http(event.image_url)}},
                 ],
             }
         ]

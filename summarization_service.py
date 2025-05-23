@@ -43,10 +43,12 @@ class SummarizationService:
         # Check if this response is actually for the summarization service. Some
         # older events in tests do not specify a ``response_topic`` so we only
         # filter when a topic is provided and does not match.
-        if response_event.response_topic and response_event.response_topic != "ai_summary_response_received":
-            # logger.debug(
-            #     f"SummarizationSvc: Ignoring AIInferenceResponseEvent with topic '{response_event.response_topic}'. Expected 'ai_summary_response_received'."
-            # )
+        # Only process events explicitly marked for the summarization service.
+        # If the response_topic is missing or differs from our expected topic,
+        # simply ignore the event. Some older events in tests may omit the
+        # topic entirely, so treating a ``None`` value as non-matching prevents
+        # spurious error logs when handling regular chat responses.
+        if response_event.response_topic != "ai_summary_response_received":
             return
 
         room_id = response_event.original_request_payload.get("room_id")
