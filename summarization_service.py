@@ -7,10 +7,11 @@ from dotenv import load_dotenv
 
 from message_bus import MessageBus
 from event_definitions import (
-    AIInferenceRequestEvent, AIInferenceResponseEvent, 
+    AIInferenceRequestEvent, AIInferenceResponseEvent,
     SummaryGeneratedEvent, BotDisplayNameReadyEvent,
-    RequestAISummaryCommand, # Added
-    OllamaInferenceRequestEvent, OpenRouterInferenceRequestEvent # Added
+    RequestAISummaryCommand,
+    OllamaInferenceRequestEvent, OpenRouterInferenceRequestEvent,
+    OllamaInferenceResponseEvent, OpenRouterInferenceResponseEvent,
 )
 import database 
 import prompt_constructor
