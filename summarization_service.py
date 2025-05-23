@@ -40,6 +40,11 @@ class SummarizationService:
         logger.info(f"SummarizationSvc: Bot display name updated to '{self.bot_display_name}'")
 
     async def _handle_ai_summary_response(self, response_event: AIInferenceResponseEvent) -> None:
+        # Check if this response is actually for the summarization service
+        if response_event.response_topic != "ai_summary_response_received":
+            # logger.debug(f"SummarizationSvc: Ignoring AIInferenceResponseEvent with topic '{response_event.response_topic}'. Expected 'ai_summary_response_received'.")
+            return
+
         room_id = response_event.original_request_payload.get("room_id")
         event_id_last_msg = response_event.original_request_payload.get("event_id_of_last_message_in_summary_batch")
         if not room_id or not event_id_last_msg:

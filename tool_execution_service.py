@@ -37,7 +37,7 @@ class ToolExecutionService:
         else:
             parsed_args = {}
 
-        logger.info(f"TES: Received ExecuteToolRequest for tool: {tool_name}, Tool Call ID: {tool_call_id}, Event ID: {event.event_id}. Args: {arguments_str}") # MODIFIED
+        logger.info(f"TES: Received ExecuteToolRequest for tool: {tool_name}, Tool Call ID: {tool_call_id}, Event ID: {event.event_id}. Args: {arguments_input}") # MODIFIED
 
         tool = self.tool_registry.get_tool(tool_name)
 
