@@ -308,6 +308,7 @@ class ToolExecutionResponse(BaseEvent):
     data_from_tool_for_followup_llm: Optional[Dict[str, Any]] = None
     original_request_payload: Dict[str, Any] = Field(default_factory=dict)
     # Added from test
-    commands_to_publish: Optional[List[BaseEvent]] = None 
+    commands_to_publish: Optional[List[BaseEvent]] = None
+    original_tool_call: Optional[ToolCall] = None
     # original_ai_request_event_id: Optional[str] = None # From test, map to original_request_payload
 

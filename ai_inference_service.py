@@ -22,6 +22,61 @@ class AIInferenceService:
         self.site_name = os.getenv("YOUR_SITE_NAME", "MyMatrixBotSOA_AI")
         self._stop_event = asyncio.Event()
 
+    def _convert_messages_to_anthropic_format(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Convert OpenAI-style messages to Anthropic's tool_use format."""
+        converted: List[Dict[str, Any]] = []
+        for msg in messages:
+            role = msg.get("role")
+            if role == "assistant":
+                blocks: List[Dict[str, Any]] = []
+                text = msg.get("content")
+                if text:
+                    blocks.append({"type": "text", "text": text})
+                for tc in msg.get("tool_calls", []) or []:
+                    fn = tc.get("function", {})
+                    args = fn.get("arguments")
+                    try:
+                        parsed_args = json.loads(args) if isinstance(args, str) else args
+                    except json.JSONDecodeError:
+                        parsed_args = args
+                    blocks.append({
+                        "type": "tool_use",
+                        "id": tc.get("id"),
+                        "name": fn.get("name"),
+                        "input": parsed_args or {},
+                    })
+                converted.append({"role": "assistant", "content": blocks or text})
+            elif role == "tool":
+                converted.append({
+                    "role": "user",
+                    "content": [{
+                        "type": "tool_result",
+                        "tool_use_id": msg.get("tool_call_id"),
+                        "content": msg.get("content"),
+                    }],
+                })
+            else:
+                converted.append(msg)
+        return converted
+
+    def _validate_message_history(self, messages: List[Dict[str, Any]]) -> bool:
+        """Ensure tool results have corresponding tool calls."""
+        tool_calls_seen: set[str] = set()
+        for i, msg in enumerate(messages):
+            role = msg.get("role")
+            if role == "assistant" and msg.get("tool_calls"):
+                for tc in msg["tool_calls"]:
+                    if isinstance(tc, dict) and tc.get("id"):
+                        tool_calls_seen.add(tc["id"])
+            elif role == "tool":
+                tool_call_id = msg.get("tool_call_id")
+                if tool_call_id not in tool_calls_seen:
+                    logger.error(
+                        f"Tool result {tool_call_id} has no corresponding tool call"
+                    )
+                    return False
+        return True
+
     async def _get_openrouter_response_async(
         self,
         model_name: str,
@@ -156,8 +211,14 @@ class AIInferenceService:
             pending_tool_ids_from_assistant.clear()
 
         # Use the corrected payload for the API call
-        processed_messages_payload = corrected_messages_payload 
+        processed_messages_payload = corrected_messages_payload
         # --- END PAYLOAD CORRECTION AND VALIDATION ---
+
+        if model_name.startswith("anthropic/"):
+            processed_messages_payload = self._convert_messages_to_anthropic_format(processed_messages_payload)
+
+        if not self._validate_message_history(processed_messages_payload):
+            return False, None, None, "Message history validation failed"
 
         payload_data = {"model": model_name, "messages": processed_messages_payload}
         if tools:

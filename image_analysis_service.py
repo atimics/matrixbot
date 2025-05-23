@@ -45,6 +45,7 @@ class ImageAnalysisService:
             error_message=error_message,
             original_request_payload={"room_id": room_id},
             commands_to_publish=None,
+            original_tool_call=None,
         )
 
         await self.bus.publish(tool_response)
