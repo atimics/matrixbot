@@ -462,10 +462,14 @@ class MatrixGatewayService:
                     localpart = self.client.user_id.split(':')[0]
                     self.bot_display_name = localpart[1:] if localpart.startswith("@") else localpart
                 logger.info(f"Gateway: Bot display name set to '{self.bot_display_name}'")
-                await self.bus.publish(BotDisplayNameReadyEvent(display_name=self.bot_display_name))
+                await self.bus.publish(
+                    BotDisplayNameReadyEvent(display_name=self.bot_display_name, user_id=self.client.user_id)
+                )
             except Exception as e:
                 logger.warning(f"Gateway: Could not fetch bot's display name, using default '{self.bot_display_name}'. Error: {type(e).__name__} - {e}")
-                await self.bus.publish(BotDisplayNameReadyEvent(display_name=self.bot_display_name)) # Publish default
+                await self.bus.publish(
+                    BotDisplayNameReadyEvent(display_name=self.bot_display_name, user_id=self.client.user_id)
+                )  # Publish default
 
 
             # --- Join room (remains the same) ---
