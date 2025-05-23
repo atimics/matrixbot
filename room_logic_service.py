@@ -158,7 +158,8 @@ class RoomLogicService:
                 'last_event_id_in_db_summary': initial_last_event_id_db,
                 'new_turns_since_last_summary': 0,
                 'batch_response_task': None,
-                'activation_trigger_event_id': event.activation_message_event_id # Store the triggering event_id
+                'activation_trigger_event_id': event.activation_message_event_id, # Store the triggering event_id
+                'pending_tool_calls': {}
             }
             self.room_activity_config[room_id] = config
         else:
@@ -392,7 +393,8 @@ class RoomLogicService:
                     "role": "user",
                     "name": user_name_for_memory,
                     "content": combined_user_content.strip(),
-                    "event_id": representative_event_id_for_user_turn
+                    "event_id": representative_event_id_for_user_turn,
+                    "timestamp": asyncio.get_event_loop().time()
                 })
                 config['new_turns_since_last_summary'] = config.get('new_turns_since_last_summary', 0) + 1
             except (KeyError, IndexError) as e:
@@ -404,7 +406,11 @@ class RoomLogicService:
             "provider_name": llm_provider_for_this_turn,
             "model_name": response_event.original_request_payload.get("requested_model_name")
         }
-        assistant_message_for_memory: Dict[str, Any] = {"role": "assistant", "name": current_bot_name}
+        assistant_message_for_memory: Dict[str, Any] = {
+            "role": "assistant",
+            "name": current_bot_name,
+            "timestamp": asyncio.get_event_loop().time(),
+        }
         assistant_acted_this_turn = False
 
         if response_event.success:
@@ -416,6 +422,14 @@ class RoomLogicService:
             if tool_calls_from_llm: # Check if tool_calls is present and not empty
                 logger.info(f"RLS: [{room_id}] Processing tool calls: {tool_calls_from_llm}")
                 assistant_acted_this_turn = True
+                for tc in tool_calls_from_llm:
+                    tc_id = tc.id if hasattr(tc, "id") else tc.get("id")
+                    if tc_id:
+                        config.setdefault("pending_tool_calls", {})[tc_id] = {
+                            "tool_call": tc,
+                            "timestamp": asyncio.get_event_loop().time(),
+                            "original_request_id": response_event.request_id,
+                        }
                 if text_response_content:
                     logger.warning(f"RLS: [{room_id}] LLM provided both text_response ('{text_response_content}') and tool_calls. Prioritizing tool_calls. Direct text will be ignored.")
                 
@@ -491,7 +505,15 @@ class RoomLogicService:
                         text=text_response_content
                     ))
             else:
-                logger.warning(f"RLS: [{room_id}] AI response was successful but had no text content and no tool calls.")
+                if config.get("pending_tool_calls"):
+                    logger.info(
+                        f"RLS: [{room_id}] AI provided empty response after tool execution, clearing pending tool calls"
+                    )
+                    config["pending_tool_calls"].clear()
+                else:
+                    logger.warning(
+                        f"RLS: [{room_id}] AI response was successful but had no text content and no tool calls."
+                    )
         else:
             logger.error(f"RLS: [{room_id}] AI response was not successful. Error: {response_event.error_message}")
 
@@ -641,6 +663,8 @@ class RoomLogicService:
             logger.error(f"RLS: [{room_id}] Error - No config found for room after ToolExecutionResponse")
             return
 
+        pending_call_store = config.get("pending_tool_calls", {})
+
         pending_turn_info = self.pending_tool_calls_for_ai_turn.get(turn_request_id)
         if not pending_turn_info:
             logger.error(f"RLS: [{room_id}] Error - No pending tool call info found for turn_request_id: {turn_request_id}. This might happen if a tool responds very late or if there's a state mismatch.")
@@ -683,7 +707,7 @@ class RoomLogicService:
         short_term_memory_list = config.get('memory', [])
 
         for original_tc_obj in original_tool_call_pydantic_objects:
-            tool_id = original_tc_obj.id 
+            tool_id = original_tc_obj.id
             tool_exec_response = responses_dict.get(tool_id)
             
             tool_message_content_for_llm: str
@@ -695,8 +719,9 @@ class RoomLogicService:
             
             tool_message_for_history_and_memory = {
                 "role": "tool",
-                "tool_call_id": tool_id, 
-                "content": tool_message_content_for_llm
+                "tool_call_id": tool_id,
+                "content": tool_message_content_for_llm,
+                "timestamp": asyncio.get_event_loop().time()
             }
             augmented_history_for_follow_up.append(tool_message_for_history_and_memory)
 
@@ -704,6 +729,8 @@ class RoomLogicService:
             # The assistant's message (that called the tools) is already in memory from _handle_ai_chat_response.
             # We only need to add these tool responses here.
             short_term_memory_list.append(tool_message_for_history_and_memory)
+            if tool_id in pending_call_store:
+                pending_call_store.pop(tool_id, None)
         
         # After appending all tool messages, apply memory size limit to short_term_memory_list
         while len(short_term_memory_list) > self.short_term_memory_items:

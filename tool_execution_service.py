@@ -49,7 +49,8 @@ class ToolExecutionService:
                 status="failure",
                 result_for_llm_history=f"[Error: Tool '{tool_name}' not found]",
                 error_message=f"Tool '{tool_name}' not found",
-                original_request_payload=event.original_request_payload
+                original_request_payload=event.original_request_payload,
+                original_tool_call=event.tool_call
             )
             await self.bus.publish(tool_response)
             return
@@ -89,7 +90,8 @@ class ToolExecutionService:
                     result_for_llm_history=tool_result.result_for_llm_history,
                     error_message=tool_result.error_message,
                     data_from_tool_for_followup_llm=tool_result.data_for_followup_llm,
-                    original_request_payload=event.original_request_payload
+                    original_request_payload=event.original_request_payload,
+                    original_tool_call=event.tool_call
                 )
                 await self.bus.publish(tool_response)
                 logger.info(f"ToolExecSvc: Finished executing tool '{tool_name}' (Call ID: {tool_call_id}). Status: {tool_result.status}")
@@ -104,7 +106,8 @@ class ToolExecutionService:
                 status="failure",
                 result_for_llm_history=f"[Error executing tool '{tool_name}': {e}]",
                 error_message=str(e),
-                original_request_payload=event.original_request_payload
+                original_request_payload=event.original_request_payload,
+                original_tool_call=event.tool_call
             )
             await self.bus.publish(error_response)
 
@@ -182,7 +185,8 @@ class ToolExecutionService:
             result_for_llm_history=result_for_llm_history_content,  # This is the string that goes into the 'tool' role message content
             error_message=error_msg,
             data_from_tool_for_followup_llm=data_for_llm_followup,  # This can carry richer structured data if needed
-            original_request_payload=final_original_request_payload_for_rls
+            original_request_payload=final_original_request_payload_for_rls,
+            original_tool_call=event.tool_call if hasattr(event, "tool_call") else None
         )
         await self.bus.publish(final_tool_response)
         logger.info(f"ToolExecSvc: Published final ToolExecutionResponse for delegated call_openrouter_llm (Original Call ID: {original_tool_call_id}). Status: {final_status}")
@@ -194,7 +198,8 @@ class ToolExecutionService:
             status="success" if event.success else "failure",
             result_for_llm_history=str(event.info) if event.success else f"[Failed to fetch room info: {event.error_message}]",
             error_message=event.error_message,
-            original_request_payload={"room_id": event.room_id}
+            original_request_payload={"room_id": event.room_id},
+            original_tool_call=None
         )
         await self.bus.publish(tool_response)
 
