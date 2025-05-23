@@ -71,9 +71,10 @@ class MatrixImageReceivedEvent(BaseEvent):
     event_id_matrix: str
     sender_id: str
     sender_display_name: str
+    room_display_name: str
     image_url: str
     body: Optional[str] = None
-    room_display_name: str
+    image_info: Optional[Dict[str, Any]] = None
 
 class SendMatrixMessageCommand(BaseEvent):
     event_type: EventType = Field(EventType.SEND_MATRIX_MESSAGE_COMMAND, frozen=True)

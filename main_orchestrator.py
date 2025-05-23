@@ -9,6 +9,7 @@ from ai_inference_service import AIInferenceService
 from room_logic_service import RoomLogicService
 from summarization_service import SummarizationService
 from image_caption_service import ImageCaptionService
+from image_analysis_service import ImageAnalysisService
 from ollama_inference_service import OllamaInferenceService # Add this
 from tool_manager import ToolLoader, ToolRegistry # Added
 from tool_execution_service import ToolExecutionService # Added
@@ -56,8 +57,18 @@ async def main() -> None:
     room_logic = RoomLogicService(bus, tool_registry=tool_registry, db_path=db_path)
     summarization = SummarizationService(bus)
     image_caption = ImageCaptionService(bus)
+    image_analysis = ImageAnalysisService(bus)
 
-    services = [matrix_gateway, ai_inference, ollama_inference, room_logic, summarization, image_caption, tool_execution_service]
+    services = [
+        matrix_gateway,
+        ai_inference,
+        ollama_inference,
+        room_logic,
+        summarization,
+        image_caption,
+        image_analysis,
+        tool_execution_service,
+    ]
     
     service_tasks = []
     try:

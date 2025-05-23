@@ -147,17 +147,40 @@ class MatrixGatewayService:
     async def _matrix_image_callback(self, room: MatrixRoom, event: RoomMessageImage):
         if not self.client or event.sender == self.client.user_id:
             return
+
         sender_display_name = room.user_name(event.sender) or event.sender
+
+        if hasattr(event, "url"):
+            image_url = event.url
+        else:
+            logger.warning(f"MatrixGateway: Image event {event.event_id} has no URL")
+            return
+
+        image_info = {}
+        if hasattr(event, "content") and isinstance(event.content, dict):
+            info = event.content.get("info", {})
+            image_info = {
+                "mimetype": info.get("mimetype"),
+                "size": info.get("size"),
+                "width": info.get("w"),
+                "height": info.get("h"),
+                "filename": event.content.get("filename"),
+            }
+
         img_event = MatrixImageReceivedEvent(
             room_id=room.room_id,
             event_id_matrix=event.event_id,
-            sender_id=event.sender,
             sender_display_name=sender_display_name,
-            image_url=event.url,
-            body=event.body,
-            room_display_name=room.display_name,
+            sender_id=event.sender,
+            room_display_name=room.display_name or room.room_id,
+            image_url=image_url,
+            body=getattr(event, "body", ""),
+            timestamp=event.server_timestamp,
+            image_info=image_info,
         )
+
         await self.bus.publish(img_event)
+        logger.info(f"MatrixGateway: Published image event for room {room.room_id}")
 
     async def _handle_send_message_command(self, command: SendMatrixMessageCommand):
         await self._enqueue_command(self._send_message_impl, command)
