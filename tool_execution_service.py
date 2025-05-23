@@ -193,11 +193,11 @@ class ToolExecutionService:
 
     async def run(self) -> None:
         logger.info("ToolExecutionService: Starting...")
-        self.bus.subscribe(ExecuteToolRequest.model_fields['event_type'].default, self._handle_execute_tool_request)
+        self.bus.subscribe(ExecuteToolRequest.get_event_type(), self._handle_execute_tool_request)
         # Subscribe to the specific event type that OpenRouterInferenceService will publish to
         # when a response for a DelegateToOpenRouterTool call is ready.
         self.bus.subscribe(DELEGATED_OPENROUTER_RESPONSE_EVENT_TYPE, self._handle_delegated_openrouter_response)
-        self.bus.subscribe(MatrixRoomInfoResponseEvent.model_fields['event_type'].default, self._handle_room_info_response)
+        self.bus.subscribe(MatrixRoomInfoResponseEvent.get_event_type(), self._handle_room_info_response)
         await self._stop_event.wait()
         logger.info("ToolExecutionService: Stopped.")
 

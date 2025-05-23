@@ -250,7 +250,7 @@ class AIInferenceService:
     async def run(self) -> None:
         logger.info("AIInferenceService: Starting...")
         # Access default from model_fields for subscription
-        self.bus.subscribe(OpenRouterInferenceRequestEvent.model_fields['event_type'].default, self._handle_inference_request)
+        self.bus.subscribe(OpenRouterInferenceRequestEvent.get_event_type(), self._handle_inference_request)
         await self._stop_event.wait()
         logger.info("AIInferenceService: Stopped.")
 

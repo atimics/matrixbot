@@ -3,7 +3,7 @@ import logging
 from collections import defaultdict
 from typing import Callable, Any, Dict, List
 
-from event_definitions import BaseEvent
+from event_definitions import BaseEvent, EventType
 
 logger = logging.getLogger(__name__)
 
@@ -17,17 +17,18 @@ class MessageBus:
 
     async def publish(self, event: BaseEvent) -> None:
         """Publishes an event to all subscribers of its event_type."""
-        event_type = event.event_type
-        if not self.topics[event_type]:
-            logger.debug(f"No subscribers for event type '{event_type}'.")
+        event_key = event.event_type.value if isinstance(event.event_type, EventType) else str(event.event_type)
+        if not self.topics[event_key]:
+            logger.debug(f"No subscribers for event type '{event_key}'.")
             return
-        for queue in self.topics[event_type]:
+        for queue in self.topics[event_key]:
             await queue.put(event)
 
-    def subscribe(self, event_type: str, callback: Callable[[BaseEvent], Any]) -> None:
+    def subscribe(self, event_type: EventType | str, callback: Callable[[BaseEvent], Any]) -> None:
         """Subscribes a callback to an event type. The callback runs in its own task."""
+        event_key = event_type.value if isinstance(event_type, EventType) else str(event_type)
         queue = asyncio.Queue()
-        self.topics[event_type].append(queue)
+        self.topics[event_key].append(queue)
         async def listener():
             while not self._stop_event.is_set():
                 try:

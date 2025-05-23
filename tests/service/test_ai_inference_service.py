@@ -253,8 +253,8 @@ async def test_service_subscribes_to_openrouter_requests_on_run(
 
 
         mock_message_bus.subscribe.assert_any_call(
-            OpenRouterInferenceRequestEvent.model_fields['event_type'].default, 
-            ai_service._handle_inference_request 
+            OpenRouterInferenceRequestEvent.get_event_type(),
+            ai_service._handle_inference_request
         )
         
         # To test the handler being called, we can simulate a publish

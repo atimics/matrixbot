@@ -28,11 +28,12 @@ from event_definitions import (
     BatchedUserMessage, # Assuming this might be used or tested directly
     ToolCall, # Assuming this might be used or tested directly
     ToolRoleMessage, # Assuming this might be used or tested directly
-    ToolFunction # Added for corrected ToolCall instantiation
+    ToolFunction, # Added for corrected ToolCall instantiation
+    EventType
 )
 
 # Helper to check common BaseEvent fields
-def check_base_event_fields(event: BaseEvent, expected_event_type: str):
+def check_base_event_fields(event: BaseEvent, expected_event_type: EventType):
     assert isinstance(event.event_id, str)
     assert len(event.event_id) > 0
     assert isinstance(event.timestamp, datetime)
@@ -50,7 +51,7 @@ def test_matrix_message_received_event_valid():
         body="Hello world!", # Added
         room_display_name="Test Room" # Added
     )
-    check_base_event_fields(event, "matrix_message_received")
+    check_base_event_fields(event, EventType.MATRIX_MESSAGE_RECEIVED)
     assert event.room_id == "!room:host"
     assert event.event_id_matrix == "$matrix_event_id"
     assert event.sender_id == "@user:host"
@@ -73,7 +74,7 @@ def test_matrix_image_received_event_valid():
         body="optional alt",
         room_display_name="Test Room",
     )
-    check_base_event_fields(event, "matrix_image_received")
+    check_base_event_fields(event, EventType.MATRIX_IMAGE_RECEIVED)
     assert event.image_url == "mxc://server/id"
     assert event.body == "optional alt"
 
@@ -88,7 +89,7 @@ def test_send_matrix_message_command_valid():
         text="Response message",
         reply_to_event_id="$original_event"
     )
-    check_base_event_fields(event, "send_matrix_message_command")
+    check_base_event_fields(event, EventType.SEND_MATRIX_MESSAGE_COMMAND)
     assert event.room_id == "!room:host"
     assert event.text == "Response message"
     assert event.reply_to_event_id == "$original_event"
@@ -98,7 +99,7 @@ def test_send_matrix_message_command_valid_no_reply():
         room_id="!room:host",
         text="General message"
     )
-    check_base_event_fields(event, "send_matrix_message_command")
+    check_base_event_fields(event, EventType.SEND_MATRIX_MESSAGE_COMMAND)
     assert event.room_id == "!room:host"
     assert event.text == "General message"
     assert event.reply_to_event_id is None
@@ -110,21 +111,21 @@ def test_send_matrix_message_command_missing_fields():
 # Test ActivateListeningEvent
 def test_activate_listening_event_valid():
     event = ActivateListeningEvent(room_id="!room:host", activation_message_event_id="$event1")
-    check_base_event_fields(event, "activate_listening")
+    check_base_event_fields(event, EventType.ACTIVATE_LISTENING)
     assert event.room_id == "!room:host"
     assert event.activation_message_event_id == "$event1"
 
 # Test DeactivateListeningEvent
 def test_deactivate_listening_event_valid():
     event = DeactivateListeningEvent(room_id="!room:host")
-    check_base_event_fields(event, "deactivate_listening")
+    check_base_event_fields(event, EventType.DEACTIVATE_LISTENING)
     assert event.room_id == "!room:host"
 
 # Test ProcessMessageBatchCommand
 def test_process_message_batch_command_valid():
     messages = [BatchedUserMessage(user_id="@user:host", content="Test", event_id="$event1")]
     event = ProcessMessageBatchCommand(room_id="!room:host", messages_in_batch=messages)
-    check_base_event_fields(event, "process_message_batch_command")
+    check_base_event_fields(event, EventType.PROCESS_MESSAGE_BATCH_COMMAND)
     assert event.room_id == "!room:host"
     assert event.messages_in_batch == messages
 
@@ -138,7 +139,7 @@ def test_ai_inference_request_event_valid():
         messages_payload=payload, # Changed from ai_payload
         original_request_payload={"original_event_id": "$req_event"} # Example of storing other ids
     )
-    check_base_event_fields(event, "ai_inference_request")
+    check_base_event_fields(event, EventType.AI_INFERENCE_REQUEST)
     assert event.messages_payload == payload
     assert event.request_id == "req1"
     assert event.reply_to_service_event == "some_reply_event"
@@ -153,7 +154,7 @@ def test_ai_inference_response_event_success_text():
         text_response="AI says hi",
         original_request_payload={"original_event_id": "$req_event", "response_topic": "some_topic"}
     )
-    check_base_event_fields(event, "ai_inference_response")
+    check_base_event_fields(event, EventType.AI_INFERENCE_RESPONSE)
     assert event.success is True
     assert event.text_response == "AI says hi"
     assert event.tool_calls is None
@@ -168,7 +169,7 @@ def test_ai_inference_response_event_success_tool_calls():
         tool_calls=tool_calls,
         original_request_payload={"original_event_id": "$req_event", "response_topic": "some_topic"}
     )
-    check_base_event_fields(event, "ai_inference_response")
+    check_base_event_fields(event, EventType.AI_INFERENCE_RESPONSE)
     assert event.success is True
     assert event.text_response is None
     assert event.tool_calls == tool_calls
@@ -180,7 +181,7 @@ def test_ai_inference_response_event_failure():
         error_message="API Error",
         original_request_payload={"original_event_id": "$req_event", "response_topic": "some_topic"}
     )
-    check_base_event_fields(event, "ai_inference_response")
+    check_base_event_fields(event, EventType.AI_INFERENCE_RESPONSE)
     assert event.success is False
     assert event.error_message == "API Error"
 
@@ -198,7 +199,7 @@ def test_openrouter_inference_request_event():
             "event_type_to_respond_to": "tool_response_type"
         }
     )
-    check_base_event_fields(event, "open_router_inference_request")
+    check_base_event_fields(event, EventType.OPEN_ROUTER_INFERENCE_REQUEST)
     assert event.messages_payload == payload
     assert event.original_request_payload["original_request_payload_event_id"] == "$orig_payload_id"
     assert event.original_request_payload["original_request_event_id"] == "$orig_req_id"
@@ -216,7 +217,7 @@ def test_openrouter_inference_response_event():
             "event_type_to_respond_to": "tool_response_type"
         }
     )
-    check_base_event_fields(event, "open_router_inference_response")
+    check_base_event_fields(event, EventType.OPEN_ROUTER_INFERENCE_RESPONSE)
     assert event.text_response == "Hi from OR"
     assert event.original_request_payload["original_request_payload_event_id"] == "$orig_payload_id"
     assert event.original_request_payload["event_type_to_respond_to"] == "tool_response_type"
@@ -235,7 +236,7 @@ def test_ollama_inference_request_event():
             "event_type_to_respond_to": "tool_response_type"
         }
     )
-    check_base_event_fields(event, "ollama_inference_request")
+    check_base_event_fields(event, EventType.OLLAMA_INFERENCE_REQUEST)
     assert event.messages_payload == payload
     assert event.original_request_payload["original_request_payload_event_id"] == "$orig_payload_id"
     assert event.original_request_payload["original_request_event_id"] == "$orig_req_id"
@@ -253,7 +254,7 @@ def test_ollama_inference_response_event():
             "event_type_to_respond_to": "tool_response_type"
         }
     )
-    check_base_event_fields(event, "ollama_inference_response")
+    check_base_event_fields(event, EventType.OLLAMA_INFERENCE_RESPONSE)
     assert event.text_response == "Hi from Ollama"
     assert event.original_request_payload["original_request_payload_event_id"] == "$orig_payload_id"
     assert event.original_request_payload["event_type_to_respond_to"] == "tool_response_type"
@@ -268,7 +269,7 @@ def test_execute_tool_request_valid():
         last_user_event_id="$user_event",
         original_request_payload={"original_ai_request_event_id": "$ai_req"} # Added
     )
-    check_base_event_fields(event, "execute_tool_request")
+    check_base_event_fields(event, EventType.EXECUTE_TOOL_REQUEST)
     assert event.tool_call == tool_call
     assert event.original_request_payload["original_ai_request_event_id"] == "$ai_req" # Check in payload
 
@@ -282,7 +283,7 @@ def test_tool_execution_response_success():
         commands_to_publish=[],
         original_request_payload={"original_ai_request_event_id": "$ai_req"} # Added
     )
-    check_base_event_fields(event, "tool_execution_response")
+    check_base_event_fields(event, EventType.TOOL_EXECUTION_RESPONSE)
     assert event.status == "success"
     assert event.result_for_llm_history == "Tool ran okay"
 
@@ -295,7 +296,7 @@ def test_tool_execution_response_failure():
         result_for_llm_history="", # Added required field
         original_request_payload={"original_ai_request_event_id": "$ai_req"} # Added
     )
-    check_base_event_fields(event, "tool_execution_response")
+    check_base_event_fields(event, EventType.TOOL_EXECUTION_RESPONSE)
     assert event.status == "failure"
     assert event.error_message == "Tool broke"
 
@@ -308,14 +309,14 @@ def test_tool_execution_response_requires_followup():
         result_for_llm_history="Follow up needed", # Added required field
         original_request_payload={"original_ai_request_event_id": "$ai_req"} # Added
     )
-    check_base_event_fields(event, "tool_execution_response")
+    check_base_event_fields(event, EventType.TOOL_EXECUTION_RESPONSE)
     assert event.status == "requires_llm_followup"
     assert event.data_from_tool_for_followup_llm == {"key": "value"}
 
 # Test SetTypingIndicatorCommand
 def test_set_typing_indicator_command_valid():
     event = SetTypingIndicatorCommand(room_id="!room:host", typing=True)
-    check_base_event_fields(event, "set_typing_indicator_command")
+    check_base_event_fields(event, EventType.SET_TYPING_INDICATOR_COMMAND)
     assert event.room_id == "!room:host"
     assert event.typing is True
     # Test Literal validation for event_type
@@ -325,7 +326,7 @@ def test_set_typing_indicator_command_valid():
 # Test ReactToMessageCommand
 def test_react_to_message_command_valid():
     event = ReactToMessageCommand(room_id="!room:host", event_id_to_react_to="$event1", reaction_key="👍")
-    check_base_event_fields(event, "react_to_message_command")
+    check_base_event_fields(event, EventType.REACT_TO_MESSAGE_COMMAND)
     assert event.reaction_key == "👍"
 
 # Test RequestAISummaryCommand
@@ -337,7 +338,7 @@ def test_request_ai_summary_command_valid():
         current_summary_text="Old summary",
         last_event_id_in_messages="$last_msg"
     )
-    check_base_event_fields(event, "request_ai_summary_command")
+    check_base_event_fields(event, EventType.REQUEST_AI_SUMMARY_COMMAND)
     assert event.messages_to_summarize == messages
     assert event.current_summary_text == "Old summary"
     assert event.last_event_id_in_messages == "$last_msg"
@@ -349,14 +350,14 @@ def test_summary_generated_event_valid():
         summary_text="New summary",
         last_event_id_summarized="$last_event"
     )
-    check_base_event_fields(event, "summary_generated")
+    check_base_event_fields(event, EventType.SUMMARY_GENERATED)
     assert event.summary_text == "New summary"
     assert event.last_event_id_summarized == "$last_event"
 
 # Test BotDisplayNameReadyEvent
 def test_bot_display_name_ready_event_valid():
     event = BotDisplayNameReadyEvent(display_name="MyBot")
-    check_base_event_fields(event, "bot_display_name_ready")
+    check_base_event_fields(event, EventType.BOT_DISPLAY_NAME_READY)
     assert event.display_name == "MyBot"
 
 # Test ImageCaptionGeneratedEvent
@@ -366,14 +367,14 @@ def test_image_caption_generated_event_valid():
         caption_text="a cat",
         original_event_id="$img1",
     )
-    check_base_event_fields(event, "image_caption_generated")
+    check_base_event_fields(event, EventType.IMAGE_CAPTION_GENERATED)
     assert event.caption_text == "a cat"
     assert event.original_event_id == "$img1"
 
 # Test default timestamp generation and awareness
 def test_base_event_timestamp_defaults():
     before = datetime.now(timezone.utc)
-    event = BaseEvent(event_type="test_event")
+    event = BaseEvent(event_type=EventType.MATRIX_MESSAGE_RECEIVED)
     after = datetime.now(timezone.utc)
     assert event.timestamp >= before
     assert event.timestamp <= after

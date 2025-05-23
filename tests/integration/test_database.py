@@ -1,4 +1,5 @@
 import pytest
+import pytest_asyncio
 import sqlite3
 import os
 # The plan mentioned a SummaryData Pydantic model, but database.py currently returns a tuple.
@@ -6,7 +7,7 @@ import os
 # from database import initialize_database, update_summary, get_summary, SummaryData # Assuming SummaryData if it were used
 from database import initialize_database, update_summary, get_summary
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def test_db_path(tmp_path):
     """Fixture to provide a temporary database path and initialize the DB."""
     db_file = tmp_path / "test_matrix_bot.db"

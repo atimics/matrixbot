@@ -1,15 +1,44 @@
 from typing import List, Dict, Optional, Literal, Any
 from pydantic import BaseModel, Field, field_validator
+from enum import Enum
 from datetime import datetime, timezone
 import uuid
+
+
+class EventType(str, Enum):
+    MATRIX_MESSAGE_RECEIVED = "matrix_message_received"
+    MATRIX_IMAGE_RECEIVED = "matrix_image_received"
+    SEND_MATRIX_MESSAGE_COMMAND = "send_matrix_message_command"
+    AI_INFERENCE_REQUEST = "ai_inference_request"
+    AI_INFERENCE_RESPONSE = "ai_inference_response"
+    OPEN_ROUTER_INFERENCE_REQUEST = "open_router_inference_request"
+    OPEN_ROUTER_INFERENCE_RESPONSE = "open_router_inference_response"
+    OLLAMA_INFERENCE_REQUEST = "ollama_inference_request"
+    OLLAMA_INFERENCE_RESPONSE = "ollama_inference_response"
+    ACTIVATE_LISTENING = "activate_listening"
+    DEACTIVATE_LISTENING = "deactivate_listening"
+    PROCESS_MESSAGE_BATCH_COMMAND = "process_message_batch_command"
+    SUMMARY_GENERATED = "summary_generated"
+    REACT_TO_MESSAGE_COMMAND = "react_to_message_command"
+    SEND_REPLY_COMMAND = "send_reply_command"
+    BOT_DISPLAY_NAME_READY = "bot_display_name_ready"
+    IMAGE_CAPTION_GENERATED = "image_caption_generated"
+    SET_TYPING_INDICATOR_COMMAND = "set_typing_indicator_command"
+    SET_PRESENCE_COMMAND = "set_presence_command"
+    REQUEST_AI_SUMMARY_COMMAND = "request_ai_summary_command"
+    REQUEST_MATRIX_ROOM_INFO_COMMAND = "request_matrix_room_info_command"
+    MATRIX_ROOM_INFO_RESPONSE_EVENT = "matrix_room_info_response_event"
+    EXECUTE_TOOL_REQUEST = "execute_tool_request"
+    TOOL_EXECUTION_RESPONSE = "tool_execution_response"
+    DELEGATED_OPENROUTER_RESPONSE_FOR_TOOL = "delegated_openrouter_response_for_tool"
 
 # Helper function to generate a default UUID string if needed elsewhere,
 # but Pydantic's default_factory is usually sufficient for default field values.
 
 class BaseEvent(BaseModel):
-    event_id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="Unique identifier for the event") # Assuming uuid is imported or defined
+    event_id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="Unique identifier for the event")
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Event creation timestamp")
-    event_type: str = Field(..., description="The type of the event")
+    event_type: EventType = Field(..., description="The type of the event")
 
     @field_validator('timestamp', mode='before')
     def ensure_timezone_aware(cls, v):
@@ -20,14 +49,14 @@ class BaseEvent(BaseModel):
         return v
 
     @classmethod
-    def get_event_type(cls) -> str:
+    def get_event_type(cls) -> EventType:
         """Return the default event type for this class."""
         if hasattr(cls, "model_fields"):
             return cls.model_fields["event_type"].default  # type: ignore[attr-defined]
         return cls.__fields__["event_type"].default  # type: ignore[attr-defined]
 
 class MatrixMessageReceivedEvent(BaseEvent):
-    event_type: str = Field("matrix_message_received", frozen=True)
+    event_type: EventType = Field(EventType.MATRIX_MESSAGE_RECEIVED, frozen=True)
     room_id: str
     event_id_matrix: str # Renamed from event_id to avoid clash with BaseEvent.event_id
     sender_id: str
@@ -37,7 +66,7 @@ class MatrixMessageReceivedEvent(BaseEvent):
 
 class MatrixImageReceivedEvent(BaseEvent):
     """Event emitted when an image message is received from Matrix."""
-    event_type: str = Field("matrix_image_received", frozen=True)
+    event_type: EventType = Field(EventType.MATRIX_IMAGE_RECEIVED, frozen=True)
     room_id: str
     event_id_matrix: str
     sender_id: str
@@ -47,13 +76,13 @@ class MatrixImageReceivedEvent(BaseEvent):
     room_display_name: str
 
 class SendMatrixMessageCommand(BaseEvent):
-    event_type: str = Field("send_matrix_message_command", frozen=True)
+    event_type: EventType = Field(EventType.SEND_MATRIX_MESSAGE_COMMAND, frozen=True)
     room_id: str
     text: str
     reply_to_event_id: Optional[str] = None # Added from test
 
 class AIInferenceRequestEvent(BaseEvent):
-    event_type: str = Field("ai_inference_request", frozen=True) # Changed from "ai_inference_request"
+    event_type: EventType = Field(EventType.AI_INFERENCE_REQUEST, frozen=True) # Changed from "ai_inference_request"
     request_id: str 
     reply_to_service_event: str 
     original_request_payload: Dict[str, Any] = Field(default_factory=dict)
@@ -86,7 +115,7 @@ class ToolCall(BaseModel): # Defined based on test_event_definitions.py usage
     #     return values
 
 class AIInferenceResponseEvent(BaseEvent):
-    event_type: str = Field("ai_inference_response", frozen=True) # Changed from "ai_inference_response"
+    event_type: EventType = Field(EventType.AI_INFERENCE_RESPONSE, frozen=True) # Changed from "ai_inference_response"
     request_id: str 
     original_request_payload: Dict[str, Any] = Field(default_factory=dict)
     
@@ -99,7 +128,7 @@ class AIInferenceResponseEvent(BaseEvent):
 
 
 class OpenRouterInferenceRequestEvent(AIInferenceRequestEvent):
-    event_type: str = Field("open_router_inference_request", frozen=True) # Changed from "openrouter_inference_request"
+    event_type: EventType = Field(EventType.OPEN_ROUTER_INFERENCE_REQUEST, frozen=True) # Changed from "openrouter_inference_request"
     # Fields from test: original_request_payload_event_id, original_request_event_id, event_type_to_respond_to
     # These seem to map to original_request_payload, request_id, and reply_to_service_event respectively.
     # For clarity, if these are distinct, they should be added. Assuming mapping for now.
@@ -109,14 +138,14 @@ class OpenRouterInferenceRequestEvent(AIInferenceRequestEvent):
 
 
 class OpenRouterInferenceResponseEvent(AIInferenceResponseEvent):
-    event_type: str = Field("open_router_inference_response", frozen=True) # Changed from "openrouter_inference_response"
+    event_type: EventType = Field(EventType.OPEN_ROUTER_INFERENCE_RESPONSE, frozen=True) # Changed from "openrouter_inference_response"
     # Fields from test: original_request_payload_event_id, event_type_to_respond_to
     # original_request_payload_event_id: Optional[str] = None # Example if needed
     # event_type_to_respond_to: Optional[str] = None          # Example if needed
 
 
 class OllamaInferenceRequestEvent(AIInferenceRequestEvent):
-    event_type: str = Field("ollama_inference_request", frozen=True)
+    event_type: EventType = Field(EventType.OLLAMA_INFERENCE_REQUEST, frozen=True)
     # Similar to OpenRouter, map or add distinct fields if necessary
     # original_request_payload_event_id: Optional[str] = None 
     # original_request_event_id: Optional[str] = None         
@@ -124,12 +153,12 @@ class OllamaInferenceRequestEvent(AIInferenceRequestEvent):
 
 
 class OllamaInferenceResponseEvent(AIInferenceResponseEvent):
-    event_type: str = Field("ollama_inference_response", frozen=True)
+    event_type: EventType = Field(EventType.OLLAMA_INFERENCE_RESPONSE, frozen=True)
     # original_request_payload_event_id: Optional[str] = None 
     # event_type_to_respond_to: Optional[str] = None
 
 class ActivateListeningEvent(BaseEvent):
-    event_type: str = Field("activate_listening", frozen=True) # Changed from "activate_listening_event"
+    event_type: EventType = Field(EventType.ACTIVATE_LISTENING, frozen=True) # Changed from "activate_listening_event"
     room_id: str
     # Renamed from triggering_event_id to match test
     activation_message_event_id: str 
@@ -140,7 +169,7 @@ class ActivateListeningEvent(BaseEvent):
 
 
 class DeactivateListeningEvent(BaseEvent): # New model based on test
-    event_type: str = Field("deactivate_listening", frozen=True)
+    event_type: EventType = Field(EventType.DEACTIVATE_LISTENING, frozen=True)
     room_id: str
 
 class BatchedUserMessage(BaseModel): # Defined based on test_event_definitions.py
@@ -150,14 +179,14 @@ class BatchedUserMessage(BaseModel): # Defined based on test_event_definitions.p
 
 
 class ProcessMessageBatchCommand(BaseEvent):
-    event_type: str = Field("process_message_batch_command", frozen=True)
+    event_type: EventType = Field(EventType.PROCESS_MESSAGE_BATCH_COMMAND, frozen=True)
     room_id: str
     # Added messages_in_batch from test
     messages_in_batch: List[BatchedUserMessage]
 
 
 class SummaryGeneratedEvent(BaseEvent): 
-    event_type: str = Field("summary_generated", frozen=True) # Changed from "summary_generated_event"
+    event_type: EventType = Field(EventType.SUMMARY_GENERATED, frozen=True) # Changed from "summary_generated_event"
     room_id: str
     summary_text: str
     # Renamed from last_event_id_in_summary to match test
@@ -165,7 +194,7 @@ class SummaryGeneratedEvent(BaseEvent):
 
 
 class ReactToMessageCommand(BaseEvent):
-    event_type: str = Field("react_to_message_command", frozen=True)
+    event_type: EventType = Field(EventType.REACT_TO_MESSAGE_COMMAND, frozen=True)
     room_id: str
     # Renamed from target_event_id to match test
     event_id_to_react_to: str 
@@ -173,34 +202,34 @@ class ReactToMessageCommand(BaseEvent):
 
 
 class SendReplyCommand(BaseEvent): # This seems to be a duplicate of SendMatrixMessageCommand if reply_to_event_id is supported there
-    event_type: str = Field("send_reply_command", frozen=True)
+    event_type: EventType = Field(EventType.SEND_REPLY_COMMAND, frozen=True)
     room_id: str
     text: str
     reply_to_event_id: str
 
 
 class BotDisplayNameReadyEvent(BaseEvent):
-    event_type: str = Field("bot_display_name_ready", frozen=True)
+    event_type: EventType = Field(EventType.BOT_DISPLAY_NAME_READY, frozen=True)
     display_name: str
 
 class ImageCaptionGeneratedEvent(BaseEvent):
     """Event containing an image caption generated by an AI model."""
-    event_type: str = Field("image_caption_generated", frozen=True)
+    event_type: EventType = Field(EventType.IMAGE_CAPTION_GENERATED, frozen=True)
     room_id: str
     caption_text: str
     original_event_id: str
 
 
-class SetTypingIndicatorCommand(BaseEvent): # Changed from BaseModel to BaseEvent
-    event_type: Literal["set_typing_indicator_command"] = Field("set_typing_indicator_command", frozen=True)
+class SetTypingIndicatorCommand(BaseEvent):
+    event_type: EventType = Field(EventType.SET_TYPING_INDICATOR_COMMAND, frozen=True)
     room_id: str
     typing: bool
-    timeout: int = 10000 
+    timeout: int = 10000
 
 
-class SetPresenceCommand(BaseEvent): # Changed from BaseModel to BaseEvent
-    event_type: Literal["set_presence_command"] = Field("set_presence_command", frozen=True)
-    presence: Literal["online", "offline", "unavailable"] 
+class SetPresenceCommand(BaseEvent):
+    event_type: EventType = Field(EventType.SET_PRESENCE_COMMAND, frozen=True)
+    presence: Literal["online", "offline", "unavailable"]
     status_msg: Optional[str] = None
 
 
@@ -215,7 +244,7 @@ class HistoricalMessage(BaseModel): # Defined based on test_event_definitions.py
 
 
 class RequestAISummaryCommand(BaseEvent):
-    event_type: str = Field("request_ai_summary_command", frozen=True)
+    event_type: EventType = Field(EventType.REQUEST_AI_SUMMARY_COMMAND, frozen=True)
     room_id: str
     force_update: bool = False
     messages_to_summarize: Optional[List[HistoricalMessage]] = None # Changed to use HistoricalMessage
@@ -225,7 +254,7 @@ class RequestAISummaryCommand(BaseEvent):
 
 
 class RequestMatrixRoomInfoCommand(BaseEvent):
-    event_type: str = Field("request_matrix_room_info_command", frozen=True)
+    event_type: EventType = Field(EventType.REQUEST_MATRIX_ROOM_INFO_COMMAND, frozen=True)
     room_id: str
     aspects: List[str]
     response_event_topic: str
@@ -233,7 +262,7 @@ class RequestMatrixRoomInfoCommand(BaseEvent):
 
 
 class MatrixRoomInfoResponseEvent(BaseEvent):
-    event_type: str = Field("matrix_room_info_response_event", frozen=True)
+    event_type: EventType = Field(EventType.MATRIX_ROOM_INFO_RESPONSE_EVENT, frozen=True)
     room_id: str
     info: Dict[str, Any]
     original_request_event_id: str
@@ -244,7 +273,7 @@ class MatrixRoomInfoResponseEvent(BaseEvent):
 
 # --- Tool Execution Events ---
 class ExecuteToolRequest(BaseEvent):
-    event_type: str = Field("execute_tool_request", frozen=True)
+    event_type: EventType = Field(EventType.EXECUTE_TOOL_REQUEST, frozen=True)
     room_id: str
     # tool_name: str # Field from definition, but test uses tool_call.function_name
     tool_call: ToolCall # Added from test, uses Pydantic ToolCall
@@ -267,7 +296,7 @@ class ToolRoleMessage(BaseModel): # Defined based on test_event_definitions.py
     # name: Optional[str] = None # If the function name should also be here
 
 class ToolExecutionResponse(BaseEvent):
-    event_type: str = Field("tool_execution_response", frozen=True)
+    event_type: EventType = Field(EventType.TOOL_EXECUTION_RESPONSE, frozen=True)
     original_tool_call_id: str 
     tool_name: str # Added tool_name field
     status: Literal["success", "failure", "requires_llm_followup"]

@@ -5,7 +5,7 @@ import datetime # Add this import
 from unittest.mock import MagicMock, AsyncMock, patch
 
 from message_bus import MessageBus
-from event_definitions import BaseEvent
+from event_definitions import BaseEvent, EventType
 
 @pytest_asyncio.fixture # Use the specific decorator
 async def message_bus_instance(): # Make the fixture itself async
@@ -17,7 +17,7 @@ async def message_bus_instance(): # Make the fixture itself async
 @pytest.mark.asyncio
 async def test_publish_subscribe_single_listener(message_bus_instance: MessageBus):
     bus = message_bus_instance
-    test_event = BaseEvent(event_type="test_event_single")
+    test_event = BaseEvent(event_type=EventType.MATRIX_MESSAGE_RECEIVED)
     received_event = None
     listener_called = asyncio.Event()
 
@@ -26,7 +26,7 @@ async def test_publish_subscribe_single_listener(message_bus_instance: MessageBu
         received_event = event
         listener_called.set()
 
-    bus.subscribe("test_event_single", listener)
+    bus.subscribe(EventType.MATRIX_MESSAGE_RECEIVED, listener)
     await bus.publish(test_event)
     
     await asyncio.wait_for(listener_called.wait(), timeout=1.0)
@@ -36,7 +36,7 @@ async def test_publish_subscribe_single_listener(message_bus_instance: MessageBu
 @pytest.mark.asyncio
 async def test_publish_subscribe_multiple_listeners(message_bus_instance: MessageBus):
     bus = message_bus_instance
-    test_event = BaseEvent(event_type="test_event_multi")
+    test_event = BaseEvent(event_type=EventType.MATRIX_MESSAGE_RECEIVED)
     received_events = []
     listener1_called = asyncio.Event()
     listener2_called = asyncio.Event()
@@ -49,8 +49,8 @@ async def test_publish_subscribe_multiple_listeners(message_bus_instance: Messag
         received_events.append((2, event))
         listener2_called.set()
 
-    bus.subscribe("test_event_multi", listener1)
-    bus.subscribe("test_event_multi", listener2)
+    bus.subscribe(EventType.MATRIX_MESSAGE_RECEIVED, listener1)
+    bus.subscribe(EventType.MATRIX_MESSAGE_RECEIVED, listener2)
     await bus.publish(test_event)
 
     await asyncio.wait_for(asyncio.gather(listener1_called.wait(), listener2_called.wait()), timeout=1.0)
@@ -62,7 +62,7 @@ async def test_publish_subscribe_multiple_listeners(message_bus_instance: Messag
 @pytest.mark.asyncio
 async def test_publish_no_listener(message_bus_instance: MessageBus):
     bus = message_bus_instance
-    test_event = BaseEvent(event_type="test_event_no_one_cares")
+    test_event = BaseEvent(event_type=EventType.MATRIX_MESSAGE_RECEIVED)
     # No exception should be raised, and nothing should happen
     try:
         await bus.publish(test_event)
@@ -73,7 +73,7 @@ async def test_publish_no_listener(message_bus_instance: MessageBus):
 async def test_listener_receives_correct_event_object(message_bus_instance: MessageBus):
     bus = message_bus_instance
     # Test with standard BaseEvent fields
-    specific_event = BaseEvent(event_type="specific_event_type_check")
+    specific_event = BaseEvent(event_type=EventType.MATRIX_IMAGE_RECEIVED)
     received_event = None
     listener_called = asyncio.Event()
 
@@ -82,19 +82,19 @@ async def test_listener_receives_correct_event_object(message_bus_instance: Mess
         received_event = event
         listener_called.set()
 
-    bus.subscribe("specific_event_type_check", specific_listener)
+    bus.subscribe(EventType.MATRIX_IMAGE_RECEIVED, specific_listener)
     await bus.publish(specific_event)
 
     await asyncio.wait_for(listener_called.wait(), timeout=1.0)
 
     assert received_event is specific_event
-    assert received_event.event_type == "specific_event_type_check"
+    assert received_event.event_type == EventType.MATRIX_IMAGE_RECEIVED
     assert isinstance(received_event.timestamp, datetime.datetime)
 
 @pytest.mark.asyncio
 async def test_shutdown_stops_listeners(message_bus_instance: MessageBus):
     bus = message_bus_instance
-    event_type = "event_for_shutdown_test"
+    event_type = EventType.DEACTIVATE_LISTENING
     listener_started_event = asyncio.Event()
     listener_cancelled = False
 
@@ -132,7 +132,7 @@ async def test_shutdown_stops_listeners(message_bus_instance: MessageBus):
 @patch('message_bus.logger') # Patch logger to check for error messages
 async def test_listener_exception_handling(mock_logger, message_bus_instance: MessageBus):
     bus = message_bus_instance
-    event_type = "event_causing_error"
+    event_type = EventType.PROCESS_MESSAGE_BATCH_COMMAND
     failing_listener_called = asyncio.Event()
     successful_listener_called = asyncio.Event()
 

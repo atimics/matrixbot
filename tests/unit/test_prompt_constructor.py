@@ -26,12 +26,12 @@ def test_build_status_prompt():
 @patch('prompt_constructor.database')
 @pytest.mark.asyncio
 async def test_get_formatted_system_prompt_all_parts(mock_db):
-    mock_db.get_prompt.return_value = ("Test system prompt template with {bot_identity_section}, {global_summary_section}, {user_memories_section}, and {tool_states_section}.", None)
-    mock_db.get_latest_global_summary.return_value = ("Test global summary", None)
-    mock_db.get_user_memories.return_value = [
+    mock_db.get_prompt = AsyncMock(return_value=("Test system prompt template with {bot_identity_section}, {global_summary_section}, {user_memories_section}, and {tool_states_section}.", None))
+    mock_db.get_latest_global_summary = AsyncMock(return_value=("Test global summary", None))
+    mock_db.get_user_memories = AsyncMock(return_value=[
         (1, "user1", "Memory 1 for user1", 1678886400),
         (2, "user1", "Memory 2 for user1", 1678886500),
-    ]
+    ])
     tool_states = {"tool_a": {"state": "active"}, "tool_b": {"count": 5}}
     
     prompt = await get_formatted_system_prompt(
@@ -52,9 +52,9 @@ async def test_get_formatted_system_prompt_all_parts(mock_db):
 @patch('prompt_constructor.database')
 @pytest.mark.asyncio
 async def test_get_formatted_system_prompt_no_channel_summary(mock_db):
-    mock_db.get_prompt.return_value = ("System prompt: {bot_identity_section}, {global_summary_section}, {user_memories_section}, {tool_states_section}", None)
-    mock_db.get_latest_global_summary.return_value = ("Global summary", None)
-    mock_db.get_user_memories.return_value = []
+    mock_db.get_prompt = AsyncMock(return_value=("System prompt: {bot_identity_section}, {global_summary_section}, {user_memories_section}, {tool_states_section}", None))
+    mock_db.get_latest_global_summary = AsyncMock(return_value=("Global summary", None))
+    mock_db.get_user_memories = AsyncMock(return_value=[])
     prompt = await get_formatted_system_prompt("TestBot", None, None, "dummy_db.sqlite", [])
     assert "TestBot" in prompt
     assert "Global summary" in prompt
@@ -65,9 +65,9 @@ async def test_get_formatted_system_prompt_no_channel_summary(mock_db):
 @patch('prompt_constructor.database')
 @pytest.mark.asyncio
 async def test_get_formatted_system_prompt_no_global_summary(mock_db):
-    mock_db.get_prompt.return_value = ("System prompt: {bot_identity_section}, {global_summary_section}, {user_memories_section}, {tool_states_section}", None)
-    mock_db.get_latest_global_summary.return_value = None # No global summary
-    mock_db.get_user_memories.return_value = []
+    mock_db.get_prompt = AsyncMock(return_value=("System prompt: {bot_identity_section}, {global_summary_section}, {user_memories_section}, {tool_states_section}", None))
+    mock_db.get_latest_global_summary = AsyncMock(return_value=None)
+    mock_db.get_user_memories = AsyncMock(return_value=[])
     prompt = await get_formatted_system_prompt("TestBot", "Channel summary", None, "dummy_db.sqlite", [])
     assert "TestBot" in prompt
     assert "No global summary available currently." in prompt
@@ -79,9 +79,9 @@ async def test_get_formatted_system_prompt_no_global_summary(mock_db):
 @patch('prompt_constructor.database')
 @pytest.mark.asyncio
 async def test_get_formatted_system_prompt_no_summaries_no_bot_name(mock_db):
-    mock_db.get_prompt.return_value = ("System prompt: {bot_identity_section}, {global_summary_section}, {user_memories_section}, {tool_states_section}", None)
-    mock_db.get_latest_global_summary.return_value = None
-    mock_db.get_user_memories.return_value = []
+    mock_db.get_prompt = AsyncMock(return_value=("System prompt: {bot_identity_section}, {global_summary_section}, {user_memories_section}, {tool_states_section}", None))
+    mock_db.get_latest_global_summary = AsyncMock(return_value=None)
+    mock_db.get_user_memories = AsyncMock(return_value=[])
     prompt = await get_formatted_system_prompt(None, None, None, "dummy_db.sqlite", [])
     assert "You are AI." in prompt # Default identity
     assert "No global summary available currently." in prompt
@@ -91,9 +91,9 @@ async def test_get_formatted_system_prompt_no_summaries_no_bot_name(mock_db):
 @patch('prompt_constructor.database')
 @pytest.mark.asyncio
 async def test_get_formatted_system_prompt_only_bot_name(mock_db):
-    mock_db.get_prompt.return_value = ("System prompt: {bot_identity_section}, {global_summary_section}, {user_memories_section}, {tool_states_section}", None)
-    mock_db.get_latest_global_summary.return_value = None
-    mock_db.get_user_memories.return_value = []
+    mock_db.get_prompt = AsyncMock(return_value=("System prompt: {bot_identity_section}, {global_summary_section}, {user_memories_section}, {tool_states_section}", None))
+    mock_db.get_latest_global_summary = AsyncMock(return_value=None)
+    mock_db.get_user_memories = AsyncMock(return_value=[])
     prompt = await get_formatted_system_prompt("NamedBot", None, None, "dummy_db.sqlite", [])
     assert "You are NamedBot, AI." in prompt
     assert "No global summary available currently." in prompt
