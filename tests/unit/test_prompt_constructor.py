@@ -10,7 +10,8 @@ from event_definitions import (
     HistoricalMessage,
     BatchedUserMessage,
     ToolCall,
-    ToolRoleMessage
+    ToolRoleMessage,
+    ToolFunction
 )
 
 # Tests for build_status_prompt
@@ -144,3 +145,21 @@ async def test_build_messages_for_ai_only_current_multiple(mock_get_formatted_sy
     assert messages[1]["content"] == expected_content
     assert messages[1]["name"] == "@user1:host" # name of the first user in batch is used
 
+@patch('prompt_constructor.get_formatted_system_prompt', new_callable=AsyncMock)
+@pytest.mark.asyncio
+async def test_build_messages_for_ai_inserts_stub_for_orphan_tool(mock_get):
+    mock_get.return_value = "System"
+    hist = [
+        HistoricalMessage(
+            role="assistant",
+            content=None,
+            tool_calls=[ToolCall(id="t1", function=ToolFunction(name="foo", arguments="{}"))]
+        ),
+        ToolRoleMessage(tool_call_id="t1", content="ok"),
+        ToolRoleMessage(tool_call_id="t2", content="late")
+    ]
+    msgs = await build_messages_for_ai(hist, [], bot_display_name="Bot", db_path="db")
+    stub_idx = next(i for i,m in enumerate(msgs) if m.get("tool_calls") and m["tool_calls"][0]["id"]=="t2")
+    assert msgs[stub_idx]["role"] == "assistant"
+    assert msgs[stub_idx+1]["role"] == "tool"
+    assert msgs[stub_idx+1]["tool_call_id"] == "t2"
