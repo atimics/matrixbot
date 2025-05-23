@@ -1,7 +1,8 @@
 import logging
-from typing import List, Dict, Optional, Any, Tuple
+from typing import List, Dict, Optional, Any, Tuple, Set # Added Set
 from datetime import datetime  # Added
 import json  # Added
+import os # Added
 
 import database # Added import
 
@@ -83,7 +84,38 @@ async def get_formatted_system_prompt(
     if bot_display_name:
         bot_identity_section = f"You are {bot_display_name}, AI."
     else:
-        bot_identity_section = "You are AI."
+        # Load identity from identity.md
+        identity_file_path = os.path.join(os.path.dirname(__file__), '..', 'identity.md')
+        try:
+            with open(identity_file_path, 'r') as f:
+                identity_content = f.read()
+            # The first line of identity.md is the name, the rest is the description.
+            # Example: "Ratichat: The Entity of Latent Space\n\nDeep within..."
+            identity_lines = identity_content.split('\n', 1)
+            if len(identity_lines) > 0 and identity_lines[0].strip():
+                # Attempt to extract name before the first colon if present
+                if ':' in identity_lines[0]:
+                    bot_name_from_identity = identity_lines[0].split(':', 1)[0].strip()
+                    # Use the full first line as the core identity statement
+                    # and append the rest of the document as further context.
+                    bot_identity_section = f"Your identity is: {identity_lines[0].strip()}\n\n{identity_lines[1].strip() if len(identity_lines) > 1 else ''}"
+                else: # If no colon, use the whole first line as the name part of the identity.
+                    bot_name_from_identity = identity_lines[0].strip()
+                    bot_identity_section = f"Your identity is: {bot_name_from_identity}\n\n{identity_lines[1].strip() if len(identity_lines) > 1 else ''}"
+                
+                # If bot_display_name was not provided, use the extracted name
+                if not bot_display_name:
+                    bot_display_name = bot_name_from_identity # This will be used later in the prompt if needed
+
+            else:
+                logger.warning("identity.md is empty or first line is blank. Using default identity.")
+                bot_identity_section = "You are AI."
+        except FileNotFoundError:
+            logger.warning(f"identity.md not found at {identity_file_path}. Using default identity.")
+            bot_identity_section = "You are AI."
+        except Exception as e:
+            logger.error(f"Error loading identity.md: {e}. Using default identity.")
+            bot_identity_section = "You are AI."
 
     # Fetch latest global summary
     global_summary_text = ""
@@ -154,6 +186,101 @@ async def get_formatted_system_prompt(
     logger.debug(f"Final formatted system prompt:\n{formatted_prompt}")
     return formatted_prompt
 
+
+def _format_and_add_message(
+    msg_item: Any, 
+    messages_for_ai_list: List[Dict[str, Any]]
+):
+    """
+    Formats a single historical message and adds it to the messages_for_ai_list.
+    Encapsulates the conversion logic for roles, content, tool_calls, etc.
+    """
+    role = getattr(msg_item, 'role', msg_item.get('role') if isinstance(msg_item, dict) else None)
+    content = getattr(msg_item, 'content', msg_item.get('content') if isinstance(msg_item, dict) else None)
+    name = getattr(msg_item, 'name', msg_item.get('name') if isinstance(msg_item, dict) else None)
+    tool_calls_data = getattr(msg_item, 'tool_calls', msg_item.get('tool_calls') if isinstance(msg_item, dict) else None)
+    tool_call_id_data = getattr(msg_item, 'tool_call_id', msg_item.get('tool_call_id') if isinstance(msg_item, dict) else None)
+
+    if role is None:
+        logger.warning(f"Skipping message due to missing role: {msg_item}")
+        return
+
+    ai_msg: Dict[str, Any] = {"role": role}
+
+    # Content assignment logic
+    if role == "assistant":
+        if tool_calls_data: # Assistant has tool calls
+            if content is not None: # Original content was provided
+                ai_msg["content"] = content
+            else: # Original content was None
+                ai_msg["content"] = None # Explicitly None for AI API
+        else: # Assistant has no tool calls
+            if content is not None: # Original content was provided
+                ai_msg["content"] = content
+            else: # Original content was None
+                ai_msg["content"] = "" # Default to empty string
+    elif content is not None: # For other roles (user, system, tool)
+         ai_msg["content"] = content
+    # If content is None for user/system, it's an issue with upstream data.
+    # Tool role content is handled specifically below.
+
+    if name is not None:
+        ai_msg["name"] = name
+    
+    if role == "assistant" and tool_calls_data:
+        final_tool_calls_for_api = []
+        for tc_input_item in tool_calls_data:
+            tc_dict_intermediate = {}
+            if hasattr(tc_input_item, 'model_dump') and callable(tc_input_item.model_dump):
+                tc_dict_intermediate = tc_input_item.model_dump(mode='json')
+            elif isinstance(tc_input_item, dict):
+                tc_dict_intermediate = tc_input_item
+            else:
+                logger.warning(f"Skipping unexpected tool_call item type: {type(tc_input_item)}")
+                continue
+
+            if not (isinstance(tc_dict_intermediate.get('function'), dict) and
+                    tc_dict_intermediate.get('id') and
+                    tc_dict_intermediate.get('type') == 'function' and
+                    tc_dict_intermediate['function'].get('name')):
+                logger.warning(f"Skipping malformed tool_call dict during history construction: {tc_dict_intermediate}")
+                continue
+            
+            current_args = tc_dict_intermediate['function'].get('arguments')
+            stringified_args = ""
+            if isinstance(current_args, str):
+                stringified_args = current_args
+            elif isinstance(current_args, (dict, list)):
+                try:
+                    stringified_args = json.dumps(current_args)
+                except TypeError as e:
+                    logger.error(f"Failed to JSON stringify arguments for tool_call {tc_dict_intermediate.get('id')}: {current_args}. Error: {e}")
+                    stringified_args = json.dumps({"error": "Failed to serialize arguments", "original_args": str(current_args)})
+            elif current_args is None:
+                stringified_args = "{}"
+            else:
+                logger.warning(f"Tool call arguments are unexpected type: {type(current_args)}. Converting to string: {str(current_args)}")
+                stringified_args = str(current_args)
+
+            final_tool_calls_for_api.append({
+                "id": tc_dict_intermediate["id"],
+                "type": "function",
+                "function": {
+                    "name": tc_dict_intermediate["function"]["name"],
+                    "arguments": stringified_args
+                }
+            })
+        
+        ai_msg["tool_calls"] = final_tool_calls_for_api
+    
+    if role == "tool":
+        if tool_call_id_data is not None:
+            ai_msg["tool_call_id"] = tool_call_id_data
+        if ai_msg.get("content") is None: # Content for role:tool is mandatory
+            ai_msg["content"] = "[Tool execution result not available]"
+
+    messages_for_ai_list.append(ai_msg)
+
 async def build_messages_for_ai(
     historical_messages: List[Any], # Allow both dict and HistoricalMessage
     current_batched_user_inputs: List[Dict[str, str]],
@@ -169,6 +296,7 @@ async def build_messages_for_ai(
     Builds the message list for the AI, including system prompt, historical messages, and current user input.
     Handles OpenAI tool call message structure quirks and ensures event_id context is provided.
     Accepts historical_messages as a list of either dictionaries or HistoricalMessage objects.
+    Injects stub tool responses if an assistant's tool calls are not followed by actual tool responses.
     """
     messages_for_ai: List[Dict[str, Any]] = []
     if include_system_prompt:
@@ -192,54 +320,72 @@ async def build_messages_for_ai(
                 )
             })
 
-    for msg_item in historical_messages:
-        role = getattr(msg_item, 'role', msg_item.get('role') if isinstance(msg_item, dict) else None)
-        content = getattr(msg_item, 'content', msg_item.get('content') if isinstance(msg_item, dict) else None)
-        name = getattr(msg_item, 'name', msg_item.get('name') if isinstance(msg_item, dict) else None)
-        tool_calls = getattr(msg_item, 'tool_calls', msg_item.get('tool_calls') if isinstance(msg_item, dict) else None)
-        tool_call_id = getattr(msg_item, 'tool_call_id', msg_item.get('tool_call_id') if isinstance(msg_item, dict) else None)
+    pending_tool_call_ids: Set[str] = set()
 
-        if role is None:
+    for msg_item in historical_messages:
+        current_msg_role = getattr(msg_item, 'role', msg_item.get('role') if isinstance(msg_item, dict) else None)
+        current_msg_tool_call_id = getattr(msg_item, 'tool_call_id', msg_item.get('tool_call_id') if isinstance(msg_item, dict) else None)
+
+        if current_msg_role is None:
             logger.warning(f"Skipping message due to missing role: {msg_item}")
             continue
 
-        ai_msg: Dict[str, Any] = {"role": role}
-
+        if pending_tool_call_ids:
+            is_current_message_a_response_to_pending = (
+                current_msg_role == "tool" and
+                current_msg_tool_call_id in pending_tool_call_ids
+            )
+            if not is_current_message_a_response_to_pending:
+                for tc_id_to_stub in list(pending_tool_call_ids): # Iterate copy
+                    stub_tool_response = {
+                        "role": "tool",
+                        "tool_call_id": tc_id_to_stub,
+                        "content": "[Tool execution is pending or encountered an issue. Waiting for tool execution to complete.]"
+                    }
+                    messages_for_ai.append(stub_tool_response)
+                    logger.info(f"Injected stub for pending tool_call_id: {tc_id_to_stub} (before msg role: {current_msg_role})")
+                pending_tool_call_ids.clear()
+        
+        ai_msg: Dict[str, Any] = {"role": current_msg_role}
+        content = getattr(msg_item, 'content', msg_item.get('content') if isinstance(msg_item, dict) else None)
+        name = getattr(msg_item, 'name', msg_item.get('name') if isinstance(msg_item, dict) else None)
+        
+        # Determine content for assistant messages (None if tool_calls, "" otherwise if no explicit content)
         if content is not None:
             ai_msg["content"] = content
-        elif role == "assistant":
-            if not tool_calls:
-                ai_msg["content"] = ""
+        elif current_msg_role == "assistant":
+            # Check original msg_item for tool_calls to decide content structure
+            if not getattr(msg_item, 'tool_calls', msg_item.get('tool_calls')):
+                ai_msg["content"] = ""  # No tool calls, no explicit content, so empty string
             else:
-                ai_msg["content"] = None # OpenAI prefers None if only tool_calls
+                ai_msg["content"] = None # Tool calls present, content should be None
 
         if name is not None:
             ai_msg["name"] = name
         
-        if role == "assistant" and tool_calls is not None:
-            # Meticulously reconstruct tool_calls to ensure API compliance
-            final_tool_calls_for_api = []
-            for tc_input_item in tool_calls: # tc_input_item can be a Pydantic ToolCall or a dict
+        final_tool_calls_on_ai_msg = None
+        if current_msg_role == "assistant" and getattr(msg_item, 'tool_calls', msg_item.get('tool_calls')):
+            processed_tool_calls_for_api = []
+            raw_tool_calls = getattr(msg_item, 'tool_calls', msg_item.get('tool_calls'))
+            for tc_input_item in raw_tool_calls:
                 tc_dict_intermediate = {}
-                if hasattr(tc_input_item, 'model_dump') and callable(tc_input_item.model_dump): # Is Pydantic model
+                if hasattr(tc_input_item, 'model_dump') and callable(tc_input_item.model_dump):
                     tc_dict_intermediate = tc_input_item.model_dump(mode='json')
                 elif isinstance(tc_input_item, dict):
-                    tc_dict_intermediate = tc_input_item # Use directly if already a dict
+                    tc_dict_intermediate = tc_input_item
                 else:
                     logger.warning(f"Skipping unexpected tool_call item type during history construction: {type(tc_input_item)}")
                     continue
 
-                # Validate basic structure
-                if not isinstance(tc_dict_intermediate.get('function'), dict) or \
-                   not tc_dict_intermediate.get('id') or \
-                   not tc_dict_intermediate.get('type') == 'function' or \
-                   not tc_dict_intermediate['function'].get('name'):
+                if not (isinstance(tc_dict_intermediate.get('function'), dict) and \
+                   tc_dict_intermediate.get('id') and \
+                   tc_dict_intermediate.get('type') == 'function' and \
+                   tc_dict_intermediate['function']['name']):
                     logger.warning(f"Skipping malformed tool_call dict during history construction: {tc_dict_intermediate}")
                     continue
                 
                 current_args = tc_dict_intermediate['function'].get('arguments')
                 stringified_args = ""
-
                 if isinstance(current_args, str):
                     stringified_args = current_args
                 elif isinstance(current_args, (dict, list)):
@@ -249,33 +395,52 @@ async def build_messages_for_ai(
                         logger.error(f"Failed to JSON stringify arguments for tool_call {tc_dict_intermediate.get('id')}: {current_args}. Error: {e}")
                         stringified_args = json.dumps({"error": "Failed to serialize arguments", "original_args": str(current_args)})
                 elif current_args is None:
-                    stringified_args = "{}" # OpenAI often expects a string, even for no args. "{}" is common.
+                    stringified_args = "{}"
                 else:
                     logger.warning(f"Tool call arguments are unexpected type: {type(current_args)}. Converting to string: {str(current_args)}")
                     stringified_args = str(current_args)
 
-                final_tool_calls_for_api.append({
+                processed_tool_calls_for_api.append({
                     "id": tc_dict_intermediate["id"],
-                    "type": "function", # Explicitly set type
+                    "type": "function",
                     "function": {
                         "name": tc_dict_intermediate["function"]["name"],
                         "arguments": stringified_args
                     }
                 })
-            
-            ai_msg["tool_calls"] = final_tool_calls_for_api
-            # Ensure content is None if only tool_calls are present, or if content was already None
-            if "content" not in ai_msg or ai_msg["content"] is None: # Check if content key exists and is None
-                 ai_msg["content"] = None
+            final_tool_calls_on_ai_msg = processed_tool_calls_for_api
+            ai_msg["tool_calls"] = processed_tool_calls_for_api
         
-        if role == "tool":
-            if tool_call_id is not None:
-                ai_msg["tool_call_id"] = tool_call_id
-            if content is None: # Content for role:tool is mandatory
-                ai_msg["content"] = "[Tool execution result not available]"
-            # else content is already set
+        if current_msg_role == "tool":
+            final_tool_call_id_on_ai_msg = current_msg_tool_call_id
+            if current_msg_tool_call_id is not None:
+                ai_msg["tool_call_id"] = current_msg_tool_call_id
+            if ai_msg.get("content") is None: # Content for role:tool is mandatory
+                ai_msg["content"] = "[Tool execution result not available or error occurred]"
 
         messages_for_ai.append(ai_msg)
+
+        if current_msg_role == "assistant" and final_tool_calls_on_ai_msg:
+            assert not pending_tool_call_ids, "Pending IDs should have been cleared before processing new assistant calls if it wasn't a direct tool response."
+            for tc in final_tool_calls_on_ai_msg:
+                pending_tool_call_ids.add(tc["id"])
+            logger.debug(f"Assistant message added. New pending tool_call_ids: {pending_tool_call_ids}")
+        elif current_msg_role == "tool" and final_tool_call_id_on_ai_msg:
+            if final_tool_call_id_on_ai_msg in pending_tool_call_ids:
+                pending_tool_call_ids.remove(final_tool_call_id_on_ai_msg)
+                logger.debug(f"Tool response message processed for {final_tool_call_id_on_ai_msg}. Remaining pending: {pending_tool_call_ids}")
+            # else: it's a tool response for a non-immediately-pending call, which is fine.
+
+    if pending_tool_call_ids:
+        for tc_id_to_stub in list(pending_tool_call_ids):
+            stub_tool_response = {
+                "role": "tool",
+                "tool_call_id": tc_id_to_stub,
+                "content": "[Tool execution is pending or encountered an issue. Waiting for tool execution to complete.]"
+            }
+            messages_for_ai.append(stub_tool_response)
+            logger.info(f"Injected stub for pending tool_call_id: {tc_id_to_stub} (at end of history)")
+        pending_tool_call_ids.clear()
 
     # Combine batched user inputs if needed
     if current_batched_user_inputs:
@@ -283,7 +448,7 @@ async def build_messages_for_ai(
         # The 'name' field in the combined message should ideally represent the sender of the *first* message in the batch,
         # or be a generic identifier if that's more appropriate for the LLM.
         # For now, using the name of the first user in the batch.
-        first_user_name_in_batch = current_batched_user_inputs[0]["name"]
+        first_user_name_in_batch = current_batched_user_inputs[0].get("name", "user")
         
         # Join parts with a newline, avoids manual newline appending and stripping
         # Each part should clearly indicate its original sender.
@@ -294,20 +459,12 @@ async def build_messages_for_ai(
             if len(current_batched_user_inputs) == 1:
                 message_parts.append(content_text)
             else:
-                # The test expects a literal \n, so we construct the string accordingly.
                 message_parts.append(f"{sender_name}: {content_text}")
 
-        if len(current_batched_user_inputs) > 1:
-            # For multiple messages, the test expects them to be joined by a literal '\n'
-            # which means the string itself should contain '\' followed by 'n'.
-            # This is different from a newline character.
-            # However, the previous logic was to join with "\n" (newline character).
-            # Let's stick to joining with a newline character as that's more standard for multi-line text.
-            # The test might need adjustment if it strictly requires literal '\n'.
-            # For now, I will assume the test wants actual newlines between messages.
-            combined_content = "\n".join(message_parts)
-        else:
-            combined_content = message_parts[0] if message_parts else ""
+        # Join the parts into a single string.
+        # If there was more than one message, they are joined by newlines.
+        # If only one, it's just that message's content.
+        combined_content = "\n".join(message_parts)
         
         messages_for_ai.append({"role": "user", "name": first_user_name_in_batch, "content": combined_content})
     

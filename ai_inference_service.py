@@ -72,63 +72,92 @@ class AIInferenceService:
             
             processed_messages_payload.append(new_message)
 
-        # --- BEGIN PRE-FLIGHT CHECK for tool call structure ---
-        # This check ensures that assistant messages with tool_calls are correctly followed by tool responses.
-        # It operates on processed_messages_payload, which should have arguments stringified.
-        active_assistant_tool_calls_ids = set()
-        for i, msg in enumerate(processed_messages_payload):
-            role = msg.get("role")
+        # --- BEGIN PAYLOAD CORRECTION AND VALIDATION ---
+        # This section ensures that assistant messages with tool_calls are correctly followed by tool responses.
+        # If responses are missing, stubs are inserted.
+        # If tool messages are malformed or unexpected, the request will fail.
 
-            if active_assistant_tool_calls_ids: # We are expecting tool responses
-                if role == "tool":
-                    tc_id = msg.get("tool_call_id")
-                    if tc_id in active_assistant_tool_calls_ids:
-                        active_assistant_tool_calls_ids.remove(tc_id)
-                    else:
-                        error_msg = f"Pre-flight check failed: Encountered tool message with unexpected tool_call_id '{tc_id}' at index {i}. Expected one of {active_assistant_tool_calls_ids}."
-                        logger.error(f"{error_msg} History: {json.dumps(processed_messages_payload, indent=2)}")
-                        return False, None, None, error_msg
-                else: # A non-tool message appeared before all expected tool responses were found
-                    error_msg = f"Pre-flight check failed: Assistant message at an earlier index made tool calls (missing responses for {active_assistant_tool_calls_ids}), but message at index {i} has role '{role}' instead of 'tool'."
-                    logger.error(f"{error_msg} History: {json.dumps(processed_messages_payload, indent=2)}")
+        corrected_messages_payload = []
+        # Stores IDs of tool calls made by the last assistant message, awaiting responses.
+        pending_tool_ids_from_assistant = set()
+
+        original_payload_for_logging = processed_messages_payload # Keep a reference for logging errors
+
+        for i, current_message in enumerate(processed_messages_payload):
+            current_role = current_message.get("role")
+
+            # If the current message is not a tool message, it means any tool calls
+            # expected from a *previous* assistant message that were not yet met must now be stubbed.
+            if current_role != "tool":
+                if pending_tool_ids_from_assistant:
+                    for tool_id_to_stub in list(pending_tool_ids_from_assistant): # Iterate over a copy for modification
+                        stub_content = json.dumps({
+                            "status": "stubbed_by_preflight_check",
+                            "reason": f"Expected tool response for call_id '{tool_id_to_stub}' was missing before a subsequent '{current_role}' message at index {i}."
+                        })
+                        stub_message = {"role": "tool", "tool_call_id": tool_id_to_stub, "content": stub_content}
+                        corrected_messages_payload.append(stub_message)
+                        logger.warning(f"AIS Pre-flight: Inserted stub for missing tool response (ID: {tool_id_to_stub}) before message index {i} ('{current_role}').")
+                    pending_tool_ids_from_assistant.clear()
+
+            # Now, process the current_message itself
+            if current_role == "assistant":
+                corrected_messages_payload.append(current_message)
+                # This assistant message might make new tool calls.
+                # Any previous pending_tool_ids should have been cleared and stubbed above.
+                # So, pending_tool_ids_from_assistant should be empty here before repopulating.
+                
+                assistant_tool_calls = current_message.get("tool_calls")
+                if assistant_tool_calls and isinstance(assistant_tool_calls, list):
+                    for tc in assistant_tool_calls:
+                        # Ensure tc is a dictionary, as it might be a Pydantic model (ToolCall)
+                        # This should have been handled by the initial processing loop already,
+                        # but double-check tc structure if issues persist.
+                        # For this logic, we assume tc is a dict as per OpenRouter's expected format.
+                        if isinstance(tc, dict) and tc.get("id") and tc.get("type") == "function":
+                            pending_tool_ids_from_assistant.add(tc["id"])
+                        else:
+                            # This assistant message itself has a malformed tool_call. This is a fatal error.
+                            error_msg = f"Pre-flight check failed: Assistant message at index {i} has malformed tool_call entry: {tc}."
+                            logger.error(f"{error_msg} Original History Segment: {json.dumps(original_payload_for_logging, indent=2)}")
+                            return False, None, None, error_msg
+            
+            elif current_role == "tool":
+                tool_call_id = current_message.get("tool_call_id")
+                if tool_call_id and tool_call_id in pending_tool_ids_from_assistant:
+                    corrected_messages_payload.append(current_message)
+                    pending_tool_ids_from_assistant.remove(tool_call_id)
+                else:
+                    # This tool message is unexpected (no matching pending call_id from an assistant)
+                    # or malformed (e.g., missing tool_call_id). This is a fatal error for the request.
+                    error_msg = (f"Pre-flight check failed: Encountered tool message at index {i} with "
+                                 f"tool_call_id '{tool_call_id}' which was not pending or ID is missing. "
+                                 f"Currently pending IDs from assistant: {pending_tool_ids_from_assistant}.")
+                    logger.error(f"{error_msg} Original History Segment: {json.dumps(original_payload_for_logging, indent=2)}")
                     return False, None, None, error_msg
             
-            if role == "assistant":
-                if active_assistant_tool_calls_ids: # Should have been cleared by tool responses or a non-tool message
-                    # This implies an assistant message was followed by another assistant message, but tool responses were still pending.
-                    error_msg = f"Pre-flight check failed: New assistant message at index {i} found, but previous assistant message's tool calls were not all addressed (missing responses for {active_assistant_tool_calls_ids})."
-                    logger.error(f"{error_msg} History: {json.dumps(processed_messages_payload, indent=2)}")
-                    return False, None, None, error_msg
+            else: # Handles "user", "system", or any other roles
+                corrected_messages_payload.append(current_message)
+                # If we reached here, pending_tool_ids_from_assistant should be empty due to the check
+                # at the beginning of the loop for non-tool messages.
 
-                current_tool_calls = msg.get("tool_calls")
-                if current_tool_calls and isinstance(current_tool_calls, list):
-                    # This assistant message is making tool calls.
-                    # Note: tool_calls here should already be processed dicts with stringified arguments.
-                    for tc in current_tool_calls:
-                        if isinstance(tc, dict) and tc.get("id") and tc.get("type") == "function":
-                            active_assistant_tool_calls_ids.add(tc["id"])
-                        else:
-                            error_msg = f"Pre-flight check failed: Assistant message at index {i} has malformed tool_call entry: {tc}."
-                            logger.error(f"{error_msg} History: {json.dumps(processed_messages_payload, indent=2)}")
-                            return False, None, None, error_msg
-                    
-                    if not active_assistant_tool_calls_ids and current_tool_calls: # e.g. tool_calls was [{}] (list of empty dicts)
-                        # This means tool_calls array was present but contained no valid tool calls with IDs.
-                        # This is usually fine if the list is empty, but if not empty and no IDs, it's odd.
-                        # For an empty list `[]`, active_assistant_tool_calls_ids would be empty, and this block is fine.
-                        pass # No actual tool calls to track.
-                    elif active_assistant_tool_calls_ids and (i == len(processed_messages_payload) - 1):
-                        # Last message is an assistant making tool calls, but no tool responses can follow.
-                        error_msg = f"Pre-flight check failed: Last message (index {i}) is an assistant message making tool calls (IDs: {active_assistant_tool_calls_ids}), but no tool responses follow."
-                        logger.error(f"{error_msg} History: {json.dumps(processed_messages_payload, indent=2)}")
-                        return False, None, None, error_msg
-        
-        # After iterating through all messages, if there are still active_assistant_tool_calls_ids, it means the history ended without satisfying them.
-        if active_assistant_tool_calls_ids:
-            error_msg = f"Pre-flight check failed: Message history ends but assistant tool calls are still pending responses for IDs: {active_assistant_tool_calls_ids}."
-            logger.error(f"{error_msg} History: {json.dumps(processed_messages_payload, indent=2)}")
-            return False, None, None, error_msg
-        # --- END PRE-FLIGHT CHECK ---
+        # After iterating through all messages, if there are still pending_tool_ids,
+        # it means the history ended with an assistant message making tool calls that were not responded to.
+        # These must be stubbed.
+        if pending_tool_ids_from_assistant:
+            for tool_id_to_stub in list(pending_tool_ids_from_assistant): # Iterate over a copy
+                stub_content = json.dumps({
+                    "status": "stubbed_by_preflight_check",
+                    "reason": f"Expected tool response for call_id '{tool_id_to_stub}' was missing at the end of the message history."
+                })
+                stub_message = {"role": "tool", "tool_call_id": tool_id_to_stub, "content": stub_content}
+                corrected_messages_payload.append(stub_message)
+                logger.warning(f"AIS Pre-flight: Inserted stub for missing tool response (ID: {tool_id_to_stub}) at end of history.")
+            pending_tool_ids_from_assistant.clear()
+
+        # Use the corrected payload for the API call
+        processed_messages_payload = corrected_messages_payload 
+        # --- END PAYLOAD CORRECTION AND VALIDATION ---
 
         payload_data = {"model": model_name, "messages": processed_messages_payload}
         if tools:
