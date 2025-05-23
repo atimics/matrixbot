@@ -414,8 +414,18 @@ async def build_messages_for_ai(
         if current_msg_role == "tool":
             final_tool_call_id_on_ai_msg = current_msg_tool_call_id
             if current_msg_tool_call_id is not None:
+                if current_msg_tool_call_id not in pending_tool_call_ids:
+                    logger.warning(
+                        f"Skipping tool message with ID {current_msg_tool_call_id} as no matching pending tool call is present in history."
+                    )
+                    continue
                 ai_msg["tool_call_id"] = current_msg_tool_call_id
-            if ai_msg.get("content") is None: # Content for role:tool is mandatory
+            else:
+                logger.warning(
+                    "Skipping tool message with missing tool_call_id as no prior tool call is available."
+                )
+                continue
+            if ai_msg.get("content") is None:  # Content for role:tool is mandatory
                 ai_msg["content"] = "[Tool execution result not available or error occurred]"
 
         messages_for_ai.append(ai_msg)
