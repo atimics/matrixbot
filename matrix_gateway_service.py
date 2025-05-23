@@ -16,7 +16,7 @@ from nio import (
     WhoamiError # Added
 )
 from nio.exceptions import LocalProtocolError # Import specific known nio exceptions
-from dotenv import load_dotenv, set_key, find_dotenv # Modified import
+from dotenv import load_dotenv # MODIFIED import: Removed set_key, find_dotenv
 import markdown
 
 from message_bus import MessageBus
@@ -44,10 +44,11 @@ class MatrixGatewayService:
         self.homeserver = os.getenv("MATRIX_HOMESERVER")
         self.user_id = os.getenv("MATRIX_USER_ID") # Will be updated by .env or after login
         self.password = os.getenv("MATRIX_PASSWORD")
-        self.access_token: Optional[str] = os.getenv("MATRIX_ACCESS_TOKEN")
+        self.access_token: Optional[str] = None
         # User's preferred device name for new logins, or if no MATRIX_DEVICE_ID is stored
         self.device_name_config = os.getenv("DEVICE_NAME", "NioChatBotSOA_Gateway_v2")
         # Device ID from a previous successful login, associated with the access_token
+        # This is now only used if an access_token is also provided.
         self.persisted_device_id: Optional[str] = os.getenv("MATRIX_DEVICE_ID")
         self.client: Optional[AsyncClient] = None
         self.bot_display_name: Optional[str] = "ChatBot" # Default
@@ -362,38 +363,36 @@ class MatrixGatewayService:
         if not self.homeserver or not self.user_id: # self.user_id here is from initial .env or None
              logger.error("Gateway: MATRIX_HOMESERVER and MATRIX_USER_ID must be set. Exiting.")
              return
-        if not self.password and not self.access_token: # self.access_token here is from initial .env or None
-            logger.error("Gateway: Either MATRIX_PASSWORD or MATRIX_ACCESS_TOKEN must be set. Exiting.")
-            return
 
-        # Determine the device_id to use for AsyncClient constructor
-        # This device_id is primarily for when a token is provided.
-        client_constructor_device_id = self.persisted_device_id or self.device_name_config
-
-        if self.access_token:
-             # If using token, user_id and device_id should ideally be the ones from the session that generated the token
-             # self.user_id is already loaded from MATRIX_USER_ID (potentially canonicalized and saved from previous run)
-             # client_constructor_device_id uses self.persisted_device_id (saved from previous run)
-             logger.info(f"Gateway: Initializing client with User ID {self.user_id}, Access Token, and Device ID {client_constructor_device_id}.")
-             self.client = AsyncClient(
-                 self.homeserver,
-                 self.user_id,
-                 device_id=client_constructor_device_id,
-                 # token=self.access_token, # Removed: token is not a valid constructor argument
-                 store_path=None
-             )
-             self.client.access_token = self.access_token # Set token after initialization
+        # Determine authentication method: Password first, then Token
+        auth_method = None
+        if self.password:
+            auth_method = "password"
+            logger.info(f"Gateway: Password provided. Prioritizing password login for user {self.user_id}.")
+            # For password login, device_id in AsyncClient constructor is a default for the client object.
+            # The actual device_id for the session is set via device_name in the login() call.
+            self.client = AsyncClient(
+                self.homeserver,
+                self.user_id,
+                device_id=self.device_name_config,
+                store_path=None
+            )
+            # Ensure self.client.access_token is None so the login block attempts password auth.
+            # Any self.access_token from env is ignored if password is set.
+        elif self.access_token:
+            auth_method = "token"
+            client_constructor_device_id = self.persisted_device_id or self.device_name_config
+            logger.info(f"Gateway: No password, using access token. Initializing client for token login for user {self.user_id} with device ID {client_constructor_device_id}.")
+            self.client = AsyncClient(
+                self.homeserver,
+                self.user_id,
+                device_id=client_constructor_device_id,
+                store_path=None
+            )
+            self.client.access_token = self.access_token # Set token for the client to use
         else:
-             logger.info(f"Gateway: Initializing client with User ID {self.user_id} for password login.")
-             # For password login, device_id in constructor is a default.
-             # The actual device_id will be set by the server after login.
-             # The device_name for the login call itself is self.device_name_config.
-             self.client = AsyncClient(
-                 self.homeserver,
-                 self.user_id, # Initial user_id from env
-                 device_id=self.device_name_config, # Provide configured name as default for client object
-                 store_path=None
-             )
+            logger.error("Gateway: Neither MATRIX_PASSWORD nor MATRIX_ACCESS_TOKEN is set. Exiting.")
+            return
 
         self.client.add_event_callback(self._matrix_message_callback, RoomMessageText)
         self.client.add_event_callback(self._matrix_image_callback, RoomMessageImage)
@@ -409,71 +408,50 @@ class MatrixGatewayService:
 
         login_success = False
         try:
-            if not self.client.access_token: # Only login if we don't already have a token (i.e. self.access_token was None)
-                logger.info(f"Gateway: Attempting password login as {self.user_id}...")
-                # Use self.device_name_config for the login attempt
+            if auth_method == "token":
+                logger.info("Gateway: Verifying provided access token...")
+                try:
+                   whoami_response = await self.client.whoami()
+                   if isinstance(whoami_response, WhoamiResponse):
+                       # Validate user ID and potentially device ID if needed
+                       if whoami_response.user_id == self.user_id:
+                           logger.info(f"Gateway: Access token is valid for user {self.user_id}. Device from token: {whoami_response.device_id or '(not in response)'}")
+                           login_success = True
+                           # Ensure client's device_id is updated if whoami provides it and it's different
+                           # from the one used in constructor (self.persisted_device_id or self.device_name_config)
+                           if whoami_response.device_id and self.client.device_id != whoami_response.device_id:
+                               logger.info(f"Gateway: Updating client device ID from whoami response to: {whoami_response.device_id}")
+                               self.client.device_id = whoami_response.device_id
+                       else:
+                           logger.error(f"Gateway: Access token is for a different user (response: {whoami_response.user_id}, expected: {self.user_id}).")
+                           # No return here, login_success remains False, handled below
+                   elif isinstance(whoami_response, WhoamiError):
+                       logger.error(f"Gateway: Failed to verify access token. Whoami check failed: {getattr(whoami_response, 'message', 'Unknown WhoamiError')}")
+                   else:
+                       logger.error(f"Gateway: Failed to verify access token. Unexpected whoami response type: {type(whoami_response)}. Response: {whoami_response}")
+                except Exception as e:
+                    logger.error(f"Gateway: Exception during access token verification: {type(e).__name__} - {e}")
+            
+            elif auth_method == "password":
+                logger.info(f"Gateway: Attempting password login as {self.user_id} with device name '{self.device_name_config}'...")
                 login_response = await self.client.login(self.password, device_name=self.device_name_config)
 
                 if isinstance(login_response, LoginResponse):
                     login_success = True
-                    # IMPORTANT: Update with values from the server
-                    self.access_token = self.client.access_token
-                    self.user_id = self.client.user_id # Canonicalized user ID from server
+                    # Update internal state with details from successful login
+                    self.access_token = self.client.access_token # Store the new token
+                    self.user_id = self.client.user_id # Canonicalized user ID
                     actual_device_id = self.client.device_id # Actual device ID from server
-
-                    logger.info(f"Gateway: Logged in successfully as {self.user_id} with device ID {actual_device_id}")
-                    logger.info(f"Gateway: Saving access token, user ID, and device ID to .env file...")
-                    try:
-                        dotenv_path_found = find_dotenv(usecwd=True, raise_error_if_not_found=False)
-                        env_file_to_write = dotenv_path_found
-                        if not env_file_to_write: # If .env doesn't exist or not found in CWD/parents
-                            env_file_to_write = os.path.join(os.getcwd(), ".env")
-                            # Create .env if it doesn't exist, so set_key can write to it
-                            if not os.path.exists(env_file_to_write):
-                                with open(env_file_to_write, "w") as f:
-                                    pass # Create empty .env
-                                logger.info(f"Gateway: Created .env file at {env_file_to_write}")
-                        
-                        set_key(env_file_to_write, "MATRIX_ACCESS_TOKEN", self.access_token)
-                        set_key(env_file_to_write, "MATRIX_USER_ID", self.user_id)
-                        set_key(env_file_to_write, "MATRIX_DEVICE_ID", actual_device_id)
-                        logger.info(f"Gateway: Credentials saved to {env_file_to_write}.")
-
-                        # Update current environment variables for this running instance
-                        # and internal state, so it doesn't rely on a restart to use them.
-                        os.environ['MATRIX_ACCESS_TOKEN'] = self.access_token
-                        os.environ['MATRIX_USER_ID'] = self.user_id
-                        os.environ['MATRIX_DEVICE_ID'] = actual_device_id
-                        self.persisted_device_id = actual_device_id # Update internal state
-
-                    except Exception as e:
-                        logger.error(f"Gateway: Failed to save credentials to .env file. Error: {type(e).__name__} - {e}")
+                    logger.info(f"Gateway: Logged in successfully as {self.user_id} with device ID {actual_device_id}.")
+                    # self.persisted_device_id = actual_device_id # No longer saving to env or updating os.environ
                 else:
-                    logger.error(f"Gateway: Login failed. Response: {login_response}")
-                    await self.client.close()
-                    return
-            else:
-                logger.info("Gateway: Using provided access token. Verifying token...")
-                # Optionally verify token with a simple API call like /account/whoami
-                try:
-                   whoami_response = await self.client.whoami() # Returns WhoamiResponse or WhoamiError
-                   if isinstance(whoami_response, WhoamiResponse):
-                       if whoami_response.user_id == self.user_id:
-                           logger.info("Gateway: Access token is valid.")
-                           login_success = True # Treat as successful login
-                       else:
-                           logger.error(f"Gateway: Access token seems invalid or for wrong user (response: {whoami_response.user_id}, expected: {self.user_id}).")
-                           return # Exit run method, finally block will handle cleanup
-                   elif isinstance(whoami_response, WhoamiError):
-                       logger.error(f"Gateway: Failed to verify access token. Whoami check failed with WhoamiError: {getattr(whoami_response, 'message', 'Unknown WhoamiError')}")
-                       return # Exit run method, finally block will handle cleanup
-                   else:
-                       logger.error(f"Gateway: Failed to verify access token. Unexpected whoami response type: {type(whoami_response)}. Response: {whoami_response}")
-                       return # Exit run method, finally block will handle cleanup
-                except Exception as e:
-                    logger.error(f"Gateway: Exception during access token verification: {type(e).__name__} - {e}")
-                    return # Exit run method, finally block will handle cleanup
-
+                    logger.error(f"Gateway: Password login failed. Response: {login_response}")
+            
+            # If authentication was not successful by this point, exit.
+            if not login_success:
+                logger.error("Gateway: Authentication failed. Exiting service.")
+                # Cleanup is handled in the finally block of the outer try
+                return
 
             # --- Fetch display name (remains the same) ---
             try:

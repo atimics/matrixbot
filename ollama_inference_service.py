@@ -125,7 +125,7 @@ class OllamaInferenceService:
             logger.info("OllamaInferenceService: Stop event received, cleaning up...")
             if self._client: # self._client is an ollama.AsyncClient
                 try:
-                    await self._client.close() # Use the ollama.AsyncClient's close() method
+                    await self._client.aclose() # Use the httpx.AsyncClient's aclose() method
                     logger.info("OllamaInferenceService: Ollama client session closed.")
                 except Exception as e:
                     logger.error(f"OllamaInferenceService: Error closing Ollama client session: {e}")

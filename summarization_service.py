@@ -29,8 +29,6 @@ class SummarizationService:
         
         # Initialize database path (same as orchestrator)
         self.db_path = os.getenv("DATABASE_PATH", "matrix_bot_soa.db")
-        # Ensure database is initialized if not already (idempotent)
-        database.initialize_database(self.db_path)
 
         # LLM Configuration for summaries
         self.primary_llm_provider = os.getenv("PRIMARY_LLM_PROVIDER", "openrouter").lower()
@@ -147,6 +145,9 @@ class SummarizationService:
 
     async def run(self) -> None:
         logger.info("SummarizationService: Starting...")
+        # It's better to initialize async resources in an async method.
+        await database.initialize_database(self.db_path)
+
         self.bus.subscribe(
             BotDisplayNameReadyEvent.model_fields["event_type"].default,
             self._handle_bot_display_name_ready,
