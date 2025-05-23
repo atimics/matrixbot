@@ -57,7 +57,3 @@ class AbstractTool(ABC):
             A ToolResult object detailing the outcome of the execution.
         """
         pass
-
-# Pydantic BaseModel needs to be imported if not already available globally
-# For ToolResult, we might need to import BaseModel from Pydantic
-from pydantic import BaseModel
