@@ -123,32 +123,39 @@ class ToolExecutionService:
         logger.info(f"ToolExecSvc: Received OpenRouter response for original tool call ID '{original_tool_call_id}' in room '{original_room_id}'. Success: {or_response_event.success}")
 
         final_status: str
-        result_for_llm: str
+        result_for_llm_history_content: str
         error_msg: Optional[str] = None
         data_for_llm_followup: Optional[Dict[str, Any]] = None
 
         if or_response_event.success:
-            final_status = "success" # The delegated call itself was successful
+            final_status = "success"  # The delegated call itself was successful
             # The result for the primary LLM is the text response from OpenRouter
-            result_for_llm = or_response_event.text_response or "[OpenRouter returned no text content]"
+            # This is what the primary LLM will see as the "output" of the call_openrouter_llm tool.
+            result_for_llm_history_content = or_response_event.text_response or "[OpenRouter returned no text content]"
             
             # If OpenRouter itself made tool calls, that's a more complex scenario.
             # For now, we assume the primary LLM wants the text response from OpenRouter.
             # The `data_for_followup_llm` will carry this text response back.
             data_for_llm_followup = {
-                "text_response_from_openrouter": or_response_event.text_response,
+                "text_response": or_response_event.text_response,
                 "tool_calls_from_openrouter": [
                     tc.model_dump(mode='json') if hasattr(tc, 'model_dump') else tc 
                     for tc in or_response_event.tool_calls
                 ] if or_response_event.tool_calls else None
             }
             if or_response_event.tool_calls:
-                logger.warning(f"ToolExecSvc: OpenRouter (delegated call for {original_tool_call_id}) itself returned tool_calls: {or_response_event.tool_calls}. These are passed in data_for_followup_llm but not directly executed by ToolExecutionService at this step.")
+                logger.warning(
+                    f"ToolExecSvc: OpenRouter (delegated call for {original_tool_call_id}) itself returned tool_calls: {or_response_event.tool_calls}. These are passed in data_from_tool_for_followup_llm. The primary LLM will decide how to use this."
+                )
+                # Potentially, the primary LLM might want to see these tool calls too.
+                # For simplicity, result_for_llm_history_content currently only includes text.
+                # If the primary LLM should see the tool calls from the delegate, this string should be augmented.
+                # Example: result_for_llm_history_content += f"\n[Delegated OpenRouter also suggested tool calls: {or_response_event.tool_calls}]"
 
         else: # OpenRouter call failed
             final_status = "failure"
             error_msg = or_response_event.error_message or "OpenRouter call failed with no specific error message."
-            result_for_llm = f"[Tool call_openrouter_llm failed: OpenRouter error: {error_msg}]"
+            result_for_llm_history_content = f"[Tool call_openrouter_llm failed: OpenRouter error: {error_msg}]"
 
         # For now, we'll use what we have, which is `delegation_context`.
         # This means RoomLogicService needs to be aware of this structure.
@@ -170,11 +177,11 @@ class ToolExecutionService:
 
         final_tool_response = ToolExecutionResponse(
             original_tool_call_id=original_tool_call_id,
-            tool_name="call_openrouter_llm", # Populate tool_name (specific for delegated calls)
-            status=final_status,
-            result_for_llm_history=result_for_llm,
+            tool_name="call_openrouter_llm",  # Populate tool_name (specific for delegated calls)
+            status=final_status,  # This is the status of the call_openrouter_llm tool execution itself
+            result_for_llm_history=result_for_llm_history_content,  # This is the string that goes into the 'tool' role message content
             error_message=error_msg,
-            data_from_tool_for_followup_llm=data_for_llm_followup,
+            data_from_tool_for_followup_llm=data_for_llm_followup,  # This can carry richer structured data if needed
             original_request_payload=final_original_request_payload_for_rls
         )
         await self.bus.publish(final_tool_response)

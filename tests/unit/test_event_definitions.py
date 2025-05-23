@@ -356,9 +356,10 @@ def test_summary_generated_event_valid():
 
 # Test BotDisplayNameReadyEvent
 def test_bot_display_name_ready_event_valid():
-    event = BotDisplayNameReadyEvent(display_name="MyBot")
+    event = BotDisplayNameReadyEvent(display_name="MyBot", user_id="@bot:server")
     check_base_event_fields(event, EventType.BOT_DISPLAY_NAME_READY)
     assert event.display_name == "MyBot"
+    assert event.user_id == "@bot:server"
 
 # Test ImageCaptionGeneratedEvent
 def test_image_caption_generated_event_valid():

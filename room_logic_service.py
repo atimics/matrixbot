@@ -519,7 +519,14 @@ class RoomLogicService:
             logger.info(f"RLS: [{room_id}] No short term memory to summarize.")
             return
 
-        summary_payload = prompt_constructor.build_summary_payload(short_term_memory)
+        summary_payload = await prompt_constructor.build_summary_generation_payload(
+            transcript_for_summarization="\n".join(
+                f"{msg.get('name', 'Unknown')}: {msg.get('content', '')}" for msg in short_term_memory
+            ),
+            previous_summary=None,
+            db_path=self.db_path,
+            bot_display_name=self.bot_display_name
+        )
         turn_request_id = str(uuid.uuid4())
 
         model_to_use: str
