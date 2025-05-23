@@ -195,11 +195,18 @@ def _format_and_add_message(
     Formats a single historical message and adds it to the messages_for_ai_list.
     Encapsulates the conversion logic for roles, content, tool_calls, etc.
     """
-    role = getattr(msg_item, 'role', msg_item.get('role') if isinstance(msg_item, dict) else None)
-    content = getattr(msg_item, 'content', msg_item.get('content') if isinstance(msg_item, dict) else None)
-    name = getattr(msg_item, 'name', msg_item.get('name') if isinstance(msg_item, dict) else None)
-    tool_calls_data = getattr(msg_item, 'tool_calls', msg_item.get('tool_calls') if isinstance(msg_item, dict) else None)
-    tool_call_id_data = getattr(msg_item, 'tool_call_id', msg_item.get('tool_call_id') if isinstance(msg_item, dict) else None)
+    if isinstance(msg_item, dict):
+        role = msg_item.get('role')
+        content = msg_item.get('content')
+        name = msg_item.get('name')
+        tool_calls_data = msg_item.get('tool_calls')
+        tool_call_id_data = msg_item.get('tool_call_id')
+    else:
+        role = getattr(msg_item, 'role', None)
+        content = getattr(msg_item, 'content', None)
+        name = getattr(msg_item, 'name', None)
+        tool_calls_data = getattr(msg_item, 'tool_calls', None)
+        tool_call_id_data = getattr(msg_item, 'tool_call_id', None)
 
     if role is None:
         logger.warning(f"Skipping message due to missing role: {msg_item}")
@@ -323,8 +330,12 @@ async def build_messages_for_ai(
     pending_tool_call_ids: Set[str] = set()
 
     for msg_item in historical_messages:
-        current_msg_role = getattr(msg_item, 'role', msg_item.get('role') if isinstance(msg_item, dict) else None)
-        current_msg_tool_call_id = getattr(msg_item, 'tool_call_id', msg_item.get('tool_call_id') if isinstance(msg_item, dict) else None)
+        if isinstance(msg_item, dict):
+            current_msg_role = msg_item.get('role')
+            current_msg_tool_call_id = msg_item.get('tool_call_id')
+        else:
+            current_msg_role = getattr(msg_item, 'role', None)
+            current_msg_tool_call_id = getattr(msg_item, 'tool_call_id', None)
 
         if current_msg_role is None:
             logger.warning(f"Skipping message due to missing role: {msg_item}")
@@ -347,15 +358,21 @@ async def build_messages_for_ai(
                 pending_tool_call_ids.clear()
         
         ai_msg: Dict[str, Any] = {"role": current_msg_role}
-        content = getattr(msg_item, 'content', msg_item.get('content') if isinstance(msg_item, dict) else None)
-        name = getattr(msg_item, 'name', msg_item.get('name') if isinstance(msg_item, dict) else None)
+        if isinstance(msg_item, dict):
+            content = msg_item.get('content')
+            name = msg_item.get('name')
+            raw_tool_calls = msg_item.get('tool_calls')
+        else:
+            content = getattr(msg_item, 'content', None)
+            name = getattr(msg_item, 'name', None)
+            raw_tool_calls = getattr(msg_item, 'tool_calls', None)
         
         # Determine content for assistant messages (None if tool_calls, "" otherwise if no explicit content)
         if content is not None:
             ai_msg["content"] = content
         elif current_msg_role == "assistant":
             # Check original msg_item for tool_calls to decide content structure
-            if not getattr(msg_item, 'tool_calls', msg_item.get('tool_calls')):
+            if not raw_tool_calls:
                 ai_msg["content"] = ""  # No tool calls, no explicit content, so empty string
             else:
                 ai_msg["content"] = None # Tool calls present, content should be None
@@ -364,9 +381,8 @@ async def build_messages_for_ai(
             ai_msg["name"] = name
         
         final_tool_calls_on_ai_msg = None
-        if current_msg_role == "assistant" and getattr(msg_item, 'tool_calls', msg_item.get('tool_calls')):
+        if current_msg_role == "assistant" and raw_tool_calls:
             processed_tool_calls_for_api = []
-            raw_tool_calls = getattr(msg_item, 'tool_calls', msg_item.get('tool_calls'))
             for tc_input_item in raw_tool_calls:
                 tc_dict_intermediate = {}
                 if hasattr(tc_input_item, 'model_dump') and callable(tc_input_item.model_dump):
@@ -416,9 +432,21 @@ async def build_messages_for_ai(
             if current_msg_tool_call_id is not None:
                 if current_msg_tool_call_id not in pending_tool_call_ids:
                     logger.warning(
-                        f"Skipping tool message with ID {current_msg_tool_call_id} as no matching pending tool call is present in history."
+                        f"Orphaned tool result {current_msg_tool_call_id} - inserting stub tool_use to keep history consistent."
                     )
-                    continue
+                    stub_tool_use = {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": current_msg_tool_call_id,
+                                "type": "function",
+                                "function": {"name": "unknown_tool", "arguments": "{}"},
+                            }
+                        ],
+                    }
+                    messages_for_ai.append(stub_tool_use)
+                    pending_tool_call_ids.add(current_msg_tool_call_id)
                 ai_msg["tool_call_id"] = current_msg_tool_call_id
             else:
                 logger.warning(
