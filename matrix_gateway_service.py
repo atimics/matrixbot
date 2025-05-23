@@ -398,12 +398,12 @@ class MatrixGatewayService:
         self.client.add_event_callback(self._matrix_message_callback, RoomMessageText)
         self.client.add_event_callback(self._matrix_image_callback, RoomMessageImage)
         # Subscribe to commands
-        self.bus.subscribe(SendMatrixMessageCommand.model_fields['event_type'].default, self._handle_send_message_command)
-        self.bus.subscribe(ReactToMessageCommand.model_fields['event_type'].default, self._handle_react_to_message_command)
-        self.bus.subscribe(SendReplyCommand.model_fields['event_type'].default, self._handle_send_reply_command)
-        self.bus.subscribe(SetTypingIndicatorCommand.model_fields['event_type'].default, self._handle_set_typing_command)
-        self.bus.subscribe(SetPresenceCommand.model_fields['event_type'].default, self._handle_set_presence_command)
-        self.bus.subscribe(RequestMatrixRoomInfoCommand.model_fields['event_type'].default, self._handle_request_room_info)
+        self.bus.subscribe(SendMatrixMessageCommand.get_event_type(), self._handle_send_message_command)
+        self.bus.subscribe(ReactToMessageCommand.get_event_type(), self._handle_react_to_message_command)
+        self.bus.subscribe(SendReplyCommand.get_event_type(), self._handle_send_reply_command)
+        self.bus.subscribe(SetTypingIndicatorCommand.get_event_type(), self._handle_set_typing_command)
+        self.bus.subscribe(SetPresenceCommand.get_event_type(), self._handle_set_presence_command)
+        self.bus.subscribe(RequestMatrixRoomInfoCommand.get_event_type(), self._handle_request_room_info)
 
         self._command_worker_task = asyncio.create_task(self._command_worker())
 

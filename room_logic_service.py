@@ -778,9 +778,9 @@ class RoomLogicService:
 
     async def run(self):
         """Main run loop for the service, subscribing to events."""
-        self.bus.subscribe(MatrixMessageReceivedEvent.model_fields['event_type'].default, self._handle_matrix_message)
-        self.bus.subscribe(ActivateListeningEvent.model_fields['event_type'].default, self._handle_activate_listening)
-        self.bus.subscribe(ProcessMessageBatchCommand.model_fields['event_type'].default, self._handle_process_message_batch)
+        self.bus.subscribe(MatrixMessageReceivedEvent.get_event_type(), self._handle_matrix_message)
+        self.bus.subscribe(ActivateListeningEvent.get_event_type(), self._handle_activate_listening)
+        self.bus.subscribe(ProcessMessageBatchCommand.get_event_type(), self._handle_process_message_batch)
         
         # Subscribe to specific AI response events for chat.
         # The _handle_ai_chat_response method itself checks response_event.response_topic.
@@ -788,16 +788,16 @@ class RoomLogicService:
         # We remove the subscription to the generic AIInferenceResponseEvent for this handler
         # to prevent double calls if the message bus delivers an event to handlers for both
         # its specific type and its base type.
-        self.bus.subscribe(OpenRouterInferenceResponseEvent.model_fields['event_type'].default, self._handle_ai_chat_response)
-        self.bus.subscribe(OllamaInferenceResponseEvent.model_fields['event_type'].default, self._handle_ai_chat_response)
+        self.bus.subscribe(OpenRouterInferenceResponseEvent.get_event_type(), self._handle_ai_chat_response)
+        self.bus.subscribe(OllamaInferenceResponseEvent.get_event_type(), self._handle_ai_chat_response)
         # If other specific chat response events exist, they should be subscribed here.
         # A generic AIInferenceResponseEvent for chat, if not covered by specific types, would need careful handling
         # or a separate handler if it implies different processing. For now, assuming specific types cover chat.
 
         # Subscribe to specific AI response events for summary.
         # Similar to chat responses, removed generic subscription to avoid double calls.
-        self.bus.subscribe(OpenRouterInferenceResponseEvent.model_fields['event_type'].default, self._handle_ai_summary_response)
-        self.bus.subscribe(OllamaInferenceResponseEvent.model_fields['event_type'].default, self._handle_ai_summary_response)
+        self.bus.subscribe(OpenRouterInferenceResponseEvent.get_event_type(), self._handle_ai_summary_response)
+        self.bus.subscribe(OllamaInferenceResponseEvent.get_event_type(), self._handle_ai_summary_response)
     
         # Fallback subscriptions for truly generic AIInferenceResponseEvents,
         # only if they are not instances of the more specific types handled above
@@ -810,8 +810,8 @@ class RoomLogicService:
         # for chat or summary, separate logic or a more sophisticated subscription mechanism might be needed.
         # Based on current usage, specific events are published by AIInferenceService.
         
-        self.bus.subscribe(BotDisplayNameReadyEvent.model_fields['event_type'].default, self._handle_bot_display_name_ready)
-        self.bus.subscribe(ToolExecutionResponse.model_fields['event_type'].default, self._handle_tool_execution_response)
+        self.bus.subscribe(BotDisplayNameReadyEvent.get_event_type(), self._handle_bot_display_name_ready)
+        self.bus.subscribe(ToolExecutionResponse.get_event_type(), self._handle_tool_execution_response)
         
         await self._stop_event.wait()
 

@@ -117,7 +117,7 @@ class OllamaInferenceService:
 
     async def run(self):
         logger.info("OllamaInferenceService: Starting...")
-        self.bus.subscribe(OllamaInferenceRequestEvent.model_fields['event_type'].default, self._handle_inference_request)
+        self.bus.subscribe(OllamaInferenceRequestEvent.get_event_type(), self._handle_inference_request)
         
         try:
             await self._stop_event.wait()
