@@ -23,12 +23,13 @@ class S3Service:
         if not self.S3_API_KEY or not self.S3_API_ENDPOINT or not self.CLOUDFRONT_DOMAIN:
             raise ValueError('Missing one or more required environment variables (S3_API_KEY, S3_API_ENDPOINT, CLOUDFRONT_DOMAIN)')
 
-    async def upload_image(self, file_path: str) -> Optional[str]:
+    async def upload_image(self, file_path: str, object_name: Optional[str] = None) -> Optional[str]:
         """
         Upload an image file to S3 and return the CloudFront URL.
         
         Args:
             file_path: Path to the image file to upload
+            object_name: Optional custom name for the uploaded object (currently unused but kept for compatibility)
             
         Returns:
             CloudFront URL of the uploaded image, or None if upload failed

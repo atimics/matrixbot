@@ -53,7 +53,9 @@ class ImageAnalysisService:
 
     async def run(self) -> None:
         logger.info("ImageAnalysisService: Starting...")
-        self.bus.subscribe("image_analysis_response", self._handle_image_analysis_response)
+        # Subscribe to the proper OpenRouter response event type instead of the custom string
+        from event_definitions import OpenRouterInferenceResponseEvent
+        self.bus.subscribe(OpenRouterInferenceResponseEvent.get_event_type(), self._handle_image_analysis_response)
         await self._stop_event.wait()
         logger.info("ImageAnalysisService: Stopped.")
 

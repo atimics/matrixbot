@@ -180,6 +180,7 @@ class BatchedUserMessage(BaseModel): # Defined based on test_event_definitions.p
     user_id: str
     content: str
     event_id: str
+    image_url: Optional[str] = None  # Added to support image messages
 
 
 class ProcessMessageBatchCommand(BaseEvent):

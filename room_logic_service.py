@@ -37,12 +37,13 @@ from tool_manager import ToolRegistry # Added
 load_dotenv()
 
 class RoomLogicService:
-    def __init__(self, message_bus: MessageBus, tool_registry: ToolRegistry, db_path: str, bot_display_name: str = "ChatBot"): # Added db_path
+    def __init__(self, message_bus: MessageBus, tool_registry: ToolRegistry, db_path: str, bot_display_name: str = "ChatBot", matrix_client=None): # Added matrix_client parameter
         """Service for managing room logic, batching, and AI interaction."""
         self.bus = message_bus
         self.tool_registry = tool_registry # Store it
         self.db_path = db_path # Store db_path
         self.bot_display_name = bot_display_name # Set by BotDisplayNameReadyEvent
+        self.matrix_client = matrix_client  # Store the Matrix client for authenticated image downloads
         self.room_activity_config: Dict[str, Dict[str, Any]] = {}
         self._stop_event = asyncio.Event()
         self._service_start_time = datetime.datetime.now(datetime.timezone.utc) # Changed to datetime object
@@ -214,8 +215,8 @@ class RoomLogicService:
                 return
 
             # Convert pending_messages to BatchedUserMessage instances
-            # Assuming pending_messages are dicts like: {"name": sender_display_name, "content": body, "event_id": event_id}
-            # BatchedUserMessage expects: {"user_id": str, "content": str, "event_id": str}
+            # Assuming pending_messages are dicts like: {"name": sender_display_name, "content": body, "event_id": event_id, "image_url": optional}
+            # BatchedUserMessage expects: {"user_id": str, "content": str, "event_id": str, "image_url": Optional[str]}
             # We'll use "name" as "user_id" for now, though this might need refinement if a more persistent user_id is available.
             messages_to_batch: List[BatchedUserMessage] = []
             for msg_data in pending_messages:
@@ -223,7 +224,8 @@ class RoomLogicService:
                     messages_to_batch.append(BatchedUserMessage(
                         user_id=msg_data.get("name", "Unknown User"), # Using 'name' as 'user_id'
                         content=msg_data.get("content", ""),
-                        event_id=msg_data.get("event_id", "")
+                        event_id=msg_data.get("event_id", ""),
+                        image_url=msg_data.get("image_url")  # Preserve image_url if present
                     ))
                 except Exception as e:
                     logger.error(f"RoomLogic: [{room_id}] Error converting message to BatchedUserMessage: {msg_data}. Error: {e}")
@@ -281,11 +283,16 @@ class RoomLogicService:
         current_user_ids: List[str] = [] # ADDED: For collecting user IDs
 
         for bum in pending_batch_from_command:
-            processed_pending_batch_for_ai.append({
+            batch_item = {
                 "name": bum.user_id, # Map back from user_id to name
                 "content": bum.content,
                 "event_id": bum.event_id
-            })
+            }
+            # Preserve image_url if present
+            if bum.image_url:
+                batch_item["image_url"] = bum.image_url
+            
+            processed_pending_batch_for_ai.append(batch_item)
             if bum.user_id not in current_user_ids: # ADDED: Collect unique user IDs
                 current_user_ids.append(bum.user_id)
         
@@ -307,7 +314,8 @@ class RoomLogicService:
             channel_summary=summary_text_for_prompt,
             tool_states=tool_states_for_prompt, # ADDED (Can be None)
             current_user_ids_in_context=current_user_ids, # ADDED
-            last_user_event_id_in_batch=last_user_event_id_in_batch
+            last_user_event_id_in_batch=last_user_event_id_in_batch,
+            matrix_client=self.matrix_client  # ADDED for authenticated image downloads
         )
 
         turn_request_id = str(uuid.uuid4())
@@ -773,6 +781,7 @@ class RoomLogicService:
         # Now, prepare and publish the follow-up AI request using augmented_history_for_follow_up
         original_ai_payload_from_first_call = pending_turn_info["original_ai_response_payload"]
         current_user_ids_in_context = original_ai_payload_from_first_call.get("current_user_ids_in_context", [])
+        original_last_user_event_id = original_ai_payload_from_first_call.get("last_user_event_id_in_batch")  # Preserve original event ID
         current_channel_summary, _ = await database.get_summary(self.db_path, room_id) or (None, None)
 
         follow_up_payload = await prompt_constructor.build_messages_for_ai(
@@ -783,7 +792,8 @@ class RoomLogicService:
             channel_summary=current_channel_summary,
             tool_states=config.get('tool_states'),
             current_user_ids_in_context=current_user_ids_in_context,
-            last_user_event_id_in_batch=None
+            last_user_event_id_in_batch=original_last_user_event_id,  # Use original event ID for replies
+            matrix_client=self.matrix_client  # ADDED for authenticated image downloads
         )
 
         # Clean up the pending tool call info for this turn_request_id
@@ -806,7 +816,8 @@ class RoomLogicService:
             "turn_request_id": turn_request_id,
             "requested_model_name": follow_up_model_name,
             "current_llm_provider": follow_up_provider,
-            "current_user_ids_in_context": current_user_ids_in_context
+            "current_user_ids_in_context": current_user_ids_in_context,
+            "last_user_event_id_in_batch": original_last_user_event_id  # Preserve for final reply
         }
 
         follow_up_request = FollowUpEventClass(

@@ -470,6 +470,8 @@ class AIInferenceService:
             response_topic=request_event.reply_to_service_event
         )
         
+        # Don't modify the frozen event_type field - use response_topic for custom routing instead
+        
         logger.info(f"Publishing {ResponseEventClass.__name__} for request {request_event.request_id}. Success: {success}")
         await self.bus.publish(response_event)
 

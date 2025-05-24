@@ -110,7 +110,8 @@ class OllamaInferenceService:
             tool_calls=tool_calls, # Pass Ollama's tool_calls structure
             error_message=error_message
         )
-        response_event.event_type = request_event.reply_to_service_event
+        # Use response_topic instead of trying to change the frozen event_type field
+        response_event.response_topic = request_event.reply_to_service_event
         await self.bus.publish(response_event)
         # logger.debug(f"OllamaInfer: Published AIInferenceResponseEvent (as {response_event.event_type}) for request {request_event.request_id}. Success: {success}")
 

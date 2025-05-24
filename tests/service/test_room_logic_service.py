@@ -13,7 +13,7 @@ async def test_room_logic_service_creation_and_run_stop():
     bus = MessageBus()
     tool_registry = ToolRegistry([]) # Empty registry for basic test
     db_path = ":memory:" # In-memory DB for test
-    service = RoomLogicService(bus, tool_registry, db_path, bot_display_name="TestBot")
+    service = RoomLogicService(bus, tool_registry, db_path, bot_display_name="TestBot", matrix_client=None)
 
     # Ensure all subscriptions can be made (i.e., methods exist)
     # This also implicitly tests that the handler methods are defined.

@@ -7,6 +7,7 @@ from typing import Dict, Any, List, Optional
 from tool_base import AbstractTool, ToolResult
 from event_definitions import OpenRouterInferenceRequestEvent
 from s3_service import S3Service
+from matrix_media_utils import MatrixMediaUtils  # Added for centralized media conversion
 
 logger = logging.getLogger(__name__)
 
@@ -55,19 +56,8 @@ class DescribeImageTool(AbstractTool):
 
     def _convert_mxc_to_http(self, mxc_url: str) -> str:
         """Convert Matrix MXC URL to HTTP URL for downloading."""
-        if not mxc_url.startswith("mxc://"):
-            return mxc_url
-        
-        # Extract server and media_id from mxc://server/media_id format
-        parts = mxc_url[6:].split("/", 1)  # Remove "mxc://" and split
-        if len(parts) != 2:
-            logger.error(f"Invalid MXC URL format: {mxc_url}")
-            return mxc_url
-        
-        server, media_id = parts
-        # Convert to Matrix media download URL
-        # This assumes the Matrix server is available at the same domain
-        return f"https://{server}/_matrix/media/r0/download/{server}/{media_id}"
+        # Use centralized utility for simple conversion
+        return MatrixMediaUtils.convert_mxc_to_http_simple(mxc_url)
 
     async def execute(
         self,
@@ -89,21 +79,34 @@ class DescribeImageTool(AbstractTool):
 
         # First, check for images in the standard format (from conversation history)
         for msg in reversed(conversation_history_snapshot):
-            if msg.get("role") == "user":
-                content = msg.get("content")
-                
+            # Handle both dict and HistoricalMessage object formats
+            if isinstance(msg, dict):
+                msg_role = msg.get("role")
+                msg_content = msg.get("content")
+                msg_event_id = msg.get("event_id")
+            else:
+                # HistoricalMessage object - access attributes directly
+                msg_role = getattr(msg, 'role', None)
+                msg_content = getattr(msg, 'content', None)
+                msg_event_id = getattr(msg, 'event_id', None)
+            
+            if msg_role == "user":
                 # Check for image_url in structured content
-                if isinstance(content, list):
-                    for item in content:
+                if isinstance(msg_content, list):
+                    for item in msg_content:
                         if isinstance(item, dict) and item.get("type") == "image_url":
                             recent_image_url = item["image_url"].get("url")
-                            recent_image_event_id = msg.get("event_id")
+                            recent_image_event_id = msg_event_id
                             break
                 
                 # Check for image_url in message metadata (from Matrix image events)
-                elif "image_url" in msg:
+                elif isinstance(msg, dict) and "image_url" in msg:
                     recent_image_url = msg["image_url"]
-                    recent_image_event_id = msg.get("event_id")
+                    recent_image_event_id = msg_event_id
+                    break
+                elif hasattr(msg, 'image_url'):
+                    recent_image_url = getattr(msg, 'image_url', None)
+                    recent_image_event_id = msg_event_id
                     break
                 
                 if recent_image_url:
@@ -119,16 +122,45 @@ class DescribeImageTool(AbstractTool):
         logger.info(f"DescribeImageTool: Found image URL: {recent_image_url}")
 
         try:
-            # Download the image from Matrix
-            matrix_http_url = self._convert_mxc_to_http(recent_image_url)
-            logger.info(f"DescribeImageTool: Downloading image from: {matrix_http_url}")
+            # Use centralized Matrix media utility with fallback API versions
+            image_data = None
             
-            image_data = await self.s3_service.download_image(matrix_http_url)
+            # If it's an MXC URL, use the centralized fallback logic
+            if recent_image_url.startswith("mxc://"):
+                # Extract server and media_id from mxc://server/media_id format
+                parts = recent_image_url[6:].split("/", 1)  # Remove "mxc://" and split
+                if len(parts) != 2:
+                    logger.error(f"DescribeImageTool: Invalid MXC URL format: {recent_image_url}")
+                    return ToolResult(
+                        status="failure",
+                        result_for_llm_history="[Tool describe_image failed: Invalid image URL format.]",
+                        error_message="Invalid MXC URL format",
+                    )
+                
+                server, media_id = parts
+                
+                # Try multiple Matrix media API versions as fallbacks using centralized logic
+                api_versions = ["v3", "v1", "r0"]
+                
+                for version in api_versions:
+                    matrix_http_url = f"https://{server}/_matrix/media/{version}/download/{server}/{media_id}"
+                    logger.info(f"DescribeImageTool: Trying to download image using {version} API: {matrix_http_url}")
+                    
+                    image_data = await self.s3_service.download_image(matrix_http_url)
+                    if image_data:
+                        logger.info(f"DescribeImageTool: Successfully downloaded image using Matrix media API {version}")
+                        break
+                    else:
+                        logger.warning(f"DescribeImageTool: Failed to download image using Matrix media API {version}")
+            else:
+                # Non-MXC URL, try direct download
+                image_data = await self.s3_service.download_image(recent_image_url)
+            
             if not image_data:
                 return ToolResult(
                     status="failure",
-                    result_for_llm_history="[Tool describe_image failed: Could not download the image from Matrix.]",
-                    error_message="Failed to download image from Matrix",
+                    result_for_llm_history="[Tool describe_image failed: Could not download the image from Matrix using any API version.]",
+                    error_message="Failed to download image from Matrix using all API versions",
                 )
 
             # Save image to temporary file

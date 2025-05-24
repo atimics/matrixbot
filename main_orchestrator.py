@@ -51,11 +51,11 @@ async def main() -> None:
 
     tool_execution_service = ToolExecutionService(bus, tool_registry)
 
-    # Pass ToolRegistry to services that need it (e.g., RoomLogicService)
+    # Pass ToolRegistry and MatrixGateway to services that need them
     # RoomLogicService will be modified to accept this in its __init__
-    room_logic = RoomLogicService(bus, tool_registry=tool_registry, db_path=db_path)
+    room_logic = RoomLogicService(bus, tool_registry=tool_registry, db_path=db_path, matrix_client=matrix_gateway.get_client())
     summarization = SummarizationService(bus)
-    image_caption = ImageCaptionService(bus)
+    image_caption = ImageCaptionService(bus, matrix_gateway=matrix_gateway)  # Pass matrix_gateway
     image_analysis = ImageAnalysisService(bus)
 
     services = [

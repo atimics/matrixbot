@@ -8,6 +8,7 @@ import uuid  # Added for unique filenames
 
 import database # Added import
 from s3_service import S3Service  # Added for image upload
+from matrix_media_utils import MatrixMediaUtils  # Added for centralized media conversion
 
 logger = logging.getLogger(__name__)
 
@@ -21,61 +22,138 @@ except Exception as e:
 
 def _convert_mxc_to_http(mxc_url: str) -> str:
     """Convert Matrix MXC URL to HTTP URL for downloading."""
-    if not mxc_url.startswith("mxc://"):
-        return mxc_url
-    
-    # Extract server and media_id from mxc://server/media_id format
-    parts = mxc_url[6:].split("/", 1)  # Remove "mxc://" and split
-    if len(parts) != 2:
-        logger.error(f"Invalid MXC URL format: {mxc_url}")
-        return mxc_url
-    
-    server, media_id = parts
-    # Convert to Matrix media download URL
-    return f"https://{server}/_matrix/media/r0/download/{server}/{media_id}"
+    # Use centralized utility for simple conversion
+    return MatrixMediaUtils.convert_mxc_to_http_simple(mxc_url)
 
-async def _upload_image_to_s3(image_url: str) -> Optional[str]:
+async def _upload_image_to_s3(image_url: str, matrix_client=None) -> Optional[str]:
     """Download image from Matrix and upload to S3, returning S3 URL."""
     if not s3_service:
         logger.error("S3Service not available, cannot upload image")
         return None
     
     try:
-        # Convert MXC URL to HTTP URL
-        http_url = _convert_mxc_to_http(image_url)
-        logger.info(f"Converting image URL from {image_url} to HTTP: {http_url}")
+        # First, try to download the image using authenticated Matrix client if available
+        logger.info(f"Attempting to download image from Matrix URL: {image_url}")
         
-        # Download the image from Matrix
-        image_data = await s3_service.download_image(http_url)
+        image_data = None
+        if image_url.startswith("mxc://"):
+            # If we have an authenticated Matrix client, use it for downloading
+            if matrix_client and hasattr(matrix_client, 'download'):
+                try:
+                    logger.info(f"Using authenticated Matrix client to download image: {image_url}")
+                    # Use the Matrix client's download method which includes authentication
+                    response = await matrix_client.download(image_url)
+                    if hasattr(response, 'body') and response.body:
+                        image_data = response.body
+                        logger.info(f"Successfully downloaded image using authenticated Matrix client")
+                    else:
+                        logger.warning(f"Matrix client download returned empty response for: {image_url}")
+                except Exception as e:
+                    logger.warning(f"Failed to download via authenticated Matrix client: {e}")
+            
+            # If authenticated download failed or no client available, try fallback approaches
+            if not image_data:
+                # Try multiple approaches to download the image
+                # 1. Try using the Matrix media utils conversion first with federation support
+                try:
+                    # Extract homeserver URL from matrix_client if available
+                    client_homeserver_url = None
+                    if matrix_client and hasattr(matrix_client, 'homeserver'):
+                        client_homeserver_url = matrix_client.homeserver
+                        logger.info(f"Using client homeserver for federation: {client_homeserver_url}")
+                    
+                    http_url = await MatrixMediaUtils.convert_mxc_to_http_with_fallback(
+                        image_url, 
+                        client_homeserver_url
+                    )
+                    logger.info(f"Converted MXC URL to HTTP: {http_url}")
+                    
+                    if http_url != image_url:  # Successful conversion
+                        # Try with authentication headers if we have a Matrix client
+                        headers = {}
+                        if matrix_client and hasattr(matrix_client, 'access_token') and matrix_client.access_token:
+                            headers['Authorization'] = f'Bearer {matrix_client.access_token}'
+                            logger.info("Adding authentication header for Matrix media download")
+                        
+                        image_data = await s3_service.download_image(http_url, headers=headers)
+                        if image_data:
+                            logger.info(f"Successfully downloaded image from converted URL with auth: {http_url}")
+                        else:
+                            logger.warning(f"Failed to download image from converted URL with auth: {http_url}")
+                except Exception as e:
+                    logger.warning(f"Failed to convert/download via MatrixMediaUtils: {e}")
+                
+                # 2. If that failed, try direct conversion approach with authentication
+                if not image_data:
+                    try:
+                        # Extract server and media_id from mxc://server/media_id
+                        parts = image_url[6:].split("/", 1)  # Remove "mxc://"
+                        if len(parts) == 2:
+                            server, media_id = parts
+                            # Try common Matrix media API endpoints directly with auth
+                            direct_urls = [
+                                f"https://{server}/_matrix/media/v3/download/{server}/{media_id}",
+                                f"https://{server}/_matrix/media/r0/download/{server}/{media_id}",
+                                f"https://{server}/_matrix/media/v1/download/{server}/{media_id}"
+                            ]
+                            
+                            for direct_url in direct_urls:
+                                logger.info(f"Trying direct download from: {direct_url}")
+                                try:
+                                    headers = {}
+                                    if matrix_client and hasattr(matrix_client, 'access_token') and matrix_client.access_token:
+                                        headers['Authorization'] = f'Bearer {matrix_client.access_token}'
+                                    
+                                    image_data = await s3_service.download_image(direct_url, headers=headers)
+                                    if image_data:
+                                        logger.info(f"Successfully downloaded image via direct authenticated URL: {direct_url}")
+                                        break
+                                    else:
+                                        logger.warning(f"Direct authenticated download failed for: {direct_url}")
+                                except Exception as e:
+                                    logger.warning(f"Exception during direct authenticated download from {direct_url}: {e}")
+                    except Exception as e:
+                        logger.error(f"Failed to parse MXC URL or direct download: {e}")
+        else:
+            # If it's already an HTTP URL, try downloading directly
+            try:
+                image_data = await s3_service.download_image(image_url)
+                if image_data:
+                    logger.info(f"Successfully downloaded image from HTTP URL: {image_url}")
+            except Exception as e:
+                logger.warning(f"Failed to download from HTTP URL {image_url}: {e}")
+        
         if not image_data:
-            logger.error(f"Failed to download image from Matrix: {http_url}")
+            logger.error(f"Failed to download image from any attempted URL: {image_url}")
             return None
-
+        
+        # Generate unique filename for S3
+        file_extension = ".jpg"  # Default to jpg, could be improved to detect actual type
+        unique_filename = f"matrix_image_{uuid.uuid4()}{file_extension}"
+        
         # Save image to temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as temp_file:
             temp_file.write(image_data)
             temp_file_path = temp_file.name
-
+        
         try:
-            # Upload image to S3
-            logger.info(f"Uploading image to S3: {temp_file_path}")
-            s3_url = await s3_service.upload_image(temp_file_path)
-            if not s3_url:
-                logger.error("Failed to upload image to S3")
+            # Upload to S3
+            s3_url = await s3_service.upload_image(temp_file_path, object_name=unique_filename)
+            if s3_url:
+                logger.info(f"Successfully uploaded image to S3: {s3_url}")
+                return s3_url
+            else:
+                logger.error("S3 upload returned None")
                 return None
-
-            logger.info(f"Image uploaded to S3 successfully: {s3_url}")
-            return s3_url
-
         finally:
             # Clean up temporary file
             try:
                 os.unlink(temp_file_path)
-            except OSError:
-                logger.warning(f"Could not delete temporary file: {temp_file_path}")
-
+            except OSError as e:
+                logger.warning(f"Could not delete temporary file {temp_file_path}: {e}")
+                
     except Exception as e:
-        logger.error(f"Error uploading image to S3: {e}", exc_info=True)
+        logger.error(f"Error uploading image to S3: {e}")
         return None
 
 # Default system prompt template.
@@ -360,7 +438,8 @@ async def build_messages_for_ai(
     tool_states: Optional[Dict[str, Any]] = None, # ADDED
     current_user_ids_in_context: Optional[List[str]] = None, # ADDED
     last_user_event_id_in_batch: Optional[str] = None,
-    include_system_prompt: bool = True
+    include_system_prompt: bool = True,
+    matrix_client = None  # ADDED for authenticated image downloads
 ) -> List[Dict[str, Any]]:
     """
     Builds the message list for the AI, including system prompt, historical messages, and current user input.
@@ -553,7 +632,7 @@ async def build_messages_for_ai(
                 if image_url:
                     logger.info(f"Processing image in batch: {image_url}")
                     # Convert Matrix MXC URL to S3 URL
-                    s3_url = await _upload_image_to_s3(image_url)
+                    s3_url = await _upload_image_to_s3(image_url, matrix_client)
                     if s3_url:
                         logger.info(f"Successfully converted Matrix image to S3 URL: {s3_url}")
                         content_parts.append({
