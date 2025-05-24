@@ -402,8 +402,12 @@ async def build_messages_for_ai(
 
     # Process historical messages and handle image placeholders
     for msg_item in historical_messages:
-        current_msg_role = getattr(msg_item, 'role', msg_item.get('role') if isinstance(msg_item, dict) else None)
-        current_msg_tool_call_id = getattr(msg_item, 'tool_call_id', msg_item.get('tool_call_id') if isinstance(msg_item, dict) else None)
+        if isinstance(msg_item, dict):
+            current_msg_role = msg_item.get('role')
+            current_msg_tool_call_id = msg_item.get('tool_call_id')
+        else:
+            current_msg_role = getattr(msg_item, 'role', None)
+            current_msg_tool_call_id = getattr(msg_item, 'tool_call_id', None)
 
         if current_msg_role is None:
             logger.warning(f"Skipping message due to missing role: {msg_item}")
@@ -475,9 +479,8 @@ async def build_messages_for_ai(
             ai_msg["name"] = name
         
         final_tool_calls_on_ai_msg = None
-        if current_msg_role == "assistant" and getattr(msg_item, 'tool_calls', msg_item.get('tool_calls')):
+        if current_msg_role == "assistant" and raw_tool_calls:
             processed_tool_calls_for_api = []
-            raw_tool_calls = getattr(msg_item, 'tool_calls', msg_item.get('tool_calls'))
             for tc_input_item in raw_tool_calls:
                 tc_dict_intermediate = {}
                 if hasattr(tc_input_item, 'model_dump') and callable(tc_input_item.model_dump):
@@ -527,9 +530,21 @@ async def build_messages_for_ai(
             if current_msg_tool_call_id is not None:
                 if current_msg_tool_call_id not in pending_tool_call_ids:
                     logger.warning(
-                        f"Skipping tool message with ID {current_msg_tool_call_id} as no matching pending tool call is present in history."
+                        f"Orphaned tool result {current_msg_tool_call_id} - inserting stub tool_use to keep history consistent."
                     )
-                    continue
+                    stub_tool_use = {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": current_msg_tool_call_id,
+                                "type": "function",
+                                "function": {"name": "unknown_tool", "arguments": "{}"},
+                            }
+                        ],
+                    }
+                    messages_for_ai.append(stub_tool_use)
+                    pending_tool_call_ids.add(current_msg_tool_call_id)
                 ai_msg["tool_call_id"] = current_msg_tool_call_id
             else:
                 logger.warning(
