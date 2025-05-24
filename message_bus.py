@@ -15,6 +15,8 @@ class MessageBus:
         self._stop_event = asyncio.Event()
         # Add _subscribers for tracking callback subscriptions
         self._subscribers: Dict[str, List[Callable]] = defaultdict(list)
+        # Add task_mapping for tracking task-callback pairs
+        self.task_mapping: Dict[tuple, asyncio.Task] = {}
         logger.info("MessageBus initialized.")
 
     async def publish(self, event: BaseEvent) -> None:

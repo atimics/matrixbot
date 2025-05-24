@@ -243,6 +243,7 @@ class TestMatrixGatewayService:
         room = MagicMock(spec=MatrixRoom)
         event = MagicMock(spec=RoomMessageImage)
         event.sender = "@user:matrix.example.com"
+        event.event_id = "$missing_url_event:matrix.example.com"  # Add event_id
         # No url attribute
         delattr(event, 'url') if hasattr(event, 'url') else None
         
@@ -417,6 +418,7 @@ class TestMatrixGatewayService:
         command = RequestMatrixRoomInfoCommand(
             room_id="!test:matrix.example.com",
             aspects=["name", "topic", "members"],
+            response_event_topic="room_info_response_test",
             event_id="$request:matrix.example.com",
             original_tool_call_id="call_123",
             turn_request_id="turn_456"
@@ -442,6 +444,7 @@ class TestMatrixGatewayService:
         command = RequestMatrixRoomInfoCommand(
             room_id="!test:matrix.example.com",
             aspects=["name"],
+            response_event_topic="room_info_response_test",
             event_id="$request:matrix.example.com",
             original_tool_call_id="call_123",
             turn_request_id="turn_456"

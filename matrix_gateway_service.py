@@ -154,7 +154,8 @@ class MatrixGatewayService:
         if hasattr(event, "url"):
             image_url = event.url
         else:
-            logger.warning(f"MatrixGateway: Image event {event.event_id} has no URL")
+            event_id = getattr(event, 'event_id', 'unknown')
+            logger.warning(f"MatrixGateway: Image event {event_id} has no URL")
             return
 
         image_info = {}
@@ -384,6 +385,18 @@ class MatrixGatewayService:
 
     async def run(self) -> None:
         logger.info("MatrixGatewayService: Starting...")
+        
+        # Read environment variables at runtime to allow for test mocking
+        # Only update if not already set (to allow test mocking)
+        if not self.homeserver:
+            self.homeserver = os.getenv("MATRIX_HOMESERVER")
+        if not self.user_id:
+            self.user_id = os.getenv("MATRIX_USER_ID")
+        if not self.password:
+            self.password = os.getenv("MATRIX_PASSWORD")
+        if not self.access_token:
+            self.access_token = os.getenv("MATRIX_ACCESS_TOKEN")
+        
         if not self.homeserver or not self.user_id: # self.user_id here is from initial .env or None
              logger.error("Gateway: MATRIX_HOMESERVER and MATRIX_USER_ID must be set. Exiting.")
              return
@@ -430,6 +443,7 @@ class MatrixGatewayService:
 
         self._command_worker_task = asyncio.create_task(self._command_worker())
 
+        # Authenticate
         login_success = False
         try:
             if auth_method == "token":
@@ -470,14 +484,17 @@ class MatrixGatewayService:
                     # self.persisted_device_id = actual_device_id # No longer saving to env or updating os.environ
                 else:
                     logger.error(f"Gateway: Password login failed. Response: {login_response}")
-            
-            # If authentication was not successful by this point, exit.
-            if not login_success:
-                logger.error("Gateway: Authentication failed. Exiting service.")
-                # Cleanup is handled in the finally block of the outer try
-                return
+        except Exception as e:
+            logger.error(f"Gateway: Exception during authentication: {type(e).__name__} - {e}")
+        
+        # If authentication was not successful by this point, exit.
+        if not login_success:
+            logger.error("Gateway: Authentication failed. Exiting service.")
+            return
 
-            # --- Fetch display name (remains the same) ---
+        # Post-authentication setup and sync loop
+        try:
+            # --- Fetch display name ---
             try:
                 profile: ProfileGetResponse = await self.client.get_profile(self.client.user_id)
                 fetched_displayname = profile.displayname
@@ -495,8 +512,7 @@ class MatrixGatewayService:
                     BotDisplayNameReadyEvent(display_name=self.bot_display_name, user_id=self.client.user_id)
                 )  # Publish default
 
-
-            # --- Join room (remains the same) ---
+            # --- Join room ---
             matrix_room_id_env = os.getenv("MATRIX_ROOM_ID")
             if matrix_room_id_env and "YOUR_MATRIX_ROOM_ID" not in matrix_room_id_env:
                 logger.info(f"Gateway: Attempting to join predefined room: {matrix_room_id_env}...")
@@ -515,7 +531,7 @@ class MatrixGatewayService:
                 except Exception as e:
                     logger.error(f"Gateway: General error joining room {matrix_room_id_env}: {type(e).__name__} - {e}")
 
-
+            # --- Set initial presence ---
             try:
                 # Set an initial presence, e.g., online or unavailable
                 initial_presence = "unavailable" # Or "unavailable" if you want it to start idle
@@ -525,7 +541,7 @@ class MatrixGatewayService:
             except Exception as e:
                 logger.warning(f"Gateway: Failed to set initial presence: {e}")
 
-            # --- Sync loop (remains the same) ---
+            # --- Sync loop ---
             logger.info("Gateway: Starting sync loop...")
             sync_task = asyncio.create_task(self.client.sync_forever(timeout=30000, full_state=True))
             stop_event_task = asyncio.create_task(self._stop_event.wait())
@@ -546,7 +562,6 @@ class MatrixGatewayService:
                 try: await sync_task
                 except asyncio.CancelledError: logger.info("Gateway: Sync task successfully processed cancellation.")
                 except Exception as e: logger.error(f"Gateway: Exception awaiting cancelled sync_task: {type(e).__name__} - {e}")
-
 
         except (LocalProtocolError) as e:
             logger.error(f"Gateway: Matrix Sync error during initial setup: {type(e).__name__} - {e}")
