@@ -114,6 +114,10 @@ class ToolExecutionService:
     async def _handle_delegated_openrouter_response(self, or_response_event: OpenRouterInferenceResponseEvent) -> None:
         """Handles responses from OpenRouter that were initiated by DelegateToOpenRouterTool."""
         
+        # Filter by response_topic to only handle delegated responses
+        if or_response_event.response_topic != DELEGATED_OPENROUTER_RESPONSE_EVENT_TYPE:
+            return
+        
         # Extract the context saved by DelegateToOpenRouterTool
         delegation_context = or_response_event.original_request_payload
         original_tool_call_id = delegation_context.get("original_tool_call_id")
@@ -186,19 +190,24 @@ class ToolExecutionService:
             error_message=error_msg,
             data_from_tool_for_followup_llm=data_for_llm_followup,  # This can carry richer structured data if needed
             original_request_payload=final_original_request_payload_for_rls,
-            original_tool_call=event.tool_call if hasattr(event, "tool_call") else None
+            original_tool_call=None  # No original tool call available in delegated response
         )
         await self.bus.publish(final_tool_response)
         logger.info(f"ToolExecSvc: Published final ToolExecutionResponse for delegated call_openrouter_llm (Original Call ID: {original_tool_call_id}). Status: {final_status}")
 
     async def _handle_room_info_response(self, event: MatrixRoomInfoResponseEvent) -> None:
+        # Include the turn_request_id in the original_request_payload for room logic service
+        original_request_payload = {"room_id": event.room_id}
+        if event.turn_request_id:
+            original_request_payload["turn_request_id"] = event.turn_request_id
+            
         tool_response = ToolExecutionResponse(
             original_tool_call_id=event.original_tool_call_id,
             tool_name="get_room_info",
             status="success" if event.success else "failure",
             result_for_llm_history=str(event.info) if event.success else f"[Failed to fetch room info: {event.error_message}]",
             error_message=event.error_message,
-            original_request_payload={"room_id": event.room_id},
+            original_request_payload=original_request_payload,
             original_tool_call=None
         )
         await self.bus.publish(tool_response)
@@ -206,9 +215,9 @@ class ToolExecutionService:
     async def run(self) -> None:
         logger.info("ToolExecutionService: Starting...")
         self.bus.subscribe(ExecuteToolRequest.get_event_type(), self._handle_execute_tool_request)
-        # Subscribe to the specific event type that OpenRouterInferenceService will publish to
-        # when a response for a DelegateToOpenRouterTool call is ready.
-        self.bus.subscribe(DELEGATED_OPENROUTER_RESPONSE_EVENT_TYPE, self._handle_delegated_openrouter_response)
+        # Subscribe to the proper OpenRouter response event type instead of the custom string
+        from event_definitions import OpenRouterInferenceResponseEvent
+        self.bus.subscribe(OpenRouterInferenceResponseEvent.get_event_type(), self._handle_delegated_openrouter_response)
         self.bus.subscribe(MatrixRoomInfoResponseEvent.get_event_type(), self._handle_room_info_response)
         await self._stop_event.wait()
         logger.info("ToolExecutionService: Stopped.")

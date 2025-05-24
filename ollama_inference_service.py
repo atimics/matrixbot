@@ -7,7 +7,7 @@ import uuid # Added import for uuid
 from typing import Dict, List, Optional, Tuple, Any
 
 from message_bus import MessageBus
-from event_definitions import OllamaInferenceRequestEvent, OllamaInferenceResponseEvent
+from event_definitions import OllamaInferenceRequestEvent, OllamaInferenceResponseEvent, ToolCall, ToolFunction
 
 logger = logging.getLogger(__name__)
 
@@ -95,22 +95,42 @@ class OllamaInferenceService:
         # logger.debug(f"OllamaInfer: Payload: {request_event.messages_payload}")
         # logger.debug(f"OllamaInfer: Tools: {request_event.tools}")
 
-        success, text_response, tool_calls, error_message = await self._get_ollama_response(
+        success, text_response, tool_calls_dicts, error_message = await self._get_ollama_response(
             model_name=request_event.model_name, # Model name comes from the request
             messages_payload=request_event.messages_payload,
             tools=request_event.tools
             # keep_alive can be configured globally or per call
         )
 
+        # Convert dictionary tool calls to Pydantic ToolCall objects
+        tool_calls_pydantic = None
+        if tool_calls_dicts:
+            tool_calls_pydantic = []
+            for tc_dict in tool_calls_dicts:
+                try:
+                    tool_call = ToolCall(
+                        id=tc_dict["id"],
+                        type=tc_dict["type"],
+                        function=ToolFunction(
+                            name=tc_dict["function"]["name"],
+                            arguments=tc_dict["function"]["arguments"]
+                        )
+                    )
+                    tool_calls_pydantic.append(tool_call)
+                except Exception as e:
+                    logger.error(f"Failed to convert tool call dict to Pydantic object: {e}")
+                    continue
+
         response_event = OllamaInferenceResponseEvent(
             request_id=request_event.request_id,
             original_request_payload=request_event.original_request_payload,
             success=success,
             text_response=text_response,
-            tool_calls=tool_calls, # Pass Ollama's tool_calls structure
+            tool_calls=tool_calls_pydantic, # Now using Pydantic ToolCall objects
             error_message=error_message
         )
-        response_event.event_type = request_event.reply_to_service_event
+        # Use response_topic instead of trying to change the frozen event_type field
+        response_event.response_topic = request_event.reply_to_service_event
         await self.bus.publish(response_event)
         # logger.debug(f"OllamaInfer: Published AIInferenceResponseEvent (as {response_event.event_type}) for request {request_event.request_id}. Success: {success}")
 

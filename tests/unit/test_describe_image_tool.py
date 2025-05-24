@@ -1,10 +1,25 @@
 import pytest
+from unittest.mock import patch, AsyncMock
 from available_tools.describe_image_tool import DescribeImageTool
 from event_definitions import OpenRouterInferenceRequestEvent
 
 @pytest.fixture
 def describe_image_tool():
-    return DescribeImageTool()
+    # Mock the S3 environment variables and S3Service methods
+    with patch.dict('os.environ', {
+        'S3_API_KEY': 'fake_s3_key',
+        'S3_API_ENDPOINT': 'https://fake-s3-endpoint.com',
+        'CLOUDFRONT_DOMAIN': 'https://fake-cloudfront.com'
+    }), patch('available_tools.describe_image_tool.S3Service') as mock_s3_class:
+        # Create mock S3Service instance
+        mock_s3_instance = AsyncMock()
+        mock_s3_instance.download_image.return_value = b'fake_image_data'
+        mock_s3_instance.upload_image.return_value = 'https://fake-cloudfront.com/fake-image.jpg'
+        mock_s3_class.return_value = mock_s3_instance
+        
+        tool = DescribeImageTool()
+        tool.s3_service = mock_s3_instance  # Ensure the tool uses our mock
+        return tool
 
 
 def test_tool_definition(describe_image_tool):

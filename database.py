@@ -86,6 +86,16 @@ async def initialize_database(db_path: str) -> None:
                 )
                 """
             )
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS image_cache (
+                    cache_key TEXT PRIMARY KEY,
+                    original_url TEXT NOT NULL,
+                    s3_url TEXT NOT NULL,
+                    timestamp REAL NOT NULL
+                )
+                """
+            )
             await db.commit()
             logger.info(f"Database initialized at {db_path}")
     except aiosqlite.Error as e:
@@ -260,4 +270,63 @@ async def delete_room_state(db_path: str, room_id: str, state_key: str) -> bool:
     except aiosqlite.Error as e:
         logger.error(f"SQLite error deleting room state for room '{room_id}', key '{state_key}': {e}")
         return False
+
+async def store_image_cache(db_path: str, cache_key: str, original_url: str, s3_url: str) -> bool:
+    """Store an image cache mapping in the database."""
+    try:
+        async with aiosqlite.connect(db_path) as db:
+            await db.execute(
+                "INSERT OR REPLACE INTO image_cache (cache_key, original_url, s3_url, timestamp) VALUES (?, ?, ?, ?)",
+                (cache_key, original_url, s3_url, time.time()),
+            )
+            await db.commit()
+            return True
+    except aiosqlite.Error as e:
+        logger.error(f"SQLite error storing image cache for key '{cache_key}': {e}")
+        return False
+
+async def get_image_cache(db_path: str, cache_key: str) -> Optional[Tuple[str, str, str, float]]:
+    """Retrieve cached image data by cache key."""
+    try:
+        async with aiosqlite.connect(db_path) as db:
+            async with db.execute(
+                "SELECT cache_key, original_url, s3_url, timestamp FROM image_cache WHERE cache_key = ?",
+                (cache_key,),
+            ) as cursor:
+                result = await cursor.fetchone()
+                if result:
+                    return result[0], result[1], result[2], result[3]
+                return None
+    except aiosqlite.Error as e:
+        logger.error(f"SQLite error fetching image cache for key '{cache_key}': {e}")
+        return None
+
+async def delete_image_cache(db_path: str, cache_key: str) -> bool:
+    """Delete an image cache entry."""
+    try:
+        async with aiosqlite.connect(db_path) as db:
+            cursor = await db.execute(
+                "DELETE FROM image_cache WHERE cache_key = ?",
+                (cache_key,),
+            )
+            await db.commit()
+            return cursor.rowcount > 0
+    except aiosqlite.Error as e:
+        logger.error(f"SQLite error deleting image cache for key '{cache_key}': {e}")
+        return False
+
+async def cleanup_old_image_cache(db_path: str, max_age_seconds: int = 86400 * 30) -> int:
+    """Clean up image cache entries older than max_age_seconds (default 30 days)."""
+    try:
+        cutoff_time = time.time() - max_age_seconds
+        async with aiosqlite.connect(db_path) as db:
+            cursor = await db.execute(
+                "DELETE FROM image_cache WHERE timestamp < ?",
+                (cutoff_time,),
+            )
+            await db.commit()
+            return cursor.rowcount
+    except aiosqlite.Error as e:
+        logger.error(f"SQLite error cleaning up old image cache entries: {e}")
+        return 0
 

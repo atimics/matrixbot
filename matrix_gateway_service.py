@@ -2,6 +2,7 @@ import asyncio
 import os
 import logging
 import json # ADDED
+import httpx  # Added for Matrix media API validation
 from typing import Optional, Dict, Any
 from nio import (
     AsyncClient,
@@ -88,7 +89,7 @@ class MatrixGatewayService:
                     # This part is speculative as nio might not expose raw response headers easily on all exceptions.
                     # For now, we'll rely on retry_after_ms or the default.
                     logger.warning(f"Gateway: Got 429 response (rate limited). No explicit Retry-After in exception. Using default {default_retry_sec}s.")
-            elif '429' in str(e) or (hasattr(e, 'message') and isinstance(e.message, str) and 'M_LIMIT_EXCEEDED' in e.message):
+            elif '429' in str(e) or 'M_LIMIT_EXCEEDED' in str(e):
                 # Fallback if status_code attribute isn't present but error message indicates rate limiting
                 is_rate_limit_error = True
                 logger.warning(f"Gateway: Got 429-like response (rate limited by string match). Using default {default_retry_sec}s. Error: {e}")
@@ -338,7 +339,8 @@ class MatrixGatewayService:
             original_request_event_id=command.event_id,
             original_tool_call_id=command.original_tool_call_id,
             success=success,
-            error_message=error_msg
+            error_message=error_msg,
+            turn_request_id=command.turn_request_id
         ))
 
     async def _handle_set_typing_command(self, command: SetTypingIndicatorCommand):
@@ -379,7 +381,6 @@ class MatrixGatewayService:
                 logger.error(f"Gateway: Failed to set presence (Error): {e}")
         else:
             logger.error("Gateway: Cannot set presence, client not ready or not logged in.")
-
 
     async def run(self) -> None:
         logger.info("MatrixGatewayService: Starting...")
@@ -577,3 +578,7 @@ class MatrixGatewayService:
     async def stop(self) -> None:
         logger.info("MatrixGatewayService: Stop requested.")
         self._stop_event.set()
+
+    def get_client(self) -> Optional[AsyncClient]:
+        """Get the authenticated Matrix client for use by other services."""
+        return self.client

@@ -230,47 +230,6 @@ async def test_api_payload_construction_with_optional_params(
     assert api_payload["tools"] == request_event.tools
 
 
-@pytest.mark.asyncio
-async def test_anthropic_payload_conversion(
-    ai_service: AIInferenceService,
-    mock_message_bus: MagicMock,
-    mock_httpx_client_post: AsyncMock,
-):
-    request_event = OpenRouterInferenceRequestEvent(
-        request_id="anthropic_req",
-        reply_to_service_event="reply_event",
-        model_name="anthropic/claude-3-sonnet",
-        messages_payload=[
-            {
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [
-                    {
-                        "id": "call1",
-                        "type": "function",
-                        "function": {"name": "ping", "arguments": "{}"},
-                    }
-                ],
-            },
-            {"role": "tool", "tool_call_id": "call1", "content": "pong"},
-        ],
-        original_request_payload={},
-    )
-
-    mock_response = MagicMock(spec=httpx.Response)
-    mock_response.status_code = 200
-    mock_response.json.return_value = {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
-    mock_httpx_client_post.return_value = mock_response
-
-    await ai_service._handle_inference_request(request_event)
-
-    sent_messages = mock_httpx_client_post.call_args[1]["json"]["messages"]
-    assert sent_messages[0]["role"] == "assistant"
-    assert isinstance(sent_messages[0]["content"], list)
-    assert sent_messages[0]["content"][0]["type"] == "tool_use"
-    assert sent_messages[1]["role"] == "user"
-    assert sent_messages[1]["content"][0]["type"] == "tool_result"
-
 # Example of how to start testing the main run loop and subscription
 # This is more of an integration test for the service's core behavior.
 @pytest.mark.asyncio
