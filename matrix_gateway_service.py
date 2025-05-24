@@ -338,7 +338,8 @@ class MatrixGatewayService:
             original_request_event_id=command.event_id,
             original_tool_call_id=command.original_tool_call_id,
             success=success,
-            error_message=error_msg
+            error_message=error_msg,
+            turn_request_id=command.turn_request_id
         ))
 
     async def _handle_set_typing_command(self, command: SetTypingIndicatorCommand):

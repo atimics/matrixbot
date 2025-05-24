@@ -45,6 +45,9 @@ class BaseEvent(BaseModel):
         if isinstance(v, datetime) and v.tzinfo is None:
             return v.replace(tzinfo=timezone.utc)
         if isinstance(v, (int, float)): # Support for float timestamps
+            # Handle timestamps in milliseconds (Matrix server format)
+            if v > 1e10:  # If timestamp is larger than 10^10, it's likely in milliseconds
+                v = v / 1000.0
             return datetime.fromtimestamp(v, tz=timezone.utc)
         return v
 
@@ -261,6 +264,8 @@ class RequestMatrixRoomInfoCommand(BaseEvent):
     aspects: List[str]
     response_event_topic: str
     original_tool_call_id: str
+    # Add turn_request_id to preserve context for room logic service
+    turn_request_id: Optional[str] = None
 
 
 class MatrixRoomInfoResponseEvent(BaseEvent):
@@ -271,6 +276,8 @@ class MatrixRoomInfoResponseEvent(BaseEvent):
     original_tool_call_id: str
     success: bool
     error_message: Optional[str] = None
+    # Add turn_request_id to preserve context for room logic service
+    turn_request_id: Optional[str] = None
 
 
 # --- Tool Execution Events ---

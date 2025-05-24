@@ -3,10 +3,80 @@ from typing import List, Dict, Optional, Any, Tuple, Set # Added Set
 from datetime import datetime  # Added
 import json  # Added
 import os # Added
+import tempfile  # Added for image processing
+import uuid  # Added for unique filenames
 
 import database # Added import
+from s3_service import S3Service  # Added for image upload
 
 logger = logging.getLogger(__name__)
+
+# Create S3 service instance
+s3_service = None
+try:
+    s3_service = S3Service()
+    logger.info("S3Service initialized successfully for image processing")
+except Exception as e:
+    logger.warning(f"S3Service initialization failed: {e}. Images will not be uploaded to S3.")
+
+def _convert_mxc_to_http(mxc_url: str) -> str:
+    """Convert Matrix MXC URL to HTTP URL for downloading."""
+    if not mxc_url.startswith("mxc://"):
+        return mxc_url
+    
+    # Extract server and media_id from mxc://server/media_id format
+    parts = mxc_url[6:].split("/", 1)  # Remove "mxc://" and split
+    if len(parts) != 2:
+        logger.error(f"Invalid MXC URL format: {mxc_url}")
+        return mxc_url
+    
+    server, media_id = parts
+    # Convert to Matrix media download URL
+    return f"https://{server}/_matrix/media/r0/download/{server}/{media_id}"
+
+async def _upload_image_to_s3(image_url: str) -> Optional[str]:
+    """Download image from Matrix and upload to S3, returning S3 URL."""
+    if not s3_service:
+        logger.error("S3Service not available, cannot upload image")
+        return None
+    
+    try:
+        # Convert MXC URL to HTTP URL
+        http_url = _convert_mxc_to_http(image_url)
+        logger.info(f"Converting image URL from {image_url} to HTTP: {http_url}")
+        
+        # Download the image from Matrix
+        image_data = await s3_service.download_image(http_url)
+        if not image_data:
+            logger.error(f"Failed to download image from Matrix: {http_url}")
+            return None
+
+        # Save image to temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
+            temp_file.write(image_data)
+            temp_file_path = temp_file.name
+
+        try:
+            # Upload image to S3
+            logger.info(f"Uploading image to S3: {temp_file_path}")
+            s3_url = await s3_service.upload_image(temp_file_path)
+            if not s3_url:
+                logger.error("Failed to upload image to S3")
+                return None
+
+            logger.info(f"Image uploaded to S3 successfully: {s3_url}")
+            return s3_url
+
+        finally:
+            # Clean up temporary file
+            try:
+                os.unlink(temp_file_path)
+            except OSError:
+                logger.warning(f"Could not delete temporary file: {temp_file_path}")
+
+    except Exception as e:
+        logger.error(f"Error uploading image to S3: {e}", exc_info=True)
+        return None
 
 # Default system prompt template.
 DEFAULT_SYSTEM_PROMPT_TEMPLATE = """
@@ -460,23 +530,67 @@ async def build_messages_for_ai(
         # For now, using the name of the first user in the batch.
         first_user_name_in_batch = current_batched_user_inputs[0].get("name", "user")
         
-        # Join parts with a newline, avoids manual newline appending and stripping
-        # Each part should clearly indicate its original sender.
-        message_parts = []
-        for user_input in current_batched_user_inputs:
-            sender_name = user_input.get("name", "Unknown User")
-            content_text = user_input.get("content", "")
-            if len(current_batched_user_inputs) == 1:
-                message_parts.append(content_text)
-            else:
-                message_parts.append(f"{sender_name}: {content_text}")
-
-        # Join the parts into a single string.
-        # If there was more than one message, they are joined by newlines.
-        # If only one, it's just that message's content.
-        combined_content = "\n".join(message_parts)
+        # Check if any of the batched inputs contain images
+        has_images = any("image_url" in user_input for user_input in current_batched_user_inputs)
         
-        messages_for_ai.append({"role": "user", "name": first_user_name_in_batch, "content": combined_content})
+        if has_images:
+            # Process messages with images - convert to OpenAI vision format
+            content_parts = []
+            
+            for user_input in current_batched_user_inputs:
+                sender_name = user_input.get("name", "Unknown User")
+                content_text = user_input.get("content", "")
+                image_url = user_input.get("image_url")
+                
+                # Add text content if present
+                if content_text:
+                    if len(current_batched_user_inputs) == 1:
+                        content_parts.append({"type": "text", "text": content_text})
+                    else:
+                        content_parts.append({"type": "text", "text": f"{sender_name}: {content_text}"})
+                
+                # Add image if present
+                if image_url:
+                    logger.info(f"Processing image in batch: {image_url}")
+                    # Convert Matrix MXC URL to S3 URL
+                    s3_url = await _upload_image_to_s3(image_url)
+                    if s3_url:
+                        logger.info(f"Successfully converted Matrix image to S3 URL: {s3_url}")
+                        content_parts.append({
+                            "type": "image_url",
+                            "image_url": {"url": s3_url}
+                        })
+                    else:
+                        logger.error(f"Failed to upload image to S3, adding text description instead: {image_url}")
+                        # Fallback to text description if image upload fails
+                        content_parts.append({
+                            "type": "text", 
+                            "text": f"[Image failed to upload: {content_text or 'No description available'}]"
+                        })
+            
+            # Create message with structured content for vision
+            messages_for_ai.append({
+                "role": "user", 
+                "name": first_user_name_in_batch, 
+                "content": content_parts
+            })
+        else:
+            # No images - use simple text format
+            message_parts = []
+            for user_input in current_batched_user_inputs:
+                sender_name = user_input.get("name", "Unknown User")
+                content_text = user_input.get("content", "")
+                if len(current_batched_user_inputs) == 1:
+                    message_parts.append(content_text)
+                else:
+                    message_parts.append(f"{sender_name}: {content_text}")
+
+            # Join the parts into a single string.
+            # If there was more than one message, they are joined by newlines.
+            # If only one, it's just that message's content.
+            combined_content = "\n".join(message_parts)
+            
+            messages_for_ai.append({"role": "user", "name": first_user_name_in_batch, "content": combined_content})
     
     # Log the final constructed messages for debugging
     logger.debug(f"Final messages_for_ai being sent to LLM: {json.dumps(messages_for_ai, indent=2)}")

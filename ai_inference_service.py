@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Tuple, Any
 from dotenv import load_dotenv
 
 from message_bus import MessageBus
-from event_definitions import OpenRouterInferenceRequestEvent, AIInferenceResponseEvent, ToolCall, ToolFunction, OpenRouterInferenceResponseEvent  # MODIFIED import
+from event_definitions import OpenRouterInferenceRequestEvent, AIInferenceResponseEvent, ToolCall, ToolFunction, OpenRouterInferenceResponseEvent
 
 logger = logging.getLogger(__name__)
 
@@ -22,65 +22,245 @@ class AIInferenceService:
         self.site_name = os.getenv("YOUR_SITE_NAME", "MyMatrixBotSOA_AI")
         self._stop_event = asyncio.Event()
 
-    def _convert_messages_to_anthropic_format(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Convert OpenAI-style messages to Anthropic's tool_use format."""
-        converted: List[Dict[str, Any]] = []
-        for msg in messages:
-            role = msg.get("role")
-            if role == "assistant":
-                blocks: List[Dict[str, Any]] = []
-                text = msg.get("content")
-                if text:
-                    blocks.append({"type": "text", "text": text})
-                for tc in msg.get("tool_calls", []) or []:
-                    fn = tc.get("function", {})
-                    args = fn.get("arguments")
-                    try:
-                        parsed_args = json.loads(args) if isinstance(args, str) else args
-                    except json.JSONDecodeError:
-                        parsed_args = args
-                    blocks.append({
-                        "type": "tool_use",
-                        "id": tc.get("id"),
-                        "name": fn.get("name"),
-                        "input": parsed_args or {},
-                    })
-                converted.append({"role": "assistant", "content": blocks or text})
-            elif role == "tool":
-                converted.append({
-                    "role": "user",
-                    "content": [{
-                        "type": "tool_result",
-                        "tool_use_id": msg.get("tool_call_id"),
-                        "content": msg.get("content"),
-                    }],
-                })
-            else:
-                converted.append(msg)
-        return converted
-
-    def _validate_message_history(self, messages: List[Dict[str, Any]]) -> bool:
-        """Ensure tool results have corresponding tool calls."""
-        tool_calls_seen: set[str] = set()
+    def _validate_and_clean_tool_sequences(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Validate and clean tool call sequences, removing orphaned tool results."""
+        if not messages:
+            return messages
+        
+        cleaned_messages = []
+        openai_tool_calls_awaiting = set()  # For tool_call_id tracking
+        anthropic_tool_calls_awaiting = set()  # For tool_use_id tracking
+        
         for i, msg in enumerate(messages):
             role = msg.get("role")
-            if role == "assistant" and msg.get("tool_calls"):
-                for tc in msg["tool_calls"]:
-                    if isinstance(tc, dict) and tc.get("id"):
-                        tool_calls_seen.add(tc["id"])
+            msg_copy = msg.copy()
+            
+            if role == "assistant":
+                # Track tool calls made by assistant (OpenAI format)
+                tool_calls = msg.get("tool_calls", [])
+                if tool_calls:
+                    for tc in tool_calls:
+                        tc_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
+                        if tc_id:
+                            openai_tool_calls_awaiting.add(tc_id)
+                
+                # Also check for Anthropic-style tool_use blocks in content
+                content = msg.get("content")
+                if isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "tool_use":
+                            tool_use_id = block.get("id")
+                            if tool_use_id:
+                                anthropic_tool_calls_awaiting.add(tool_use_id)
+                
+                cleaned_messages.append(msg_copy)
+                
             elif role == "tool":
+                # Validate OpenAI-style tool responses
                 tool_call_id = msg.get("tool_call_id")
-                if tool_call_id not in tool_calls_seen:
-                    logger.error(
-                        f"Tool result {tool_call_id} has no corresponding tool call"
-                    )
-                    return False
-        return True
+                if not tool_call_id:
+                    logger.warning(f"Skipping tool message at index {i}: missing tool_call_id")
+                    continue
+                
+                if tool_call_id not in openai_tool_calls_awaiting:
+                    logger.warning(f"Skipping orphaned tool result at index {i}: tool_call_id {tool_call_id} has no corresponding tool call")
+                    continue
+                
+                openai_tool_calls_awaiting.remove(tool_call_id)
+                cleaned_messages.append(msg_copy)
+                
+            elif role == "user":
+                # Handle content that might contain tool_result blocks (Anthropic format)
+                content = msg.get("content")
+                if isinstance(content, list):
+                    # Filter out orphaned tool_result blocks
+                    filtered_content = []
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "tool_result":
+                            tool_use_id = block.get("tool_use_id")
+                            # Check if this tool_result has a corresponding tool_use
+                            if tool_use_id and tool_use_id in anthropic_tool_calls_awaiting:
+                                anthropic_tool_calls_awaiting.remove(tool_use_id)
+                                filtered_content.append(block)
+                            else:
+                                logger.warning(f"Skipping orphaned tool_result block with tool_use_id {tool_use_id} in user message at index {i}")
+                        elif isinstance(block, dict) and block.get("type") == "tool_use":
+                            # Track tool_use blocks
+                            tool_use_id = block.get("id")
+                            if tool_use_id:
+                                anthropic_tool_calls_awaiting.add(tool_use_id)
+                            filtered_content.append(block)
+                        else:
+                            # Keep all other content blocks (text, image, etc.)
+                            filtered_content.append(block)
+                    
+                    if filtered_content:
+                        msg_copy["content"] = filtered_content
+                        cleaned_messages.append(msg_copy)
+                    else:
+                        logger.warning(f"Skipping user message at index {i}: all content blocks were filtered out")
+                elif isinstance(content, str) and content.strip():
+                    # Regular text content
+                    cleaned_messages.append(msg_copy)
+                
+            else:
+                # Other roles (system, etc.)
+                cleaned_messages.append(msg_copy)
+        
+        return cleaned_messages
+
+    def _validate_message_sequence(self, messages: List[Dict[str, Any]]) -> Tuple[bool, Optional[str]]:
+        """Validate message sequence according to OpenRouter/OpenAI standards."""
+        if not messages:
+            return False, "Empty message list"
+        
+        # Check for alternating user/assistant pattern (flexible)
+        has_user_message = any(msg.get("role") == "user" for msg in messages)
+        if not has_user_message:
+            return False, "No user messages found in conversation"
+        
+        # Validate tool call/response pairs with separate tracking for different formats
+        openai_tool_calls_awaiting = set()  # For tool_call_id tracking
+        anthropic_tool_calls_awaiting = set()  # For tool_use_id tracking
+        
+        for i, msg in enumerate(messages):
+            role = msg.get("role")
+            
+            if role == "assistant":
+                # Track OpenAI-style tool calls
+                if msg.get("tool_calls"):
+                    for tc in msg["tool_calls"]:
+                        tc_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
+                        if tc_id:
+                            openai_tool_calls_awaiting.add(tc_id)
+                
+                # Track Anthropic-style tool_use blocks in content
+                content = msg.get("content")
+                if isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "tool_use":
+                            tool_use_id = block.get("id")
+                            if tool_use_id:
+                                anthropic_tool_calls_awaiting.add(tool_use_id)
+            
+            elif role == "tool":
+                # Validate OpenAI-style tool responses
+                tool_call_id = msg.get("tool_call_id")
+                if not tool_call_id:
+                    return False, f"Tool message at index {i} missing tool_call_id"
+                if tool_call_id not in openai_tool_calls_awaiting:
+                    return False, f"Tool response {tool_call_id} has no corresponding tool call"
+                openai_tool_calls_awaiting.remove(tool_call_id)
+            
+            elif role == "user":
+                # Check for Anthropic-style tool_result blocks
+                content = msg.get("content")
+                if isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "tool_result":
+                            tool_use_id = block.get("tool_use_id")
+                            if tool_use_id:
+                                if tool_use_id not in anthropic_tool_calls_awaiting:
+                                    return False, f"Tool result block with tool_use_id {tool_use_id} has no corresponding tool call"
+                                anthropic_tool_calls_awaiting.remove(tool_use_id)
+        
+        return True, None
+
+    def _clean_and_prepare_messages(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Clean and prepare messages for OpenRouter API."""
+        # First, validate and clean tool sequences
+        messages = self._validate_and_clean_tool_sequences(messages)
+        
+        cleaned_messages = []
+        system_messages = []
+        
+        for msg in messages:
+            role = msg.get("role")
+            content = msg.get("content")
+            
+            # Handle system messages separately - consolidate them
+            if role == "system":
+                if content and isinstance(content, str) and content.strip():
+                    system_messages.append(content.strip())
+                continue
+            
+            # Skip messages with empty content (except those with tool_calls)
+            if not content or (isinstance(content, str) and not content.strip()):
+                if role == "assistant" and msg.get("tool_calls"):
+                    # Assistant message with tool calls but no content - keep it but ensure content is None
+                    msg_copy = msg.copy()
+                    msg_copy["content"] = None
+                    cleaned_messages.append(msg_copy)
+                continue
+            
+            # Handle list content - filter out empty blocks
+            if isinstance(content, list):
+                filtered_content = [block for block in content if block]
+                if filtered_content:
+                    msg_copy = msg.copy()
+                    msg_copy["content"] = filtered_content
+                    cleaned_messages.append(msg_copy)
+                continue
+            
+            # For regular messages, ensure content is properly formatted
+            msg_copy = msg.copy()
+            if isinstance(content, str):
+                msg_copy["content"] = content.strip()
+            cleaned_messages.append(msg_copy)
+        
+        # Add consolidated system message at the beginning if any exist
+        final_messages = []
+        if system_messages:
+            consolidated_system = "\n\n".join(system_messages)
+            final_messages.append({"role": "system", "content": consolidated_system})
+        
+        final_messages.extend(cleaned_messages)
+        return final_messages
+
+    def _prepare_tool_calls_for_api(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Ensure tool calls are properly formatted for the OpenRouter API."""
+        processed_messages = []
+        
+        for message in messages:
+            msg_copy = message.copy()
+            
+            if msg_copy.get("role") == "assistant" and "tool_calls" in msg_copy and msg_copy["tool_calls"]:
+                processed_tool_calls = []
+                
+                for tc in msg_copy["tool_calls"]:
+                    # Convert Pydantic models to dict if needed
+                    tc_dict = tc if isinstance(tc, dict) else tc.model_dump(mode='json')
+                    
+                    function_data = tc_dict.get("function", {})
+                    arguments_data = function_data.get("arguments")
+                    
+                    # Ensure arguments are JSON string for OpenRouter
+                    if isinstance(arguments_data, (dict, list)):
+                        stringified_arguments = json.dumps(arguments_data)
+                    elif arguments_data is None:
+                        stringified_arguments = json.dumps({})
+                    else:
+                        stringified_arguments = str(arguments_data)
+                    
+                    processed_tool_calls.append({
+                        "id": tc_dict.get("id"),
+                        "type": tc_dict.get("type", "function"),
+                        "function": {
+                            "name": function_data.get("name"),
+                            "arguments": stringified_arguments
+                        }
+                    })
+                
+                msg_copy["tool_calls"] = processed_tool_calls
+            
+            processed_messages.append(msg_copy)
+        
+        return processed_messages
 
     async def _get_openrouter_response_async(
         self,
         model_name: str,
-        messages_payload: List[Dict[str, str]],
+        messages_payload: List[Dict[str, Any]],
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: Optional[str] = "auto"
     ) -> Tuple[bool, Optional[str], Optional[List[Dict[str, Any]]], Optional[str]]:
@@ -90,193 +270,145 @@ class AIInferenceService:
         if not messages_payload:
             return False, None, None, "Empty messages_payload."
 
-        # Preprocess messages_payload to ensure ToolCall objects are JSON serializable
-        processed_messages_payload = []
-        for message in messages_payload:
-            new_message = message.copy() # Work on a copy
-            if new_message.get("role") == "assistant" and "tool_calls" in new_message and new_message["tool_calls"] is not None:
-                processed_tool_calls = []
-                for tc in new_message["tool_calls"]:
-                    # Ensure tc is a dictionary, as it might be a Pydantic model (ToolCall)
-                    tc_dict = tc if isinstance(tc, dict) else tc.model_dump(mode='json')
-                    
-                    function_data = tc_dict.get("function", {})
-                    arguments_data = function_data.get("arguments")
+        try:
+            # Step 1: Validate message sequence
+            is_valid, validation_error = self._validate_message_sequence(messages_payload)
+            if not is_valid:
+                logger.error(f"Message validation failed: {validation_error}")
+                return False, None, None, f"Message validation failed: {validation_error}"
 
-                    # Ensure arguments are a JSON string for OpenRouter
-                    if isinstance(arguments_data, dict) or isinstance(arguments_data, list): # Added list
-                        stringified_arguments = json.dumps(arguments_data)
-                    elif arguments_data is None: 
-                        stringified_arguments = json.dumps({}) 
-                    else: 
-                        stringified_arguments = str(arguments_data)
+            # Step 2: Prepare tool calls
+            processed_messages = self._prepare_tool_calls_for_api(messages_payload)
 
-                    processed_tool_calls.append({
-                        "id": tc_dict.get("id"),
-                        "type": tc_dict.get("type"),
-                        "function": {
-                            "name": function_data.get("name"),
-                            "arguments": stringified_arguments
-                        }
-                    })
-                new_message["tool_calls"] = processed_tool_calls
-                # Explicitly set content to None if only tool_calls are present and content is not already set (or is empty string)
-                # This is a safeguard; primary logic for this should be upstream when message is created.
-                if not new_message.get("content"): # If content is None or empty string
-                    new_message["content"] = None
-            
-            processed_messages_payload.append(new_message)
+            # Step 3: Clean and prepare messages
+            final_messages = self._clean_and_prepare_messages(processed_messages)
 
-        # --- BEGIN PAYLOAD CORRECTION AND VALIDATION ---
-        # This section ensures that assistant messages with tool_calls are correctly followed by tool responses.
-        # If responses are missing, stubs are inserted.
-        # If tool messages are malformed or unexpected, the request will fail.
+            # Step 4: Final validation
+            if not final_messages:
+                return False, None, None, "All messages were filtered out due to empty content"
 
-        corrected_messages_payload = []
-        # Stores IDs of tool calls made by the last assistant message, awaiting responses.
-        pending_tool_ids_from_assistant = set()
-
-        original_payload_for_logging = processed_messages_payload # Keep a reference for logging errors
-
-        for i, current_message in enumerate(processed_messages_payload):
-            current_role = current_message.get("role")
-
-            # If the current message is not a tool message, it means any tool calls
-            # expected from a *previous* assistant message that were not yet met must now be stubbed.
-            if current_role != "tool":
-                if pending_tool_ids_from_assistant:
-                    for tool_id_to_stub in list(pending_tool_ids_from_assistant): # Iterate over a copy for modification
-                        stub_content = json.dumps({
-                            "status": "stubbed_by_preflight_check",
-                            "reason": f"Expected tool response for call_id '{tool_id_to_stub}' was missing before a subsequent '{current_role}' message at index {i}."
-                        })
-                        stub_message = {"role": "tool", "tool_call_id": tool_id_to_stub, "content": stub_content}
-                        corrected_messages_payload.append(stub_message)
-                        logger.warning(f"AIS Pre-flight: Inserted stub for missing tool response (ID: {tool_id_to_stub}) before message index {i} ('{current_role}').")
-                    pending_tool_ids_from_assistant.clear()
-
-            # Now, process the current_message itself
-            if current_role == "assistant":
-                corrected_messages_payload.append(current_message)
-                # This assistant message might make new tool calls.
-                # Any previous pending_tool_ids should have been cleared and stubbed above.
-                # So, pending_tool_ids_from_assistant should be empty here before repopulating.
+            # Check for empty content in final messages
+            for i, msg in enumerate(final_messages):
+                content = msg.get("content")
+                role = msg.get("role")
                 
-                assistant_tool_calls = current_message.get("tool_calls")
-                if assistant_tool_calls and isinstance(assistant_tool_calls, list):
-                    for tc in assistant_tool_calls:
-                        # Ensure tc is a dictionary, as it might be a Pydantic model (ToolCall)
-                        # This should have been handled by the initial processing loop already,
-                        # but double-check tc structure if issues persist.
-                        # For this logic, we assume tc is a dict as per OpenRouter's expected format.
-                        if isinstance(tc, dict) and tc.get("id") and tc.get("type") == "function":
-                            pending_tool_ids_from_assistant.add(tc["id"])
-                        else:
-                            # This assistant message itself has a malformed tool_call. This is a fatal error.
-                            error_msg = f"Pre-flight check failed: Assistant message at index {i} has malformed tool_call entry: {tc}."
-                            logger.error(f"{error_msg} Original History Segment: {json.dumps(original_payload_for_logging, indent=2)}")
-                            return False, None, None, error_msg
+                # Allow assistant messages with tool_calls to have None/empty content
+                if role == "assistant" and msg.get("tool_calls"):
+                    continue
+                
+                # For Anthropic format, content can be a list of blocks
+                if isinstance(content, list) and content:
+                    continue
+                    
+                # Check for truly empty content
+                if content is None or (isinstance(content, str) and not content.strip()):
+                    logger.error(f"Message {i} has empty content: {msg}")
+                    return False, None, None, f"Message {i} has empty content"
+
+            logger.debug(f"Sending {len(final_messages)} messages to OpenRouter model {model_name}")
+
+            # Prepare request payload
+            payload_data = {
+                "model": model_name,
+                "messages": final_messages
+            }
             
-            elif current_role == "tool":
-                tool_call_id = current_message.get("tool_call_id")
-                if tool_call_id and tool_call_id in pending_tool_ids_from_assistant:
-                    corrected_messages_payload.append(current_message)
-                    pending_tool_ids_from_assistant.remove(tool_call_id)
-                else:
-                    # This tool message is unexpected (no matching pending call_id from an assistant)
-                    # or malformed (e.g., missing tool_call_id). This is a fatal error for the request.
-                    error_msg = (f"Pre-flight check failed: Encountered tool message at index {i} with "
-                                 f"tool_call_id '{tool_call_id}' which was not pending or ID is missing. "
-                                 f"Currently pending IDs from assistant: {pending_tool_ids_from_assistant}.")
-                    logger.error(f"{error_msg} Original History Segment: {json.dumps(original_payload_for_logging, indent=2)}")
-                    return False, None, None, error_msg
-            
-            else: # Handles "user", "system", or any other roles
-                corrected_messages_payload.append(current_message)
-                # If we reached here, pending_tool_ids_from_assistant should be empty due to the check
-                # at the beginning of the loop for non-tool messages.
+            if tools:
+                payload_data["tools"] = tools
+                payload_data["tool_choice"] = tool_choice
 
-        # After iterating through all messages, if there are still pending_tool_ids,
-        # it means the history ended with an assistant message making tool calls that were not responded to.
-        # These must be stubbed.
-        if pending_tool_ids_from_assistant:
-            for tool_id_to_stub in list(pending_tool_ids_from_assistant): # Iterate over a copy
-                stub_content = json.dumps({
-                    "status": "stubbed_by_preflight_check",
-                    "reason": f"Expected tool response for call_id '{tool_id_to_stub}' was missing at the end of the message history."
-                })
-                stub_message = {"role": "tool", "tool_call_id": tool_id_to_stub, "content": stub_content}
-                corrected_messages_payload.append(stub_message)
-                logger.warning(f"AIS Pre-flight: Inserted stub for missing tool response (ID: {tool_id_to_stub}) at end of history.")
-            pending_tool_ids_from_assistant.clear()
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": self.site_url,
+                "X-Title": self.site_name,
+            }
 
-        # Use the corrected payload for the API call
-        processed_messages_payload = corrected_messages_payload
-        # --- END PAYLOAD CORRECTION AND VALIDATION ---
-
-        if model_name.startswith("anthropic/"):
-            processed_messages_payload = self._convert_messages_to_anthropic_format(processed_messages_payload)
-
-        if not self._validate_message_history(processed_messages_payload):
-            return False, None, None, "Message history validation failed"
-
-        payload_data = {"model": model_name, "messages": processed_messages_payload}
-        if tools:
-            payload_data["tools"] = tools
-            payload_data["tool_choice"] = tool_choice
-        
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": self.site_url, 
-            "X-Title": self.site_name,
-        }
-        
-        async with httpx.AsyncClient() as client:
-            try:
+            # Make the API request
+            async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
                     "https://openrouter.ai/api/v1/chat/completions",
                     json=payload_data,
-                    headers=headers,
-                    timeout=30.0  # Added a timeout
+                    headers=headers
                 )
-                response.raise_for_status()  # Raises an HTTPStatusError for 4XX/5XX responses
-                
+                response.raise_for_status()
+
                 response_json = response.json()
-                logger.info(f"AIS: OpenRouter raw response data: {response_json}") # ADDED
-                
+                logger.debug(f"OpenRouter response for model {model_name}: {response_json}")
+
+                # Check for errors in successful HTTP responses
+                if response_json.get("error"):
+                    error_details = response_json.get("error", {})
+                    error_message = error_details.get("message", "Unknown error in response")
+                    error_code = error_details.get("code")
+                    error_type = error_details.get("type")
+                    
+                    logger.error(f"OpenRouter API error for {model_name}: {error_message} (code: {error_code}, type: {error_type}). Full response: {response_json}")
+                    return False, None, None, error_message
+
                 if response_json.get("choices"):
                     message = response_json["choices"][0]["message"]
                     text_content = message.get("content")
                     tool_calls = message.get("tool_calls")
                     return True, text_content, tool_calls, None
                 else:
-                    # This case might be less likely if choices are always present on 200 OK
+                    # Log the full response for debugging when there are no choices
+                    logger.error(f"OpenRouter response for {model_name} has no choices. Full response: {response_json}")
                     error_details = response_json.get("error", {})
-                    error_message = error_details.get("message", "Unknown error (No choices in response)")
-                    logger.error(f"OpenRouter error ({model_name}): No choices in response - Resp: {response_json}")
+                    error_message = error_details.get("message", "No choices in response")
                     return False, None, None, error_message
 
-            except httpx.HTTPStatusError as e:
-                error_message = f"HTTP error: {e.response.status_code} - {e.response.text}"
-                try:
-                    # Attempt to parse more specific error from response body
-                    error_json = e.response.json()
-                    if error_json and "error" in error_json and "message" in error_json["error"]:
-                        error_message = error_json["error"]["message"]
-                except json.JSONDecodeError:
-                    pass  # Stick with the text version if JSON parsing fails
-                logger.error(f"OpenRouter HTTPStatusError ({model_name}): {e.response.status_code} - {error_message} - Full Response: {e.response.text}")
-                return False, None, None, error_message
-            except httpx.RequestError as e:  # Catches network errors, timeouts, etc.
-                logger.error(f"Exception connecting to OpenRouter ({model_name}) with httpx: {type(e).__name__} - {e}")
-                return False, None, None, f"RequestError: {str(e)}"
-            except json.JSONDecodeError as e:  # If response is not valid JSON
-                logger.error(f"Failed to decode JSON response from OpenRouter ({model_name}): {e}")
-                return False, None, None, f"JSONDecodeError: {str(e)}"
-            except Exception as e:  # Catch-all for other unexpected errors
-                logger.error(f"Unexpected exception in _get_openrouter_response_async ({model_name}): {type(e).__name__} - {e}")
-                return False, None, None, f"Unexpected error: {str(e)}"
+        except httpx.HTTPStatusError as e:
+            try:
+                error_json = e.response.json()
+                error_details = error_json.get("error", {})
+                error_message = error_details.get("message", str(e))
+                error_code = error_details.get("code")
+                
+                # Ensure error_message is a string and handle mock objects
+                if not isinstance(error_message, str):
+                    # If we get a mock object or other non-string, fall back to basic error
+                    error_message = f"HTTP error: {e.response.status_code}"
+                
+                # Provide more specific error messages for common issues
+                if e.response.status_code == 404:
+                    logger.error(f"OpenRouter model not found: {model_name}. Check if the model name is correct. Response: {e.response.text}")
+                    error_message = f"Model '{model_name}' not found. Please check the model name is correct."
+                elif e.response.status_code == 401:
+                    logger.error(f"OpenRouter authentication failed. Check your API key. Response: {e.response.text}")
+                    error_message = "Authentication failed. Please check your OpenRouter API key."
+                elif e.response.status_code == 429:
+                    logger.error(f"OpenRouter rate limit exceeded for model {model_name}. Response: {e.response.text}")
+                    error_message = "Rate limit exceeded. Please try again later."
+                elif "invalid model" in str(error_message).lower() or "model not found" in str(error_message).lower():
+                    logger.error(f"OpenRouter invalid model: {model_name}. Error: {error_message}. Response: {e.response.text}")
+                    error_message = f"Invalid model '{model_name}': {error_message}"
+                else:
+                    # For 500 errors, include the response text
+                    if e.response.status_code == 500:
+                        response_text = str(e.response.text) if hasattr(e.response, 'text') else ""
+                        error_message = f"HTTP error: {e.response.status_code} - {response_text}"
+                    logger.error(f"OpenRouter HTTP {e.response.status_code} error for {model_name}: {error_message}. Response: {e.response.text}")
+                    
+            except (json.JSONDecodeError, AttributeError):
+                # Ensure error_message is always a string
+                response_text = str(e.response.text) if hasattr(e.response, 'text') else str(e)
+                error_message = f"HTTP error: {e.response.status_code} - {response_text}"
+                logger.error(f"OpenRouter HTTP error for {model_name}: {error_message}")
+            
+            return False, None, None, str(error_message)
+
+        except httpx.RequestError as e:
+            logger.error(f"Request error for {model_name}: {e}")
+            return False, None, None, f"Network error: {str(e)}"
+
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error for {model_name}: {e}")
+            return False, None, None, f"Invalid JSON response: {str(e)}"
+
+        except Exception as e:
+            logger.error(f"Unexpected error for {model_name}: {e}")
+            return False, None, None, f"Unexpected error: {str(e)}"
 
     async def _handle_inference_request(self, request_event: OpenRouterInferenceRequestEvent) -> None:
         """Handles incoming AI inference requests and publishes the response event."""
@@ -290,40 +422,43 @@ class AIInferenceService:
             tool_choice_payload
         )
         
+        # Parse tool calls into Pydantic models
         parsed_tool_calls: Optional[List[ToolCall]] = None
         if tool_calls_data:
             parsed_tool_calls = []
             for tc_data in tool_calls_data:
-                function_data = tc_data.get("function", {})
-                arguments_data = function_data.get("arguments")
-                parsed_arguments = None
-                if isinstance(arguments_data, str):
-                    try:
-                        parsed_arguments = json.loads(arguments_data)
-                    except json.JSONDecodeError as e:
-                        logger.error(f"Failed to parse tool call arguments JSON: {arguments_data} - Error: {e}")
-                        parsed_arguments = arguments_data 
-                else:
-                    parsed_arguments = arguments_data
+                try:
+                    function_data = tc_data.get("function", {})
+                    arguments_data = function_data.get("arguments")
+                    
+                    # Parse arguments if they're a JSON string
+                    if isinstance(arguments_data, str):
+                        try:
+                            parsed_arguments = json.loads(arguments_data)
+                        except json.JSONDecodeError as e:
+                            logger.warning(f"Failed to parse tool call arguments as JSON: {arguments_data}")
+                            parsed_arguments = arguments_data
+                    else:
+                        parsed_arguments = arguments_data
 
-                parsed_tool_calls.append(
-                    ToolCall(
-                        id=tc_data.get("id"),
-                        type=tc_data.get("type"),
-                        function=ToolFunction(
-                            name=function_data.get("name"),
-                            arguments=parsed_arguments
+                    parsed_tool_calls.append(
+                        ToolCall(
+                            id=tc_data.get("id"),
+                            type=tc_data.get("type", "function"),
+                            function=ToolFunction(
+                                name=function_data.get("name"),
+                                arguments=parsed_arguments
+                            )
                         )
                     )
-                )
+                except Exception as e:
+                    logger.error(f"Error parsing tool call {tc_data}: {e}")
+                    continue
 
-        # Determine the correct response event type
-        ResponseEventClass = AIInferenceResponseEvent # Default
+        # Determine response event type
+        ResponseEventClass = AIInferenceResponseEvent
         if isinstance(request_event, OpenRouterInferenceRequestEvent):
             ResponseEventClass = OpenRouterInferenceResponseEvent
-        # Add other specific request types here if needed, e.g.:
-        # elif isinstance(request_event, OllamaInferenceRequestEvent):
-        #     ResponseEventClass = OllamaInferenceResponseEvent
 
         response_event = ResponseEventClass(
             request_id=request_event.request_id,
@@ -334,12 +469,12 @@ class AIInferenceService:
             error_message=error_message,
             response_topic=request_event.reply_to_service_event
         )
-        logger.info(f"AIS: Publishing {ResponseEventClass.__name__} for request {request_event.request_id}. Success: {success}, EventTypeForBus: {response_event.event_type}, ResponseTopicForHandler: {response_event.response_topic}") # MODIFIED logging
+        
+        logger.info(f"Publishing {ResponseEventClass.__name__} for request {request_event.request_id}. Success: {success}")
         await self.bus.publish(response_event)
 
     async def run(self) -> None:
         logger.info("AIInferenceService: Starting...")
-        # Access default from model_fields for subscription
         self.bus.subscribe(OpenRouterInferenceRequestEvent.get_event_type(), self._handle_inference_request)
         await self._stop_event.wait()
         logger.info("AIInferenceService: Stopped.")

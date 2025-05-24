@@ -19,7 +19,7 @@ SIMPLE_OUTPUT_TOOLS = {"send_reply", "send_message", "react_to_message", "do_not
 
 from message_bus import MessageBus
 from event_definitions import (
-    MatrixMessageReceivedEvent, AIInferenceRequestEvent, AIInferenceResponseEvent,
+    MatrixMessageReceivedEvent, MatrixImageReceivedEvent, AIInferenceRequestEvent, AIInferenceResponseEvent,
     OpenRouterInferenceRequestEvent, OllamaInferenceRequestEvent, # Added specific request events
     OpenRouterInferenceResponseEvent, OllamaInferenceResponseEvent, # ADDED specific response events
     SendMatrixMessageCommand, ProcessMessageBatchCommand, ActivateListeningEvent,
@@ -290,7 +290,7 @@ class RoomLogicService:
                 current_user_ids.append(bum.user_id)
         
         if processed_pending_batch_for_ai:
-            last_user_event_id_in_batch = processed_pending_batch_for_ai[-1].get("event_id")
+            last_user_event_id_in_batch = processed_pending_batch_for_ai[-1]["event_id"]  # Fixed: use dict key access
 
         # Fetch tool_states from the room's config.
         # This assumes tool_states are stored/updated in the config dictionary.
@@ -541,10 +541,21 @@ class RoomLogicService:
             logger.info(f"RLS: [{room_id}] No short term memory to summarize.")
             return
 
+        # Fix: Handle both dict and HistoricalMessage objects properly
+        transcript_lines = []
+        for msg in short_term_memory:
+            if isinstance(msg, dict):
+                # Dictionary format
+                name = msg.get('name', 'Unknown')
+                content = msg.get('content', '')
+            else:
+                # HistoricalMessage object - access attributes directly
+                name = getattr(msg, 'name', 'Unknown')
+                content = getattr(msg, 'content', '')
+            transcript_lines.append(f"{name}: {content}")
+
         summary_payload = await prompt_constructor.build_summary_generation_payload(
-            transcript_for_summarization="\n".join(
-                f"{msg.get('name', 'Unknown')}: {msg.get('content', '')}" for msg in short_term_memory
-            ),
+            transcript_for_summarization="\n".join(transcript_lines),
             previous_summary=None,
             db_path=self.db_path,
             bot_display_name=self.bot_display_name
@@ -813,6 +824,7 @@ class RoomLogicService:
     async def run(self):
         """Main run loop for the service, subscribing to events."""
         self.bus.subscribe(MatrixMessageReceivedEvent.get_event_type(), self._handle_matrix_message)
+        self.bus.subscribe(MatrixImageReceivedEvent.get_event_type(), self._handle_matrix_image)  # Add image handler
         self.bus.subscribe(ActivateListeningEvent.get_event_type(), self._handle_activate_listening)
         self.bus.subscribe(ProcessMessageBatchCommand.get_event_type(), self._handle_process_message_batch)
         
@@ -857,3 +869,43 @@ class RoomLogicService:
         # Unsubscribe from all events
         await self.bus.shutdown() # Replaced unsubscribe_all with shutdown
         logger.info("RoomLogicService: Unsubscribed from all events.")
+
+    async def _handle_matrix_image(self, event: MatrixImageReceivedEvent):
+        """Handle Matrix image events by adding them to the conversation batch."""
+        # Ignore events that occurred before the service started (historical events)
+        if hasattr(event, 'timestamp') and event.timestamp < self._service_start_time:
+            return
+        
+        room_id = event.room_id
+        
+        # Check if we're actively listening in this room
+        config = self.room_activity_config.get(room_id)
+        if config and config.get('is_active_listening'):
+            logger.info(f"RoomLogic: [{room_id}] Actively listening. Adding image to batch.")
+            
+            # Add image message to the batch with a special format that includes the image URL
+            image_content = f"[Image uploaded: {event.body or 'No description'}]"
+            config['pending_messages_for_batch'].append({
+                "name": event.sender_display_name,
+                "content": image_content,
+                "event_id": event.event_id_matrix,
+                "image_url": event.image_url,  # Store the Matrix image URL
+                "image_info": event.image_info
+            })
+            config['last_message_timestamp'] = time.time()
+            config['current_interval'] = self.initial_interval  # Reset decay polling
+            config['max_interval_no_activity_cycles'] = 0
+
+            # Debounce batch processing
+            old_batch_task = config.get('batch_response_task')
+            if old_batch_task and not old_batch_task.done():
+                old_batch_task.cancel()
+                try:
+                    await old_batch_task
+                except asyncio.CancelledError:
+                    pass
+                except Exception as e:
+                    logger.error(f"RoomLogic: [{room_id}] Previous batch task raised {e} while being awaited after cancellation.")
+            config['batch_response_task'] = asyncio.create_task(
+                self._delayed_batch_processing_publisher(room_id, self.batch_delay)
+            )

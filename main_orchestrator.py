@@ -10,11 +10,10 @@ from room_logic_service import RoomLogicService
 from summarization_service import SummarizationService
 from image_caption_service import ImageCaptionService
 from image_analysis_service import ImageAnalysisService
-from ollama_inference_service import OllamaInferenceService # Add this
-from tool_manager import ToolLoader, ToolRegistry # Added
-from tool_execution_service import ToolExecutionService # Added
+from ollama_inference_service import OllamaInferenceService
+from tool_manager import ToolLoader, ToolRegistry
+from tool_execution_service import ToolExecutionService
 import database
-from event_definitions import BotDisplayNameReadyEvent # For initial display name
 
 def configure_logging():
     logging.basicConfig(

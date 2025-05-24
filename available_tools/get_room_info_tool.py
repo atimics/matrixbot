@@ -55,11 +55,17 @@ class GetRoomInfoTool(AbstractTool):
         }
         aspects = aspects_map.get(args.info_type, [args.info_type])
         response_topic = f"room_info_response_{tool_call_id or uuid.uuid4()}"
+        
+        # Extract turn_request_id from the original request payload to preserve context
+        original_execute_tool_request_payload = llm_provider_info.get("original_execute_tool_request_payload", {})
+        turn_request_id = original_execute_tool_request_payload.get("turn_request_id")
+        
         command = RequestMatrixRoomInfoCommand(
             room_id=room_id,
             aspects=aspects,
             response_event_topic=response_topic,
-            original_tool_call_id=tool_call_id or "unknown"
+            original_tool_call_id=tool_call_id or "unknown",
+            turn_request_id=turn_request_id
         )
         return ToolResult(
             status="requires_llm_followup",
