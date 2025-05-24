@@ -89,7 +89,7 @@ class MatrixGatewayService:
                     # This part is speculative as nio might not expose raw response headers easily on all exceptions.
                     # For now, we'll rely on retry_after_ms or the default.
                     logger.warning(f"Gateway: Got 429 response (rate limited). No explicit Retry-After in exception. Using default {default_retry_sec}s.")
-            elif '429' in str(e) or (hasattr(e, 'message') and isinstance(e.message, str) and 'M_LIMIT_EXCEEDED' in e.message):
+            elif '429' in str(e) or 'M_LIMIT_EXCEEDED' in str(e):
                 # Fallback if status_code attribute isn't present but error message indicates rate limiting
                 is_rate_limit_error = True
                 logger.warning(f"Gateway: Got 429-like response (rate limited by string match). Using default {default_retry_sec}s. Error: {e}")
