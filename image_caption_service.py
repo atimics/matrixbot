@@ -2,7 +2,6 @@ import asyncio
 import os
 import uuid
 import logging
-import httpx
 from typing import List, Dict, Any
 
 from message_bus import MessageBus
@@ -12,6 +11,8 @@ from event_definitions import (
     AIInferenceResponseEvent,
     SendReplyCommand,
     ImageCaptionGeneratedEvent,
+    ImageCacheRequestEvent,
+    ImageCacheResponseEvent,
 )
 
 logger = logging.getLogger(__name__)
@@ -19,38 +20,70 @@ logger = logging.getLogger(__name__)
 class ImageCaptionService:
     """Service that automatically generates captions for received images."""
 
-    def __init__(self, message_bus: MessageBus, matrix_gateway=None):
+    def __init__(self, message_bus: MessageBus):
         self.bus = message_bus
-        self.matrix_gateway = matrix_gateway  # Reference to MatrixGatewayService for centralized media conversion
         self.openrouter_vision_model = os.getenv("OPENROUTER_VISION_MODEL", "openai/gpt-4o")
-        self.matrix_homeserver = os.getenv("MATRIX_HOMESERVER")
         self._stop_event = asyncio.Event()
+        # Track pending image caption requests
+        self._pending_requests: Dict[str, Dict[str, Any]] = {}
 
     async def _handle_image_message(self, event: MatrixImageReceivedEvent) -> None:
-        # Use centralized Matrix Gateway service for media conversion if available
-        if self.matrix_gateway:
-            converted_url = await self.matrix_gateway.convert_mxc_to_http_with_fallback(event.image_url)
-        else:
-            # Fallback to local method if Matrix Gateway is not available
-            logger.warning("ImageCaptionService: Matrix Gateway not available, using local fallback conversion")
-            converted_url = await self._convert_mxc_to_http_with_fallback(event.image_url)
+        # Request image to be cached to S3 first
+        cache_request_id = str(uuid.uuid4())
         
+        # Store the context for when the cache response comes back
+        self._pending_requests[cache_request_id] = {
+            "room_id": event.room_id,
+            "reply_to_event_id": event.event_id_matrix,
+            "original_image_url": event.image_url,
+            "body": event.body,
+        }
+        
+        # Request image caching
+        cache_request = ImageCacheRequestEvent(
+            request_id=cache_request_id,
+            image_url=event.image_url
+        )
+        
+        logger.info(f"ImageCaptionService: Requesting image cache for: {event.image_url}")
+        await self.bus.publish(cache_request)
+
+    async def _handle_image_cache_response(self, response: ImageCacheResponseEvent) -> None:
+        """Handle response from image cache service and proceed with caption generation."""
+        request_context = self._pending_requests.pop(response.request_id, None)
+        if not request_context:
+            logger.warning(f"ImageCaptionService: Received cache response for unknown request: {response.request_id}")
+            return
+        
+        if not response.success or not response.s3_url:
+            logger.error(f"ImageCaptionService: Image caching failed for {response.original_url}: {response.error_message}")
+            # Send fallback message
+            await self.bus.publish(SendReplyCommand(
+                room_id=request_context["room_id"], 
+                text="[Image could not be processed for captioning]",
+                reply_to_event_id=request_context["reply_to_event_id"]
+            ))
+            return
+        
+        logger.info(f"ImageCaptionService: Using S3 URL for caption generation: {response.s3_url}")
+        
+        # Now create the caption request with the S3 URL
         messages_payload: List[Dict[str, Any]] = [
             {
                 "role": "user",
                 "content": [
                     {"type": "text", "text": "Describe this image."},
-                    {"type": "image_url", "image_url": {"url": converted_url}},
+                    {"type": "image_url", "image_url": {"url": response.s3_url}},
                 ],
             }
         ]
-        if event.body:
-            messages_payload[0]["content"].insert(0, {"type": "text", "text": event.body})
+        if request_context["body"]:
+            messages_payload[0]["content"].insert(0, {"type": "text", "text": request_context["body"]})
 
         request_id = str(uuid.uuid4())
         original_payload = {
-            "room_id": event.room_id,
-            "reply_to_event_id": event.event_id_matrix,
+            "room_id": request_context["room_id"],
+            "reply_to_event_id": request_context["reply_to_event_id"],
         }
         ai_request = OpenRouterInferenceRequestEvent(
             request_id=request_id,
@@ -62,72 +95,6 @@ class ImageCaptionService:
             tool_choice=None,
         )
         await self.bus.publish(ai_request)
-
-    # Keep the fallback methods for backward compatibility in case Matrix Gateway is not available
-    async def _convert_mxc_to_http_with_fallback(self, mxc_url: str) -> str:
-        """Convert an MXC URI to an HTTP download URL using fallback API versions."""
-        if not mxc_url.startswith("mxc://"):
-            return mxc_url
-        
-        try:
-            # Extract server and media_id from mxc://server/media_id format
-            parts = mxc_url[6:].split("/", 1)  # Remove "mxc://" and split
-            if len(parts) != 2:
-                logger.error(f"ImageCaptionService: Invalid MXC URL format: {mxc_url}")
-                return mxc_url
-            
-            server, media_id = parts
-            
-            # Try multiple Matrix media API versions as fallbacks
-            api_versions = ["v3", "v1", "r0"]
-            
-            for version in api_versions:
-                matrix_http_url = f"https://{server}/_matrix/media/{version}/download/{server}/{media_id}"
-                logger.info(f"ImageCaptionService: Trying Matrix media API {version}: {matrix_http_url}")
-                
-                # Test if the URL is accessible by making a HEAD request
-                try:
-                    import httpx
-                    async with httpx.AsyncClient(timeout=10.0) as client:
-                        response = await client.head(matrix_http_url)
-                        if response.status_code == 200:
-                            logger.info(f"ImageCaptionService: Successfully validated Matrix media API {version}")
-                            return matrix_http_url
-                        else:
-                            logger.warning(f"ImageCaptionService: Matrix media API {version} returned status {response.status_code}")
-                except Exception as e:
-                    logger.warning(f"ImageCaptionService: Failed to validate Matrix media API {version}: {e}")
-                    continue
-            
-            # If all versions fail, return the v3 URL as fallback (original behavior)
-            fallback_url = f"https://{server}/_matrix/media/v3/download/{server}/{media_id}"
-            logger.error(f"ImageCaptionService: All Matrix media API versions failed, using v3 fallback: {fallback_url}")
-            return fallback_url
-            
-        except Exception as e:
-            logger.error(f"ImageCaptionService: Failed to convert MXC URL '{mxc_url}': {e}")
-            return mxc_url
-
-    def _convert_mxc_to_http(self, mxc_url: str) -> str:
-        """Convert an MXC URI to an HTTP download URL using fallback API versions."""
-        if not mxc_url.startswith("mxc://"):
-            return mxc_url
-        
-        try:
-            # Extract server and media_id from mxc://server/media_id format
-            parts = mxc_url[6:].split("/", 1)  # Remove "mxc://" and split
-            if len(parts) != 2:
-                logger.error(f"ImageCaptionService: Invalid MXC URL format: {mxc_url}")
-                return mxc_url
-            
-            server, media_id = parts
-            
-            # Use server from MXC URL instead of MATRIX_HOMESERVER for direct conversion
-            # Try v3 first (most current), but could be extended to use fallbacks like the main system
-            return f"https://{server}/_matrix/media/v3/download/{server}/{media_id}"
-        except Exception as e:
-            logger.error(f"ImageCaptionService: Failed to convert MXC URL '{mxc_url}': {e}")
-            return mxc_url
 
     async def _handle_caption_response(self, response: AIInferenceResponseEvent) -> None:
         if response.response_topic != "image_caption_response":
@@ -144,6 +111,7 @@ class ImageCaptionService:
     async def run(self) -> None:
         logger.info("ImageCaptionService: Starting...")
         self.bus.subscribe(MatrixImageReceivedEvent.get_event_type(), self._handle_image_message)
+        self.bus.subscribe(ImageCacheResponseEvent.get_event_type(), self._handle_image_cache_response)
         # Subscribe to the proper OpenRouter response event type instead of the custom string
         from event_definitions import OpenRouterInferenceResponseEvent
         self.bus.subscribe(OpenRouterInferenceResponseEvent.get_event_type(), self._handle_caption_response)

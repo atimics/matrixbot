@@ -10,10 +10,12 @@ from room_logic_service import RoomLogicService
 from summarization_service import SummarizationService
 from image_caption_service import ImageCaptionService
 from image_analysis_service import ImageAnalysisService
+from image_cache_service import ImageCacheService  # Added new service
 from ollama_inference_service import OllamaInferenceService
 from tool_manager import ToolLoader, ToolRegistry
 from tool_execution_service import ToolExecutionService
 import database
+import prompt_constructor  # Added to set the message bus reference
 
 def configure_logging():
     logging.basicConfig(
@@ -41,6 +43,9 @@ async def main() -> None:
     ai_inference = AIInferenceService(bus) # For OpenRouter
     ollama_inference = OllamaInferenceService(bus) # For Ollama
 
+    # Initialize Image Cache Service (needs to be early to handle image processing)
+    image_cache = ImageCacheService(bus, db_path)
+
     # Initialize Tooling Infrastructure (Phase 1)
     tool_loader = ToolLoader() # Uses default 'available_tools/' directory
     loaded_tools = tool_loader.load_tools()
@@ -55,11 +60,12 @@ async def main() -> None:
     # RoomLogicService will be modified to accept this in its __init__
     room_logic = RoomLogicService(bus, tool_registry=tool_registry, db_path=db_path, matrix_client=matrix_gateway.get_client())
     summarization = SummarizationService(bus)
-    image_caption = ImageCaptionService(bus, matrix_gateway=matrix_gateway)  # Pass matrix_gateway
+    image_caption = ImageCaptionService(bus)  # Remove matrix_gateway dependency
     image_analysis = ImageAnalysisService(bus)
 
     services = [
         matrix_gateway,
+        image_cache,  # Start image cache early
         ai_inference,
         ollama_inference,
         room_logic,
@@ -69,11 +75,24 @@ async def main() -> None:
         tool_execution_service,
     ]
     
+    # Set up message bus reference for prompt constructor
+    prompt_constructor.set_message_bus(bus)
+    logger.info("Orchestrator: Message bus reference set for prompt constructor")
+    
     service_tasks = []
     try:
         # Start all service run loops
         for service in services:
             service_tasks.append(asyncio.create_task(service.run()))
+        
+        # After matrix gateway starts, give it time to initialize, then set matrix client reference
+        # This could be improved with proper event signaling, but for now use a small delay
+        await asyncio.sleep(2.0)  # Increased delay to ensure proper initialization
+        if matrix_gateway.get_client():
+            image_cache.set_matrix_client(matrix_gateway.get_client())
+            logger.info("Orchestrator: Image cache service connected to Matrix client")
+        else:
+            logger.warning("Orchestrator: Matrix client not ready for image cache service")
         
         logger.info("Orchestrator: All services started. Running...")
         # Keep main running, or wait for a specific condition like KeyboardInterrupt
@@ -94,6 +113,10 @@ async def main() -> None:
                 except asyncio.CancelledError:
                     service_name = next((name for name, t in service_tasks.items() if t == task), "Unknown Service")
                     logger.info(f"Orchestrator: {service_name} task was cancelled.")
+                except KeyboardInterrupt:
+                    # Re-raise KeyboardInterrupt to trigger main's exception handler
+                    logger.info("Orchestrator: KeyboardInterrupt from service task, propagating...")
+                    raise
                 except Exception as e:
                     logger.error(f"Orchestrator: Service task exited with error: {e}")
             
@@ -114,6 +137,10 @@ async def main() -> None:
         # Give them some time to clean up.
         if service_tasks:
             logger.info("Orchestrator: Allowing time for service run loops to exit...")
+            # Initialize pending as empty list if not set from asyncio.wait above
+            if 'pending' not in locals():
+                pending = service_tasks
+            
             # For tasks that were still pending when FIRST_COMPLETED happened
             for task in pending: # From the asyncio.wait above
                 if not task.done():

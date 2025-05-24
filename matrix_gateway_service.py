@@ -21,7 +21,6 @@ from dotenv import load_dotenv # MODIFIED import: Removed set_key, find_dotenv
 import markdown
 
 from message_bus import MessageBus
-from matrix_media_utils import MatrixMediaUtils  # Added for centralized media conversion
 from event_definitions import (
     MatrixMessageReceivedEvent,
     MatrixImageReceivedEvent,
@@ -382,23 +381,6 @@ class MatrixGatewayService:
                 logger.error(f"Gateway: Failed to set presence (Error): {e}")
         else:
             logger.error("Gateway: Cannot set presence, client not ready or not logged in.")
-
-    async def convert_mxc_to_http_with_fallback(self, mxc_url: str) -> str:
-        """
-        Centralized Matrix media URL conversion with API version fallback.
-        
-        This method tries multiple Matrix media API versions and validates URLs
-        before returning them. Should be used by all services that need to convert
-        Matrix MXC URLs to HTTP URLs for external use (like OpenRouter).
-        
-        Args:
-            mxc_url: Matrix content URI (mxc://server/media_id)
-            
-        Returns:
-            HTTP URL that can be accessed externally, or original URL if conversion fails
-        """
-        access_token = self.client.access_token if self.client else None
-        return await MatrixMediaUtils.convert_mxc_to_http_with_fallback(mxc_url, self.homeserver, access_token)
 
     async def run(self) -> None:
         logger.info("MatrixGatewayService: Starting...")

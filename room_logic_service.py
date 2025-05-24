@@ -276,9 +276,6 @@ class RoomLogicService:
         summary_text_for_prompt, _ = await database.get_summary(self.db_path, room_id) or (None, None)
 
         last_user_event_id_in_batch = None
-        # Convert BatchedUserMessage back to the dict format expected by build_messages_for_ai
-        # and also for adding to memory later.
-        # build_messages_for_ai expects: List[Dict[str, str]] where dicts are {"name": ..., "content": ..., "event_id": ...}
         processed_pending_batch_for_ai: List[Dict[str, str]] = []
         current_user_ids: List[str] = [] # ADDED: For collecting user IDs
 
@@ -315,7 +312,6 @@ class RoomLogicService:
             tool_states=tool_states_for_prompt, # ADDED (Can be None)
             current_user_ids_in_context=current_user_ids, # ADDED
             last_user_event_id_in_batch=last_user_event_id_in_batch,
-            matrix_client=self.matrix_client  # ADDED for authenticated image downloads
         )
 
         turn_request_id = str(uuid.uuid4())
@@ -393,17 +389,42 @@ class RoomLogicService:
            pending_batch_for_memory:
             logger.info(f"RLS: [{room_id}] Adding user messages from pending_batch_for_memory to short_term_memory for turn_request_id: {turn_req_id_for_debug}.") # MODIFIED to INFO for visibility
             try:
-                combined_user_content = "".join(f"{msg['name']}: {msg['content']}\n" for msg in pending_batch_for_memory)
-                representative_event_id_for_user_turn = pending_batch_for_memory[-1]["event_id"]
-                user_name_for_memory = pending_batch_for_memory[0]["name"]
+                # Check if any messages in the batch contain images
+                has_images = any("image_url" in msg for msg in pending_batch_for_memory)
+                
+                if has_images:
+                    # For image messages, store each message separately to preserve image URLs
+                    for msg in pending_batch_for_memory:
+                        user_message_for_memory = {
+                            "role": "user",
+                            "name": msg["name"],
+                            "content": msg["content"],
+                            "event_id": msg["event_id"],
+                            "timestamp": asyncio.get_event_loop().time()
+                        }
+                        # Preserve image_url if present
+                        if "image_url" in msg:
+                            user_message_for_memory["image_url"] = msg["image_url"]
+                        
+                        short_term_memory.append(user_message_for_memory)
+                else:
+                    # For text-only messages, combine as before
+                    combined_user_content = "".join(f"{msg['name']}: {msg['content']}\n" for msg in pending_batch_for_memory)
+                    representative_event_id_for_user_turn = pending_batch_for_memory[-1]["event_id"]
+                    user_name_for_memory = pending_batch_for_memory[0]["name"]
 
-                short_term_memory.append({
-                    "role": "user",
-                    "name": user_name_for_memory,
-                    "content": combined_user_content.strip(),
-                    "event_id": representative_event_id_for_user_turn,
-                    "timestamp": asyncio.get_event_loop().time()
-                })
+                    short_term_memory.append({
+                        "role": "user",
+                        "name": user_name_for_memory,
+                        "content": combined_user_content.strip(),
+                        "event_id": representative_event_id_for_user_turn,
+                        "timestamp": asyncio.get_event_loop().time()
+                    })
+                
+                # Apply memory trimming after adding user messages
+                while len(short_term_memory) > self.short_term_memory_items:
+                    short_term_memory.pop(0)
+                
                 config['new_turns_since_last_summary'] = config.get('new_turns_since_last_summary', 0) + 1
             except (KeyError, IndexError) as e:
                 logger.error(f"RLS: [{room_id}] Error processing pending_batch_for_memory for memory: {e}. Batch: {pending_batch_for_memory}")
@@ -793,7 +814,6 @@ class RoomLogicService:
             tool_states=config.get('tool_states'),
             current_user_ids_in_context=current_user_ids_in_context,
             last_user_event_id_in_batch=original_last_user_event_id,  # Use original event ID for replies
-            matrix_client=self.matrix_client  # ADDED for authenticated image downloads
         )
 
         # Clean up the pending tool call info for this turn_request_id

@@ -69,6 +69,7 @@ class DescribeImageTool(AbstractTool):
         last_user_event_id: Optional[str],
         db_path: Optional[str] = None,
         original_request_payload: Optional[Dict[str, Any]] = None,
+        matrix_client = None  # Added for nio client download
     ) -> ToolResult:
         analysis_type = arguments.get("analysis_type", "general")
         specific_question = arguments.get("specific_question")
@@ -122,36 +123,49 @@ class DescribeImageTool(AbstractTool):
         logger.info(f"DescribeImageTool: Found image URL: {recent_image_url}")
 
         try:
-            # Use centralized Matrix media utility with fallback API versions
             image_data = None
             
-            # If it's an MXC URL, use the centralized fallback logic
+            # If it's an MXC URL, use the simple nio client download method first
             if recent_image_url.startswith("mxc://"):
-                # Extract server and media_id from mxc://server/media_id format
-                parts = recent_image_url[6:].split("/", 1)  # Remove "mxc://" and split
-                if len(parts) != 2:
-                    logger.error(f"DescribeImageTool: Invalid MXC URL format: {recent_image_url}")
-                    return ToolResult(
-                        status="failure",
-                        result_for_llm_history="[Tool describe_image failed: Invalid image URL format.]",
-                        error_message="Invalid MXC URL format",
-                    )
+                if matrix_client:
+                    try:
+                        logger.info(f"DescribeImageTool: Using nio client download method for: {recent_image_url}")
+                        image_data = await MatrixMediaUtils.download_media_simple(recent_image_url, matrix_client)
+                        if image_data:
+                            logger.info(f"DescribeImageTool: Successfully downloaded image using nio client. Size: {len(image_data)} bytes")
+                        else:
+                            logger.warning(f"DescribeImageTool: Nio client download returned no data for: {recent_image_url}")
+                    except Exception as e:
+                        logger.warning(f"DescribeImageTool: Nio client download failed: {e}")
                 
-                server, media_id = parts
-                
-                # Try multiple Matrix media API versions as fallbacks using centralized logic
-                api_versions = ["v3", "v1", "r0"]
-                
-                for version in api_versions:
-                    matrix_http_url = f"https://{server}/_matrix/media/{version}/download/{server}/{media_id}"
-                    logger.info(f"DescribeImageTool: Trying to download image using {version} API: {matrix_http_url}")
+                # Fallback to HTTP conversion approach if nio client fails or is unavailable
+                if not image_data:
+                    logger.info("DescribeImageTool: Falling back to HTTP conversion approach")
+                    # Extract server and media_id from mxc://server/media_id format
+                    parts = recent_image_url[6:].split("/", 1)  # Remove "mxc://" and split
+                    if len(parts) != 2:
+                        logger.error(f"DescribeImageTool: Invalid MXC URL format: {recent_image_url}")
+                        return ToolResult(
+                            status="failure",
+                            result_for_llm_history="[Tool describe_image failed: Invalid image URL format.]",
+                            error_message="Invalid MXC URL format",
+                        )
                     
-                    image_data = await self.s3_service.download_image(matrix_http_url)
-                    if image_data:
-                        logger.info(f"DescribeImageTool: Successfully downloaded image using Matrix media API {version}")
-                        break
-                    else:
-                        logger.warning(f"DescribeImageTool: Failed to download image using Matrix media API {version}")
+                    server, media_id = parts
+                    
+                    # Try multiple Matrix media API versions as fallbacks
+                    api_versions = ["v3", "v1", "r0"]
+                    
+                    for version in api_versions:
+                        matrix_http_url = f"https://{server}/_matrix/media/{version}/download/{server}/{media_id}"
+                        logger.info(f"DescribeImageTool: Trying to download image using {version} API: {matrix_http_url}")
+                        
+                        image_data = await self.s3_service.download_image(matrix_http_url)
+                        if image_data:
+                            logger.info(f"DescribeImageTool: Successfully downloaded image using Matrix media API {version}")
+                            break
+                        else:
+                            logger.warning(f"DescribeImageTool: Failed to download image using Matrix media API {version}")
             else:
                 # Non-MXC URL, try direct download
                 image_data = await self.s3_service.download_image(recent_image_url)
@@ -159,8 +173,8 @@ class DescribeImageTool(AbstractTool):
             if not image_data:
                 return ToolResult(
                     status="failure",
-                    result_for_llm_history="[Tool describe_image failed: Could not download the image from Matrix using any API version.]",
-                    error_message="Failed to download image from Matrix using all API versions",
+                    result_for_llm_history="[Tool describe_image failed: Could not download the image from any source.]",
+                    error_message="Failed to download image from all attempted methods",
                 )
 
             # Save image to temporary file

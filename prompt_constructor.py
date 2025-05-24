@@ -1,159 +1,73 @@
+import asyncio
 import logging
 from typing import List, Dict, Optional, Any, Tuple, Set # Added Set
 from datetime import datetime  # Added
 import json  # Added
 import os # Added
-import tempfile  # Added for image processing
 import uuid  # Added for unique filenames
 
 import database # Added import
-from s3_service import S3Service  # Added for image upload
-from matrix_media_utils import MatrixMediaUtils  # Added for centralized media conversion
+from message_bus import MessageBus  # Added for image cache requests
+from event_definitions import ImageCacheRequestEvent, ImageCacheResponseEvent  # Added for image cache
 
 logger = logging.getLogger(__name__)
 
-# Create S3 service instance
-s3_service = None
-try:
-    s3_service = S3Service()
-    logger.info("S3Service initialized successfully for image processing")
-except Exception as e:
-    logger.warning(f"S3Service initialization failed: {e}. Images will not be uploaded to S3.")
+# Global reference to message bus for image processing
+# This will be set by the orchestrator during initialization
+current_message_bus: Optional[MessageBus] = None
 
-def _convert_mxc_to_http(mxc_url: str) -> str:
-    """Convert Matrix MXC URL to HTTP URL for downloading."""
-    # Use centralized utility for simple conversion
-    return MatrixMediaUtils.convert_mxc_to_http_simple(mxc_url)
+def set_message_bus(message_bus: MessageBus) -> None:
+    """Set the global message bus reference for image processing."""
+    global current_message_bus
+    current_message_bus = message_bus
+    logger.info("PromptConstructor: Message bus reference set for image processing")
 
-async def _upload_image_to_s3(image_url: str, matrix_client=None) -> Optional[str]:
-    """Download image from Matrix and upload to S3, returning S3 URL."""
-    if not s3_service:
-        logger.error("S3Service not available, cannot upload image")
-        return None
-    
+async def _get_s3_url_for_image(image_url: str, message_bus: MessageBus) -> Optional[str]:
+    """
+    Request S3 URL for an image through the image cache service.
+    This removes coupling between prompt constructor and Matrix client.
+    """
     try:
-        # First, try to download the image using authenticated Matrix client if available
-        logger.info(f"Attempting to download image from Matrix URL: {image_url}")
+        request_id = str(uuid.uuid4())
         
-        image_data = None
-        if image_url.startswith("mxc://"):
-            # If we have an authenticated Matrix client, use it for downloading
-            if matrix_client and hasattr(matrix_client, 'download'):
-                try:
-                    logger.info(f"Using authenticated Matrix client to download image: {image_url}")
-                    # Use the Matrix client's download method which includes authentication
-                    response = await matrix_client.download(image_url)
-                    if hasattr(response, 'body') and response.body:
-                        image_data = response.body
-                        logger.info(f"Successfully downloaded image using authenticated Matrix client")
-                    else:
-                        logger.warning(f"Matrix client download returned empty response for: {image_url}")
-                except Exception as e:
-                    logger.warning(f"Failed to download via authenticated Matrix client: {e}")
-            
-            # If authenticated download failed or no client available, try fallback approaches
-            if not image_data:
-                # Try multiple approaches to download the image
-                # 1. Try using the Matrix media utils conversion first with federation support
-                try:
-                    # Extract homeserver URL from matrix_client if available
-                    client_homeserver_url = None
-                    if matrix_client and hasattr(matrix_client, 'homeserver'):
-                        client_homeserver_url = matrix_client.homeserver
-                        logger.info(f"Using client homeserver for federation: {client_homeserver_url}")
-                    
-                    http_url = await MatrixMediaUtils.convert_mxc_to_http_with_fallback(
-                        image_url, 
-                        client_homeserver_url
-                    )
-                    logger.info(f"Converted MXC URL to HTTP: {http_url}")
-                    
-                    if http_url != image_url:  # Successful conversion
-                        # Try with authentication headers if we have a Matrix client
-                        headers = {}
-                        if matrix_client and hasattr(matrix_client, 'access_token') and matrix_client.access_token:
-                            headers['Authorization'] = f'Bearer {matrix_client.access_token}'
-                            logger.info("Adding authentication header for Matrix media download")
-                        
-                        image_data = await s3_service.download_image(http_url, headers=headers)
-                        if image_data:
-                            logger.info(f"Successfully downloaded image from converted URL with auth: {http_url}")
-                        else:
-                            logger.warning(f"Failed to download image from converted URL with auth: {http_url}")
-                except Exception as e:
-                    logger.warning(f"Failed to convert/download via MatrixMediaUtils: {e}")
-                
-                # 2. If that failed, try direct conversion approach with authentication
-                if not image_data:
-                    try:
-                        # Extract server and media_id from mxc://server/media_id
-                        parts = image_url[6:].split("/", 1)  # Remove "mxc://"
-                        if len(parts) == 2:
-                            server, media_id = parts
-                            # Try common Matrix media API endpoints directly with auth
-                            direct_urls = [
-                                f"https://{server}/_matrix/media/v3/download/{server}/{media_id}",
-                                f"https://{server}/_matrix/media/r0/download/{server}/{media_id}",
-                                f"https://{server}/_matrix/media/v1/download/{server}/{media_id}"
-                            ]
-                            
-                            for direct_url in direct_urls:
-                                logger.info(f"Trying direct download from: {direct_url}")
-                                try:
-                                    headers = {}
-                                    if matrix_client and hasattr(matrix_client, 'access_token') and matrix_client.access_token:
-                                        headers['Authorization'] = f'Bearer {matrix_client.access_token}'
-                                    
-                                    image_data = await s3_service.download_image(direct_url, headers=headers)
-                                    if image_data:
-                                        logger.info(f"Successfully downloaded image via direct authenticated URL: {direct_url}")
-                                        break
-                                    else:
-                                        logger.warning(f"Direct authenticated download failed for: {direct_url}")
-                                except Exception as e:
-                                    logger.warning(f"Exception during direct authenticated download from {direct_url}: {e}")
-                    except Exception as e:
-                        logger.error(f"Failed to parse MXC URL or direct download: {e}")
-        else:
-            # If it's already an HTTP URL, try downloading directly
-            try:
-                image_data = await s3_service.download_image(image_url)
-                if image_data:
-                    logger.info(f"Successfully downloaded image from HTTP URL: {image_url}")
-            except Exception as e:
-                logger.warning(f"Failed to download from HTTP URL {image_url}: {e}")
+        # Create a future to wait for the response
+        response_future = asyncio.Future()
         
-        if not image_data:
-            logger.error(f"Failed to download image from any attempted URL: {image_url}")
-            return None
+        # Subscribe to the response temporarily
+        async def handle_response(event: ImageCacheResponseEvent):
+            if event.request_id == request_id:
+                if not response_future.done():
+                    response_future.set_result(event)
         
-        # Generate unique filename for S3
-        file_extension = ".jpg"  # Default to jpg, could be improved to detect actual type
-        unique_filename = f"matrix_image_{uuid.uuid4()}{file_extension}"
-        
-        # Save image to temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as temp_file:
-            temp_file.write(image_data)
-            temp_file_path = temp_file.name
+        message_bus.subscribe(ImageCacheResponseEvent.get_event_type(), handle_response)
         
         try:
-            # Upload to S3
-            s3_url = await s3_service.upload_image(temp_file_path, object_name=unique_filename)
-            if s3_url:
-                logger.info(f"Successfully uploaded image to S3: {s3_url}")
-                return s3_url
+            # Send the request
+            cache_request = ImageCacheRequestEvent(
+                request_id=request_id,
+                image_url=image_url
+            )
+            await message_bus.publish(cache_request)
+            
+            # Wait for response with timeout
+            response = await asyncio.wait_for(response_future, timeout=30.0)
+            
+            if response.success and response.s3_url:
+                logger.info(f"PromptConstructor: Successfully got S3 URL for image: {image_url} -> {response.s3_url}")
+                return response.s3_url
             else:
-                logger.error("S3 upload returned None")
+                logger.error(f"PromptConstructor: Failed to get S3 URL for image: {image_url}")
                 return None
-        finally:
-            # Clean up temporary file
-            try:
-                os.unlink(temp_file_path)
-            except OSError as e:
-                logger.warning(f"Could not delete temporary file {temp_file_path}: {e}")
                 
+        finally:
+            # Unsubscribe from the response
+            message_bus.unsubscribe(ImageCacheResponseEvent.get_event_type(), handle_response)
+            
+    except asyncio.TimeoutError:
+        logger.error(f"PromptConstructor: Timeout waiting for image cache response for: {image_url}")
+        return None
     except Exception as e:
-        logger.error(f"Error uploading image to S3: {e}")
+        logger.error(f"PromptConstructor: Error getting S3 URL for image {image_url}: {e}")
         return None
 
 # Default system prompt template.
@@ -348,6 +262,7 @@ def _format_and_add_message(
     name = getattr(msg_item, 'name', msg_item.get('name') if isinstance(msg_item, dict) else None)
     tool_calls_data = getattr(msg_item, 'tool_calls', msg_item.get('tool_calls') if isinstance(msg_item, dict) else None)
     tool_call_id_data = getattr(msg_item, 'tool_call_id', msg_item.get('tool_call_id') if isinstance(msg_item, dict) else None)
+    image_url = getattr(msg_item, 'image_url', msg_item.get('image_url') if isinstance(msg_item, dict) else None)
 
     if role is None:
         logger.warning(f"Skipping message due to missing role: {msg_item}")
@@ -355,22 +270,37 @@ def _format_and_add_message(
 
     ai_msg: Dict[str, Any] = {"role": role}
 
-    # Content assignment logic
-    if role == "assistant":
-        if tool_calls_data: # Assistant has tool calls
-            if content is not None: # Original content was provided
-                ai_msg["content"] = content
-            else: # Original content was None
-                ai_msg["content"] = None # Explicitly None for AI API
-        else: # Assistant has no tool calls
-            if content is not None: # Original content was provided
-                ai_msg["content"] = content
-            else: # Original content was None
-                ai_msg["content"] = "" # Default to empty string
-    elif content is not None: # For other roles (user, system, tool)
-         ai_msg["content"] = content
-    # If content is None for user/system, it's an issue with upstream data.
-    # Tool role content is handled specifically below.
+    # Handle content - check if this message has an image
+    if role == "user" and image_url:
+        # This is a user message with an image - convert to vision format
+        content_parts = []
+        if content:
+            content_parts.append({"type": "text", "text": content})
+        
+        # Add image - we'll need to process it asynchronously
+        # For now, add a placeholder that will be replaced during build_messages_for_ai
+        content_parts.append({
+            "type": "image_url_placeholder",
+            "image_url": image_url
+        })
+        ai_msg["content"] = content_parts
+    else:
+        # Standard content assignment logic for non-image messages
+        if role == "assistant":
+            if tool_calls_data: # Assistant has tool calls
+                if content is not None: # Original content was provided
+                    ai_msg["content"] = content
+                else: # Original content was None
+                    ai_msg["content"] = None # Explicitly None for AI API
+            else: # Assistant has no tool calls
+                if content is not None: # Original content was provided
+                    ai_msg["content"] = content
+                else: # Original content was None
+                    ai_msg["content"] = "" # Default to empty string
+        elif content is not None: # For other roles (user, system, tool)
+             ai_msg["content"] = content
+        # If content is None for user/system, it's an issue with upstream data.
+        # Tool role content is handled specifically below.
 
     if name is not None:
         ai_msg["name"] = name
@@ -438,8 +368,7 @@ async def build_messages_for_ai(
     tool_states: Optional[Dict[str, Any]] = None, # ADDED
     current_user_ids_in_context: Optional[List[str]] = None, # ADDED
     last_user_event_id_in_batch: Optional[str] = None,
-    include_system_prompt: bool = True,
-    matrix_client = None  # ADDED for authenticated image downloads
+    include_system_prompt: bool = True
 ) -> List[Dict[str, Any]]:
     """
     Builds the message list for the AI, including system prompt, historical messages, and current user input.
@@ -471,6 +400,7 @@ async def build_messages_for_ai(
 
     pending_tool_call_ids: Set[str] = set()
 
+    # Process historical messages and handle image placeholders
     for msg_item in historical_messages:
         current_msg_role = getattr(msg_item, 'role', msg_item.get('role') if isinstance(msg_item, dict) else None)
         current_msg_tool_call_id = getattr(msg_item, 'tool_call_id', msg_item.get('tool_call_id') if isinstance(msg_item, dict) else None)
@@ -498,16 +428,48 @@ async def build_messages_for_ai(
         ai_msg: Dict[str, Any] = {"role": current_msg_role}
         content = getattr(msg_item, 'content', msg_item.get('content') if isinstance(msg_item, dict) else None)
         name = getattr(msg_item, 'name', msg_item.get('name') if isinstance(msg_item, dict) else None)
+        image_url = getattr(msg_item, 'image_url', msg_item.get('image_url') if isinstance(msg_item, dict) else None)
         
-        # Determine content for assistant messages (None if tool_calls, "" otherwise if no explicit content)
-        if content is not None:
-            ai_msg["content"] = content
-        elif current_msg_role == "assistant":
-            # Check original msg_item for tool_calls to decide content structure
-            if not getattr(msg_item, 'tool_calls', msg_item.get('tool_calls')):
-                ai_msg["content"] = ""  # No tool calls, no explicit content, so empty string
+        # Handle content - check if this message has an image URL in historical messages
+        if current_msg_role == "user" and image_url:
+            # This is a user message with an image from history - convert to vision format
+            content_parts = []
+            if content:
+                content_parts.append({"type": "text", "text": content})
+            
+            # Process the image URL to get S3 URL
+            if current_message_bus:
+                s3_url = await _get_s3_url_for_image(image_url, current_message_bus)
+                if s3_url:
+                    logger.info(f"Successfully got S3 URL for historical image: {image_url} -> {s3_url}")
+                    content_parts.append({
+                        "type": "image_url",
+                        "image_url": {"url": s3_url}
+                    })
+                else:
+                    logger.error(f"Failed to get S3 URL for historical image, adding text description: {image_url}")
+                    content_parts.append({
+                        "type": "text", 
+                        "text": f"[Historical image failed to process: {content or 'No description available'}]"
+                    })
             else:
-                ai_msg["content"] = None # Tool calls present, content should be None
+                logger.error(f"No message bus available for historical image processing: {image_url}")
+                content_parts.append({
+                    "type": "text", 
+                    "text": f"[Historical image processing unavailable: {content or 'No description available'}]"
+                })
+            
+            ai_msg["content"] = content_parts
+        else:
+            # Standard content assignment logic for non-image messages
+            if content is not None:
+                ai_msg["content"] = content
+            elif current_msg_role == "assistant":
+                # Check original msg_item for tool_calls to decide content structure
+                if not getattr(msg_item, 'tool_calls', msg_item.get('tool_calls')):
+                    ai_msg["content"] = ""  # No tool calls, no explicit content, so empty string
+                else:
+                    ai_msg["content"] = None # Tool calls present, content should be None
 
         if name is not None:
             ai_msg["name"] = name
@@ -631,20 +593,27 @@ async def build_messages_for_ai(
                 # Add image if present
                 if image_url:
                     logger.info(f"Processing image in batch: {image_url}")
-                    # Convert Matrix MXC URL to S3 URL
-                    s3_url = await _upload_image_to_s3(image_url, matrix_client)
-                    if s3_url:
-                        logger.info(f"Successfully converted Matrix image to S3 URL: {s3_url}")
-                        content_parts.append({
-                            "type": "image_url",
-                            "image_url": {"url": s3_url}
-                        })
+                    # Use the new image cache service instead of direct upload
+                    if current_message_bus:
+                        s3_url = await _get_s3_url_for_image(image_url, current_message_bus)
+                        if s3_url:
+                            logger.info(f"Successfully got S3 URL from cache service: {s3_url}")
+                            content_parts.append({
+                                "type": "image_url",
+                                "image_url": {"url": s3_url}
+                            })
+                        else:
+                            logger.error(f"Failed to get S3 URL from cache service, adding text description instead: {image_url}")
+                            # Fallback to text description if image processing fails
+                            content_parts.append({
+                                "type": "text", 
+                                "text": f"[Image failed to process: {content_text or 'No description available'}]"
+                            })
                     else:
-                        logger.error(f"Failed to upload image to S3, adding text description instead: {image_url}")
-                        # Fallback to text description if image upload fails
+                        logger.error(f"No message bus available for image processing, adding text description: {image_url}")
                         content_parts.append({
                             "type": "text", 
-                            "text": f"[Image failed to upload: {content_text or 'No description available'}]"
+                            "text": f"[Image processing unavailable: {content_text or 'No description available'}]"
                         })
             
             # Create message with structured content for vision
