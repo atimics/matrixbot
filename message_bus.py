@@ -48,6 +48,7 @@ class MessageBus:
                     logger.error(f"Error in listener for '{event_type}' with callback {callback.__name__}: {e}")
         task = asyncio.create_task(listener())
         self.subscriber_tasks.append(task)
+        self.task_mapping[(event_key, callback)] = task
         logger.debug(f"Subscribed {callback.__name__} to '{event_type}'. Task: {task.get_name()}")
 
     def unsubscribe(self, event_type: EventType | str, callback: Callable[[BaseEvent], Any]) -> None:
