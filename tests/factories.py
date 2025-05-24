@@ -26,7 +26,9 @@ from event_definitions import (
     BotDisplayNameReadyEvent,
     HistoricalMessage,
     BatchedUserMessage,
-    ToolRoleMessage
+    ToolRoleMessage,
+    SetPresenceCommand,
+    RequestMatrixRoomInfoCommand
 )
 
 
@@ -142,6 +144,53 @@ class SendMatrixMessageCommandFactory(factory.Factory):
 
     room_id = factory.Sequence(lambda n: f"!room{n}:matrix.example.com")
     text = Faker('text', max_nb_chars=200)
+
+
+class SendReplyCommandFactory(factory.Factory):
+    class Meta:
+        model = SendReplyCommand
+
+    room_id = factory.Sequence(lambda n: f"!room{n}:matrix.example.com")
+    text = Faker('text', max_nb_chars=200)
+    reply_to_event_id = factory.Sequence(lambda n: f"$event{n}:matrix.example.com")
+
+
+class ReactToMessageCommandFactory(factory.Factory):
+    class Meta:
+        model = ReactToMessageCommand
+
+    room_id = factory.Sequence(lambda n: f"!room{n}:matrix.example.com")
+    event_id_to_react_to = factory.Sequence(lambda n: f"$event{n}:matrix.example.com")
+    reaction_key = "👍"
+
+
+class SetTypingIndicatorCommandFactory(factory.Factory):
+    class Meta:
+        model = SetTypingIndicatorCommand
+
+    room_id = factory.Sequence(lambda n: f"!room{n}:matrix.example.com")
+    typing = True
+    timeout = 30000
+
+
+class SetPresenceCommandFactory(factory.Factory):
+    class Meta:
+        model = SetPresenceCommand
+
+    presence = "online"
+    status_msg = Faker('sentence', nb_words=3)
+
+
+class RequestMatrixRoomInfoCommandFactory(factory.Factory):
+    class Meta:
+        model = RequestMatrixRoomInfoCommand
+
+    room_id = factory.Sequence(lambda n: f"!room{n}:matrix.example.com")
+    aspects = factory.LazyFunction(lambda: ["name", "topic", "members"])
+    response_event_topic = "matrix_room_info_response"
+    original_tool_call_id = factory.LazyFunction(lambda: f"call_{uuid.uuid4().hex[:8]}")
+    event_id = factory.Sequence(lambda n: f"$event{n}:matrix.example.com")
+    turn_request_id = factory.LazyFunction(lambda: str(uuid.uuid4()))
 
 
 class ActivateListeningEventFactory(factory.Factory):

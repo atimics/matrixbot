@@ -470,7 +470,8 @@ async def build_messages_for_ai(
                 ai_msg["content"] = content
             elif current_msg_role == "assistant":
                 # Check original msg_item for tool_calls to decide content structure
-                if not getattr(msg_item, 'tool_calls', msg_item.get('tool_calls')):
+                msg_tool_calls = getattr(msg_item, 'tool_calls', msg_item.get('tool_calls') if isinstance(msg_item, dict) else None)
+                if not msg_tool_calls:
                     ai_msg["content"] = ""  # No tool calls, no explicit content, so empty string
                 else:
                     ai_msg["content"] = None # Tool calls present, content should be None
@@ -479,6 +480,8 @@ async def build_messages_for_ai(
             ai_msg["name"] = name
         
         final_tool_calls_on_ai_msg = None
+        # Get tool_calls from the message item
+        raw_tool_calls = getattr(msg_item, 'tool_calls', msg_item.get('tool_calls') if isinstance(msg_item, dict) else None)
         if current_msg_role == "assistant" and raw_tool_calls:
             processed_tool_calls_for_api = []
             for tc_input_item in raw_tool_calls:

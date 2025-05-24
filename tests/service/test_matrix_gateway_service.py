@@ -125,18 +125,28 @@ class TestMatrixGatewayService(ServiceTestBase):
         # Start the worker
         worker_task = asyncio.create_task(gateway_service._command_worker())
         
-        # Add a command
-        mock_func = AsyncMock()
-        await gateway_service._enqueue_command(mock_func, "arg1", kwarg1="kwarg1")
-        
-        # Give time to process
-        await asyncio.sleep(0.1)
-        
-        # Stop the worker
-        gateway_service._stop_event.set()
-        await worker_task
-        
-        mock_func.assert_called_once_with("arg1", kwarg1="kwarg1")
+        try:
+            # Add a command
+            mock_func = AsyncMock()
+            await gateway_service._enqueue_command(mock_func, "arg1", kwarg1="kwarg1")
+            
+            # Give time to process
+            await asyncio.sleep(0.01)
+            
+            # Verify the function was called
+            mock_func.assert_called_once_with("arg1", kwarg1="kwarg1")
+            
+        finally:
+            # Always stop the worker
+            gateway_service._stop_event.set()
+            try:
+                await asyncio.wait_for(worker_task, timeout=0.1)
+            except asyncio.TimeoutError:
+                worker_task.cancel()
+                try:
+                    await worker_task
+                except asyncio.CancelledError:
+                    pass
 
     @pytest.mark.asyncio
     async def test_command_worker_error_handling(self, gateway_service):
@@ -144,18 +154,29 @@ class TestMatrixGatewayService(ServiceTestBase):
         # Start the worker
         worker_task = asyncio.create_task(gateway_service._command_worker())
         
-        # Add a command that raises an error
-        mock_func = AsyncMock(side_effect=Exception("Test error"))
-        await gateway_service._enqueue_command(mock_func)
-        
-        # Give time to process
-        await asyncio.sleep(0.1)
-        
-        # Stop the worker
-        gateway_service._stop_event.set()
-        await worker_task
-        
-        # Worker should have handled the error and continued
+        try:
+            # Add a command that raises an error
+            mock_func = AsyncMock(side_effect=Exception("Test error"))
+            await gateway_service._enqueue_command(mock_func)
+            
+            # Give time to process
+            await asyncio.sleep(0.01)
+            
+            # Worker should have handled the error and continued
+            # Verify the function was called despite the error
+            mock_func.assert_called_once()
+            
+        finally:
+            # Always stop the worker
+            gateway_service._stop_event.set()
+            try:
+                await asyncio.wait_for(worker_task, timeout=0.1)
+            except asyncio.TimeoutError:
+                worker_task.cancel()
+                try:
+                    await worker_task
+                except asyncio.CancelledError:
+                    pass
 
     @pytest.mark.asyncio
     async def test_matrix_message_callback_own_message(self, gateway_service, mock_matrix_client):
@@ -329,12 +350,11 @@ class TestMatrixGatewayService(ServiceTestBase):
         original_event.sender = "@user:matrix.example.com"
         original_event.body = "Original message"
         
-        event_response = MagicMock()
+        from nio import RoomGetEventResponse
+        event_response = RoomGetEventResponse()
         event_response.event = original_event
         
-        from nio import RoomGetEventResponse
         mock_matrix_client.room_get_event.return_value = event_response
-        type(event_response).__class__ = RoomGetEventResponse
         
         await gateway_service._send_reply_impl(command)
         
@@ -465,15 +485,21 @@ class TestMatrixGatewayService(ServiceTestBase):
             mock_client.access_token = "test_token"
             mock_client.logged_in = True
             
-            # Mock login response
+            # Mock login response with required parameters
             from nio import LoginResponse
-            login_response = LoginResponse()
+            login_response = LoginResponse(
+                user_id="@bot:matrix.example.com",
+                device_id="test_device",
+                access_token="test_token"
+            )
             mock_client.login.return_value = login_response
             
-            # Mock profile response
+            # Mock profile response with correct parameters
             from nio import ProfileGetResponse
-            profile_response = ProfileGetResponse()
-            profile_response.displayname = "Test Bot"
+            profile_response = ProfileGetResponse(
+                displayname="Test Bot",
+                avatar_url=None
+            )
             mock_client.get_profile.return_value = profile_response
             
             with patch('matrix_gateway_service.AsyncClient', return_value=mock_client):
@@ -506,12 +532,17 @@ class TestMatrixGatewayService(ServiceTestBase):
             mock_client = AsyncMock()
             mock_client.user_id = "@bot:matrix.example.com"
             mock_client.logged_in = True
+            mock_client.add_event_callback = MagicMock()
+            mock_client.sync_forever = AsyncMock()
+            mock_client.close = AsyncMock()
             
-            # Mock whoami response
+            # Mock whoami response with required parameters
             from nio import WhoamiResponse
-            whoami_response = WhoamiResponse()
-            whoami_response.user_id = "@bot:matrix.example.com"
-            whoami_response.device_id = "test_device"
+            whoami_response = WhoamiResponse(
+                user_id="@bot:matrix.example.com",
+                device_id="test_device",
+                is_guest=False
+            )
             mock_client.whoami.return_value = whoami_response
             
             with patch('matrix_gateway_service.AsyncClient', return_value=mock_client):
@@ -521,13 +552,16 @@ class TestMatrixGatewayService(ServiceTestBase):
                 # Give time to initialize
                 await asyncio.sleep(0.1)
                 
-                # Stop service
+                # Stop service properly
+                service._stop_event.set()
                 await service.stop()
                 
+                # Cancel and wait for the task to complete
+                run_task.cancel()
                 try:
-                    await asyncio.wait_for(run_task, timeout=1.0)
-                except asyncio.TimeoutError:
-                    run_task.cancel()
+                    await run_task
+                except asyncio.CancelledError:
+                    pass  # Expected when cancelling
 
     @pytest.mark.asyncio
     async def test_get_client(self, gateway_service, mock_matrix_client):
