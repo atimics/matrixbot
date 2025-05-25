@@ -59,6 +59,9 @@ class MatrixGatewayService:
         self._stop_event = None  # Will be initialized in run() to ensure correct event loop
         # Move queue and task creation to run() to ensure they're in the correct event loop
         self._command_queue = None
+        self._stop_event = None  # Will be initialized in run() to ensure correct event loop
+        # Move queue and task creation to run() to ensure they're in the correct event loop
+        self._command_queue = None
         self._rate_limit_until = 0.0  # Timestamp until which we must wait due to 429
         self._command_worker_task = None
         
@@ -209,6 +212,7 @@ class MatrixGatewayService:
                     # For now, we'll rely on retry_after_ms or the default.
                     logger.warning(f"Gateway: Got 429 response (rate limited). No explicit Retry-After in exception. Using default {default_retry_sec}s.")
             elif '429' in str(e) or 'M_LIMIT_EXCEEDED' in str(e):
+            elif '429' in str(e) or 'M_LIMIT_EXCEEDED' in str(e):
                 # Fallback if status_code attribute isn't present but error message indicates rate limiting
                 is_rate_limit_error = True
                 logger.warning(f"Gateway: Got 429-like response (rate limited by string match). Using default {default_retry_sec}s. Error: {e}")
@@ -246,6 +250,9 @@ class MatrixGatewayService:
         if self._command_queue is None:
             logger.warning("Gateway: Command queue not initialized, cannot enqueue command")
             return
+        if self._command_queue is None:
+            logger.warning("Gateway: Command queue not initialized, cannot enqueue command")
+            return
         await self._command_queue.put((func, args, kwargs))
 
     async def _matrix_message_callback(self, room: MatrixRoom, event: RoomMessageText):
@@ -276,6 +283,8 @@ class MatrixGatewayService:
         if hasattr(event, "url"):
             image_url = event.url
         else:
+            event_id = getattr(event, 'event_id', 'unknown')
+            logger.warning(f"MatrixGateway: Image event {event_id} has no URL")
             event_id = getattr(event, 'event_id', 'unknown')
             logger.warning(f"MatrixGateway: Image event {event_id} has no URL")
             return
@@ -464,6 +473,8 @@ class MatrixGatewayService:
             success=success,
             error_message=error_msg,
             turn_request_id=command.turn_request_id
+            error_message=error_msg,
+            turn_request_id=command.turn_request_id
         ))
 
     async def _handle_set_typing_command(self, command: SetTypingIndicatorCommand):
@@ -507,6 +518,21 @@ class MatrixGatewayService:
 
     async def run(self) -> None:
         logger.info("MatrixGatewayService: Starting...")
+        
+        # Initialize stop event in the correct event loop
+        self._stop_event = asyncio.Event()
+        
+        # Read environment variables at runtime to allow for test mocking
+        # Only update if not already set (to allow test mocking)
+        if not self.homeserver:
+            self.homeserver = os.getenv("MATRIX_HOMESERVER")
+        if not self.user_id:
+            self.user_id = os.getenv("MATRIX_USER_ID")
+        if not self.password:
+            self.password = os.getenv("MATRIX_PASSWORD")
+        if not self.access_token:
+            self.access_token = os.getenv("MATRIX_ACCESS_TOKEN")
+        
         
         # Initialize stop event in the correct event loop
         self._stop_event = asyncio.Event()
@@ -587,8 +613,11 @@ class MatrixGatewayService:
 
         # Initialize queue and worker in the correct event loop
         self._command_queue = asyncio.Queue()
+        # Initialize queue and worker in the correct event loop
+        self._command_queue = asyncio.Queue()
         self._command_worker_task = asyncio.create_task(self._command_worker())
 
+        # Authenticate
         # Authenticate
         login_success = False
         try:
@@ -703,6 +732,9 @@ class MatrixGatewayService:
         # Post-authentication setup and sync loop
         try:
             # --- Fetch display name ---
+        # Post-authentication setup and sync loop
+        try:
+            # --- Fetch display name ---
             try:
                 profile: ProfileGetResponse = await self.client.get_profile(self.client.user_id)
                 fetched_displayname = profile.displayname
@@ -720,6 +752,7 @@ class MatrixGatewayService:
                     BotDisplayNameReadyEvent(display_name=self.bot_display_name, user_id=self.client.user_id)
                 )  # Publish default
 
+            # --- Join room ---
             # --- Join room ---
             matrix_room_id_env = os.getenv("MATRIX_ROOM_ID")
             if matrix_room_id_env and "YOUR_MATRIX_ROOM_ID" not in matrix_room_id_env:
@@ -740,6 +773,7 @@ class MatrixGatewayService:
                     logger.error(f"Gateway: General error joining room {matrix_room_id_env}: {type(e).__name__} - {e}")
 
             # --- Set initial presence ---
+            # --- Set initial presence ---
             try:
                 # Set an initial presence, e.g., online or unavailable
                 initial_presence = "unavailable" # Or "unavailable" if you want it to start idle
@@ -749,6 +783,7 @@ class MatrixGatewayService:
             except Exception as e:
                 logger.warning(f"Gateway: Failed to set initial presence: {e}")
 
+            # --- Sync loop ---
             # --- Sync loop ---
             logger.info("Gateway: Starting sync loop...")
             sync_task = asyncio.create_task(self.client.sync_forever(timeout=30000, full_state=True))
@@ -800,6 +835,28 @@ class MatrixGatewayService:
 
     async def stop(self) -> None:
         logger.info("MatrixGatewayService: Stop requested.")
+        if self._stop_event:
+            self._stop_event.set()
+        else:
+            logger.warning("Gateway: Stop called but _stop_event not initialized")
+        
+        # Clean up command worker task if it exists
+        if self._command_worker_task and not self._command_worker_task.done():
+            self._command_worker_task.cancel()
+            try:
+                await self._command_worker_task
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.error(f"Gateway: Error during command worker cleanup: {e}")
+        
+        # Clear the queue and reset state for next run
+        self._command_queue = None
+        self._command_worker_task = None
+
+    def get_client(self) -> Optional[AsyncClient]:
+        """Get the authenticated Matrix client for use by other services."""
+        return self.client
         if self._stop_event:
             self._stop_event.set()
         else:

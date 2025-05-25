@@ -57,6 +57,9 @@ class BaseEvent(BaseModel):
             # Handle timestamps in milliseconds (Matrix server format)
             if v > 1e10:  # If timestamp is larger than 10^10, it's likely in milliseconds
                 v = v / 1000.0
+            # Handle timestamps in milliseconds (Matrix server format)
+            if v > 1e10:  # If timestamp is larger than 10^10, it's likely in milliseconds
+                v = v / 1000.0
             return datetime.fromtimestamp(v, tz=timezone.utc)
         return v
 
@@ -66,6 +69,24 @@ class BaseEvent(BaseModel):
         if hasattr(cls, "model_fields"):
             return cls.model_fields["event_type"].default  # type: ignore[attr-defined]
         return cls.__fields__["event_type"].default  # type: ignore[attr-defined]
+
+    def __hash__(self):
+        """Make events hashable for set operations."""
+        # Use a combination of class name and serialized data
+        try:
+            return hash((self.__class__.__name__, self.model_dump_json()))
+        except Exception:
+            # Fallback to id() if serialization fails
+            return hash(id(self))
+    
+    def __eq__(self, other):
+        """Compare events for equality."""
+        if not isinstance(other, self.__class__):
+            return False
+        try:
+            return self.model_dump() == other.model_dump()
+        except Exception:
+            return id(self) == id(other)
 
     def __hash__(self):
         """Make events hashable for set operations."""
@@ -208,6 +229,7 @@ class BatchedUserMessage(BaseModel): # Defined based on test_event_definitions.p
     content: str
     event_id: str
     image_url: Optional[str] = None  # Added to support image messages
+    image_url: Optional[str] = None  # Added to support image messages
 
 
 class ProcessMessageBatchCommand(BaseEvent):
@@ -272,6 +294,7 @@ class HistoricalMessage(BaseModel): # Defined based on test_event_definitions.py
     content: Optional[str] = None
     tool_calls: Optional[List[ToolCall]] = None # Uses Pydantic ToolCall
     tool_call_id: Optional[str] = None # Added for tool role messages
+    tool_call_id: Optional[str] = None # Added for tool role messages
     event_id: Optional[str] = None # Added event_id
     # If name is sometimes present for user/assistant roles:
     # name: Optional[str] = None 
@@ -295,6 +318,8 @@ class RequestMatrixRoomInfoCommand(BaseEvent):
     original_tool_call_id: str
     # Add turn_request_id to preserve context for room logic service
     turn_request_id: Optional[str] = None
+    # Add turn_request_id to preserve context for room logic service
+    turn_request_id: Optional[str] = None
 
 
 class MatrixRoomInfoResponseEvent(BaseEvent):
@@ -305,6 +330,8 @@ class MatrixRoomInfoResponseEvent(BaseEvent):
     original_tool_call_id: str
     success: bool
     error_message: Optional[str] = None
+    # Add turn_request_id to preserve context for room logic service
+    turn_request_id: Optional[str] = None
     # Add turn_request_id to preserve context for room logic service
     turn_request_id: Optional[str] = None
 
