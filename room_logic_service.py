@@ -480,7 +480,13 @@ class RoomLogicService:
                      assistant_message_for_memory["content"] = None
 
                 # Determine if all tool calls are simple output tools and no additional text was provided.
-                tool_names_called = [tc.function.name for tc in tool_calls_from_llm if tc.function]
+                tool_names_called = []
+                for tc in tool_calls_from_llm:
+                    if hasattr(tc, 'function') and hasattr(tc.function, 'name'):
+                        tool_names_called.append(tc.function.name)
+                    elif isinstance(tc, dict) and tc.get('function', {}).get('name'):
+                        tool_names_called.append(tc['function']['name'])
+                
                 is_simple_output_only = all(name in SIMPLE_OUTPUT_TOOLS for name in tool_names_called)
                 ai_only_simple_output = (not text_response_content) or is_text_in_send_reply or text_response_content.strip() == ""
 
@@ -492,12 +498,20 @@ class RoomLogicService:
                     # Snapshot history *before* this assistant's tool-calling message is added.
                     history_snapshot_for_tools = list(short_term_memory)
                     
+                    # Extract tool call IDs properly
+                    expected_tool_call_ids = []
+                    for tc in tool_calls_from_llm:
+                        if hasattr(tc, 'id'):
+                            expected_tool_call_ids.append(tc.id)
+                        elif isinstance(tc, dict):
+                            expected_tool_call_ids.append(tc.get('id'))
+                    
                     # Store information needed for follow-up after ALL tools complete
                     self.pending_tool_calls_for_ai_turn[ai_turn_key] = {
                         "room_id": room_id,
                         "conversation_history_at_tool_call_time": history_snapshot_for_tools,
                         "assistant_message_with_tool_calls": dict(assistant_message_for_memory), # Store the full assistant message
-                        "expected_tool_call_ids": [tc.id for tc in tool_calls_from_llm],
+                        "expected_tool_call_ids": expected_tool_call_ids,
                         "received_tool_responses": [], # To store ToolExecutionResponse objects
                         "original_ai_response_payload": response_event.original_request_payload, # For model, provider, etc.
                         "skip_follow_up_if_simple_output": is_simple_output_only and ai_only_simple_output
@@ -506,6 +520,16 @@ class RoomLogicService:
 
                     # Publish tool calls
                     for tool_call in tool_calls_from_llm:
+                        # Extract tool call ID for logging
+                        tc_id_for_log = tool_call.id if hasattr(tool_call, 'id') else tool_call.get('id', 'unknown')
+                        # Extract function name for logging
+                        if hasattr(tool_call, 'function') and hasattr(tool_call.function, 'name'):
+                            func_name = tool_call.function.name
+                        elif isinstance(tool_call, dict) and tool_call.get('function', {}).get('name'):
+                            func_name = tool_call['function']['name']
+                        else:
+                            func_name = 'unknown'
+                            
                         execute_request = ExecuteToolRequest(
                             room_id=room_id,
                             tool_call=tool_call,
@@ -514,7 +538,7 @@ class RoomLogicService:
                             conversation_history_snapshot=history_snapshot_for_tools,
                             last_user_event_id=last_user_event_id_in_batch
                         )
-                        logger.info(f"RLS: [{room_id}] Publishing ExecuteToolRequest for tool {tool_call.function.name} (Call ID: {tool_call.id}), Request ID: {execute_request.event_id}") # ADDED
+                        logger.info(f"RLS: [{room_id}] Publishing ExecuteToolRequest for tool {func_name} (Call ID: {tc_id_for_log}), Request ID: {execute_request.event_id}") # ADDED
                         await self.bus.publish(execute_request)
 
             # II. If no tool calls, handle text response
@@ -738,7 +762,15 @@ class RoomLogicService:
         responses_dict = {resp.original_tool_call_id: resp for resp in pending_turn_info["received_tool_responses"]}
 
         # Defensive logging for this specific turn completion
-        assistant_tool_call_ids = [tc.id for tc in original_tool_call_pydantic_objects]
+        assistant_tool_call_ids = []
+        for tc in original_tool_call_pydantic_objects:
+            if hasattr(tc, 'id'):
+                assistant_tool_call_ids.append(tc.id)
+            elif isinstance(tc, dict):
+                assistant_tool_call_ids.append(tc.get('id'))
+            else:
+                logger.warning(f"Unexpected tool call object type: {type(tc)}")
+        
         received_tool_call_ids = list(responses_dict.keys())
         logger.debug(f"RLS: [{room_id}] Finalizing turn {turn_request_id}. Tool call IDs in assistant message: {assistant_tool_call_ids}")
         logger.debug(f"RLS: [{room_id}] Finalizing turn {turn_request_id}. Tool call IDs with responses: {received_tool_call_ids}")
@@ -747,7 +779,15 @@ class RoomLogicService:
         short_term_memory_list = config.get('memory', [])
 
         for original_tc_obj in original_tool_call_pydantic_objects:
-            tool_id = original_tc_obj.id
+            # Handle both Pydantic objects and dictionaries
+            if hasattr(original_tc_obj, 'id'):
+                tool_id = original_tc_obj.id
+            elif isinstance(original_tc_obj, dict):
+                tool_id = original_tc_obj.get('id')
+            else:
+                logger.error(f"RLS: [{room_id}] Unexpected tool call object type: {type(original_tc_obj)}")
+                continue
+                
             tool_exec_response = responses_dict.get(tool_id)
             
             tool_message_content_for_llm: str
@@ -782,7 +822,15 @@ class RoomLogicService:
         # was first handled.
         skip_follow_up = pending_turn_info.get("skip_follow_up_if_simple_output", False)
         assistant_content = assistant_message_with_tool_calls.get("content")
-        tool_names = [tc.function.name for tc in original_tool_call_pydantic_objects if tc.function]
+        
+        # Extract tool names properly handling both dict and object formats
+        tool_names = []
+        for tc in original_tool_call_pydantic_objects:
+            if hasattr(tc, 'function') and hasattr(tc.function, 'name'):
+                tool_names.append(tc.function.name)
+            elif isinstance(tc, dict) and tc.get('function', {}).get('name'):
+                tool_names.append(tc['function']['name'])
+        
         dynamic_simple_output = (
             all(name in SIMPLE_OUTPUT_TOOLS for name in tool_names)
             and (not assistant_content or str(assistant_content).strip() == "")

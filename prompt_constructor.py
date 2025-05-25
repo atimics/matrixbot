@@ -537,7 +537,7 @@ async def build_messages_for_ai(
                     )
                     stub_tool_use = {
                         "role": "assistant",
-                        "content": "",
+                        "content": None,  # Changed from "" to None for consistency with tool calls
                         "tool_calls": [
                             {
                                 "id": current_msg_tool_call_id,
@@ -547,7 +547,7 @@ async def build_messages_for_ai(
                         ],
                     }
                     messages_for_ai.append(stub_tool_use)
-                    pending_tool_call_ids.add(current_msg_tool_call_id)
+                    # Don't add to pending_tool_call_ids - the stub handles this orphaned tool result directly
                 ai_msg["tool_call_id"] = current_msg_tool_call_id
             else:
                 logger.warning(
@@ -568,6 +568,9 @@ async def build_messages_for_ai(
             if final_tool_call_id_on_ai_msg in pending_tool_call_ids:
                 pending_tool_call_ids.remove(final_tool_call_id_on_ai_msg)
                 logger.debug(f"Tool response message processed for {final_tool_call_id_on_ai_msg}. Remaining pending: {pending_tool_call_ids}")
+            else:
+                # Tool response without a pending call - this is the orphaned case we just handled above
+                logger.debug(f"Tool response {final_tool_call_id_on_ai_msg} processed (was orphaned, stub already inserted)")
             # else: it's a tool response for a non-immediately-pending call, which is fine.
 
     if pending_tool_call_ids:

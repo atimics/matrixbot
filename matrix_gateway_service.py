@@ -53,8 +53,9 @@ class MatrixGatewayService:
         self.persisted_device_id: Optional[str] = os.getenv("MATRIX_DEVICE_ID")
         self.client: Optional[AsyncClient] = None
         self.bot_display_name: Optional[str] = "ChatBot" # Default
-        self._stop_event = asyncio.Event()
-        self._command_queue = asyncio.Queue()
+        self._stop_event = None  # Will be initialized in run() to ensure correct event loop
+        # Move queue and task creation to run() to ensure they're in the correct event loop
+        self._command_queue = None
         self._rate_limit_until = 0.0  # Timestamp until which we must wait due to 429
         self._command_worker_task = None
 
@@ -124,6 +125,9 @@ class MatrixGatewayService:
                     self._command_queue.task_done()
 
     async def _enqueue_command(self, func, *args, **kwargs):
+        if self._command_queue is None:
+            logger.warning("Gateway: Command queue not initialized, cannot enqueue command")
+            return
         await self._command_queue.put((func, args, kwargs))
 
     async def _matrix_message_callback(self, room: MatrixRoom, event: RoomMessageText):
@@ -386,6 +390,9 @@ class MatrixGatewayService:
     async def run(self) -> None:
         logger.info("MatrixGatewayService: Starting...")
         
+        # Initialize stop event in the correct event loop
+        self._stop_event = asyncio.Event()
+        
         # Read environment variables at runtime to allow for test mocking
         # Only update if not already set (to allow test mocking)
         if not self.homeserver:
@@ -441,6 +448,8 @@ class MatrixGatewayService:
         self.bus.subscribe(SetPresenceCommand.get_event_type(), self._handle_set_presence_command)
         self.bus.subscribe(RequestMatrixRoomInfoCommand.get_event_type(), self._handle_request_room_info)
 
+        # Initialize queue and worker in the correct event loop
+        self._command_queue = asyncio.Queue()
         self._command_worker_task = asyncio.create_task(self._command_worker())
 
         # Authenticate
@@ -592,7 +601,24 @@ class MatrixGatewayService:
 
     async def stop(self) -> None:
         logger.info("MatrixGatewayService: Stop requested.")
-        self._stop_event.set()
+        if self._stop_event:
+            self._stop_event.set()
+        else:
+            logger.warning("Gateway: Stop called but _stop_event not initialized")
+        
+        # Clean up command worker task if it exists
+        if self._command_worker_task and not self._command_worker_task.done():
+            self._command_worker_task.cancel()
+            try:
+                await self._command_worker_task
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.error(f"Gateway: Error during command worker cleanup: {e}")
+        
+        # Clear the queue and reset state for next run
+        self._command_queue = None
+        self._command_worker_task = None
 
     def get_client(self) -> Optional[AsyncClient]:
         """Get the authenticated Matrix client for use by other services."""

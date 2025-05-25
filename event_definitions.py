@@ -264,6 +264,7 @@ class HistoricalMessage(BaseModel): # Defined based on test_event_definitions.py
     role: Literal["system", "user", "assistant", "tool"]
     content: Optional[str] = None
     tool_calls: Optional[List[ToolCall]] = None # Uses Pydantic ToolCall
+    tool_call_id: Optional[str] = None # Added for tool role messages
     event_id: Optional[str] = None # Added event_id
     # If name is sometimes present for user/assistant roles:
     # name: Optional[str] = None 

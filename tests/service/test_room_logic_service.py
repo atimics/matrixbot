@@ -1,6 +1,7 @@
 """Comprehensive tests for the RoomLogicService."""
 
 import pytest
+import pytest_asyncio
 import asyncio
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -32,10 +33,10 @@ from event_definitions import (
 class TestRoomLogicService(ServiceTestBase):
     """Test the RoomLogicService functionality."""
 
-    @pytest.fixture
-    def room_logic_service(self):
+    @pytest_asyncio.fixture
+    async def room_logic_service(self):
         """Create a RoomLogicService instance for testing."""
-        # Create database synchronously for fixture
+        # Create database asynchronously for fixture
         import tempfile
         import os
         from database import initialize_database
@@ -43,7 +44,7 @@ class TestRoomLogicService(ServiceTestBase):
         # Create temporary database
         db_fd, db_path = tempfile.mkstemp(suffix='.db')
         os.close(db_fd)
-        initialize_database(db_path)
+        await initialize_database(db_path)
         
         tool_registry = create_mock_tool_registry()
         

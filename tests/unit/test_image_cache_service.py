@@ -26,6 +26,7 @@ class TestImageCacheService:
         """Create a mock message bus."""
         bus = MagicMock(spec=MessageBus)
         bus.publish = AsyncMock()
+        # Use regular MagicMock for subscribe/unsubscribe since they're synchronous in real MessageBus
         bus.subscribe = MagicMock()
         bus.unsubscribe = MagicMock()
         return bus
@@ -352,9 +353,6 @@ class TestImageCacheService:
     @pytest.mark.asyncio
     async def test_service_lifecycle(self, image_cache_service, mock_message_bus):
         """Test service start and stop lifecycle."""
-        # Mock the event subscriptions
-        mock_message_bus.subscribe = MagicMock()
-        
         # Create a task to run the service
         run_task = asyncio.create_task(image_cache_service.run())
         
@@ -373,8 +371,15 @@ class TestImageCacheService:
         # Stop the service
         await image_cache_service.stop()
         
-        # Wait for the run task to complete
-        await run_task
+        # Wait for the run task to complete with proper cleanup
+        try:
+            await asyncio.wait_for(run_task, timeout=1.0)
+        except asyncio.TimeoutError:
+            run_task.cancel()
+            try:
+                await run_task
+            except asyncio.CancelledError:
+                pass
         
         assert image_cache_service._stop_event.is_set()
 
