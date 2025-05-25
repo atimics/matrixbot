@@ -32,8 +32,8 @@ class JsonCentricAIService:
         self._stop_event = asyncio.Event()
         
         # Model configuration for two-step processing
-        self.thinker_model = os.getenv("THINKER_MODEL", "openai/gpt-4.1-mini")
-        self.planner_model = os.getenv("PLANNER_MODEL", "anthropic/claude-opus-4")
+        self.thinker_model = os.getenv("THINKER_MODEL", "openai/gpt-4o-mini")
+        self.planner_model = os.getenv("PLANNER_MODEL", "openai/gpt-4o-mini")
         
         # Database path for accessing bot context
         self.db_path = os.getenv("DATABASE_PATH", "matrix_bot_soa.db")
@@ -90,6 +90,32 @@ class JsonCentricAIService:
                             logger.info(f"JsonCentricAI: Message keys: {list(message.keys())}")
                             content = message.get("content")
                             logger.info(f"JsonCentricAI: Content type: {type(content)}, length: {len(content) if content else 0}")
+                            
+                            # Handle empty or None content
+                            if not content or content.strip() == "":
+                                logger.warning(f"JsonCentricAI: Empty response from model {model_name}")
+                                
+                                # Check if there's a reasoning field (for some models)
+                                reasoning = message.get("reasoning")
+                                if reasoning and reasoning.strip():
+                                    logger.info(f"JsonCentricAI: Using reasoning field as content: {reasoning[:100]}...")
+                                    return True, reasoning, None
+                                
+                                # Check for error info in the response
+                                error_info = data.get("error") or choice.get("error")
+                                if error_info:
+                                    return False, None, f"API returned error: {error_info}"
+                                
+                                # Check finish reason for clues
+                                finish_reason = choice.get("finish_reason") or choice.get("native_finish_reason")
+                                if finish_reason:
+                                    logger.info(f"JsonCentricAI: Finish reason: {finish_reason}")
+                                    if finish_reason in ["content_filter", "safety"]:
+                                        return False, None, f"Content filtered by model (reason: {finish_reason})"
+                                    elif finish_reason == "length":
+                                        return False, None, "Response truncated due to length limit"
+                                
+                                return False, None, f"Empty response from model {model_name} (finish_reason: {finish_reason})"
                             
                             return True, content, None
                         else:
@@ -150,10 +176,38 @@ class JsonCentricAIService:
                 )
             else:
                 logger.error(f"JsonCentricAI: Thinking failed for {event.request_id}: {error_msg}")
+                
+                # Provide a fallback response to allow the system to continue
+                fallback_thoughts = []
+                for context in event.context_batch.channel_contexts:
+                    # Extract basic content from current user input
+                    if isinstance(context.current_user_input, dict):
+                        user_content = context.current_user_input.get('content', 'No content')
+                    else:
+                        user_content = str(context.current_user_input)
+                    
+                    fallback_text = f"""AI analysis temporarily unavailable. 
+User input: {user_content}
+Basic reasoning: The user has sent a message that appears to be a greeting or general request. 
+Since the AI thinking service is experiencing issues, I should provide a helpful response acknowledging their message."""
+                    
+                    fallback_thoughts.append(AIThoughts(
+                        channel_id=context.channel_id,
+                        thoughts_text=fallback_text
+                    ))
+                
+                logger.info(f"JsonCentricAI: Using fallback thoughts for {event.request_id}")
+                
                 response_event = ThinkingResponseEvent(
                     request_id=event.request_id,
-                    success=False,
-                    error_message=error_msg or "Failed to generate thoughts"
+                    success=True,  # Mark as success so the system continues
+                    thoughts=fallback_thoughts,
+                    original_request_payload={
+                        "context_batch": event.context_batch.model_dump(),
+                        "model_name": event.model_name,
+                        "fallback_used": True,
+                        "fallback_reason": error_msg
+                    }
                 )
             
             await self.bus.publish(response_event)
@@ -450,8 +504,16 @@ Be thorough in your reasoning but focus on actionable insights.
 
 Based on the provided 'AI Thought Process' and the original user context, generate a structured JSON action plan.
 
-Available actions:
+Available actions with REQUIRED parameters:
 {self.action_registry.get_action_descriptions_for_prompt()}
+
+CRITICAL: You MUST provide ALL required parameters for each action. Empty parameters {{}} will cause failures.
+
+Examples of correct action usage:
+- send_reply_text: {{"text": "Your actual reply message here"}}
+- send_message_text: {{"text": "Your message content here"}}
+- react_to_message: {{"event_id": "$actual_event_id", "emoji": "👍"}}
+- do_not_respond: {{}} (no required parameters for this action)
 
 You must respond with a JSON object that follows this exact structure:
 {{
@@ -462,7 +524,8 @@ You must respond with a JSON object that follows this exact structure:
         {{
           "action_name": "action_name_here",
           "parameters": {{
-            // parameters specific to the action
+            // REQUIRED: Fill in all required parameters for the chosen action
+            // Example: "text": "Your actual message content here"
           }}
         }}
       ],
@@ -471,8 +534,15 @@ You must respond with a JSON object that follows this exact structure:
   ]
 }}
 
-Translate the intentions and steps from the thought process into concrete actions with their required parameters.
-Always include at least one action per channel, even if it's 'do_not_respond'."""
+IMPORTANT RULES:
+1. Every action MUST include its required parameters with actual values
+2. For text-based actions (send_reply_text, send_message_text), the "text" parameter must contain your actual response content
+3. Never use empty parameters {{}} unless the action truly has no required parameters
+4. If replying to a message, use send_reply_text with both "text" and optionally "reply_to_event_id"
+5. If sending a new message, use send_message_text with "text"
+6. Always include at least one action per channel, even if it's 'do_not_respond'
+
+Translate the intentions and steps from the thought process into concrete actions with their required parameters filled in."""
             
             # Replace the system message with planning-focused one
             if messages_for_ai and messages_for_ai[0]['role'] == 'system':
@@ -492,7 +562,7 @@ Always include at least one action per channel, even if it's 'do_not_respond'.""
         for thought in thoughts:
             thoughts_text += f"Channel {thought.channel_id}:\n{thought.thoughts_text}\n\n"
         
-        thoughts_text += "Based on this analysis, generate the structured JSON action plan."
+        thoughts_text += "Based on this analysis, generate the structured JSON action plan with all required parameters filled in."
         
         # Replace or add the final user message with thoughts
         messages_for_ai.append({

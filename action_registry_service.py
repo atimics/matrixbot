@@ -130,17 +130,35 @@ class ActionRegistryService:
         descriptions = []
         for action_name, action_def in self.actions.items():
             description = action_def.get("description", "No description available")
-            parameters = action_def.get("parameters", {}).get("properties", {})
+            parameters = action_def.get("parameters", {})
+            properties = parameters.get("properties", {})
+            required_params = parameters.get("required", [])
             
             param_descriptions = []
-            for param_name, param_info in parameters.items():
+            for param_name, param_info in properties.items():
                 param_desc = param_info.get("description", "No description")
                 param_type = param_info.get("type", "unknown")
-                param_descriptions.append(f"  - {param_name} ({param_type}): {param_desc}")
+                is_required = param_name in required_params
+                required_label = " [REQUIRED]" if is_required else " [optional]"
+                param_descriptions.append(f"  - {param_name} ({param_type}){required_label}: {param_desc}")
             
-            param_text = "\n".join(param_descriptions) if param_descriptions else "  No parameters"
+            if param_descriptions:
+                param_text = "\n".join(param_descriptions)
+            else:
+                param_text = "  No parameters required"
             
-            action_text = f"• {action_name}: {description}\n{param_text}"
+            # Add example usage for common actions
+            example_text = ""
+            if action_name == "send_reply_text":
+                example_text = '\n  Example: {"text": "Hello! How can I help you?"}'
+            elif action_name == "send_message_text":
+                example_text = '\n  Example: {"text": "Welcome to the channel!"}'
+            elif action_name == "react_to_message":
+                example_text = '\n  Example: {"event_id": "$event123", "emoji": "👍"}'
+            elif action_name == "do_not_respond":
+                example_text = '\n  Example: {} (no parameters needed)'
+            
+            action_text = f"• {action_name}: {description}\n{param_text}{example_text}"
             descriptions.append(action_text)
         
         return "\n\n".join(descriptions)
