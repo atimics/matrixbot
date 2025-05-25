@@ -31,6 +31,8 @@ class EventType(str, Enum):
     EXECUTE_TOOL_REQUEST = "execute_tool_request"
     TOOL_EXECUTION_RESPONSE = "tool_execution_response"
     DELEGATED_OPENROUTER_RESPONSE_FOR_TOOL = "delegated_openrouter_response_for_tool"
+    IMAGE_CACHE_REQUEST = "image_cache_request"
+    IMAGE_CACHE_RESPONSE = "image_cache_response"
 
 # Helper function to generate a default UUID string if needed elsewhere,
 # but Pydantic's default_factory is usually sufficient for default field values.
@@ -45,6 +47,9 @@ class BaseEvent(BaseModel):
         if isinstance(v, datetime) and v.tzinfo is None:
             return v.replace(tzinfo=timezone.utc)
         if isinstance(v, (int, float)): # Support for float timestamps
+            # Handle timestamps in milliseconds (Matrix server format)
+            if v > 1e10:  # If timestamp is larger than 10^10, it's likely in milliseconds
+                v = v / 1000.0
             return datetime.fromtimestamp(v, tz=timezone.utc)
         return v
 
@@ -54,6 +59,24 @@ class BaseEvent(BaseModel):
         if hasattr(cls, "model_fields"):
             return cls.model_fields["event_type"].default  # type: ignore[attr-defined]
         return cls.__fields__["event_type"].default  # type: ignore[attr-defined]
+
+    def __hash__(self):
+        """Make events hashable for set operations."""
+        # Use a combination of class name and serialized data
+        try:
+            return hash((self.__class__.__name__, self.model_dump_json()))
+        except Exception:
+            # Fallback to id() if serialization fails
+            return hash(id(self))
+    
+    def __eq__(self, other):
+        """Compare events for equality."""
+        if not isinstance(other, self.__class__):
+            return False
+        try:
+            return self.model_dump() == other.model_dump()
+        except Exception:
+            return id(self) == id(other)
 
 class MatrixMessageReceivedEvent(BaseEvent):
     event_type: EventType = Field(EventType.MATRIX_MESSAGE_RECEIVED, frozen=True)
@@ -177,6 +200,7 @@ class BatchedUserMessage(BaseModel): # Defined based on test_event_definitions.p
     user_id: str
     content: str
     event_id: str
+    image_url: Optional[str] = None  # Added to support image messages
 
 
 class ProcessMessageBatchCommand(BaseEvent):
@@ -240,6 +264,7 @@ class HistoricalMessage(BaseModel): # Defined based on test_event_definitions.py
     role: Literal["system", "user", "assistant", "tool"]
     content: Optional[str] = None
     tool_calls: Optional[List[ToolCall]] = None # Uses Pydantic ToolCall
+    tool_call_id: Optional[str] = None # Added for tool role messages
     event_id: Optional[str] = None # Added event_id
     # If name is sometimes present for user/assistant roles:
     # name: Optional[str] = None 
@@ -261,6 +286,8 @@ class RequestMatrixRoomInfoCommand(BaseEvent):
     aspects: List[str]
     response_event_topic: str
     original_tool_call_id: str
+    # Add turn_request_id to preserve context for room logic service
+    turn_request_id: Optional[str] = None
 
 
 class MatrixRoomInfoResponseEvent(BaseEvent):
@@ -271,6 +298,8 @@ class MatrixRoomInfoResponseEvent(BaseEvent):
     original_tool_call_id: str
     success: bool
     error_message: Optional[str] = None
+    # Add turn_request_id to preserve context for room logic service
+    turn_request_id: Optional[str] = None
 
 
 # --- Tool Execution Events ---
@@ -311,4 +340,25 @@ class ToolExecutionResponse(BaseEvent):
     commands_to_publish: Optional[List[BaseEvent]] = None
     original_tool_call: Optional[ToolCall] = None
     # original_ai_request_event_id: Optional[str] = None # From test, map to original_request_payload
+
+
+# --- Image Cache Events ---
+class ImageCacheRequestEvent(BaseEvent):
+    """Event to request image processing and S3 upload."""
+    event_type: EventType = Field(EventType.IMAGE_CACHE_REQUEST, frozen=True)
+    request_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    image_url: str
+
+
+class ImageCacheResponseEvent(BaseEvent):
+    """Event containing the result of image cache processing."""
+    event_type: EventType = Field(EventType.IMAGE_CACHE_RESPONSE, frozen=True)
+    request_id: str
+    original_url: str
+    s3_url: Optional[str] = None
+    success: bool
+    error_message: Optional[str] = None
+
+
+# --- Tool Execution Events ---
 

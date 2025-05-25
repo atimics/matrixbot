@@ -13,6 +13,10 @@ class MessageBus:
         self.topics: Dict[str, List[asyncio.Queue]] = defaultdict(list)
         self.subscriber_tasks: List[asyncio.Task] = []
         self._stop_event = asyncio.Event()
+        # Add _subscribers for tracking callback subscriptions
+        self._subscribers: Dict[str, List[Callable]] = defaultdict(list)
+        # Add task_mapping for tracking task-callback pairs
+        self.task_mapping: Dict[tuple, asyncio.Task] = {}
         logger.info("MessageBus initialized.")
 
     async def publish(self, event: BaseEvent) -> None:
@@ -29,6 +33,10 @@ class MessageBus:
         event_key = event_type.value if isinstance(event_type, EventType) else str(event_type)
         queue = asyncio.Queue()
         self.topics[event_key].append(queue)
+        
+        # Track the callback in _subscribers
+        self._subscribers[event_key].append(callback)
+        
         async def listener():
             while not self._stop_event.is_set():
                 try:
@@ -42,7 +50,31 @@ class MessageBus:
                     logger.error(f"Error in listener for '{event_type}' with callback {callback.__name__}: {e}")
         task = asyncio.create_task(listener())
         self.subscriber_tasks.append(task)
+        self.task_mapping[(event_key, callback)] = task
         logger.debug(f"Subscribed {callback.__name__} to '{event_type}'. Task: {task.get_name()}")
+
+    def unsubscribe(self, event_type: EventType | str, callback: Callable[[BaseEvent], Any]) -> None:
+        """Unsubscribes a callback from an event type."""
+        event_key = event_type.value if isinstance(event_type, EventType) else str(event_type)
+        
+        # Remove callback from _subscribers
+        if event_key in self._subscribers and callback in self._subscribers[event_key]:
+            self._subscribers[event_key].remove(callback)
+            
+            # Find and remove the corresponding queue and task
+            # Note: This is a simplified implementation. In production, you might want
+            # to track queue-callback pairs more explicitly
+            if event_key in self.topics and self.topics[event_key]:
+                # Remove the last queue added for this event type (LIFO approach)
+                # This works for the current use case but could be improved
+                removed_queue = self.topics[event_key].pop()
+                logger.debug(f"Unsubscribed {callback.__name__} from '{event_type}'")
+            
+            # Clean up empty lists
+            if not self._subscribers[event_key]:
+                del self._subscribers[event_key]
+            if event_key in self.topics and not self.topics[event_key]:
+                del self.topics[event_key]
 
     async def shutdown(self) -> None:
         """Signals all listeners to stop and waits for them to finish."""

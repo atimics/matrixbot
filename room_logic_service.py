@@ -19,7 +19,7 @@ SIMPLE_OUTPUT_TOOLS = {"send_reply", "send_message", "react_to_message", "do_not
 
 from message_bus import MessageBus
 from event_definitions import (
-    MatrixMessageReceivedEvent, AIInferenceRequestEvent, AIInferenceResponseEvent,
+    MatrixMessageReceivedEvent, MatrixImageReceivedEvent, AIInferenceRequestEvent, AIInferenceResponseEvent,
     OpenRouterInferenceRequestEvent, OllamaInferenceRequestEvent, # Added specific request events
     OpenRouterInferenceResponseEvent, OllamaInferenceResponseEvent, # ADDED specific response events
     SendMatrixMessageCommand, ProcessMessageBatchCommand, ActivateListeningEvent,
@@ -37,12 +37,13 @@ from tool_manager import ToolRegistry # Added
 load_dotenv()
 
 class RoomLogicService:
-    def __init__(self, message_bus: MessageBus, tool_registry: ToolRegistry, db_path: str, bot_display_name: str = "ChatBot"): # Added db_path
+    def __init__(self, message_bus: MessageBus, tool_registry: ToolRegistry, db_path: str, bot_display_name: str = "ChatBot", matrix_client=None): # Added matrix_client parameter
         """Service for managing room logic, batching, and AI interaction."""
         self.bus = message_bus
         self.tool_registry = tool_registry # Store it
         self.db_path = db_path # Store db_path
         self.bot_display_name = bot_display_name # Set by BotDisplayNameReadyEvent
+        self.matrix_client = matrix_client  # Store the Matrix client for authenticated image downloads
         self.room_activity_config: Dict[str, Dict[str, Any]] = {}
         self._stop_event = asyncio.Event()
         self._service_start_time = datetime.datetime.now(datetime.timezone.utc) # Changed to datetime object
@@ -214,8 +215,8 @@ class RoomLogicService:
                 return
 
             # Convert pending_messages to BatchedUserMessage instances
-            # Assuming pending_messages are dicts like: {"name": sender_display_name, "content": body, "event_id": event_id}
-            # BatchedUserMessage expects: {"user_id": str, "content": str, "event_id": str}
+            # Assuming pending_messages are dicts like: {"name": sender_display_name, "content": body, "event_id": event_id, "image_url": optional}
+            # BatchedUserMessage expects: {"user_id": str, "content": str, "event_id": str, "image_url": Optional[str]}
             # We'll use "name" as "user_id" for now, though this might need refinement if a more persistent user_id is available.
             messages_to_batch: List[BatchedUserMessage] = []
             for msg_data in pending_messages:
@@ -223,7 +224,8 @@ class RoomLogicService:
                     messages_to_batch.append(BatchedUserMessage(
                         user_id=msg_data.get("name", "Unknown User"), # Using 'name' as 'user_id'
                         content=msg_data.get("content", ""),
-                        event_id=msg_data.get("event_id", "")
+                        event_id=msg_data.get("event_id", ""),
+                        image_url=msg_data.get("image_url")  # Preserve image_url if present
                     ))
                 except Exception as e:
                     logger.error(f"RoomLogic: [{room_id}] Error converting message to BatchedUserMessage: {msg_data}. Error: {e}")
@@ -274,23 +276,25 @@ class RoomLogicService:
         summary_text_for_prompt, _ = await database.get_summary(self.db_path, room_id) or (None, None)
 
         last_user_event_id_in_batch = None
-        # Convert BatchedUserMessage back to the dict format expected by build_messages_for_ai
-        # and also for adding to memory later.
-        # build_messages_for_ai expects: List[Dict[str, str]] where dicts are {"name": ..., "content": ..., "event_id": ...}
         processed_pending_batch_for_ai: List[Dict[str, str]] = []
         current_user_ids: List[str] = [] # ADDED: For collecting user IDs
 
         for bum in pending_batch_from_command:
-            processed_pending_batch_for_ai.append({
+            batch_item = {
                 "name": bum.user_id, # Map back from user_id to name
                 "content": bum.content,
                 "event_id": bum.event_id
-            })
+            }
+            # Preserve image_url if present
+            if bum.image_url:
+                batch_item["image_url"] = bum.image_url
+            
+            processed_pending_batch_for_ai.append(batch_item)
             if bum.user_id not in current_user_ids: # ADDED: Collect unique user IDs
                 current_user_ids.append(bum.user_id)
         
         if processed_pending_batch_for_ai:
-            last_user_event_id_in_batch = processed_pending_batch_for_ai[-1].get("event_id")
+            last_user_event_id_in_batch = processed_pending_batch_for_ai[-1]["event_id"]  # Fixed: use dict key access
 
         # Fetch tool_states from the room's config.
         # This assumes tool_states are stored/updated in the config dictionary.
@@ -307,7 +311,7 @@ class RoomLogicService:
             channel_summary=summary_text_for_prompt,
             tool_states=tool_states_for_prompt, # ADDED (Can be None)
             current_user_ids_in_context=current_user_ids, # ADDED
-            last_user_event_id_in_batch=last_user_event_id_in_batch
+            last_user_event_id_in_batch=last_user_event_id_in_batch,
         )
 
         turn_request_id = str(uuid.uuid4())
@@ -385,17 +389,42 @@ class RoomLogicService:
            pending_batch_for_memory:
             logger.info(f"RLS: [{room_id}] Adding user messages from pending_batch_for_memory to short_term_memory for turn_request_id: {turn_req_id_for_debug}.") # MODIFIED to INFO for visibility
             try:
-                combined_user_content = "".join(f"{msg['name']}: {msg['content']}\n" for msg in pending_batch_for_memory)
-                representative_event_id_for_user_turn = pending_batch_for_memory[-1]["event_id"]
-                user_name_for_memory = pending_batch_for_memory[0]["name"]
+                # Check if any messages in the batch contain images
+                has_images = any("image_url" in msg for msg in pending_batch_for_memory)
+                
+                if has_images:
+                    # For image messages, store each message separately to preserve image URLs
+                    for msg in pending_batch_for_memory:
+                        user_message_for_memory = {
+                            "role": "user",
+                            "name": msg["name"],
+                            "content": msg["content"],
+                            "event_id": msg["event_id"],
+                            "timestamp": asyncio.get_event_loop().time()
+                        }
+                        # Preserve image_url if present
+                        if "image_url" in msg:
+                            user_message_for_memory["image_url"] = msg["image_url"]
+                        
+                        short_term_memory.append(user_message_for_memory)
+                else:
+                    # For text-only messages, combine as before
+                    combined_user_content = "".join(f"{msg['name']}: {msg['content']}\n" for msg in pending_batch_for_memory)
+                    representative_event_id_for_user_turn = pending_batch_for_memory[-1]["event_id"]
+                    user_name_for_memory = pending_batch_for_memory[0]["name"]
 
-                short_term_memory.append({
-                    "role": "user",
-                    "name": user_name_for_memory,
-                    "content": combined_user_content.strip(),
-                    "event_id": representative_event_id_for_user_turn,
-                    "timestamp": asyncio.get_event_loop().time()
-                })
+                    short_term_memory.append({
+                        "role": "user",
+                        "name": user_name_for_memory,
+                        "content": combined_user_content.strip(),
+                        "event_id": representative_event_id_for_user_turn,
+                        "timestamp": asyncio.get_event_loop().time()
+                    })
+                
+                # Apply memory trimming after adding user messages
+                while len(short_term_memory) > self.short_term_memory_items:
+                    short_term_memory.pop(0)
+                
                 config['new_turns_since_last_summary'] = config.get('new_turns_since_last_summary', 0) + 1
             except (KeyError, IndexError) as e:
                 logger.error(f"RLS: [{room_id}] Error processing pending_batch_for_memory for memory: {e}. Batch: {pending_batch_for_memory}")
@@ -451,7 +480,13 @@ class RoomLogicService:
                      assistant_message_for_memory["content"] = None
 
                 # Determine if all tool calls are simple output tools and no additional text was provided.
-                tool_names_called = [tc.function.name for tc in tool_calls_from_llm if tc.function]
+                tool_names_called = []
+                for tc in tool_calls_from_llm:
+                    if hasattr(tc, 'function') and hasattr(tc.function, 'name'):
+                        tool_names_called.append(tc.function.name)
+                    elif isinstance(tc, dict) and tc.get('function', {}).get('name'):
+                        tool_names_called.append(tc['function']['name'])
+                
                 is_simple_output_only = all(name in SIMPLE_OUTPUT_TOOLS for name in tool_names_called)
                 ai_only_simple_output = (not text_response_content) or is_text_in_send_reply or text_response_content.strip() == ""
 
@@ -463,12 +498,20 @@ class RoomLogicService:
                     # Snapshot history *before* this assistant's tool-calling message is added.
                     history_snapshot_for_tools = list(short_term_memory)
                     
+                    # Extract tool call IDs properly
+                    expected_tool_call_ids = []
+                    for tc in tool_calls_from_llm:
+                        if hasattr(tc, 'id'):
+                            expected_tool_call_ids.append(tc.id)
+                        elif isinstance(tc, dict):
+                            expected_tool_call_ids.append(tc.get('id'))
+                    
                     # Store information needed for follow-up after ALL tools complete
                     self.pending_tool_calls_for_ai_turn[ai_turn_key] = {
                         "room_id": room_id,
                         "conversation_history_at_tool_call_time": history_snapshot_for_tools,
                         "assistant_message_with_tool_calls": dict(assistant_message_for_memory), # Store the full assistant message
-                        "expected_tool_call_ids": [tc.id for tc in tool_calls_from_llm],
+                        "expected_tool_call_ids": expected_tool_call_ids,
                         "received_tool_responses": [], # To store ToolExecutionResponse objects
                         "original_ai_response_payload": response_event.original_request_payload, # For model, provider, etc.
                         "skip_follow_up_if_simple_output": is_simple_output_only and ai_only_simple_output
@@ -477,6 +520,16 @@ class RoomLogicService:
 
                     # Publish tool calls
                     for tool_call in tool_calls_from_llm:
+                        # Extract tool call ID for logging
+                        tc_id_for_log = tool_call.id if hasattr(tool_call, 'id') else tool_call.get('id', 'unknown')
+                        # Extract function name for logging
+                        if hasattr(tool_call, 'function') and hasattr(tool_call.function, 'name'):
+                            func_name = tool_call.function.name
+                        elif isinstance(tool_call, dict) and tool_call.get('function', {}).get('name'):
+                            func_name = tool_call['function']['name']
+                        else:
+                            func_name = 'unknown'
+                            
                         execute_request = ExecuteToolRequest(
                             room_id=room_id,
                             tool_call=tool_call,
@@ -485,7 +538,7 @@ class RoomLogicService:
                             conversation_history_snapshot=history_snapshot_for_tools,
                             last_user_event_id=last_user_event_id_in_batch
                         )
-                        logger.info(f"RLS: [{room_id}] Publishing ExecuteToolRequest for tool {tool_call.function.name} (Call ID: {tool_call.id}), Request ID: {execute_request.event_id}") # ADDED
+                        logger.info(f"RLS: [{room_id}] Publishing ExecuteToolRequest for tool {func_name} (Call ID: {tc_id_for_log}), Request ID: {execute_request.event_id}") # ADDED
                         await self.bus.publish(execute_request)
 
             # II. If no tool calls, handle text response
@@ -541,10 +594,21 @@ class RoomLogicService:
             logger.info(f"RLS: [{room_id}] No short term memory to summarize.")
             return
 
+        # Fix: Handle both dict and HistoricalMessage objects properly
+        transcript_lines = []
+        for msg in short_term_memory:
+            if isinstance(msg, dict):
+                # Dictionary format
+                name = msg.get('name', 'Unknown')
+                content = msg.get('content', '')
+            else:
+                # HistoricalMessage object - access attributes directly
+                name = getattr(msg, 'name', 'Unknown')
+                content = getattr(msg, 'content', '')
+            transcript_lines.append(f"{name}: {content}")
+
         summary_payload = await prompt_constructor.build_summary_generation_payload(
-            transcript_for_summarization="\n".join(
-                f"{msg.get('name', 'Unknown')}: {msg.get('content', '')}" for msg in short_term_memory
-            ),
+            transcript_for_summarization="\n".join(transcript_lines),
             previous_summary=None,
             db_path=self.db_path,
             bot_display_name=self.bot_display_name
@@ -698,7 +762,15 @@ class RoomLogicService:
         responses_dict = {resp.original_tool_call_id: resp for resp in pending_turn_info["received_tool_responses"]}
 
         # Defensive logging for this specific turn completion
-        assistant_tool_call_ids = [tc.id for tc in original_tool_call_pydantic_objects]
+        assistant_tool_call_ids = []
+        for tc in original_tool_call_pydantic_objects:
+            if hasattr(tc, 'id'):
+                assistant_tool_call_ids.append(tc.id)
+            elif isinstance(tc, dict):
+                assistant_tool_call_ids.append(tc.get('id'))
+            else:
+                logger.warning(f"Unexpected tool call object type: {type(tc)}")
+        
         received_tool_call_ids = list(responses_dict.keys())
         logger.debug(f"RLS: [{room_id}] Finalizing turn {turn_request_id}. Tool call IDs in assistant message: {assistant_tool_call_ids}")
         logger.debug(f"RLS: [{room_id}] Finalizing turn {turn_request_id}. Tool call IDs with responses: {received_tool_call_ids}")
@@ -707,7 +779,15 @@ class RoomLogicService:
         short_term_memory_list = config.get('memory', [])
 
         for original_tc_obj in original_tool_call_pydantic_objects:
-            tool_id = original_tc_obj.id
+            # Handle both Pydantic objects and dictionaries
+            if hasattr(original_tc_obj, 'id'):
+                tool_id = original_tc_obj.id
+            elif isinstance(original_tc_obj, dict):
+                tool_id = original_tc_obj.get('id')
+            else:
+                logger.error(f"RLS: [{room_id}] Unexpected tool call object type: {type(original_tc_obj)}")
+                continue
+                
             tool_exec_response = responses_dict.get(tool_id)
             
             tool_message_content_for_llm: str
@@ -742,7 +822,15 @@ class RoomLogicService:
         # was first handled.
         skip_follow_up = pending_turn_info.get("skip_follow_up_if_simple_output", False)
         assistant_content = assistant_message_with_tool_calls.get("content")
-        tool_names = [tc.function.name for tc in original_tool_call_pydantic_objects if tc.function]
+        
+        # Extract tool names properly handling both dict and object formats
+        tool_names = []
+        for tc in original_tool_call_pydantic_objects:
+            if hasattr(tc, 'function') and hasattr(tc.function, 'name'):
+                tool_names.append(tc.function.name)
+            elif isinstance(tc, dict) and tc.get('function', {}).get('name'):
+                tool_names.append(tc['function']['name'])
+        
         dynamic_simple_output = (
             all(name in SIMPLE_OUTPUT_TOOLS for name in tool_names)
             and (not assistant_content or str(assistant_content).strip() == "")
@@ -762,6 +850,7 @@ class RoomLogicService:
         # Now, prepare and publish the follow-up AI request using augmented_history_for_follow_up
         original_ai_payload_from_first_call = pending_turn_info["original_ai_response_payload"]
         current_user_ids_in_context = original_ai_payload_from_first_call.get("current_user_ids_in_context", [])
+        original_last_user_event_id = original_ai_payload_from_first_call.get("last_user_event_id_in_batch")  # Preserve original event ID
         current_channel_summary, _ = await database.get_summary(self.db_path, room_id) or (None, None)
 
         follow_up_payload = await prompt_constructor.build_messages_for_ai(
@@ -772,7 +861,7 @@ class RoomLogicService:
             channel_summary=current_channel_summary,
             tool_states=config.get('tool_states'),
             current_user_ids_in_context=current_user_ids_in_context,
-            last_user_event_id_in_batch=None
+            last_user_event_id_in_batch=original_last_user_event_id,  # Use original event ID for replies
         )
 
         # Clean up the pending tool call info for this turn_request_id
@@ -795,7 +884,8 @@ class RoomLogicService:
             "turn_request_id": turn_request_id,
             "requested_model_name": follow_up_model_name,
             "current_llm_provider": follow_up_provider,
-            "current_user_ids_in_context": current_user_ids_in_context
+            "current_user_ids_in_context": current_user_ids_in_context,
+            "last_user_event_id_in_batch": original_last_user_event_id  # Preserve for final reply
         }
 
         follow_up_request = FollowUpEventClass(
@@ -813,6 +903,7 @@ class RoomLogicService:
     async def run(self):
         """Main run loop for the service, subscribing to events."""
         self.bus.subscribe(MatrixMessageReceivedEvent.get_event_type(), self._handle_matrix_message)
+        self.bus.subscribe(MatrixImageReceivedEvent.get_event_type(), self._handle_matrix_image)  # Add image handler
         self.bus.subscribe(ActivateListeningEvent.get_event_type(), self._handle_activate_listening)
         self.bus.subscribe(ProcessMessageBatchCommand.get_event_type(), self._handle_process_message_batch)
         
@@ -857,3 +948,43 @@ class RoomLogicService:
         # Unsubscribe from all events
         await self.bus.shutdown() # Replaced unsubscribe_all with shutdown
         logger.info("RoomLogicService: Unsubscribed from all events.")
+
+    async def _handle_matrix_image(self, event: MatrixImageReceivedEvent):
+        """Handle Matrix image events by adding them to the conversation batch."""
+        # Ignore events that occurred before the service started (historical events)
+        if hasattr(event, 'timestamp') and event.timestamp < self._service_start_time:
+            return
+        
+        room_id = event.room_id
+        
+        # Check if we're actively listening in this room
+        config = self.room_activity_config.get(room_id)
+        if config and config.get('is_active_listening'):
+            logger.info(f"RoomLogic: [{room_id}] Actively listening. Adding image to batch.")
+            
+            # Add image message to the batch with a special format that includes the image URL
+            image_content = f"[Image uploaded: {event.body or 'No description'}]"
+            config['pending_messages_for_batch'].append({
+                "name": event.sender_display_name,
+                "content": image_content,
+                "event_id": event.event_id_matrix,
+                "image_url": event.image_url,  # Store the Matrix image URL
+                "image_info": event.image_info
+            })
+            config['last_message_timestamp'] = time.time()
+            config['current_interval'] = self.initial_interval  # Reset decay polling
+            config['max_interval_no_activity_cycles'] = 0
+
+            # Debounce batch processing
+            old_batch_task = config.get('batch_response_task')
+            if old_batch_task and not old_batch_task.done():
+                old_batch_task.cancel()
+                try:
+                    await old_batch_task
+                except asyncio.CancelledError:
+                    pass
+                except Exception as e:
+                    logger.error(f"RoomLogic: [{room_id}] Previous batch task raised {e} while being awaited after cancellation.")
+            config['batch_response_task'] = asyncio.create_task(
+                self._delayed_batch_processing_publisher(room_id, self.batch_delay)
+            )

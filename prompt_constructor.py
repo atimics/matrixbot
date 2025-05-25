@@ -1,12 +1,74 @@
+import asyncio
 import logging
 from typing import List, Dict, Optional, Any, Tuple, Set # Added Set
 from datetime import datetime  # Added
 import json  # Added
 import os # Added
+import uuid  # Added for unique filenames
 
 import database # Added import
+from message_bus import MessageBus  # Added for image cache requests
+from event_definitions import ImageCacheRequestEvent, ImageCacheResponseEvent  # Added for image cache
 
 logger = logging.getLogger(__name__)
+
+# Global reference to message bus for image processing
+# This will be set by the orchestrator during initialization
+current_message_bus: Optional[MessageBus] = None
+
+def set_message_bus(message_bus: MessageBus) -> None:
+    """Set the global message bus reference for image processing."""
+    global current_message_bus
+    current_message_bus = message_bus
+    logger.info("PromptConstructor: Message bus reference set for image processing")
+
+async def _get_s3_url_for_image(image_url: str, message_bus: MessageBus) -> Optional[str]:
+    """
+    Request S3 URL for an image through the image cache service.
+    This removes coupling between prompt constructor and Matrix client.
+    """
+    try:
+        request_id = str(uuid.uuid4())
+        
+        # Create a future to wait for the response
+        response_future = asyncio.Future()
+        
+        # Subscribe to the response temporarily
+        async def handle_response(event: ImageCacheResponseEvent):
+            if event.request_id == request_id:
+                if not response_future.done():
+                    response_future.set_result(event)
+        
+        message_bus.subscribe(ImageCacheResponseEvent.get_event_type(), handle_response)
+        
+        try:
+            # Send the request
+            cache_request = ImageCacheRequestEvent(
+                request_id=request_id,
+                image_url=image_url
+            )
+            await message_bus.publish(cache_request)
+            
+            # Wait for response with timeout
+            response = await asyncio.wait_for(response_future, timeout=30.0)
+            
+            if response.success and response.s3_url:
+                logger.info(f"PromptConstructor: Successfully got S3 URL for image: {image_url} -> {response.s3_url}")
+                return response.s3_url
+            else:
+                logger.error(f"PromptConstructor: Failed to get S3 URL for image: {image_url}")
+                return None
+                
+        finally:
+            # Unsubscribe from the response
+            message_bus.unsubscribe(ImageCacheResponseEvent.get_event_type(), handle_response)
+            
+    except asyncio.TimeoutError:
+        logger.error(f"PromptConstructor: Timeout waiting for image cache response for: {image_url}")
+        return None
+    except Exception as e:
+        logger.error(f"PromptConstructor: Error getting S3 URL for image {image_url}: {e}")
+        return None
 
 # Default system prompt template.
 DEFAULT_SYSTEM_PROMPT_TEMPLATE = """
@@ -195,18 +257,12 @@ def _format_and_add_message(
     Formats a single historical message and adds it to the messages_for_ai_list.
     Encapsulates the conversion logic for roles, content, tool_calls, etc.
     """
-    if isinstance(msg_item, dict):
-        role = msg_item.get('role')
-        content = msg_item.get('content')
-        name = msg_item.get('name')
-        tool_calls_data = msg_item.get('tool_calls')
-        tool_call_id_data = msg_item.get('tool_call_id')
-    else:
-        role = getattr(msg_item, 'role', None)
-        content = getattr(msg_item, 'content', None)
-        name = getattr(msg_item, 'name', None)
-        tool_calls_data = getattr(msg_item, 'tool_calls', None)
-        tool_call_id_data = getattr(msg_item, 'tool_call_id', None)
+    role = getattr(msg_item, 'role', msg_item.get('role') if isinstance(msg_item, dict) else None)
+    content = getattr(msg_item, 'content', msg_item.get('content') if isinstance(msg_item, dict) else None)
+    name = getattr(msg_item, 'name', msg_item.get('name') if isinstance(msg_item, dict) else None)
+    tool_calls_data = getattr(msg_item, 'tool_calls', msg_item.get('tool_calls') if isinstance(msg_item, dict) else None)
+    tool_call_id_data = getattr(msg_item, 'tool_call_id', msg_item.get('tool_call_id') if isinstance(msg_item, dict) else None)
+    image_url = getattr(msg_item, 'image_url', msg_item.get('image_url') if isinstance(msg_item, dict) else None)
 
     if role is None:
         logger.warning(f"Skipping message due to missing role: {msg_item}")
@@ -214,22 +270,37 @@ def _format_and_add_message(
 
     ai_msg: Dict[str, Any] = {"role": role}
 
-    # Content assignment logic
-    if role == "assistant":
-        if tool_calls_data: # Assistant has tool calls
-            if content is not None: # Original content was provided
-                ai_msg["content"] = content
-            else: # Original content was None
-                ai_msg["content"] = None # Explicitly None for AI API
-        else: # Assistant has no tool calls
-            if content is not None: # Original content was provided
-                ai_msg["content"] = content
-            else: # Original content was None
-                ai_msg["content"] = "" # Default to empty string
-    elif content is not None: # For other roles (user, system, tool)
-         ai_msg["content"] = content
-    # If content is None for user/system, it's an issue with upstream data.
-    # Tool role content is handled specifically below.
+    # Handle content - check if this message has an image
+    if role == "user" and image_url:
+        # This is a user message with an image - convert to vision format
+        content_parts = []
+        if content:
+            content_parts.append({"type": "text", "text": content})
+        
+        # Add image - we'll need to process it asynchronously
+        # For now, add a placeholder that will be replaced during build_messages_for_ai
+        content_parts.append({
+            "type": "image_url_placeholder",
+            "image_url": image_url
+        })
+        ai_msg["content"] = content_parts
+    else:
+        # Standard content assignment logic for non-image messages
+        if role == "assistant":
+            if tool_calls_data: # Assistant has tool calls
+                if content is not None: # Original content was provided
+                    ai_msg["content"] = content
+                else: # Original content was None
+                    ai_msg["content"] = None # Explicitly None for AI API
+            else: # Assistant has no tool calls
+                if content is not None: # Original content was provided
+                    ai_msg["content"] = content
+                else: # Original content was None
+                    ai_msg["content"] = "" # Default to empty string
+        elif content is not None: # For other roles (user, system, tool)
+             ai_msg["content"] = content
+        # If content is None for user/system, it's an issue with upstream data.
+        # Tool role content is handled specifically below.
 
     if name is not None:
         ai_msg["name"] = name
@@ -329,6 +400,7 @@ async def build_messages_for_ai(
 
     pending_tool_call_ids: Set[str] = set()
 
+    # Process historical messages and handle image placeholders
     for msg_item in historical_messages:
         if isinstance(msg_item, dict):
             current_msg_role = msg_item.get('role')
@@ -358,29 +430,58 @@ async def build_messages_for_ai(
                 pending_tool_call_ids.clear()
         
         ai_msg: Dict[str, Any] = {"role": current_msg_role}
-        if isinstance(msg_item, dict):
-            content = msg_item.get('content')
-            name = msg_item.get('name')
-            raw_tool_calls = msg_item.get('tool_calls')
-        else:
-            content = getattr(msg_item, 'content', None)
-            name = getattr(msg_item, 'name', None)
-            raw_tool_calls = getattr(msg_item, 'tool_calls', None)
+        content = getattr(msg_item, 'content', msg_item.get('content') if isinstance(msg_item, dict) else None)
+        name = getattr(msg_item, 'name', msg_item.get('name') if isinstance(msg_item, dict) else None)
+        image_url = getattr(msg_item, 'image_url', msg_item.get('image_url') if isinstance(msg_item, dict) else None)
         
-        # Determine content for assistant messages (None if tool_calls, "" otherwise if no explicit content)
-        if content is not None:
-            ai_msg["content"] = content
-        elif current_msg_role == "assistant":
-            # Check original msg_item for tool_calls to decide content structure
-            if not raw_tool_calls:
-                ai_msg["content"] = ""  # No tool calls, no explicit content, so empty string
+        # Handle content - check if this message has an image URL in historical messages
+        if current_msg_role == "user" and image_url:
+            # This is a user message with an image from history - convert to vision format
+            content_parts = []
+            if content:
+                content_parts.append({"type": "text", "text": content})
+            
+            # Process the image URL to get S3 URL
+            if current_message_bus:
+                s3_url = await _get_s3_url_for_image(image_url, current_message_bus)
+                if s3_url:
+                    logger.info(f"Successfully got S3 URL for historical image: {image_url} -> {s3_url}")
+                    content_parts.append({
+                        "type": "image_url",
+                        "image_url": {"url": s3_url}
+                    })
+                else:
+                    logger.error(f"Failed to get S3 URL for historical image, adding text description: {image_url}")
+                    content_parts.append({
+                        "type": "text", 
+                        "text": f"[Historical image failed to process: {content or 'No description available'}]"
+                    })
             else:
-                ai_msg["content"] = None # Tool calls present, content should be None
+                logger.error(f"No message bus available for historical image processing: {image_url}")
+                content_parts.append({
+                    "type": "text", 
+                    "text": f"[Historical image processing unavailable: {content or 'No description available'}]"
+                })
+            
+            ai_msg["content"] = content_parts
+        else:
+            # Standard content assignment logic for non-image messages
+            if content is not None:
+                ai_msg["content"] = content
+            elif current_msg_role == "assistant":
+                # Check original msg_item for tool_calls to decide content structure
+                msg_tool_calls = getattr(msg_item, 'tool_calls', msg_item.get('tool_calls') if isinstance(msg_item, dict) else None)
+                if not msg_tool_calls:
+                    ai_msg["content"] = ""  # No tool calls, no explicit content, so empty string
+                else:
+                    ai_msg["content"] = None # Tool calls present, content should be None
 
         if name is not None:
             ai_msg["name"] = name
         
         final_tool_calls_on_ai_msg = None
+        # Get tool_calls from the message item
+        raw_tool_calls = getattr(msg_item, 'tool_calls', msg_item.get('tool_calls') if isinstance(msg_item, dict) else None)
         if current_msg_role == "assistant" and raw_tool_calls:
             processed_tool_calls_for_api = []
             for tc_input_item in raw_tool_calls:
@@ -436,7 +537,7 @@ async def build_messages_for_ai(
                     )
                     stub_tool_use = {
                         "role": "assistant",
-                        "content": "",
+                        "content": None,  # Changed from "" to None for consistency with tool calls
                         "tool_calls": [
                             {
                                 "id": current_msg_tool_call_id,
@@ -446,7 +547,7 @@ async def build_messages_for_ai(
                         ],
                     }
                     messages_for_ai.append(stub_tool_use)
-                    pending_tool_call_ids.add(current_msg_tool_call_id)
+                    # Don't add to pending_tool_call_ids - the stub handles this orphaned tool result directly
                 ai_msg["tool_call_id"] = current_msg_tool_call_id
             else:
                 logger.warning(
@@ -467,6 +568,9 @@ async def build_messages_for_ai(
             if final_tool_call_id_on_ai_msg in pending_tool_call_ids:
                 pending_tool_call_ids.remove(final_tool_call_id_on_ai_msg)
                 logger.debug(f"Tool response message processed for {final_tool_call_id_on_ai_msg}. Remaining pending: {pending_tool_call_ids}")
+            else:
+                # Tool response without a pending call - this is the orphaned case we just handled above
+                logger.debug(f"Tool response {final_tool_call_id_on_ai_msg} processed (was orphaned, stub already inserted)")
             # else: it's a tool response for a non-immediately-pending call, which is fine.
 
     if pending_tool_call_ids:
@@ -488,23 +592,74 @@ async def build_messages_for_ai(
         # For now, using the name of the first user in the batch.
         first_user_name_in_batch = current_batched_user_inputs[0].get("name", "user")
         
-        # Join parts with a newline, avoids manual newline appending and stripping
-        # Each part should clearly indicate its original sender.
-        message_parts = []
-        for user_input in current_batched_user_inputs:
-            sender_name = user_input.get("name", "Unknown User")
-            content_text = user_input.get("content", "")
-            if len(current_batched_user_inputs) == 1:
-                message_parts.append(content_text)
-            else:
-                message_parts.append(f"{sender_name}: {content_text}")
-
-        # Join the parts into a single string.
-        # If there was more than one message, they are joined by newlines.
-        # If only one, it's just that message's content.
-        combined_content = "\n".join(message_parts)
+        # Check if any of the batched inputs contain images
+        has_images = any("image_url" in user_input for user_input in current_batched_user_inputs)
         
-        messages_for_ai.append({"role": "user", "name": first_user_name_in_batch, "content": combined_content})
+        if has_images:
+            # Process messages with images - convert to OpenAI vision format
+            content_parts = []
+            
+            for user_input in current_batched_user_inputs:
+                sender_name = user_input.get("name", "Unknown User")
+                content_text = user_input.get("content", "")
+                image_url = user_input.get("image_url")
+                
+                # Add text content if present
+                if content_text:
+                    if len(current_batched_user_inputs) == 1:
+                        content_parts.append({"type": "text", "text": content_text})
+                    else:
+                        content_parts.append({"type": "text", "text": f"{sender_name}: {content_text}"})
+                
+                # Add image if present
+                if image_url:
+                    logger.info(f"Processing image in batch: {image_url}")
+                    # Use the new image cache service instead of direct upload
+                    if current_message_bus:
+                        s3_url = await _get_s3_url_for_image(image_url, current_message_bus)
+                        if s3_url:
+                            logger.info(f"Successfully got S3 URL from cache service: {s3_url}")
+                            content_parts.append({
+                                "type": "image_url",
+                                "image_url": {"url": s3_url}
+                            })
+                        else:
+                            logger.error(f"Failed to get S3 URL from cache service, adding text description instead: {image_url}")
+                            # Fallback to text description if image processing fails
+                            content_parts.append({
+                                "type": "text", 
+                                "text": f"[Image failed to process: {content_text or 'No description available'}]"
+                            })
+                    else:
+                        logger.error(f"No message bus available for image processing, adding text description: {image_url}")
+                        content_parts.append({
+                            "type": "text", 
+                            "text": f"[Image processing unavailable: {content_text or 'No description available'}]"
+                        })
+            
+            # Create message with structured content for vision
+            messages_for_ai.append({
+                "role": "user", 
+                "name": first_user_name_in_batch, 
+                "content": content_parts
+            })
+        else:
+            # No images - use simple text format
+            message_parts = []
+            for user_input in current_batched_user_inputs:
+                sender_name = user_input.get("name", "Unknown User")
+                content_text = user_input.get("content", "")
+                if len(current_batched_user_inputs) == 1:
+                    message_parts.append(content_text)
+                else:
+                    message_parts.append(f"{sender_name}: {content_text}")
+
+            # Join the parts into a single string.
+            # If there was more than one message, they are joined by newlines.
+            # If only one, it's just that message's content.
+            combined_content = "\n".join(message_parts)
+            
+            messages_for_ai.append({"role": "user", "name": first_user_name_in_batch, "content": combined_content})
     
     # Log the final constructed messages for debugging
     logger.debug(f"Final messages_for_ai being sent to LLM: {json.dumps(messages_for_ai, indent=2)}")

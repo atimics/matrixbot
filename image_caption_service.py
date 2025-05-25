@@ -11,6 +11,8 @@ from event_definitions import (
     AIInferenceResponseEvent,
     SendReplyCommand,
     ImageCaptionGeneratedEvent,
+    ImageCacheRequestEvent,
+    ImageCacheResponseEvent,
 )
 
 logger = logging.getLogger(__name__)
@@ -21,39 +23,67 @@ class ImageCaptionService:
     def __init__(self, message_bus: MessageBus):
         self.bus = message_bus
         self.openrouter_vision_model = os.getenv("OPENROUTER_VISION_MODEL", "openai/gpt-4o")
-        self.matrix_homeserver = os.getenv("MATRIX_HOMESERVER")
         self._stop_event = asyncio.Event()
-
-    def _convert_mxc_to_http(self, mxc_url: str) -> str:
-        """Convert an MXC URI to an HTTP download URL if possible."""
-        if not mxc_url.startswith("mxc://") or not self.matrix_homeserver:
-            return mxc_url
-        try:
-            server_and_media = mxc_url[6:]
-            server, media_id = server_and_media.split("/", 1)
-            base = self.matrix_homeserver.rstrip("/")
-            return f"{base}/_matrix/media/v3/download/{server}/{media_id}"
-        except ValueError:
-            logger.warning(f"ImageCaptionService: Failed to parse MXC URL '{mxc_url}'.")
-            return mxc_url
+        # Track pending image caption requests
+        self._pending_requests: Dict[str, Dict[str, Any]] = {}
 
     async def _handle_image_message(self, event: MatrixImageReceivedEvent) -> None:
+        # Request image to be cached to S3 first
+        cache_request_id = str(uuid.uuid4())
+        
+        # Store the context for when the cache response comes back
+        self._pending_requests[cache_request_id] = {
+            "room_id": event.room_id,
+            "reply_to_event_id": event.event_id_matrix,
+            "original_image_url": event.image_url,
+            "body": event.body,
+        }
+        
+        # Request image caching
+        cache_request = ImageCacheRequestEvent(
+            request_id=cache_request_id,
+            image_url=event.image_url
+        )
+        
+        logger.info(f"ImageCaptionService: Requesting image cache for: {event.image_url}")
+        await self.bus.publish(cache_request)
+
+    async def _handle_image_cache_response(self, response: ImageCacheResponseEvent) -> None:
+        """Handle response from image cache service and proceed with caption generation."""
+        request_context = self._pending_requests.pop(response.request_id, None)
+        if not request_context:
+            logger.warning(f"ImageCaptionService: Received cache response for unknown request: {response.request_id}")
+            return
+        
+        if not response.success or not response.s3_url:
+            logger.error(f"ImageCaptionService: Image caching failed for {response.original_url}: {response.error_message}")
+            # Send fallback message
+            await self.bus.publish(SendReplyCommand(
+                room_id=request_context["room_id"], 
+                text="[Image could not be processed for captioning]",
+                reply_to_event_id=request_context["reply_to_event_id"]
+            ))
+            return
+        
+        logger.info(f"ImageCaptionService: Using S3 URL for caption generation: {response.s3_url}")
+        
+        # Now create the caption request with the S3 URL
         messages_payload: List[Dict[str, Any]] = [
             {
                 "role": "user",
                 "content": [
                     {"type": "text", "text": "Describe this image."},
-                    {"type": "image_url", "image_url": {"url": self._convert_mxc_to_http(event.image_url)}},
+                    {"type": "image_url", "image_url": {"url": response.s3_url}},
                 ],
             }
         ]
-        if event.body:
-            messages_payload[0]["content"].insert(0, {"type": "text", "text": event.body})
+        if request_context["body"]:
+            messages_payload[0]["content"].insert(0, {"type": "text", "text": request_context["body"]})
 
         request_id = str(uuid.uuid4())
         original_payload = {
-            "room_id": event.room_id,
-            "reply_to_event_id": event.event_id_matrix,
+            "room_id": request_context["room_id"],
+            "reply_to_event_id": request_context["reply_to_event_id"],
         }
         ai_request = OpenRouterInferenceRequestEvent(
             request_id=request_id,
@@ -81,7 +111,10 @@ class ImageCaptionService:
     async def run(self) -> None:
         logger.info("ImageCaptionService: Starting...")
         self.bus.subscribe(MatrixImageReceivedEvent.get_event_type(), self._handle_image_message)
-        self.bus.subscribe("image_caption_response", self._handle_caption_response)
+        self.bus.subscribe(ImageCacheResponseEvent.get_event_type(), self._handle_image_cache_response)
+        # Subscribe to the proper OpenRouter response event type instead of the custom string
+        from event_definitions import OpenRouterInferenceResponseEvent
+        self.bus.subscribe(OpenRouterInferenceResponseEvent.get_event_type(), self._handle_caption_response)
         await self._stop_event.wait()
         logger.info("ImageCaptionService: Stopped.")
 
