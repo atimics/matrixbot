@@ -586,80 +586,62 @@ async def build_messages_for_ai(
 
     # Combine batched user inputs if needed
     if current_batched_user_inputs:
-        # Ensure names are preserved correctly, especially for the 'name' field of the combined message
-        # The 'name' field in the combined message should ideally represent the sender of the *first* message in the batch,
-        # or be a generic identifier if that's more appropriate for the LLM.
-        # For now, using the name of the first user in the batch.
-        first_user_name_in_batch = current_batched_user_inputs[0].get("name", "user")
+        # Instead of combining all messages into one with embedded usernames,
+        # create separate user messages with proper role/name structure
+        # This matches the format used by ImageCaptionService and OpenRouter vision API
         
-        # Check if any of the batched inputs contain images
-        has_images = any("image_url" in user_input for user_input in current_batched_user_inputs)
-        
-        if has_images:
-            # Process messages with images - convert to OpenAI vision format
-            content_parts = []
+        for user_input in current_batched_user_inputs:
+            sender_name = user_input.get("name", "Unknown User")
+            content_text = user_input.get("content", "")
+            image_url = user_input.get("image_url")
             
-            for user_input in current_batched_user_inputs:
-                sender_name = user_input.get("name", "Unknown User")
-                content_text = user_input.get("content", "")
-                image_url = user_input.get("image_url")
+            if not content_text and not image_url:
+                continue  # Skip empty messages
+            
+            if image_url:
+                # Process message with image - convert to OpenAI vision format
+                content_parts = []
                 
                 # Add text content if present
                 if content_text:
-                    if len(current_batched_user_inputs) == 1:
-                        content_parts.append({"type": "text", "text": content_text})
-                    else:
-                        content_parts.append({"type": "text", "text": f"{sender_name}: {content_text}"})
+                    content_parts.append({"type": "text", "text": content_text})
                 
-                # Add image if present
-                if image_url:
-                    logger.info(f"Processing image in batch: {image_url}")
-                    # Use the new image cache service instead of direct upload
-                    if current_message_bus:
-                        s3_url = await _get_s3_url_for_image(image_url, current_message_bus)
-                        if s3_url:
-                            logger.info(f"Successfully got S3 URL from cache service: {s3_url}")
-                            content_parts.append({
-                                "type": "image_url",
-                                "image_url": {"url": s3_url}
-                            })
-                        else:
-                            logger.error(f"Failed to get S3 URL from cache service, adding text description instead: {image_url}")
-                            # Fallback to text description if image processing fails
-                            content_parts.append({
-                                "type": "text", 
-                                "text": f"[Image failed to process: {content_text or 'No description available'}]"
-                            })
+                # Add image
+                logger.info(f"Processing image in batch: {image_url}")
+                if current_message_bus:
+                    s3_url = await _get_s3_url_for_image(image_url, current_message_bus)
+                    if s3_url:
+                        logger.info(f"Successfully got S3 URL from cache service: {s3_url}")
+                        content_parts.append({
+                            "type": "image_url",
+                            "image_url": {"url": s3_url}
+                        })
                     else:
-                        logger.error(f"No message bus available for image processing, adding text description: {image_url}")
+                        logger.error(f"Failed to get S3 URL from cache service, adding text description instead: {image_url}")
                         content_parts.append({
                             "type": "text", 
-                            "text": f"[Image processing unavailable: {content_text or 'No description available'}]"
+                            "text": f"[Image failed to process: {content_text or 'No description available'}]"
                         })
-            
-            # Create message with structured content for vision
-            messages_for_ai.append({
-                "role": "user", 
-                "name": first_user_name_in_batch, 
-                "content": content_parts
-            })
-        else:
-            # No images - use simple text format
-            message_parts = []
-            for user_input in current_batched_user_inputs:
-                sender_name = user_input.get("name", "Unknown User")
-                content_text = user_input.get("content", "")
-                if len(current_batched_user_inputs) == 1:
-                    message_parts.append(content_text)
                 else:
-                    message_parts.append(f"{sender_name}: {content_text}")
-
-            # Join the parts into a single string.
-            # If there was more than one message, they are joined by newlines.
-            # If only one, it's just that message's content.
-            combined_content = "\n".join(message_parts)
-            
-            messages_for_ai.append({"role": "user", "name": first_user_name_in_batch, "content": combined_content})
+                    logger.error(f"No message bus available for image processing, adding text description: {image_url}")
+                    content_parts.append({
+                        "type": "text", 
+                        "text": f"[Image processing unavailable: {content_text or 'No description available'}]"
+                    })
+                
+                # Create message with structured content for vision
+                messages_for_ai.append({
+                    "role": "user", 
+                    "name": sender_name, 
+                    "content": content_parts
+                })
+            else:
+                # Text-only message - use simple format
+                messages_for_ai.append({
+                    "role": "user", 
+                    "name": sender_name, 
+                    "content": content_text
+                })
     
     # Log the final constructed messages for debugging
     logger.debug(f"Final messages_for_ai being sent to LLM: {json.dumps(messages_for_ai, indent=2)}")

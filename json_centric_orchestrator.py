@@ -131,6 +131,24 @@ Be helpful, accurate, and concise in your responses."""
                 except Exception as e:
                     logger.error(f"JsonCentricOrchestrator: Failed to start {service.__class__.__name__}: {e}")
         
+        # Wait for Matrix gateway to initialize its client and log in
+        max_wait_time = 30.0  # Maximum time to wait for Matrix client
+        wait_interval = 0.5   # Check every 500ms
+        waited_time = 0.0
+        
+        while waited_time < max_wait_time:
+            matrix_client = self.matrix_service.get_client()
+            if matrix_client and hasattr(matrix_client, 'logged_in') and matrix_client.logged_in:
+                self.image_cache_service.set_matrix_client(matrix_client)
+                logger.info("JsonCentricOrchestrator: Matrix client reference set in ImageCacheService")
+                break
+            
+            await asyncio.sleep(wait_interval)
+            waited_time += wait_interval
+        
+        if waited_time >= max_wait_time:
+            logger.warning("JsonCentricOrchestrator: Timed out waiting for Matrix client - image processing may not work for MXC URLs")
+        
         logger.info("JsonCentricOrchestrator: All services started successfully")
         logger.info("JsonCentricOrchestrator: System using JSON-centric orchestration with two-step AI processing")
         logger.info("JsonCentricOrchestrator: - Step 1: Thinker AI analyzes context")

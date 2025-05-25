@@ -212,7 +212,6 @@ class MatrixGatewayService:
                     # For now, we'll rely on retry_after_ms or the default.
                     logger.warning(f"Gateway: Got 429 response (rate limited). No explicit Retry-After in exception. Using default {default_retry_sec}s.")
             elif '429' in str(e) or 'M_LIMIT_EXCEEDED' in str(e):
-            elif '429' in str(e) or 'M_LIMIT_EXCEEDED' in str(e):
                 # Fallback if status_code attribute isn't present but error message indicates rate limiting
                 is_rate_limit_error = True
                 logger.warning(f"Gateway: Got 429-like response (rate limited by string match). Using default {default_retry_sec}s. Error: {e}")
@@ -250,9 +249,6 @@ class MatrixGatewayService:
         if self._command_queue is None:
             logger.warning("Gateway: Command queue not initialized, cannot enqueue command")
             return
-        if self._command_queue is None:
-            logger.warning("Gateway: Command queue not initialized, cannot enqueue command")
-            return
         await self._command_queue.put((func, args, kwargs))
 
     async def _matrix_message_callback(self, room: MatrixRoom, event: RoomMessageText):
@@ -283,8 +279,6 @@ class MatrixGatewayService:
         if hasattr(event, "url"):
             image_url = event.url
         else:
-            event_id = getattr(event, 'event_id', 'unknown')
-            logger.warning(f"MatrixGateway: Image event {event_id} has no URL")
             event_id = getattr(event, 'event_id', 'unknown')
             logger.warning(f"MatrixGateway: Image event {event_id} has no URL")
             return
@@ -473,8 +467,6 @@ class MatrixGatewayService:
             success=success,
             error_message=error_msg,
             turn_request_id=command.turn_request_id
-            error_message=error_msg,
-            turn_request_id=command.turn_request_id
         ))
 
     async def _handle_set_typing_command(self, command: SetTypingIndicatorCommand):
@@ -533,21 +525,6 @@ class MatrixGatewayService:
         if not self.access_token:
             self.access_token = os.getenv("MATRIX_ACCESS_TOKEN")
         
-        
-        # Initialize stop event in the correct event loop
-        self._stop_event = asyncio.Event()
-        
-        # Read environment variables at runtime to allow for test mocking
-        # Only update if not already set (to allow test mocking)
-        if not self.homeserver:
-            self.homeserver = os.getenv("MATRIX_HOMESERVER")
-        if not self.user_id:
-            self.user_id = os.getenv("MATRIX_USER_ID")
-        if not self.password:
-            self.password = os.getenv("MATRIX_PASSWORD")
-        if not self.access_token:
-            self.access_token = os.getenv("MATRIX_ACCESS_TOKEN")
-        
         if not self.homeserver or not self.user_id: # self.user_id here is from initial .env or None
              logger.error("Gateway: MATRIX_HOMESERVER and MATRIX_USER_ID must be set. Exiting.")
              return
@@ -558,7 +535,7 @@ class MatrixGatewayService:
         
         # First priority: Try loading token from file
         saved_token_data = self._load_token_from_file()
-        if saved_token_data:
+        if (saved_token_data):
             auth_method = "saved_token"
             self.access_token = saved_token_data["access_token"]
             self.persisted_device_id = saved_token_data["device_id"]
@@ -613,11 +590,8 @@ class MatrixGatewayService:
 
         # Initialize queue and worker in the correct event loop
         self._command_queue = asyncio.Queue()
-        # Initialize queue and worker in the correct event loop
-        self._command_queue = asyncio.Queue()
         self._command_worker_task = asyncio.create_task(self._command_worker())
 
-        # Authenticate
         # Authenticate
         login_success = False
         try:
@@ -732,13 +706,11 @@ class MatrixGatewayService:
         # Post-authentication setup and sync loop
         try:
             # --- Fetch display name ---
-        # Post-authentication setup and sync loop
-        try:
-            # --- Fetch display name ---
             try:
                 profile: ProfileGetResponse = await self.client.get_profile(self.client.user_id)
                 fetched_displayname = profile.displayname
-                if fetched_displayname: self.bot_display_name = fetched_displayname
+                if fetched_displayname: 
+                    self.bot_display_name = fetched_displayname
                 else:
                     localpart = self.client.user_id.split(':')[0]
                     self.bot_display_name = localpart[1:] if localpart.startswith("@") else localpart
@@ -752,7 +724,6 @@ class MatrixGatewayService:
                     BotDisplayNameReadyEvent(display_name=self.bot_display_name, user_id=self.client.user_id)
                 )  # Publish default
 
-            # --- Join room ---
             # --- Join room ---
             matrix_room_id_env = os.getenv("MATRIX_ROOM_ID")
             if matrix_room_id_env and "YOUR_MATRIX_ROOM_ID" not in matrix_room_id_env:
@@ -773,7 +744,6 @@ class MatrixGatewayService:
                     logger.error(f"Gateway: General error joining room {matrix_room_id_env}: {type(e).__name__} - {e}")
 
             # --- Set initial presence ---
-            # --- Set initial presence ---
             try:
                 # Set an initial presence, e.g., online or unavailable
                 initial_presence = "unavailable" # Or "unavailable" if you want it to start idle
@@ -784,7 +754,6 @@ class MatrixGatewayService:
                 logger.warning(f"Gateway: Failed to set initial presence: {e}")
 
             # --- Sync loop ---
-            # --- Sync loop ---
             logger.info("Gateway: Starting sync loop...")
             sync_task = asyncio.create_task(self.client.sync_forever(timeout=30000, full_state=True))
             stop_event_task = asyncio.create_task(self._stop_event.wait())
@@ -793,18 +762,26 @@ class MatrixGatewayService:
 
             if stop_event_task in done:
                 logger.info("Gateway: Stop event received, cancelling sync task.")
-                if not sync_task.done(): sync_task.cancel()
+                if not sync_task.done(): 
+                    sync_task.cancel()
             elif sync_task in done:
                 logger.warning("Gateway: Sync task finished unexpectedly.")
-                try: sync_task.result()
-                except asyncio.CancelledError: logger.info("Gateway: Sync task was cancelled.")
-                except (LocalProtocolError) as e: logger.error(f"Gateway: Sync task failed (Matrix Sync error): {type(e).__name__} - {e}")
-                except Exception as e: logger.error(f"Gateway: Sync task failed (general error): {type(e).__name__} - {e}")
+                try: 
+                    sync_task.result()
+                except asyncio.CancelledError: 
+                    logger.info("Gateway: Sync task was cancelled.")
+                except (LocalProtocolError) as e: 
+                    logger.error(f"Gateway: Sync task failed (Matrix Sync error): {type(e).__name__} - {e}")
+                except Exception as e: 
+                    logger.error(f"Gateway: Sync task failed (general error): {type(e).__name__} - {e}")
 
             if sync_task.cancelled() or (pending and sync_task in pending and not sync_task.done()):
-                try: await sync_task
-                except asyncio.CancelledError: logger.info("Gateway: Sync task successfully processed cancellation.")
-                except Exception as e: logger.error(f"Gateway: Exception awaiting cancelled sync_task: {type(e).__name__} - {e}")
+                try: 
+                    await sync_task
+                except asyncio.CancelledError: 
+                    logger.info("Gateway: Sync task successfully processed cancellation.")
+                except Exception as e: 
+                    logger.error(f"Gateway: Exception awaiting cancelled sync_task: {type(e).__name__} - {e}")
 
         except (LocalProtocolError) as e:
             logger.error(f"Gateway: Matrix Sync error during initial setup: {type(e).__name__} - {e}")
@@ -835,28 +812,6 @@ class MatrixGatewayService:
 
     async def stop(self) -> None:
         logger.info("MatrixGatewayService: Stop requested.")
-        if self._stop_event:
-            self._stop_event.set()
-        else:
-            logger.warning("Gateway: Stop called but _stop_event not initialized")
-        
-        # Clean up command worker task if it exists
-        if self._command_worker_task and not self._command_worker_task.done():
-            self._command_worker_task.cancel()
-            try:
-                await self._command_worker_task
-            except asyncio.CancelledError:
-                pass
-            except Exception as e:
-                logger.error(f"Gateway: Error during command worker cleanup: {e}")
-        
-        # Clear the queue and reset state for next run
-        self._command_queue = None
-        self._command_worker_task = None
-
-    def get_client(self) -> Optional[AsyncClient]:
-        """Get the authenticated Matrix client for use by other services."""
-        return self.client
         if self._stop_event:
             self._stop_event.set()
         else:

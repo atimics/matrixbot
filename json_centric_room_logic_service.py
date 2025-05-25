@@ -249,17 +249,22 @@ class JsonCentricRoomLogicService:
             "timestamp": last_message["timestamp"]
         }
 
-        # Build content array in OpenRouter multi-part format
+        # Build content array in proper OpenRouter multi-part format
+        # Each message should be a separate entry with proper structure
         content = []
+        
         for msg in pending_batch:
-            # Add text content
+            # Build content parts for this message
+            message_content = []
+            
+            # Add text content if present
             if msg.get("content"):
-                content.append({
+                message_content.append({
                     "type": "text",
-                    "text": f"{msg['name']}: {msg['content']}"
+                    "text": msg['content']  # Just the content, not prefixed with name
                 })
             
-            # Add image content if present - PROPERLY convert Matrix URLs to S3 URLs
+            # Add image content if present - convert Matrix URLs to S3 URLs
             if msg.get("image_url"):
                 logger.info(f"JsonCentricRLS: [{room_id}] Processing image URL: {msg['image_url']}")
                 
@@ -267,17 +272,27 @@ class JsonCentricRoomLogicService:
                 s3_url = await self._get_s3_url_for_image(msg["image_url"])
                 if s3_url:
                     logger.info(f"JsonCentricRLS: [{room_id}] Successfully converted image to S3: {s3_url}")
-                    content.append({
+                    message_content.append({
                         "type": "image_url",
                         "image_url": {"url": s3_url}
                     })
                 else:
                     logger.error(f"JsonCentricRLS: [{room_id}] Failed to convert image to S3, adding text description instead")
                     # Fallback to text description if image processing fails
-                    content.append({
+                    message_content.append({
                         "type": "text",
                         "text": f"[Image failed to process: {msg.get('content', 'No description available')}]"
                     })
+            
+            # Add this message to content as a properly structured user message
+            if message_content:
+                content.append({
+                    "role": "user",
+                    "name": msg['name'],
+                    "content": message_content,
+                    "timestamp": msg['timestamp'],
+                    "event_id": msg['event_id']
+                })
 
         # Get message history in OpenRouter format
         message_history = await self._build_message_history(room_id, config)
