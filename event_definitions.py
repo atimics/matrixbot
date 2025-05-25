@@ -316,9 +316,7 @@ class RequestMatrixRoomInfoCommand(BaseEvent):
     response_event_topic: str
     original_tool_call_id: str
     # Add turn_request_id to preserve context for room logic service
-    turn_request_id: Optional[str] = None
-    # Add turn_request_id to preserve context for room logic service
-    turn_request_id: Optional[str] = None
+    turn_request_id: Optional[str] = None  # Add turn_request_id to preserve context for room logic service
 
 
 class MatrixRoomInfoResponseEvent(BaseEvent):
