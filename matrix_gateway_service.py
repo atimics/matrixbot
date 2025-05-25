@@ -3,6 +3,8 @@ import os
 import logging
 import json # ADDED
 import httpx  # Added for Matrix media API validation
+import sys  # Added for progress bar
+import time  # Added for progress bar
 from typing import Optional, Dict, Any
 from pathlib import Path  # Added for token file management
 from nio import (
@@ -129,14 +131,60 @@ class MatrixGatewayService:
         except Exception as e:
             logger.error(f"Gateway: Failed to delete token file: {e}")
 
+    async def _animated_sleep_with_progress(self, duration: float, reason: str = "Rate limited"):
+        """Sleep with an animated progress bar showing the remaining time."""
+        start_time = time.time()
+        end_time = start_time + duration
+        
+        # Progress bar characters
+        spinner_chars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+        bar_width = 30
+        
+        print(f"\n🚫 {reason} - waiting {duration:.1f}s", end="", flush=True)
+        
+        try:
+            spinner_idx = 0
+            while time.time() < end_time:
+                current_time = time.time()
+                elapsed = current_time - start_time
+                remaining = max(0, end_time - current_time)
+                progress = min(1.0, elapsed / duration)
+                
+                # Create progress bar
+                filled_length = int(bar_width * progress)
+                bar = "█" * filled_length + "░" * (bar_width - filled_length)
+                
+                # Spinner animation
+                spinner = spinner_chars[spinner_idx % len(spinner_chars)]
+                spinner_idx += 1
+                
+                # Format time
+                remaining_str = f"{remaining:.1f}s"
+                
+                # Print progress line with carriage return to overwrite
+                progress_line = f"\r{spinner} {reason}: [{bar}] {progress*100:.1f}% - {remaining_str} remaining"
+                print(progress_line, end="", flush=True)
+                
+                # Short sleep to control animation speed
+                await asyncio.sleep(0.1)
+            
+            # Final completed state
+            final_bar = "█" * bar_width
+            print(f"\r✅ {reason}: [{final_bar}] 100.0% - Complete!        ", flush=True)
+            print()  # New line after completion
+            
+        except asyncio.CancelledError:
+            print(f"\r❌ {reason}: Cancelled                                    ", flush=True)
+            print()
+            raise
+
     async def _rate_limited_matrix_call(self, coro_func, *args, **kwargs):
         # Wait if we are currently rate limited
         now = asyncio.get_event_loop().time()
         if self._rate_limit_until > now:
             sleep_duration = self._rate_limit_until - now
             logger.info(f"Gateway: Rate limit active. Sleeping for {sleep_duration:.3f}s until {self._rate_limit_until:.3f}.")
-            await asyncio.sleep(sleep_duration)
-            # logger.info(f"Gateway: Finished rate limit sleep. Proceeding with Matrix call for {coro_func.__name__}.") # Redundant log
+            await self._animated_sleep_with_progress(sleep_duration, "Rate limit active")
         
         default_retry_sec = 10.0 # Define a default retry period
 
@@ -168,7 +216,7 @@ class MatrixGatewayService:
             if is_rate_limit_error:
                 self._rate_limit_until = asyncio.get_event_loop().time() + retry_after_seconds
                 logger.info(f"Gateway: Rate limit triggered. Will wait for {retry_after_seconds:.3f}s. Next attempt after {self._rate_limit_until:.3f}.")
-                await asyncio.sleep(retry_after_seconds)
+                await self._animated_sleep_with_progress(retry_after_seconds, "Rate limit triggered")
                 logger.info(f"Gateway: Finished rate limit sleep. Retrying Matrix call for {coro_func.__name__}...")
                 # Retry the call once after waiting
                 return await coro_func(*args, **kwargs) # This could raise again if still rate limited or another error occurs

@@ -20,7 +20,8 @@ from event_definitions import (
     ThinkingRequestEvent, ThinkingResponseEvent,
     StructuredPlanningRequestEvent, StructuredPlanningResponseEvent,
     ChannelContext, ChannelContextBatch, AIThoughts,
-    SendMatrixMessageCommand
+    SendMatrixMessageCommand,
+    ImageCacheRequestEvent, ImageCacheResponseEvent  # Added for image processing
 )
 from action_registry_service import ActionRegistryService
 from action_execution_service import ActionExecutionService
@@ -61,6 +62,53 @@ class JsonCentricRoomLogicService:
         self._status_cache: Dict[str, Any] = {"value": None, "expires_at": 0.0}
         self.status_cache_ttl = int(os.getenv("AI_STATUS_TEXT_CACHE_TTL", "3600"))
         self._last_global_presence = None
+
+    async def _get_s3_url_for_image(self, image_url: str) -> Optional[str]:
+        """
+        Request S3 URL for an image through the image cache service.
+        """
+        try:
+            request_id = str(uuid.uuid4())
+            
+            # Create a future to wait for the response
+            response_future = asyncio.Future()
+            
+            # Subscribe to the response temporarily
+            async def handle_response(event: ImageCacheResponseEvent):
+                if event.request_id == request_id:
+                    if not response_future.done():
+                        response_future.set_result(event)
+            
+            self.bus.subscribe(ImageCacheResponseEvent.get_event_type(), handle_response)
+            
+            try:
+                # Send the request
+                cache_request = ImageCacheRequestEvent(
+                    request_id=request_id,
+                    image_url=image_url
+                )
+                await self.bus.publish(cache_request)
+                
+                # Wait for response with timeout
+                response = await asyncio.wait_for(response_future, timeout=30.0)
+                
+                if response.success and response.s3_url:
+                    logger.info(f"JsonCentricRLS: Successfully got S3 URL for image: {image_url} -> {response.s3_url}")
+                    return response.s3_url
+                else:
+                    logger.error(f"JsonCentricRLS: Failed to get S3 URL for image: {image_url}, error: {response.error_message}")
+                    return None
+                    
+            finally:
+                # Unsubscribe from the response
+                self.bus.unsubscribe(ImageCacheResponseEvent.get_event_type(), handle_response)
+                
+        except asyncio.TimeoutError:
+            logger.error(f"JsonCentricRLS: Timeout waiting for image cache response for: {image_url}")
+            return None
+        except Exception as e:
+            logger.error(f"JsonCentricRLS: Error getting S3 URL for image {image_url}: {e}")
+            return None
 
     async def _handle_bot_display_name_ready(self, event: BotDisplayNameReadyEvent):
         """Handle bot display name being ready."""
@@ -211,14 +259,25 @@ class JsonCentricRoomLogicService:
                     "text": f"{msg['name']}: {msg['content']}"
                 })
             
-            # Add image content if present
+            # Add image content if present - PROPERLY convert Matrix URLs to S3 URLs
             if msg.get("image_url"):
+                logger.info(f"JsonCentricRLS: [{room_id}] Processing image URL: {msg['image_url']}")
+                
                 # Convert Matrix mxc:// URL to S3 URL using image cache service
-                # This would be handled by the image cache service
-                content.append({
-                    "type": "image_url",
-                    "image_url": {"url": msg["image_url"]}  # Will be processed by AI service
-                })
+                s3_url = await self._get_s3_url_for_image(msg["image_url"])
+                if s3_url:
+                    logger.info(f"JsonCentricRLS: [{room_id}] Successfully converted image to S3: {s3_url}")
+                    content.append({
+                        "type": "image_url",
+                        "image_url": {"url": s3_url}
+                    })
+                else:
+                    logger.error(f"JsonCentricRLS: [{room_id}] Failed to convert image to S3, adding text description instead")
+                    # Fallback to text description if image processing fails
+                    content.append({
+                        "type": "text",
+                        "text": f"[Image failed to process: {msg.get('content', 'No description available')}]"
+                    })
 
         # Get message history in OpenRouter format
         message_history = await self._build_message_history(room_id, config)
@@ -268,14 +327,25 @@ class JsonCentricRoomLogicService:
             if role == 'user':
                 # Check if this message had an image
                 if msg.get('image_url'):
-                    history.append({
-                        "role": "user",
-                        "name": name,
-                        "content": [
-                            {"type": "text", "text": content},
-                            {"type": "image_url", "image_url": {"url": msg['image_url']}}
-                        ]
-                    })
+                    # Convert historical image URLs to S3 URLs too
+                    s3_url = await self._get_s3_url_for_image(msg['image_url'])
+                    if s3_url:
+                        logger.info(f"JsonCentricRLS: [{room_id}] Converted historical image to S3: {s3_url}")
+                        history.append({
+                            "role": "user",
+                            "name": name,
+                            "content": [
+                                {"type": "text", "text": content},
+                                {"type": "image_url", "image_url": {"url": s3_url}}
+                            ]
+                        })
+                    else:
+                        logger.error(f"JsonCentricRLS: [{room_id}] Failed to convert historical image, using text only")
+                        history.append({
+                            "role": "user",
+                            "name": name,
+                            "content": f"{content} [Historical image failed to process]"
+                        })
                 else:
                     history.append({
                         "role": "user",
@@ -288,7 +358,9 @@ class JsonCentricRoomLogicService:
                     "name": name,
                     "content": content
                 })
-
+            else:
+                logger.warning(f"JsonCentricRLS: [{room_id}] Unknown message role in history: {role}")
+        
         return history
 
     async def _handle_thinking_response(self, event: ThinkingResponseEvent):
