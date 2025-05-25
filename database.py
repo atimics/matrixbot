@@ -258,6 +258,28 @@ async def get_room_states(db_path: str, room_id: str) -> Dict[str, Any]:
         logger.error(f"SQLite error fetching room states for room '{room_id}': {e}")
         return {}
 
+async def get_tool_states(db_path: str, room_id: str) -> Dict[str, Any]:
+    """Get tool-specific states from room states. Tool states are stored with keys prefixed by tool names."""
+    try:
+        all_states = await get_room_states(db_path, room_id)
+        # Filter for tool states - these could be direct tool names or prefixed keys
+        tool_states = {}
+        
+        # Look for known tool state patterns
+        for key, value in all_states.items():
+            # Check if it's a direct tool state (key is a tool name or ends with tool-related suffix)
+            if any(tool_indicator in key for tool_indicator in [
+                'tool_states', 'manage_user_memory', 'manage_system_prompt', 
+                'manage_channel_summary', 'describe_image', 'get_room_info',
+                'send_reply', 'react_to_message', 'do_not_respond'
+            ]):
+                tool_states[key] = value
+        
+        return tool_states
+    except Exception as e:
+        logger.error(f"Error fetching tool states for room '{room_id}': {e}")
+        return {}
+
 async def delete_room_state(db_path: str, room_id: str, state_key: str) -> bool:
     try:
         async with aiosqlite.connect(db_path) as db:

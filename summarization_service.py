@@ -123,6 +123,15 @@ class SummarizationService:
             previous_summary=previous_summary_text
         )
 
+        messages_for_ai = [
+            {
+                "role": msg.role,
+                "content": msg.content,
+                "event_id": msg.event_id if msg.event_id is not None else "",  # Handle None event_id
+            }
+            for msg in messages_to_summarize
+        ]
+
         request_id = str(uuid.uuid4())
         
         # Determine which provider and model to use for summarization

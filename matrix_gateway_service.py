@@ -4,6 +4,7 @@ import logging
 import json # ADDED
 import httpx  # Added for Matrix media API validation
 from typing import Optional, Dict, Any
+from pathlib import Path  # Added for token file management
 from nio import (
     AsyncClient,
     MatrixRoom,
@@ -58,6 +59,75 @@ class MatrixGatewayService:
         self._command_queue = None
         self._rate_limit_until = 0.0  # Timestamp until which we must wait due to 429
         self._command_worker_task = None
+        
+        # Token persistence configuration
+        self.token_file_path = os.getenv("MATRIX_TOKEN_FILE", "matrix_token.json")
+        
+    def _save_token_to_file(self, access_token: str, device_id: str, user_id: str) -> None:
+        """Save authentication token and related info to disk."""
+        try:
+            token_data = {
+                "access_token": access_token,
+                "device_id": device_id,
+                "user_id": user_id,
+                "homeserver": self.homeserver,
+                "saved_at": asyncio.get_event_loop().time()
+            }
+            
+            token_path = Path(self.token_file_path)
+            with open(token_path, 'w', encoding='utf-8') as f:
+                json.dump(token_data, f, indent=2)
+            
+            # Set restrictive permissions (owner read/write only)
+            token_path.chmod(0o600)
+            
+            logger.info(f"Gateway: Saved authentication token to {self.token_file_path}")
+            
+        except Exception as e:
+            logger.error(f"Gateway: Failed to save token to file: {e}")
+    
+    def _load_token_from_file(self) -> Optional[Dict[str, Any]]:
+        """Load authentication token and related info from disk."""
+        try:
+            token_path = Path(self.token_file_path)
+            if not token_path.exists():
+                logger.debug(f"Gateway: No token file found at {self.token_file_path}")
+                return None
+            
+            with open(token_path, 'r', encoding='utf-8') as f:
+                token_data = json.load(f)
+            
+            # Validate required fields
+            required_fields = ["access_token", "device_id", "user_id", "homeserver"]
+            if not all(field in token_data for field in required_fields):
+                logger.warning(f"Gateway: Token file missing required fields, ignoring")
+                self._delete_token_file()
+                return None
+            
+            # Check if token is for the same homeserver and user
+            if (token_data["homeserver"] != self.homeserver or 
+                token_data["user_id"] != self.user_id):
+                logger.warning(f"Gateway: Token file is for different homeserver/user, ignoring")
+                self._delete_token_file()
+                return None
+            
+            logger.info(f"Gateway: Loaded authentication token from {self.token_file_path}")
+            return token_data
+            
+        except Exception as e:
+            logger.error(f"Gateway: Failed to load token from file: {e}")
+            self._delete_token_file()
+            return None
+    
+    def _delete_token_file(self) -> None:
+        """Delete the token file from disk."""
+        try:
+            token_path = Path(self.token_file_path)
+            if token_path.exists():
+                token_path.unlink()
+                logger.info(f"Gateway: Deleted token file {self.token_file_path}")
+        except Exception as e:
+            logger.error(f"Gateway: Failed to delete token file: {e}")
 
     async def _rate_limited_matrix_call(self, coro_func, *args, **kwargs):
         # Wait if we are currently rate limited
@@ -408,34 +478,53 @@ class MatrixGatewayService:
              logger.error("Gateway: MATRIX_HOMESERVER and MATRIX_USER_ID must be set. Exiting.")
              return
 
-        # Determine authentication method: Password first, then Token
+        # Determine authentication method: Token file first, then password, then env token
         auth_method = None
-        if self.password:
-            auth_method = "password"
-            logger.info(f"Gateway: Password provided. Prioritizing password login for user {self.user_id}.")
-            # For password login, device_id in AsyncClient constructor is a default for the client object.
-            # The actual device_id for the session is set via device_name in the login() call.
-            self.client = AsyncClient(
-                self.homeserver,
-                self.user_id,
-                device_id=self.device_name_config,
-                store_path=None
-            )
-            # Ensure self.client.access_token is None so the login block attempts password auth.
-            # Any self.access_token from env is ignored if password is set.
-        elif self.access_token:
-            auth_method = "token"
-            client_constructor_device_id = self.persisted_device_id or self.device_name_config
-            logger.info(f"Gateway: No password, using access token. Initializing client for token login for user {self.user_id} with device ID {client_constructor_device_id}.")
+        saved_token_data = None
+        
+        # First priority: Try loading token from file
+        saved_token_data = self._load_token_from_file()
+        if saved_token_data:
+            auth_method = "saved_token"
+            self.access_token = saved_token_data["access_token"]
+            self.persisted_device_id = saved_token_data["device_id"]
+            logger.info(f"Gateway: Found saved token for user {self.user_id}, attempting token authentication.")
+            
+            client_constructor_device_id = self.persisted_device_id
             self.client = AsyncClient(
                 self.homeserver,
                 self.user_id,
                 device_id=client_constructor_device_id,
                 store_path=None
             )
-            self.client.access_token = self.access_token # Set token for the client to use
+            self.client.access_token = self.access_token
+            
+        # Second priority: Password authentication  
+        elif self.password:
+            auth_method = "password"
+            logger.info(f"Gateway: No saved token found, using password login for user {self.user_id}.")
+            self.client = AsyncClient(
+                self.homeserver,
+                self.user_id,
+                device_id=self.device_name_config,
+                store_path=None
+            )
+            
+        # Third priority: Environment token
+        elif self.access_token:
+            auth_method = "env_token"
+            client_constructor_device_id = self.persisted_device_id or self.device_name_config
+            logger.info(f"Gateway: No saved token or password, using environment access token for user {self.user_id}.")
+            self.client = AsyncClient(
+                self.homeserver,
+                self.user_id,
+                device_id=client_constructor_device_id,
+                store_path=None
+            )
+            self.client.access_token = self.access_token
+            
         else:
-            logger.error("Gateway: Neither MATRIX_PASSWORD nor MATRIX_ACCESS_TOKEN is set. Exiting.")
+            logger.error("Gateway: No authentication method available (no saved token, password, or env token). Exiting.")
             return
 
         self.client.add_event_callback(self._matrix_message_callback, RoomMessageText)
@@ -455,8 +544,9 @@ class MatrixGatewayService:
         # Authenticate
         login_success = False
         try:
-            if auth_method == "token":
-                logger.info("Gateway: Verifying provided access token...")
+            if auth_method in ["saved_token", "env_token"]:
+                token_source = "saved token file" if auth_method == "saved_token" else "environment variable"
+                logger.info(f"Gateway: Verifying access token from {token_source}...")
                 try:
                    whoami_response = await self.client.whoami()
                    if isinstance(whoami_response, WhoamiResponse):
@@ -469,15 +559,34 @@ class MatrixGatewayService:
                            if whoami_response.device_id and self.client.device_id != whoami_response.device_id:
                                logger.info(f"Gateway: Updating client device ID from whoami response to: {whoami_response.device_id}")
                                self.client.device_id = whoami_response.device_id
+                               
+                           # If this was an environment token that worked, save it to file for future use
+                           if auth_method == "env_token":
+                               self._save_token_to_file(
+                                   self.access_token,
+                                   self.client.device_id,
+                                   self.user_id
+                               )
                        else:
                            logger.error(f"Gateway: Access token is for a different user (response: {whoami_response.user_id}, expected: {self.user_id}).")
-                           # No return here, login_success remains False, handled below
+                           # Delete invalid saved token if this was from file
+                           if auth_method == "saved_token":
+                               self._delete_token_file()
                    elif isinstance(whoami_response, WhoamiError):
-                       logger.error(f"Gateway: Failed to verify access token. Whoami check failed: {getattr(whoami_response, 'message', 'Unknown WhoamiError')}")
+                       logger.error(f"Gateway: Failed to verify access token from {token_source}. Whoami check failed: {getattr(whoami_response, 'message', 'Unknown WhoamiError')}")
+                       # Delete invalid saved token if this was from file
+                       if auth_method == "saved_token":
+                           self._delete_token_file()
                    else:
-                       logger.error(f"Gateway: Failed to verify access token. Unexpected whoami response type: {type(whoami_response)}. Response: {whoami_response}")
+                       logger.error(f"Gateway: Failed to verify access token from {token_source}. Unexpected whoami response type: {type(whoami_response)}. Response: {whoami_response}")
+                       # Delete invalid saved token if this was from file
+                       if auth_method == "saved_token":
+                           self._delete_token_file()
                 except Exception as e:
-                    logger.error(f"Gateway: Exception during access token verification: {type(e).__name__} - {e}")
+                    logger.error(f"Gateway: Exception during access token verification from {token_source}: {type(e).__name__} - {e}")
+                    # Delete invalid saved token if this was from file and the error suggests the token is invalid
+                    if auth_method == "saved_token" and ("401" in str(e) or "403" in str(e) or "invalid" in str(e).lower()):
+                        self._delete_token_file()
             
             elif auth_method == "password":
                 logger.info(f"Gateway: Attempting password login as {self.user_id} with device name '{self.device_name_config}'...")
@@ -490,11 +599,53 @@ class MatrixGatewayService:
                     self.user_id = self.client.user_id # Canonicalized user ID
                     actual_device_id = self.client.device_id # Actual device ID from server
                     logger.info(f"Gateway: Logged in successfully as {self.user_id} with device ID {actual_device_id}.")
-                    # self.persisted_device_id = actual_device_id # No longer saving to env or updating os.environ
+                    
+                    # Save the successful login token to file for future use
+                    self._save_token_to_file(
+                        self.access_token,
+                        actual_device_id,
+                        self.user_id
+                    )
                 else:
                     logger.error(f"Gateway: Password login failed. Response: {login_response}")
         except Exception as e:
             logger.error(f"Gateway: Exception during authentication: {type(e).__name__} - {e}")
+            # If there was an exception and we were using a saved token, delete it as it might be invalid
+            if auth_method == "saved_token":
+                self._delete_token_file()
+        
+        # If token authentication failed, try password as fallback (if available)
+        if not login_success and auth_method in ["saved_token", "env_token"] and self.password:
+            logger.info("Gateway: Token authentication failed, attempting password login as fallback...")
+            try:
+                # Create new client for password login
+                self.client = AsyncClient(
+                    self.homeserver,
+                    self.user_id,
+                    device_id=self.device_name_config,
+                    store_path=None
+                )
+                self.client.add_event_callback(self._matrix_message_callback, RoomMessageText)
+                self.client.add_event_callback(self._matrix_image_callback, RoomMessageImage)
+                
+                login_response = await self.client.login(self.password, device_name=self.device_name_config)
+                if isinstance(login_response, LoginResponse):
+                    login_success = True
+                    self.access_token = self.client.access_token
+                    self.user_id = self.client.user_id
+                    actual_device_id = self.client.device_id
+                    logger.info(f"Gateway: Password fallback login successful as {self.user_id} with device ID {actual_device_id}.")
+                    
+                    # Save the successful fallback login token
+                    self._save_token_to_file(
+                        self.access_token,
+                        actual_device_id,
+                        self.user_id
+                    )
+                else:
+                    logger.error(f"Gateway: Password fallback login failed. Response: {login_response}")
+            except Exception as e:
+                logger.error(f"Gateway: Exception during password fallback login: {type(e).__name__} - {e}")
         
         # If authentication was not successful by this point, exit.
         if not login_success:

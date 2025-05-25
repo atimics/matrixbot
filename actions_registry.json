@@ -1,0 +1,227 @@
+{
+  "version": "1.0",
+  "description": "Registry of available actions for AI planning in the JSON-centric orchestration system",
+  "actions": [
+    {
+      "name": "send_reply_text",
+      "description": "Send a text reply to a message in a Matrix room",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The text content to send as a reply"
+          },
+          "reply_to_event_id": {
+            "type": "string",
+            "description": "The event ID of the message to reply to (optional, for threading)"
+          }
+        },
+        "required": ["text"],
+        "additionalProperties": false
+      },
+      "executor": "send_reply_tool"
+    },
+    {
+      "name": "send_message_text",
+      "description": "Send a standalone text message to a Matrix room (not a reply)",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The text content to send"
+          }
+        },
+        "required": ["text"],
+        "additionalProperties": false
+      },
+      "executor": "send_message_tool"
+    },
+    {
+      "name": "react_to_message",
+      "description": "Add an emoji reaction to a specific message",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "description": "The event ID of the message to react to"
+          },
+          "emoji": {
+            "type": "string",
+            "description": "The emoji to use as a reaction (e.g., '👍', '❤️', '😂')"
+          }
+        },
+        "required": ["event_id", "emoji"],
+        "additionalProperties": false
+      },
+      "executor": "react_to_message_tool"
+    },
+    {
+      "name": "describe_image",
+      "description": "Generate a detailed description of an image that was shared in the chat",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "image_event_id": {
+            "type": "string",
+            "description": "The event ID of the image message to describe"
+          },
+          "focus_areas": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional list of specific aspects to focus on in the description"
+          }
+        },
+        "required": ["image_event_id"],
+        "additionalProperties": false
+      },
+      "executor": "describe_image_tool"
+    },
+    {
+      "name": "manage_user_memory",
+      "description": "Store, update, or retrieve information about a specific user",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "The Matrix user ID to manage memory for"
+          },
+          "operation": {
+            "type": "string",
+            "enum": ["store", "update", "retrieve", "delete"],
+            "description": "The operation to perform on user memory"
+          },
+          "memory_key": {
+            "type": "string",
+            "description": "The key/category for the memory item (e.g., 'preferences', 'context', 'facts')"
+          },
+          "memory_value": {
+            "type": "string",
+            "description": "The value to store or update (required for store/update operations)"
+          }
+        },
+        "required": ["user_id", "operation", "memory_key"],
+        "additionalProperties": false
+      },
+      "executor": "manage_user_memory_tool"
+    },
+    {
+      "name": "manage_channel_summary",
+      "description": "Create, update, or retrieve a summary of channel conversation history",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "enum": ["create", "update", "retrieve", "refresh"],
+            "description": "The operation to perform on the channel summary"
+          },
+          "summary_scope": {
+            "type": "string",
+            "enum": ["recent", "full", "since_last"],
+            "description": "The scope of messages to include in the summary"
+          },
+          "custom_focus": {
+            "type": "string",
+            "description": "Optional custom focus or theme for the summary"
+          }
+        },
+        "required": ["operation"],
+        "additionalProperties": false
+      },
+      "executor": "manage_channel_summary_tool"
+    },
+    {
+      "name": "manage_system_prompt",
+      "description": "Update or retrieve the system prompt configuration for AI behavior",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "enum": ["get", "set", "reset"],
+            "description": "The operation to perform on the system prompt"
+          },
+          "prompt_section": {
+            "type": "string",
+            "enum": ["personality", "behavior", "capabilities", "constraints"],
+            "description": "The specific section of the system prompt to modify"
+          },
+          "new_content": {
+            "type": "string",
+            "description": "The new content for the prompt section (required for 'set' operation)"
+          }
+        },
+        "required": ["operation"],
+        "additionalProperties": false
+      },
+      "executor": "manage_system_prompt_tool"
+    },
+    {
+      "name": "get_room_info",
+      "description": "Retrieve information about the current Matrix room",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "info_type": {
+            "type": "string",
+            "enum": ["basic", "members", "settings", "history_stats"],
+            "description": "The type of room information to retrieve"
+          }
+        },
+        "required": ["info_type"],
+        "additionalProperties": false
+      },
+      "executor": "get_room_info_tool"
+    },
+    {
+      "name": "delegate_to_openrouter",
+      "description": "Delegate a complex query to OpenRouter with specific model and parameters",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The query or prompt to send to OpenRouter"
+          },
+          "model": {
+            "type": "string",
+            "description": "Specific model to use (optional, uses default if not specified)"
+          },
+          "include_context": {
+            "type": "boolean",
+            "description": "Whether to include current conversation context"
+          },
+          "response_format": {
+            "type": "string",
+            "enum": ["text", "json"],
+            "description": "Expected response format from the model"
+          }
+        },
+        "required": ["query"],
+        "additionalProperties": false
+      },
+      "executor": "delegate_to_openrouter_tool"
+    },
+    {
+      "name": "do_not_respond",
+      "description": "Explicitly choose not to respond to a message (useful for messages that don't require a response)",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "Optional reason for not responding"
+          }
+        },
+        "additionalProperties": false
+      },
+      "executor": "do_not_respond_tool"
+    }
+  ]
+}

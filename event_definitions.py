@@ -33,6 +33,13 @@ class EventType(str, Enum):
     DELEGATED_OPENROUTER_RESPONSE_FOR_TOOL = "delegated_openrouter_response_for_tool"
     IMAGE_CACHE_REQUEST = "image_cache_request"
     IMAGE_CACHE_RESPONSE = "image_cache_response"
+    # New JSON-Centric Orchestration Events
+    THINKING_REQUEST = "thinking_request"
+    THINKING_RESPONSE = "thinking_response"
+    STRUCTURED_PLANNING_REQUEST = "structured_planning_request"
+    STRUCTURED_PLANNING_RESPONSE = "structured_planning_response"
+    ACTION_EXECUTION_REQUEST = "action_execution_request"
+    ACTION_EXECUTION_RESPONSE = "action_execution_response"
 
 # Helper function to generate a default UUID string if needed elsewhere,
 # but Pydantic's default_factory is usually sufficient for default field values.
@@ -361,4 +368,101 @@ class ImageCacheResponseEvent(BaseEvent):
 
 
 # --- Tool Execution Events ---
+
+# --- New JSON-Centric Orchestration Events ---
+
+class ChannelContext(BaseModel):
+    """Represents the context for a single channel in a batch request."""
+    channel_id: str
+    current_user_input: Dict[str, Any]  # The latest user message(s) that triggered this AI turn
+    sender_id: str
+    event_id: str
+    content: List[Dict[str, Any]]  # OpenRouter multi-part content format
+    message_history: List[Dict[str, Any]]  # Recent conversation history in OpenRouter format
+    channel_summary: Optional[str] = None
+    tool_states: Optional[Dict[str, Any]] = None
+    user_memories: Optional[List[Dict[str, Any]]] = None
+    pdf_annotations: Optional[List[Dict[str, Any]]] = None
+
+class ChannelContextBatch(BaseModel):
+    """Container for one or more channel contexts to be processed together."""
+    channel_contexts: List[ChannelContext]
+
+class AIThoughts(BaseModel):
+    """Natural language reasoning output from the 'Thinker' AI."""
+    channel_id: str
+    thoughts_text: str
+
+class AIAction(BaseModel):
+    """A single action in an AI response plan."""
+    action_name: str
+    parameters: Dict[str, Any]
+
+class ChannelResponse(BaseModel):
+    """AI's planned response for a single channel."""
+    channel_id: str
+    actions: List[AIAction]
+    reasoning: Optional[str] = None
+
+class AIResponsePlan(BaseModel):
+    """Structured JSON output from the 'Structurer/Planner' AI."""
+    channel_responses: List[ChannelResponse]
+
+# Event for Step 1: Thought Generation Request
+class ThinkingRequestEvent(BaseEvent):
+    """Request for the 'Thinker' AI to analyze context and generate reasoning."""
+    event_type: EventType = Field(EventType.THINKING_REQUEST, frozen=True)
+    request_id: str
+    context_batch: ChannelContextBatch
+    model_name: str
+    reply_to_service_event: str = "thinking_response_received"
+
+# Event for Step 1: Thought Generation Response  
+class ThinkingResponseEvent(BaseEvent):
+    """Response from the 'Thinker' AI containing natural language reasoning."""
+    event_type: EventType = Field(EventType.THINKING_RESPONSE, frozen=True)
+    request_id: str
+    success: bool
+    thoughts: Optional[List[AIThoughts]] = None
+    error_message: Optional[str] = None
+    original_request_payload: Dict[str, Any] = Field(default_factory=dict)
+
+# Event for Step 2: Structured Planning Request
+class StructuredPlanningRequestEvent(BaseEvent):
+    """Request for the 'Structurer/Planner' AI to generate action plan from thoughts."""
+    event_type: EventType = Field(EventType.STRUCTURED_PLANNING_REQUEST, frozen=True)
+    request_id: str
+    thoughts: List[AIThoughts]
+    original_context: ChannelContextBatch  # Condensed version of original context
+    model_name: str
+    actions_schema: Dict[str, Any]  # JSON schema for valid actions
+    reply_to_service_event: str = "structured_planning_response_received"
+
+# Event for Step 2: Structured Planning Response
+class StructuredPlanningResponseEvent(BaseEvent):
+    """Response from the 'Structurer/Planner' AI containing structured action plan."""
+    event_type: EventType = Field(EventType.STRUCTURED_PLANNING_RESPONSE, frozen=True)
+    request_id: str
+    success: bool
+    action_plan: Optional[AIResponsePlan] = None
+    error_message: Optional[str] = None
+    original_request_payload: Dict[str, Any] = Field(default_factory=dict)
+
+# Event for Action Execution
+class ActionExecutionRequestEvent(BaseEvent):
+    """Request to execute a specific action from an AI response plan."""
+    event_type: EventType = Field(EventType.ACTION_EXECUTION_REQUEST, frozen=True)
+    channel_id: str
+    action: AIAction
+    original_context: Dict[str, Any] = Field(default_factory=dict)
+
+class ActionExecutionResponseEvent(BaseEvent):
+    """Response from action execution."""
+    event_type: EventType = Field(EventType.ACTION_EXECUTION_RESPONSE, frozen=True)
+    channel_id: str
+    action_name: str
+    success: bool
+    result: Optional[str] = None
+    error_message: Optional[str] = None
+    original_request_id: Optional[str] = None
 

@@ -143,3 +143,5 @@ cython_debug/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+matrix_token.json
