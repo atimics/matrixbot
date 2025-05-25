@@ -59,9 +59,6 @@ class MatrixGatewayService:
         self._stop_event = None  # Will be initialized in run() to ensure correct event loop
         # Move queue and task creation to run() to ensure they're in the correct event loop
         self._command_queue = None
-        self._stop_event = None  # Will be initialized in run() to ensure correct event loop
-        # Move queue and task creation to run() to ensure they're in the correct event loop
-        self._command_queue = None
         self._rate_limit_until = 0.0  # Timestamp until which we must wait due to 429
         self._command_worker_task = None
         
