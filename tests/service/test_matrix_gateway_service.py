@@ -81,12 +81,12 @@ class TestMatrixGatewayService:
         rate_limit_error.retry_after_ms = 100  # 0.1 seconds
         mock_func.side_effect = [rate_limit_error, "success"]
         
-        with patch('asyncio.sleep') as mock_sleep:
+        with patch.object(gateway_service, '_animated_sleep_with_progress', new_callable=AsyncMock) as mock_sleep:
             result = await gateway_service._rate_limited_matrix_call(mock_func)
         
         assert result == "success"
         assert mock_func.call_count == 2
-        mock_sleep.assert_called_once_with(0.1)
+        mock_sleep.assert_called_once_with(0.1, "Rate limit triggered")
 
     @pytest.mark.asyncio
     async def test_rate_limited_matrix_call_429_no_retry_after(self, gateway_service):
@@ -97,11 +97,11 @@ class TestMatrixGatewayService:
         # No retry_after_ms attribute
         mock_func.side_effect = [rate_limit_error, "success"]
         
-        with patch('asyncio.sleep') as mock_sleep:
+        with patch.object(gateway_service, '_animated_sleep_with_progress', new_callable=AsyncMock) as mock_sleep:
             result = await gateway_service._rate_limited_matrix_call(mock_func)
         
         assert result == "success"
-        mock_sleep.assert_called_once_with(10.0)  # Default retry
+        mock_sleep.assert_called_once_with(10.0, "Rate limit triggered")  # Default retry
 
     @pytest.mark.asyncio
     async def test_rate_limited_matrix_call_string_429(self, gateway_service):
@@ -110,11 +110,11 @@ class TestMatrixGatewayService:
         rate_limit_error = Exception("Error 429: M_LIMIT_EXCEEDED")
         mock_func.side_effect = [rate_limit_error, "success"]
         
-        with patch('asyncio.sleep') as mock_sleep:
+        with patch.object(gateway_service, '_animated_sleep_with_progress', new_callable=AsyncMock) as mock_sleep:
             result = await gateway_service._rate_limited_matrix_call(mock_func)
         
         assert result == "success"
-        mock_sleep.assert_called_once()
+        mock_sleep.assert_called_once_with(10.0, "Rate limit triggered")
 
     @pytest.mark.asyncio
     async def test_rate_limited_matrix_call_non_rate_limit_error(self, gateway_service):

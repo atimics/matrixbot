@@ -208,8 +208,29 @@ async def get_formatted_system_prompt(
 
     tool_states_section_text = ""
     if tool_states:
-        formatted_states = "\n".join([f"  - {key}: {json.dumps(value)}" for key, value in tool_states.items()])
-        tool_states_section_text = f"Current Tool States for this room:\n{formatted_states}"
+        formatted_states = []
+        for key, value in tool_states.items():
+            if key == "farcaster_tool_status" and isinstance(value, dict):
+                # Special formatting for Farcaster tool status to make it more readable
+                farcaster_parts = []
+                if value.get("bot_fid"):
+                    farcaster_parts.append(f"Bot FID: {value['bot_fid']}")
+                if value.get("persistent_summary"):
+                    summary_preview = value["persistent_summary"][:150] + "..." if len(value["persistent_summary"]) > 150 else value["persistent_summary"]
+                    farcaster_parts.append(f"Context Summary: {summary_preview}")
+                if value.get("unread_mention_count", 0) > 0:
+                    farcaster_parts.append(f"Unread Mentions: {value['unread_mention_count']}")
+                if value.get("recent_mentions_summary"):
+                    mentions_preview = value["recent_mentions_summary"][:100] + "..." if len(value["recent_mentions_summary"]) > 100 else value["recent_mentions_summary"]
+                    farcaster_parts.append(f"Recent Mentions: {mentions_preview}")
+                
+                farcaster_status = " | ".join(farcaster_parts) if farcaster_parts else "No active status"
+                formatted_states.append(f"  - {key}: {farcaster_status}")
+            else:
+                # Regular JSON formatting for other tool states
+                formatted_states.append(f"  - {key}: {json.dumps(value)}")
+        
+        tool_states_section_text = f"Current Tool States for this room:\n" + "\n".join(formatted_states)
         logger.debug("Included tool states in system prompt.")
     else:
         tool_states_section_text = "Current Tool States for this room:\nNo specific tool states available for this room currently."
@@ -584,63 +605,89 @@ async def build_messages_for_ai(
             logger.info(f"Injected stub for pending tool_call_id: {tc_id_to_stub} (at end of history)")
         pending_tool_call_ids.clear()
 
-    # Combine batched user inputs if needed
+    # Process batched user inputs - combine multiple inputs into a single message for consistency with tests
     if current_batched_user_inputs:
-        # Instead of combining all messages into one with embedded usernames,
-        # create separate user messages with proper role/name structure
-        # This matches the format used by ImageCaptionService and OpenRouter vision API
+        # Check if any messages have images - if so, process them separately
+        has_images = any(user_input.get("image_url") for user_input in current_batched_user_inputs)
         
-        for user_input in current_batched_user_inputs:
-            sender_name = user_input.get("name", "Unknown User")
-            content_text = user_input.get("content", "")
-            image_url = user_input.get("image_url")
-            
-            if not content_text and not image_url:
-                continue  # Skip empty messages
-            
-            if image_url:
-                # Process message with image - convert to OpenAI vision format
-                content_parts = []
+        if has_images:
+            # Process each message separately when images are involved
+            for user_input in current_batched_user_inputs:
+                sender_name = user_input.get("name", "Unknown User")
+                content_text = user_input.get("content", "")
+                image_url = user_input.get("image_url")
                 
-                # Add text content if present
-                if content_text:
-                    content_parts.append({"type": "text", "text": content_text})
+                if not content_text and not image_url:
+                    continue  # Skip empty messages
                 
-                # Add image
-                logger.info(f"Processing image in batch: {image_url}")
-                if current_message_bus:
-                    s3_url = await _get_s3_url_for_image(image_url, current_message_bus)
-                    if s3_url:
-                        logger.info(f"Successfully got S3 URL from cache service: {s3_url}")
-                        content_parts.append({
-                            "type": "image_url",
-                            "image_url": {"url": s3_url}
-                        })
+                if image_url:
+                    # Process message with image - convert to OpenAI vision format
+                    content_parts = []
+                    
+                    # Add text content if present
+                    if content_text:
+                        content_parts.append({"type": "text", "text": content_text})
+                    
+                    # Add image
+                    logger.info(f"Processing image in batch: {image_url}")
+                    if current_message_bus:
+                        s3_url = await _get_s3_url_for_image(image_url, current_message_bus)
+                        if s3_url:
+                            logger.info(f"Successfully got S3 URL from cache service: {s3_url}")
+                            content_parts.append({
+                                "type": "image_url",
+                                "image_url": {"url": s3_url}
+                            })
+                        else:
+                            logger.error(f"Failed to get S3 URL from cache service, adding text description instead: {image_url}")
+                            content_parts.append({
+                                "type": "text", 
+                                "text": f"[Image failed to process: {content_text or 'No description available'}]"
+                            })
                     else:
-                        logger.error(f"Failed to get S3 URL from cache service, adding text description instead: {image_url}")
+                        logger.error(f"No message bus available for image processing, adding text description: {image_url}")
                         content_parts.append({
                             "type": "text", 
-                            "text": f"[Image failed to process: {content_text or 'No description available'}]"
+                            "text": f"[Image processing unavailable: {content_text or 'No description available'}]"
                         })
-                else:
-                    logger.error(f"No message bus available for image processing, adding text description: {image_url}")
-                    content_parts.append({
-                        "type": "text", 
-                        "text": f"[Image processing unavailable: {content_text or 'No description available'}]"
+                    
+                    # Create message with structured content for vision
+                    messages_for_ai.append({
+                        "role": "user", 
+                        "name": sender_name, 
+                        "content": content_parts
                     })
+                else:
+                    # Text-only message - use simple format (no username prefix in content)
+                    messages_for_ai.append({
+                        "role": "user", 
+                        "name": sender_name, 
+                        "content": content_text
+                    })
+        else:
+            # No images - combine all inputs into a single message as expected by tests
+            combined_content_parts = []
+            first_sender_name = None
+            
+            for user_input in current_batched_user_inputs:
+                sender_name = user_input.get("name", "Unknown User")
+                content_text = user_input.get("content", "")
                 
-                # Create message with structured content for vision
+                if not content_text:
+                    continue  # Skip empty messages
+                
+                if first_sender_name is None:
+                    first_sender_name = sender_name
+                
+                # Format as "sender: content"
+                combined_content_parts.append(f"{sender_name}: {content_text}")
+            
+            if combined_content_parts:
+                # Create single combined message
                 messages_for_ai.append({
                     "role": "user", 
-                    "name": sender_name, 
-                    "content": content_parts
-                })
-            else:
-                # Text-only message - use simple format
-                messages_for_ai.append({
-                    "role": "user", 
-                    "name": sender_name, 
-                    "content": content_text
+                    "name": first_sender_name or "Unknown User", 
+                    "content": "\n".join(combined_content_parts)
                 })
     
     # Log the final constructed messages for debugging

@@ -21,7 +21,9 @@ from event_definitions import (
     StructuredPlanningRequestEvent, StructuredPlanningResponseEvent,
     ChannelContext, ChannelContextBatch, AIThoughts,
     SendMatrixMessageCommand,
-    ImageCacheRequestEvent, ImageCacheResponseEvent  # Added for image processing
+    ImageCacheRequestEvent, ImageCacheResponseEvent,  # Added for image processing
+    ActionFeedbackRequestEvent, ActionFeedbackResponseEvent,
+    FollowUpThinkingRequestEvent, FollowUpPlanningRequestEvent
 )
 from action_registry_service import ActionRegistryService
 from action_execution_service import ActionExecutionService
@@ -58,6 +60,10 @@ class JsonCentricRoomLogicService:
         # Model configuration for two-step processing
         self.thinker_model = os.getenv("THINKER_MODEL", "anthropic/claude-3-haiku")
         self.planner_model = os.getenv("PLANNER_MODEL", "openai/gpt-4o")
+
+        # Follow-up processing configuration
+        self.max_follow_up_phases = int(os.getenv("MAX_FOLLOW_UP_PHASES", "3"))
+        self.enable_action_feedback = os.getenv("ENABLE_ACTION_FEEDBACK", "true").lower() == "true"
 
         self._status_cache: Dict[str, Any] = {"value": None, "expires_at": 0.0}
         self.status_cache_ttl = int(os.getenv("AI_STATUS_TEXT_CACHE_TTL", "3600"))
@@ -379,7 +385,12 @@ class JsonCentricRoomLogicService:
         return history
 
     async def _handle_thinking_response(self, event: ThinkingResponseEvent):
-        """Handle response from Thinker AI."""
+        """Handle response from Thinker AI (both regular and follow-up)."""
+        # Check if this is a follow-up thinking response
+        if event.original_request_payload.get("follow_up_type") == "thinking":
+            await self._handle_follow_up_thinking_response(event)
+            return
+
         # Find the room that initiated this thinking request
         room_id = None
         config = None
@@ -427,7 +438,12 @@ class JsonCentricRoomLogicService:
             await self.bus.publish(SetTypingIndicatorCommand(room_id=room_id, typing=False))
 
     async def _handle_structured_planning_response(self, event: StructuredPlanningResponseEvent):
-        """Handle response from Planner AI and execute actions."""
+        """Handle response from Planner AI and execute actions (both regular and follow-up)."""
+        # Check if this is a follow-up planning response
+        if event.original_request_payload.get("is_follow_up"):
+            await self._handle_follow_up_planning_response(event)
+            return
+
         # Find the room that initiated this planning request
         room_id = None
         config = None
@@ -463,26 +479,35 @@ class JsonCentricRoomLogicService:
                             request_id=event.request_id
                         )
                         
-                        # Log results
+                        # Extract action results for potential follow-up processing
+                        action_results_for_follow_up = []
                         for channel_result in results.get("channel_results", []):
                             if channel_result["channel_id"] == room_id:
-                                for action_result in channel_result.get("action_results", []):
+                                action_results_for_follow_up = channel_result.get("action_results", [])
+                                
+                                # Log results
+                                for action_result in action_results_for_follow_up:
                                     if action_result.get("success"):
                                         logger.info(f"JsonCentricRLS: [{room_id}] Action {action_result['action_name']} succeeded")
                                     else:
                                         logger.error(f"JsonCentricRLS: [{room_id}] Action {action_result['action_name']} failed: {action_result.get('error', 'Unknown error')}")
+                                break
+
+                        # Initiate follow-up processing if enabled and actions were executed
+                        if action_results_for_follow_up and self.enable_action_feedback:
+                            await self._initiate_follow_up_processing(
+                                room_id, 
+                                action_results_for_follow_up, 
+                                event.request_id,
+                                phase_number=1
+                            )
+                        else:
+                            # No follow-up needed, complete the turn normally
+                            await self._complete_turn_processing(room_id, config)
                         break  # Only process actions for this room
-
-            # Update memory with the turn
-            await self._update_memory_after_turn(room_id, config)
-
-            # Clear pending batch and turn context
-            config['pending_batch'].clear()
-            config.pop('current_turn_context', None)
-
-            # Check if summary is needed
-            if config.get('new_turns_since_last_summary', 0) >= self.short_term_memory_items:
-                await self._generate_and_store_summary(room_id)
+            else:
+                # No actions executed, complete the turn normally
+                await self._complete_turn_processing(room_id, config)
 
         except Exception as e:
             logger.error(f"JsonCentricRLS: [{room_id}] Error executing actions: {e}")
@@ -541,9 +566,12 @@ class JsonCentricRoomLogicService:
         self.bus.subscribe(ActivateListeningEvent.get_event_type(), self._handle_activate_listening)
         self.bus.subscribe(BotDisplayNameReadyEvent.get_event_type(), self._handle_bot_display_name_ready)
         
-        # Subscribe to AI response events
+        # Subscribe to AI response events (handles both regular and follow-up)
         self.bus.subscribe(ThinkingResponseEvent.get_event_type(), self._handle_thinking_response)
         self.bus.subscribe(StructuredPlanningResponseEvent.get_event_type(), self._handle_structured_planning_response)
+        
+        # Subscribe to follow-up processing events
+        self.bus.subscribe(ActionFeedbackResponseEvent.get_event_type(), self._handle_action_feedback_response)
         
         await self._stop_event.wait()
         logger.info("JsonCentricRoomLogicService: Stopped.")
@@ -552,3 +580,294 @@ class JsonCentricRoomLogicService:
         """Stop the service."""
         logger.info("JsonCentricRoomLogicService: Stop requested.")
         self._stop_event.set()
+
+    async def _initiate_follow_up_processing(self, room_id: str, action_results: List[Dict[str, Any]], 
+                                           original_request_id: str, phase_number: int = 1) -> None:
+        """
+        Initiate follow-up processing based on action execution results.
+        
+        This method implements the multi-phase workflow:
+        1. Analyze action results to determine if follow-up is needed
+        2. If needed, trigger thinking → planning → execution cycle
+        3. Support multiple phases with incremental improvement
+        """
+        config = self.room_activity_config.get(room_id)
+        if not config:
+            logger.error(f"JsonCentricRLS: [{room_id}] No config found for follow-up processing")
+            return
+
+        turn_context = config.get('current_turn_context', {})
+        if not turn_context:
+            logger.error(f"JsonCentricRLS: [{room_id}] No turn context found for follow-up processing")
+            return
+
+        # Check if we've reached the maximum number of follow-up phases
+        if phase_number > self.max_follow_up_phases:
+            logger.info(f"JsonCentricRLS: [{room_id}] Reached maximum follow-up phases ({self.max_follow_up_phases}), stopping")
+            return
+
+        # Skip follow-up if disabled
+        if not self.enable_action_feedback:
+            logger.info(f"JsonCentricRLS: [{room_id}] Action feedback disabled, skipping follow-up processing")
+            return
+
+        logger.info(f"JsonCentricRLS: [{room_id}] Initiating follow-up processing phase {phase_number} for {len(action_results)} actions")
+
+        try:
+            # Step 1: Request AI analysis of action results to determine if follow-up is needed
+            feedback_request_id = str(uuid.uuid4())
+            
+            feedback_request = ActionFeedbackRequestEvent(
+                request_id=feedback_request_id,
+                original_planning_request_id=original_request_id,
+                executed_actions=action_results,
+                original_context=turn_context['context_batch'],
+                model_name=self.planner_model,  # Use planner model for feedback analysis
+                phase_number=phase_number
+            )
+
+            # Store follow-up context for when feedback response arrives
+            turn_context['follow_up_context'] = {
+                'feedback_request_id': feedback_request_id,
+                'action_results': action_results,
+                'phase_number': phase_number,
+                'original_request_id': original_request_id
+            }
+
+            await self.bus.publish(feedback_request)
+            logger.info(f"JsonCentricRLS: [{room_id}] Sent action feedback request {feedback_request_id} for phase {phase_number}")
+
+        except Exception as e:
+            logger.error(f"JsonCentricRLS: [{room_id}] Error initiating follow-up processing: {e}")
+
+    async def _handle_action_feedback_response(self, event: ActionFeedbackResponseEvent):
+        """Handle response from action feedback analysis."""
+        # Find the room that initiated this feedback request
+        room_id = None
+        config = None
+        
+        for rid, cfg in self.room_activity_config.items():
+            turn_context = cfg.get('current_turn_context', {})
+            follow_up_context = turn_context.get('follow_up_context', {})
+            if follow_up_context.get('feedback_request_id') == event.request_id:
+                room_id = rid
+                config = cfg
+                break
+
+        if not room_id or not config:
+            logger.error(f"JsonCentricRLS: Could not find room for feedback response {event.request_id}")
+            return
+
+        if not event.success:
+            logger.error(f"JsonCentricRLS: [{room_id}] Action feedback analysis failed: {event.error_message}")
+            return
+
+        turn_context = config['current_turn_context']
+        follow_up_context = turn_context['follow_up_context']
+        phase_number = follow_up_context['phase_number']
+
+        logger.info(f"JsonCentricRLS: [{room_id}] Received feedback response for phase {phase_number}: follow_up_needed={event.needs_follow_up}")
+
+        if not event.needs_follow_up:
+            logger.info(f"JsonCentricRLS: [{room_id}] No follow-up needed according to AI analysis. Reason: {event.follow_up_reasoning}")
+            # Clear follow-up context as we're done
+            turn_context.pop('follow_up_context', None)
+            return
+
+        # AI determined follow-up is needed - proceed with the recommended type
+        recommended_type = event.recommended_follow_up_type or "thinking"
+        logger.info(f"JsonCentricRLS: [{room_id}] Follow-up needed: {recommended_type}. Reason: {event.follow_up_reasoning}")
+
+        try:
+            if recommended_type == "thinking":
+                # Start with thinking phase for follow-up
+                await self._initiate_follow_up_thinking(room_id, config, phase_number + 1)
+            elif recommended_type == "planning":
+                # Jump directly to planning with existing thoughts
+                await self._initiate_follow_up_planning(room_id, config, phase_number + 1)
+            else:
+                logger.warning(f"JsonCentricRLS: [{room_id}] Unknown follow-up type: {recommended_type}")
+
+        except Exception as e:
+            logger.error(f"JsonCentricRLS: [{room_id}] Error proceeding with follow-up: {e}")
+
+    async def _initiate_follow_up_thinking(self, room_id: str, config: Dict[str, Any], phase_number: int):
+        """Initiate follow-up thinking phase based on action results."""
+        turn_context = config['current_turn_context']
+        follow_up_context = turn_context['follow_up_context']
+        
+        thinking_request_id = str(uuid.uuid4())
+        
+        thinking_request = FollowUpThinkingRequestEvent(
+            request_id=thinking_request_id,
+            original_context=turn_context['context_batch'],
+            previous_thoughts=turn_context.get('thoughts', []),
+            action_results=follow_up_context['action_results'],
+            phase_number=phase_number,
+            model_name=self.thinker_model
+        )
+
+        # Update follow-up context
+        follow_up_context['follow_up_thinking_request_id'] = thinking_request_id
+        follow_up_context['phase_number'] = phase_number
+
+        await self.bus.publish(thinking_request)
+        logger.info(f"JsonCentricRLS: [{room_id}] Sent follow-up thinking request {thinking_request_id} for phase {phase_number}")
+
+    async def _initiate_follow_up_planning(self, room_id: str, config: Dict[str, Any], phase_number: int):
+        """Initiate follow-up planning phase with updated thoughts."""
+        turn_context = config['current_turn_context']
+        follow_up_context = turn_context['follow_up_context']
+        
+        planning_request_id = str(uuid.uuid4())
+        actions_schema = self.action_registry.generate_planner_schema()
+        
+        planning_request = FollowUpPlanningRequestEvent(
+            request_id=planning_request_id,
+            updated_thoughts=turn_context.get('thoughts', []),
+            original_context=turn_context['context_batch'],
+            previous_action_results=follow_up_context['action_results'],
+            phase_number=phase_number,
+            model_name=self.planner_model,
+            actions_schema=actions_schema
+        )
+
+        # Update follow-up context
+        follow_up_context['follow_up_planning_request_id'] = planning_request_id
+        follow_up_context['phase_number'] = phase_number
+
+        await self.bus.publish(planning_request)
+        logger.info(f"JsonCentricRLS: [{room_id}] Sent follow-up planning request {planning_request_id} for phase {phase_number}")
+
+    async def _handle_follow_up_thinking_response(self, event: ThinkingResponseEvent):
+        """Handle response from follow-up thinking phase."""
+        # Find the room that initiated this follow-up thinking
+        room_id = None
+        config = None
+        
+        for rid, cfg in self.room_activity_config.items():
+            turn_context = cfg.get('current_turn_context', {})
+            follow_up_context = turn_context.get('follow_up_context', {})
+            if follow_up_context.get('follow_up_thinking_request_id') == event.request_id:
+                room_id = rid
+                config = cfg
+                break
+
+        if not room_id or not config:
+            logger.error(f"JsonCentricRLS: Could not find room for follow-up thinking response {event.request_id}")
+            return
+
+        if not event.success:
+            logger.error(f"JsonCentricRLS: [{room_id}] Follow-up thinking failed: {event.error_message}")
+            return
+
+        logger.info(f"JsonCentricRLS: [{room_id}] Received follow-up thinking response, proceeding to planning")
+
+        try:
+            turn_context = config['current_turn_context']
+            follow_up_context = turn_context['follow_up_context']
+            
+            # Update thoughts with the new thinking
+            turn_context['thoughts'] = event.thoughts
+            
+            # Proceed to follow-up planning
+            await self._initiate_follow_up_planning(room_id, config, follow_up_context['phase_number'])
+
+        except Exception as e:
+            logger.error(f"JsonCentricRLS: [{room_id}] Error proceeding to follow-up planning: {e}")
+
+    async def _handle_follow_up_planning_response(self, event: StructuredPlanningResponseEvent):
+        """Handle response from follow-up planning phase and execute actions."""
+        # Check if this is a follow-up planning response
+        if not event.original_request_payload.get("is_follow_up"):
+            # Not a follow-up response, let the regular handler deal with it
+            return
+
+        # Find the room that initiated this follow-up planning
+        room_id = None
+        config = None
+        
+        for rid, cfg in self.room_activity_config.items():
+            turn_context = cfg.get('current_turn_context', {})
+            follow_up_context = turn_context.get('follow_up_context', {})
+            if follow_up_context.get('follow_up_planning_request_id') == event.request_id:
+                room_id = rid
+                config = cfg
+                break
+
+        if not room_id or not config:
+            logger.error(f"JsonCentricRLS: Could not find room for follow-up planning response {event.request_id}")
+            return
+
+        if not event.success:
+            logger.error(f"JsonCentricRLS: [{room_id}] Follow-up planning failed: {event.error_message}")
+            return
+
+        logger.info(f"JsonCentricRLS: [{room_id}] Received follow-up action plan, executing actions")
+
+        try:
+            turn_context = config['current_turn_context']
+            follow_up_context = turn_context['follow_up_context']
+            phase_number = follow_up_context['phase_number']
+
+            # Execute the follow-up action plan
+            if event.action_plan and event.action_plan.channel_responses:
+                for channel_response in event.action_plan.channel_responses:
+                    if channel_response.channel_id == room_id:
+                        # Execute the action plan for this channel
+                        results = await self.action_executor.execute_action_plan(
+                            event.action_plan,
+                            request_id=event.request_id
+                        )
+                        
+                        # Extract action results for this channel
+                        follow_up_action_results = []
+                        for channel_result in results.get("channel_results", []):
+                            if channel_result["channel_id"] == room_id:
+                                follow_up_action_results = channel_result.get("action_results", [])
+                                
+                                # Log results
+                                for action_result in follow_up_action_results:
+                                    if action_result.get("success"):
+                                        logger.info(f"JsonCentricRLS: [{room_id}] Follow-up action {action_result['action_name']} succeeded")
+                                    else:
+                                        logger.error(f"JsonCentricRLS: [{room_id}] Follow-up action {action_result['action_name']} failed: {action_result.get('error', 'Unknown error')}")
+                                break
+
+                        # Check if further follow-up is requested
+                        follow_up_requested = event.original_request_payload.get("follow_up_requested", False)
+                        if follow_up_requested and phase_number < self.max_follow_up_phases:
+                            logger.info(f"JsonCentricRLS: [{room_id}] AI requested another follow-up phase")
+                            await self._initiate_follow_up_processing(
+                                room_id, 
+                                follow_up_action_results,
+                                event.request_id,
+                                phase_number
+                            )
+                        else:
+                            # Follow-up processing complete
+                            logger.info(f"JsonCentricRLS: [{room_id}] Follow-up processing complete after phase {phase_number}")
+                            turn_context.pop('follow_up_context', None)
+                        break
+
+        except Exception as e:
+            logger.error(f"JsonCentricRLS: [{room_id}] Error executing follow-up actions: {e}")
+
+    async def _complete_turn_processing(self, room_id: str, config: Dict[str, Any]):
+        """Complete the turn processing by updating memory and clearing context."""
+        try:
+            # Update memory with the turn
+            await self._update_memory_after_turn(room_id, config)
+
+            # Clear pending batch and turn context
+            config['pending_batch'].clear()
+            config.pop('current_turn_context', None)
+
+            # Check if summary is needed
+            if config.get('new_turns_since_last_summary', 0) >= self.short_term_memory_items:
+                await self._generate_and_store_summary(room_id)
+
+            logger.info(f"JsonCentricRLS: [{room_id}] Turn processing completed")
+
+        except Exception as e:
+            logger.error(f"JsonCentricRLS: [{room_id}] Error completing turn processing: {e}")

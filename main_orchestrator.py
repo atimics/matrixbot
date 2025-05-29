@@ -1,6 +1,7 @@
 import asyncio
 import os
 import logging
+import colorlog  # Added for colorful logging
 from dotenv import load_dotenv
 
 from message_bus import MessageBus
@@ -18,10 +19,37 @@ import database
 import prompt_constructor  # Added to set the message bus reference
 
 def configure_logging():
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    """Configure colorful logging with different colors for different log levels."""
+    # Create a colorful formatter
+    formatter = colorlog.ColoredFormatter(
+        "%(log_color)s%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        reset=True,
+        log_colors={
+            'DEBUG': 'cyan',
+            'INFO': 'green',
+            'WARNING': 'yellow',
+            'ERROR': 'red',
+            'CRITICAL': 'red,bg_white',
+        },
+        secondary_log_colors={},
+        style='%'
     )
+    
+    # Create console handler with the colorful formatter
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    root_logger.handlers.clear()  # Clear any existing handlers
+    root_logger.addHandler(console_handler)
+    
+    # Make some specific loggers more verbose for debugging
+    logging.getLogger("JsonCentricAI").setLevel(logging.INFO)
+    logging.getLogger("ActionExecution").setLevel(logging.INFO)
+    logging.getLogger("JsonCentricRLS").setLevel(logging.INFO)
 
 async def main() -> None:
     configure_logging()

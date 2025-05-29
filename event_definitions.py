@@ -40,6 +40,11 @@ class EventType(str, Enum):
     STRUCTURED_PLANNING_RESPONSE = "structured_planning_response"
     ACTION_EXECUTION_REQUEST = "action_execution_request"
     ACTION_EXECUTION_RESPONSE = "action_execution_response"
+    # Enhanced multi-phase processing events
+    ACTION_FEEDBACK_REQUEST = "action_feedback_request"
+    ACTION_FEEDBACK_RESPONSE = "action_feedback_response"
+    FOLLOW_UP_THINKING_REQUEST = "follow_up_thinking_request"
+    FOLLOW_UP_PLANNING_REQUEST = "follow_up_planning_request"
 
 # Helper function to generate a default UUID string if needed elsewhere,
 # but Pydantic's default_factory is usually sufficient for default field values.
@@ -407,6 +412,7 @@ class ChannelContext(BaseModel):
     tool_states: Optional[Dict[str, Any]] = None
     user_memories: Optional[List[Dict[str, Any]]] = None
     pdf_annotations: Optional[List[Dict[str, Any]]] = None
+    farcaster_tool_status: Optional[Dict[str, Any]] = None  # Added for Farcaster integration
 
 class ChannelContextBatch(BaseModel):
     """Container for one or more channel contexts to be processed together."""
@@ -489,4 +495,47 @@ class ActionExecutionResponseEvent(BaseEvent):
     result: Optional[str] = None
     error_message: Optional[str] = None
     original_request_id: Optional[str] = None
+
+# Enhanced multi-phase processing events
+class ActionFeedbackRequestEvent(BaseEvent):
+    """Request for AI to analyze action results and determine if follow-up is needed."""
+    event_type: EventType = Field(EventType.ACTION_FEEDBACK_REQUEST, frozen=True)
+    request_id: str
+    original_planning_request_id: str
+    executed_actions: List[Dict[str, Any]]  # Action results with success/failure info
+    original_context: ChannelContextBatch
+    model_name: str
+    phase_number: int = 1  # Track which phase this is (1, 2, 3...)
+    
+class ActionFeedbackResponseEvent(BaseEvent):
+    """Response containing AI's analysis of action results and follow-up recommendations."""
+    event_type: EventType = Field(EventType.ACTION_FEEDBACK_RESPONSE, frozen=True)
+    request_id: str
+    success: bool
+    needs_follow_up: bool = False
+    follow_up_reasoning: Optional[str] = None
+    recommended_follow_up_type: Optional[Literal["thinking", "planning", "none"]] = None
+    error_message: Optional[str] = None
+    original_request_payload: Dict[str, Any] = Field(default_factory=dict)
+
+class FollowUpThinkingRequestEvent(BaseEvent):
+    """Request for follow-up thinking phase based on action results."""
+    event_type: EventType = Field(EventType.FOLLOW_UP_THINKING_REQUEST, frozen=True)
+    request_id: str
+    original_context: ChannelContextBatch
+    previous_thoughts: List[AIThoughts]
+    action_results: List[Dict[str, Any]]
+    phase_number: int
+    model_name: str
+    
+class FollowUpPlanningRequestEvent(BaseEvent):
+    """Request for follow-up planning phase based on updated thinking."""
+    event_type: EventType = Field(EventType.FOLLOW_UP_PLANNING_REQUEST, frozen=True)
+    request_id: str
+    updated_thoughts: List[AIThoughts]
+    original_context: ChannelContextBatch
+    previous_action_results: List[Dict[str, Any]]
+    phase_number: int
+    model_name: str
+    actions_schema: Dict[str, Any]
 

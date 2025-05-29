@@ -28,6 +28,9 @@ from json_centric_room_logic_service import JsonCentricRoomLogicService
 from matrix_gateway_service import MatrixGatewayService
 from image_cache_service import ImageCacheService
 from summarization_service import SummarizationService
+from unified_channel_manager import UnifiedChannelManager
+from farcaster_service import FarcasterService
+from event_definitions import BotDisplayNameReadyEvent, RequestAISummaryCommand
 import database
 
 # Configure logging
@@ -60,10 +63,18 @@ class JsonCentricOrchestrator:
         
         # Core AI services
         self.ai_service = JsonCentricAIService(self.message_bus, self.action_registry)
+        
+        # Initialize unified channel manager and Farcaster service
+        self.unified_channel_manager = UnifiedChannelManager(self.message_bus, self.db_path)
+        self.farcaster_service = FarcasterService(self.db_path, self.unified_channel_manager)
+        
         self.action_executor = ActionExecutionService(
             self.message_bus, 
             self.action_registry
         )
+        # Set references for unified channel integration
+        self.action_executor.farcaster_service = self.farcaster_service
+        self.action_executor.unified_channel_manager = self.unified_channel_manager
         
         # Room logic service (new JSON-centric version)
         self.room_logic_service = JsonCentricRoomLogicService(
@@ -91,8 +102,15 @@ class JsonCentricOrchestrator:
             self.room_logic_service,
             self.matrix_service,
             self.image_cache_service,
-            self.summarization_service
+            self.summarization_service,
+            self.unified_channel_manager
         ]
+        
+        # Subscribe to bot ready event to update channel summaries
+        self.message_bus.subscribe(
+            BotDisplayNameReadyEvent.get_event_type(),
+            self._handle_bot_ready_for_summary_update
+        )
         
         logger.info(f"JsonCentricOrchestrator: Initialized {len(self.services)} services")
     
@@ -118,7 +136,8 @@ Be helpful, accurate, and concise in your responses."""
         # Initialize database
         await self.initialize_database()
         
-        # Message bus is ready to use immediately, no start() method needed
+        # Start MessageBus subscription tasks now that event loop is running
+        self.message_bus.start_tasks()
         
         # Start all services
         service_tasks = []
@@ -186,6 +205,73 @@ Be helpful, accurate, and concise in your responses."""
         await self.message_bus.shutdown()
         
         logger.info("JsonCentricOrchestrator: System stopped")
+
+    async def _handle_bot_ready_for_summary_update(self, event: BotDisplayNameReadyEvent) -> None:
+        """Handle bot ready event by updating channel summaries to prevent stale data."""
+        logger.info("JsonCentricOrchestrator: Bot is ready, updating channel summaries to prevent stale data...")
+        
+        try:
+            # Get all active channels
+            channels = await database.get_all_channels(self.db_path)
+            
+            if not channels:
+                logger.info("JsonCentricOrchestrator: No channels found for summary update")
+                return
+            
+            logger.info(f"JsonCentricOrchestrator: Found {len(channels)} channels, updating summaries...")
+            
+            # Update summary for each channel
+            for channel in channels:
+                channel_id = channel["channel_id"]
+                channel_type = channel.get("channel_type", "unknown")
+                
+                try:
+                    # Get recent messages for the channel
+                    messages = await database.get_channel_messages(
+                        self.db_path, 
+                        channel_id, 
+                        limit=50,  # Get more messages for better summary
+                        include_ai_replied=True
+                    )
+                    
+                    if not messages:
+                        logger.debug(f"JsonCentricOrchestrator: No messages found for channel {channel_id}")
+                        continue
+                    
+                    # Convert database messages to HistoricalMessage format for summary
+                    from event_definitions import HistoricalMessage
+                    historical_messages = []
+                    
+                    for msg in messages:
+                        historical_msg = HistoricalMessage(
+                            role="user",  # Channel messages are from users
+                            content=msg["content"],
+                            event_id=msg["message_id"]
+                        )
+                        historical_messages.append(historical_msg)
+                    
+                    # Reverse to get chronological order for summary
+                    historical_messages.reverse()
+                    
+                    # Create and publish summary request command
+                    summary_command = RequestAISummaryCommand(
+                        room_id=channel_id,
+                        force_update=True,  # Force update to refresh stale summaries
+                        messages_to_summarize=historical_messages,
+                        last_event_id_in_messages=messages[0]["message_id"] if messages else None
+                    )
+                    
+                    await self.message_bus.publish(summary_command)
+                    logger.info(f"JsonCentricOrchestrator: Requested summary update for channel {channel_id} ({channel_type})")
+                    
+                except Exception as e:
+                    logger.error(f"JsonCentricOrchestrator: Error updating summary for channel {channel_id}: {e}")
+                    continue
+            
+            logger.info("JsonCentricOrchestrator: Completed channel summary update requests")
+            
+        except Exception as e:
+            logger.error(f"JsonCentricOrchestrator: Error during channel summary update: {e}")
 
 def main():
     """Main entry point."""

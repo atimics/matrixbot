@@ -10,7 +10,8 @@ from message_bus import MessageBus
 from event_definitions import (
     ThinkingRequestEvent, ThinkingResponseEvent,
     StructuredPlanningRequestEvent, StructuredPlanningResponseEvent,
-    AIThoughts, AIResponsePlan, ChannelResponse, AIAction
+    AIThoughts, AIResponsePlan, ChannelResponse, AIAction,
+    FollowUpThinkingRequestEvent, FollowUpPlanningRequestEvent, ActionFeedbackRequestEvent, ActionFeedbackResponseEvent
 )
 from action_registry_service import ActionRegistryService
 # Added imports for rich context building
@@ -35,11 +36,18 @@ class JsonCentricAIService:
         self.thinker_model = os.getenv("THINKER_MODEL", "openai/gpt-4o-mini")
         self.planner_model = os.getenv("PLANNER_MODEL", "openai/gpt-4o-mini")
         
+        # Enhanced multi-phase processing configuration
+        self.max_follow_up_phases = int(os.getenv("MAX_FOLLOW_UP_PHASES", "3"))
+        self.enable_action_feedback = os.getenv("ENABLE_ACTION_FEEDBACK", "true").lower() == "true"
+        
         # Database path for accessing bot context
         self.db_path = os.getenv("DATABASE_PATH", "matrix_bot_soa.db")
         
         # Set the message bus for prompt constructor image processing
         prompt_constructor.set_message_bus(message_bus)
+        
+        # Track ongoing multi-phase processes
+        self.active_processes: Dict[str, Dict[str, Any]] = {}
     
     async def _make_openrouter_request(self, model_name: str, messages: List[Dict[str, Any]], 
                                      response_format: Optional[Dict[str, Any]] = None,
@@ -88,8 +96,8 @@ class JsonCentricAIService:
                         if "message" in choice:
                             message = choice["message"]
                             logger.info(f"JsonCentricAI: Message keys: {list(message.keys())}")
-                            content = message.get("content")
-                            logger.info(f"JsonCentricAI: Content type: {type(content)}, length: {len(content) if content else 0}")
+                            
+                            content = message.get("content", "")
                             
                             # Handle empty or None content
                             if not content or content.strip() == "":
@@ -99,29 +107,15 @@ class JsonCentricAIService:
                                 reasoning = message.get("reasoning")
                                 if reasoning and reasoning.strip():
                                     logger.info(f"JsonCentricAI: Using reasoning field as content: {reasoning[:100]}...")
-                                    return True, reasoning, None
-                                
-                                # Check for error info in the response
-                                error_info = data.get("error") or choice.get("error")
-                                if error_info:
-                                    return False, None, f"API returned error: {error_info}"
-                                
-                                # Check finish reason for clues
-                                finish_reason = choice.get("finish_reason") or choice.get("native_finish_reason")
-                                if finish_reason:
-                                    logger.info(f"JsonCentricAI: Finish reason: {finish_reason}")
-                                    if finish_reason in ["content_filter", "safety"]:
-                                        return False, None, f"Content filtered by model (reason: {finish_reason})"
-                                    elif finish_reason == "length":
-                                        return False, None, "Response truncated due to length limit"
-                                
-                                return False, None, f"Empty response from model {model_name} (finish_reason: {finish_reason})"
+                                    content = reasoning
+                                else:
+                                    return False, None, "Empty response content from API"
                             
                             return True, content, None
                         else:
-                            return False, None, "No message in API response choice"
+                            return False, None, "No message in choice"
                     else:
-                        return False, None, "No choices in API response"
+                        return False, None, "No choices in response"
                 else:
                     error_msg = f"OpenRouter API error: {response.status_code} - {response.text}"
                     logger.error(f"JsonCentricAI: {error_msg}")
@@ -143,7 +137,7 @@ class JsonCentricAIService:
             # Log the thinking prompt for debugging
             logger.info(f"JsonCentricAI: Thinking prompt for {event.request_id}:")
             for i, msg in enumerate(thinking_messages):
-                logger.info(f"JsonCentricAI: Message {i}: {msg['role']} - {msg['content'][:200]}...")
+                logger.debug(f"JsonCentricAI: Message {i}: {msg['role']} - {msg['content'][:200]}...")
             
             # Configure plugins for PDF processing if needed
             plugins = None
@@ -159,8 +153,8 @@ class JsonCentricAIService:
             
             if success and thoughts_text:
                 # Log the thinking response
-                logger.info(f"JsonCentricAI: Thinking response for {event.request_id}:")
-                logger.info(f"JsonCentricAI: {thoughts_text}")
+                logger.info(f"JsonCentricAI: ✅ Thinking response received for {event.request_id}")
+                logger.debug(f"JsonCentricAI: {thoughts_text}")
                 
                 # Parse thoughts for each channel
                 thoughts = self._parse_thinking_response(thoughts_text, event.context_batch)
@@ -175,7 +169,7 @@ class JsonCentricAIService:
                     }
                 )
             else:
-                logger.error(f"JsonCentricAI: Thinking failed for {event.request_id}: {error_msg}")
+                logger.error(f"JsonCentricAI: ❌ Thinking failed for {event.request_id}: {error_msg}")
                 
                 # Provide a fallback response to allow the system to continue
                 fallback_thoughts = []
@@ -196,7 +190,7 @@ Since the AI thinking service is experiencing issues, I should provide a helpful
                         thoughts_text=fallback_text
                     ))
                 
-                logger.info(f"JsonCentricAI: Using fallback thoughts for {event.request_id}")
+                logger.warning(f"JsonCentricAI: ⚠️ Using fallback thoughts for {event.request_id}")
                 
                 response_event = ThinkingResponseEvent(
                     request_id=event.request_id,
@@ -234,18 +228,18 @@ Since the AI thinking service is experiencing issues, I should provide a helpful
             for i, msg in enumerate(planning_messages):
                 logger.info(f"JsonCentricAI: Message {i}: {msg['role']} - {msg['content'][:200]}...")
             
-            # Build response format schema
+            # Build response format schema with follow-up capability
+            enhanced_schema = self._build_enhanced_planning_schema(event.actions_schema)
             response_format = {
                 "type": "json_schema",
                 "json_schema": {
                     "name": "ai_response_plan",
-                    "schema": event.actions_schema
+                    "schema": enhanced_schema
                 }
             }
             
             # Log the schema being used
-            logger.info(f"JsonCentricAI: Using JSON schema for {event.request_id}:")
-            logger.info(f"JsonCentricAI: {json.dumps(event.actions_schema, indent=2)}")
+            logger.info(f"JsonCentricAI: Using enhanced JSON schema for {event.request_id}")
             
             # Make request to Planner AI
             success, plan_json, error_msg = await self._make_openrouter_request(
@@ -281,7 +275,14 @@ Since the AI thinking service is experiencing issues, I should provide a helpful
                     
                     plan_data = json.loads(clean_json)
                     logger.info(f"JsonCentricAI: Parsed JSON successfully: {plan_data}")
-                    action_plan = AIResponsePlan(**plan_data)
+                    
+                    # Check if the AI has requested follow-up processing
+                    follow_up_requested = plan_data.get("request_follow_up", False)
+                    follow_up_type = plan_data.get("follow_up_type", "none")
+                    
+                    # Extract the main action plan
+                    action_plan = AIResponsePlan(**{k: v for k, v in plan_data.items() 
+                                                   if k not in ["request_follow_up", "follow_up_type", "follow_up_reasoning"]})
                     
                     response_event = StructuredPlanningResponseEvent(
                         request_id=event.request_id,
@@ -289,7 +290,10 @@ Since the AI thinking service is experiencing issues, I should provide a helpful
                         action_plan=action_plan,
                         original_request_payload={
                             "thoughts": [t.model_dump() for t in event.thoughts],
-                            "model_name": event.model_name
+                            "model_name": event.model_name,
+                            "follow_up_requested": follow_up_requested,
+                            "follow_up_type": follow_up_type,
+                            "follow_up_reasoning": plan_data.get("follow_up_reasoning")
                         }
                     )
                 except json.JSONDecodeError as e:
@@ -318,6 +322,137 @@ Since the AI thinking service is experiencing issues, I should provide a helpful
                 error_message=str(e)
             )
             await self.bus.publish(error_response)
+
+    def _build_enhanced_planning_schema(self, base_schema: Dict[str, Any]) -> Dict[str, Any]:
+        """Build an enhanced planning schema that includes follow-up request capabilities."""
+        enhanced_schema = base_schema.copy()
+        
+        # Add follow-up request fields to the schema
+        if "properties" in enhanced_schema:
+            enhanced_schema["properties"]["request_follow_up"] = {
+                "type": "boolean",
+                "description": "Set to true if you need additional thinking or planning phases based on action results",
+                "default": False
+            }
+            enhanced_schema["properties"]["follow_up_type"] = {
+                "type": "string",
+                "enum": ["thinking", "planning", "none"],
+                "description": "Type of follow-up needed: 'thinking' for new analysis, 'planning' for revised actions, 'none' for no follow-up",
+                "default": "none"
+            }
+            enhanced_schema["properties"]["follow_up_reasoning"] = {
+                "type": "string",
+                "description": "Explanation of why follow-up is needed and what should be analyzed or planned",
+                "default": ""
+            }
+        
+        return enhanced_schema
+
+    async def _handle_action_feedback_request(self, event) -> None:
+        """Handle action feedback analysis to determine if follow-up is needed."""
+        logger.info(f"JsonCentricAI: Processing action feedback request {event.request_id}")
+        
+        try:
+            # Build feedback analysis prompt
+            feedback_messages = await self._build_feedback_prompt(event)
+            
+            # Make request to analyze action results
+            success, feedback_text, error_msg = await self._make_openrouter_request(
+                event.model_name,
+                feedback_messages
+            )
+            
+            if success and feedback_text:
+                # Parse feedback to determine if follow-up is needed
+                needs_follow_up, follow_up_type, reasoning = self._parse_feedback_response(feedback_text)
+                
+                response_event = ActionFeedbackResponseEvent(
+                    request_id=event.request_id,
+                    success=True,
+                    needs_follow_up=needs_follow_up,
+                    follow_up_reasoning=reasoning,
+                    recommended_follow_up_type=follow_up_type,
+                    original_request_payload={
+                        "executed_actions": event.executed_actions,
+                        "phase_number": event.phase_number
+                    }
+                )
+            else:
+                response_event = ActionFeedbackResponseEvent(
+                    request_id=event.request_id,
+                    success=False,
+                    error_message=error_msg or "Failed to analyze action feedback"
+                )
+            
+            await self.bus.publish(response_event)
+            
+        except Exception as e:
+            logger.error(f"JsonCentricAI: Error in feedback request {event.request_id}: {e}")
+            error_response = ActionFeedbackResponseEvent(
+                request_id=event.request_id,
+                success=False,
+                error_message=str(e)
+            )
+            await self.bus.publish(error_response)
+
+    async def _build_feedback_prompt(self, event) -> List[Dict[str, Any]]:
+        """Build prompt for analyzing action feedback."""
+        feedback_prompt = f"""You are an AI assistant analyzing the results of actions you previously planned.
+
+Your task is to review the action results and determine if additional thinking or planning phases are needed.
+
+Original context phase: {event.phase_number}
+Maximum allowed phases: {self.max_follow_up_phases}
+
+Action Results:
+"""
+        for action_result in event.executed_actions:
+            feedback_prompt += f"- Action: {action_result.get('action_name', 'unknown')}\n"
+            feedback_prompt += f"  Success: {action_result.get('success', False)}\n"
+            feedback_prompt += f"  Result: {action_result.get('result', 'No result')}\n"
+            if action_result.get('error_message'):
+                feedback_prompt += f"  Error: {action_result['error_message']}\n"
+            feedback_prompt += "\n"
+
+        feedback_prompt += f"""
+Based on these results, analyze if follow-up is needed:
+
+1. Were all actions successful?
+2. Do the results indicate the user's needs were fully addressed?
+3. Are there any error conditions that require different actions?
+4. Would additional analysis help improve the response?
+
+Respond with your analysis and clearly state:
+- FOLLOW_UP_NEEDED: true/false
+- FOLLOW_UP_TYPE: thinking/planning/none  
+- REASONING: explanation of why follow-up is or isn't needed
+
+Keep in mind we're currently in phase {event.phase_number} of max {self.max_follow_up_phases} phases.
+"""
+
+        return [{"role": "user", "content": feedback_prompt}]
+
+    def _parse_feedback_response(self, feedback_text: str) -> tuple[bool, Optional[str], str]:
+        """Parse feedback response to extract follow-up decision."""
+        lines = feedback_text.lower()
+        
+        # Look for follow-up indicators
+        needs_follow_up = "follow_up_needed: true" in lines or "follow-up needed: true" in lines
+        
+        follow_up_type = "none"
+        if "follow_up_type: thinking" in lines:
+            follow_up_type = "thinking"
+        elif "follow_up_type: planning" in lines:
+            follow_up_type = "planning"
+        
+        # Extract reasoning
+        reasoning_start = feedback_text.lower().find("reasoning:")
+        if reasoning_start != -1:
+            reasoning = feedback_text[reasoning_start + 10:].strip()
+        else:
+            reasoning = feedback_text
+        
+        return needs_follow_up, follow_up_type if needs_follow_up else None, reasoning
     
     async def _build_thinking_prompt(self, context_batch) -> List[Dict[str, Any]]:
         """Build the prompt for the Thinker AI using rich context from prompt constructor."""
@@ -515,6 +650,18 @@ Examples of correct action usage:
 - react_to_message: {{"event_id": "$actual_event_id", "emoji": "👍"}}
 - do_not_respond: {{}} (no required parameters for this action)
 
+FOLLOW-UP PROCESSING:
+You can request additional AI processing phases by setting:
+- "request_follow_up": true (if you want to analyze action results and potentially plan more actions)
+- "follow_up_type": "thinking" | "planning" | "none"
+- "follow_up_reasoning": "explanation of why follow-up is needed"
+
+Use follow-up when:
+- Actions might fail and you want to handle errors intelligently
+- You're taking actions that will provide new information to analyze
+- Complex multi-step processes where you need to see intermediate results
+- You want to verify that your actions achieved the intended outcome
+
 You must respond with a JSON object that follows this exact structure:
 {{
   "channel_responses": [
@@ -531,7 +678,10 @@ You must respond with a JSON object that follows this exact structure:
       ],
       "reasoning": "Optional explanation of your plan for this channel"
     }}
-  ]
+  ],
+  "request_follow_up": false,
+  "follow_up_type": "none",
+  "follow_up_reasoning": ""
 }}
 
 IMPORTANT RULES:
@@ -541,6 +691,7 @@ IMPORTANT RULES:
 4. If replying to a message, use send_reply_text with both "text" and optionally "reply_to_event_id"
 5. If sending a new message, use send_message_text with "text"
 6. Always include at least one action per channel, even if it's 'do_not_respond'
+7. Consider requesting follow-up if your actions will provide new information worth analyzing
 
 Translate the intentions and steps from the thought process into concrete actions with their required parameters filled in."""
             
@@ -637,6 +788,12 @@ Translate the intentions and steps from the thought process into concrete action
         logger.info("JsonCentricAIService: Starting...")
         self.bus.subscribe(ThinkingRequestEvent.get_event_type(), self._handle_thinking_request)
         self.bus.subscribe(StructuredPlanningRequestEvent.get_event_type(), self._handle_structured_planning_request)
+        
+        # Subscribe to follow-up processing events
+        self.bus.subscribe(FollowUpThinkingRequestEvent.get_event_type(), self._handle_follow_up_thinking_request)
+        self.bus.subscribe(FollowUpPlanningRequestEvent.get_event_type(), self._handle_follow_up_planning_request)
+        self.bus.subscribe(ActionFeedbackRequestEvent.get_event_type(), self._handle_action_feedback_request)
+        
         await self._stop_event.wait()
         logger.info("JsonCentricAIService: Stopped.")
     
@@ -644,3 +801,247 @@ Translate the intentions and steps from the thought process into concrete action
         """Stop the service."""
         logger.info("JsonCentricAIService: Stop requested.")
         self._stop_event.set()
+
+    async def _handle_follow_up_thinking_request(self, event) -> None:
+        """Handle follow-up thinking request based on action results."""
+        logger.info(f"JsonCentricAI: Processing follow-up thinking request {event.request_id} (phase {event.phase_number})")
+        
+        try:
+            # Build follow-up thinking prompt that includes action results analysis
+            thinking_messages = await self._build_follow_up_thinking_prompt(event)
+            
+            # Make request to Thinker AI for follow-up analysis
+            success, thoughts_text, error_msg = await self._make_openrouter_request(
+                event.model_name,
+                thinking_messages
+            )
+            
+            if success and thoughts_text:
+                logger.info(f"JsonCentricAI: ✅ Follow-up thinking response received for {event.request_id}")
+                
+                # Parse thoughts for each channel
+                thoughts = self._parse_thinking_response(thoughts_text, event.original_context)
+                
+                response_event = ThinkingResponseEvent(
+                    request_id=event.request_id,
+                    success=True,
+                    thoughts=thoughts,
+                    original_request_payload={
+                        "context_batch": event.original_context.model_dump(),
+                        "model_name": event.model_name,
+                        "phase_number": event.phase_number,
+                        "action_results": event.action_results,
+                        "follow_up_type": "thinking"
+                    }
+                )
+            else:
+                logger.error(f"JsonCentricAI: ❌ Follow-up thinking failed for {event.request_id}: {error_msg}")
+                response_event = ThinkingResponseEvent(
+                    request_id=event.request_id,
+                    success=False,
+                    error_message=error_msg or "Failed to generate follow-up thinking"
+                )
+            
+            await self.bus.publish(response_event)
+            
+        except Exception as e:
+            logger.error(f"JsonCentricAI: Error in follow-up thinking request {event.request_id}: {e}")
+            error_response = ThinkingResponseEvent(
+                request_id=event.request_id,
+                success=False,
+                error_message=str(e)
+            )
+            await self.bus.publish(error_response)
+
+    async def _handle_follow_up_planning_request(self, event) -> None:
+        """Handle follow-up planning request with updated thoughts."""
+        logger.info(f"JsonCentricAI: Processing follow-up planning request {event.request_id} (phase {event.phase_number})")
+        
+        try:
+            # Build follow-up planning prompt
+            planning_messages = await self._build_follow_up_planning_prompt(event)
+            
+            # Build enhanced schema with follow-up capability
+            enhanced_schema = self._build_enhanced_planning_schema(event.actions_schema)
+            response_format = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "follow_up_response_plan",
+                    "schema": enhanced_schema
+                }
+            }
+            
+            # Make request to Planner AI for follow-up planning
+            success, plan_json, error_msg = await self._make_openrouter_request(
+                event.model_name,
+                planning_messages,
+                response_format=response_format
+            )
+            
+            if success and plan_json:
+                logger.info(f"JsonCentricAI: Follow-up planning response for {event.request_id}")
+                
+                try:
+                    # Parse the JSON response
+                    clean_json = plan_json.strip()
+                    if clean_json.startswith('```json'):
+                        clean_json = clean_json[7:]
+                        if clean_json.endswith('```'):
+                            clean_json = clean_json[:-3]
+                        clean_json = clean_json.strip()
+                    elif clean_json.startswith('```'):
+                        clean_json = clean_json[3:]
+                        if clean_json.endswith('```'):
+                            clean_json = clean_json[:-3]
+                        clean_json = clean_json.strip()
+                    
+                    plan_data = json.loads(clean_json)
+                    
+                    # Check for additional follow-up requests
+                    follow_up_requested = plan_data.get("request_follow_up", False)
+                    follow_up_type = plan_data.get("follow_up_type", "none")
+                    
+                    # Create action plan
+                    action_plan = AIResponsePlan(**{k: v for k, v in plan_data.items() 
+                                                   if k not in ["request_follow_up", "follow_up_type", "follow_up_reasoning"]})
+                    
+                    response_event = StructuredPlanningResponseEvent(
+                        request_id=event.request_id,
+                        success=True,
+                        action_plan=action_plan,
+                        original_request_payload={
+                            "thoughts": [t.model_dump() for t in event.updated_thoughts],
+                            "model_name": event.model_name,
+                            "phase_number": event.phase_number,
+                            "previous_action_results": event.previous_action_results,
+                            "follow_up_requested": follow_up_requested,
+                            "follow_up_type": follow_up_type,
+                            "follow_up_reasoning": plan_data.get("follow_up_reasoning"),
+                            "is_follow_up": True
+                        }
+                    )
+                except json.JSONDecodeError as e:
+                    logger.error(f"JsonCentricAI: Failed to parse follow-up planning JSON: {e}")
+                    response_event = StructuredPlanningResponseEvent(
+                        request_id=event.request_id,
+                        success=False,
+                        error_message=f"Invalid JSON response: {str(e)}"
+                    )
+            else:
+                logger.error(f"JsonCentricAI: Follow-up planning API call failed for {event.request_id}: {error_msg}")
+                response_event = StructuredPlanningResponseEvent(
+                    request_id=event.request_id,
+                    success=False,
+                    error_message=error_msg or "Failed to generate follow-up action plan"
+                )
+            
+            await self.bus.publish(response_event)
+            
+        except Exception as e:
+            logger.error(f"JsonCentricAI: Error in follow-up planning request {event.request_id}: {e}")
+            error_response = StructuredPlanningResponseEvent(
+                request_id=event.request_id,
+                success=False,
+                error_message=str(e)
+            )
+            await self.bus.publish(error_response)
+
+    async def _build_follow_up_thinking_prompt(self, event) -> List[Dict[str, Any]]:
+        """Build prompt for follow-up thinking based on action results."""
+        # Start with the original context but add action results analysis
+        messages = await self._build_thinking_prompt(event.original_context)
+        
+        # Modify the system prompt to include action result analysis
+        action_analysis_prompt = f"""
+
+FOLLOW-UP THINKING PHASE {event.phase_number}:
+
+You previously completed thinking phase {event.phase_number - 1} and actions were executed.
+Here are the results of those actions:
+
+Action Results:
+"""
+        for i, action_result in enumerate(event.action_results, 1):
+            action_analysis_prompt += f"{i}. Action: {action_result.get('action_name', 'unknown')}\n"
+            action_analysis_prompt += f"   Success: {action_result.get('success', False)}\n"
+            action_analysis_prompt += f"   Result: {action_result.get('result', 'No result provided')}\n"
+            if action_result.get('error_message'):
+                action_analysis_prompt += f"   Error: {action_result['error_message']}\n"
+            action_analysis_prompt += "\n"
+
+        action_analysis_prompt += f"""
+Previous thoughts from phase {event.phase_number - 1}:
+"""
+        for thought in event.previous_thoughts:
+            action_analysis_prompt += f"Channel {thought.channel_id}: {thought.thoughts_text}\n\n"
+
+        action_analysis_prompt += """
+Now analyze these action results and provide updated thinking:
+
+1. Were the previous actions successful in addressing the user's needs?
+2. What new information do the action results provide?
+3. Are there any issues or failures that need to be addressed?
+4. What should be done next based on these results?
+5. Has the user's original request been fully satisfied?
+
+Provide detailed reasoning for the next steps based on both the original context and the action results.
+"""
+
+        # Append the follow-up analysis to the system prompt
+        if messages and messages[0]['role'] == 'system':
+            messages[0]['content'] += action_analysis_prompt
+        else:
+            messages.insert(0, {'role': 'system', 'content': action_analysis_prompt})
+
+        return messages
+
+    async def _build_follow_up_planning_prompt(self, event) -> List[Dict[str, Any]]:
+        """Build prompt for follow-up planning with updated thoughts."""
+        # Start with the planning prompt structure but customize for follow-up
+        messages = await self._build_planning_prompt(event.updated_thoughts, event.original_context)
+        
+        # Enhance the planning prompt with follow-up context
+        follow_up_context = f"""
+
+FOLLOW-UP PLANNING PHASE {event.phase_number}:
+
+This is a follow-up planning phase. Previous actions were executed with these results:
+
+Previous Action Results:
+"""
+        for i, action_result in enumerate(event.previous_action_results, 1):
+            follow_up_context += f"{i}. {action_result.get('action_name', 'unknown')}: "
+            follow_up_context += f"{'✅ Success' if action_result.get('success') else '❌ Failed'}\n"
+            follow_up_context += f"   Result: {action_result.get('result', 'No result')}\n"
+            if action_result.get('error_message'):
+                follow_up_context += f"   Error: {action_result['error_message']}\n"
+            follow_up_context += "\n"
+
+        follow_up_context += f"""
+Based on the updated thinking and previous action results, generate a new action plan.
+
+IMPORTANT CONSIDERATIONS FOR FOLLOW-UP PLANNING:
+- Address any failed actions from the previous phase
+- Build upon successful actions
+- Don't repeat actions that already succeeded unless necessary
+- Consider if the user's original request has been fully addressed
+- If everything is complete, you may choose to use 'do_not_respond' action
+
+Remember: You can request another follow-up phase if needed, but consider whether it's truly necessary.
+Current phase: {event.phase_number}
+Maximum phases: {self.max_follow_up_phases}
+"""
+
+        # Insert the follow-up context into the system prompt
+        if messages and messages[0]['role'] == 'system':
+            # Find a good place to insert this context (after the main instructions but before examples)
+            base_content = messages[0]['content']
+            if "FOLLOW-UP PROCESSING:" in base_content:
+                # Insert before the follow-up processing section
+                parts = base_content.split("FOLLOW-UP PROCESSING:")
+                messages[0]['content'] = parts[0] + follow_up_context + "\n\nFOLLOW-UP PROCESSING:" + parts[1]
+            else:
+                # Append to the system prompt
+                messages[0]['content'] += follow_up_context
+
+        return messages

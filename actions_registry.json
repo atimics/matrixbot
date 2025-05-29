@@ -116,10 +116,10 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "operation": {
+          "action": {
             "type": "string",
-            "enum": ["create", "update", "retrieve", "refresh"],
-            "description": "The operation to perform on the channel summary"
+            "enum": ["request_update", "get_current"],
+            "description": "The action to perform on the channel summary"
           },
           "summary_scope": {
             "type": "string",
@@ -131,7 +131,7 @@
             "description": "Optional custom focus or theme for the summary"
           }
         },
-        "required": ["operation"],
+        "required": ["action"],
         "additionalProperties": false
       },
       "executor": "manage_channel_summary_tool"
@@ -222,6 +222,201 @@
         "additionalProperties": false
       },
       "executor": "do_not_respond_tool"
+    },
+    {
+      "name": "farcaster_post_cast",
+      "description": "Posts a new cast (message) to Farcaster. Can optionally specify a channel ID or embed URLs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The content of the cast"
+          },
+          "channel_id": {
+            "type": "string",
+            "description": "Optional. The ID of the Farcaster channel to post in (e.g., 'neynar', 'farcaster')"
+          },
+          "embed_urls": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Optional. A list of URLs to embed in the cast"
+          }
+        },
+        "required": ["text"],
+        "additionalProperties": false
+      },
+      "executor": "farcaster_post_cast_tool"
+    },
+    {
+      "name": "farcaster_get_home_feed",
+      "description": "Fetches the latest casts from Farcaster users the bot is following.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Number of casts to fetch (default: 25)"
+          }
+        },
+        "additionalProperties": false
+      },
+      "executor": "farcaster_get_home_feed_tool"
+    },
+    {
+      "name": "farcaster_like_cast",
+      "description": "Likes a specific Farcaster cast.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "target_cast_hash": {
+            "type": "string",
+            "description": "The hash of the cast to like"
+          }
+        },
+        "required": ["target_cast_hash"],
+        "additionalProperties": false
+      },
+      "executor": "farcaster_like_cast_tool"
+    },
+    {
+      "name": "farcaster_reply_to_cast",
+      "description": "Replies to a specific Farcaster cast.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The content of the reply"
+          },
+          "parent_cast_hash": {
+            "type": "string",
+            "description": "The hash of the cast to reply to"
+          },
+          "channel_id": {
+            "type": "string",
+            "description": "Optional. The ID of the Farcaster channel the original cast is in"
+          },
+          "embed_urls": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Optional. A list of URLs to embed in the reply"
+          }
+        },
+        "required": ["text", "parent_cast_hash"],
+        "additionalProperties": false
+      },
+      "executor": "farcaster_reply_to_cast_tool"
+    },
+    {
+      "name": "farcaster_get_notifications",
+      "description": "Fetches recent Farcaster notifications for the bot, such as mentions or replies.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Number of notifications to fetch (default: 25)"
+          },
+          "filter_types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["mention", "reply", "like", "recast", "follow"]
+            },
+            "description": "Optional. Filter notifications by type(s)"
+          }
+        },
+        "additionalProperties": false
+      },
+      "executor": "farcaster_get_notifications_tool"
+    },
+    {
+      "name": "update_farcaster_channel",
+      "description": "Update a Farcaster channel (home feed or notifications) to fetch the latest content",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel_type": {
+            "type": "string",
+            "enum": ["home", "notifications"],
+            "description": "The type of Farcaster channel to update"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Number of items to fetch (default: 25)"
+          }
+        },
+        "required": ["channel_type"],
+        "additionalProperties": false
+      },
+      "executor": "update_farcaster_channel_tool"
+    },
+    {
+      "name": "view_channel_context",
+      "description": "View recent message context from any channel (Matrix room, Farcaster home, or Farcaster notifications)",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The channel ID to view context for (Matrix room ID or special IDs like 'farcaster_home', 'farcaster_notifications')"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Number of recent messages to include in context (default: 20)"
+          }
+        },
+        "required": ["channel_id"],
+        "additionalProperties": false
+      },
+      "executor": "view_channel_context_tool"
+    },
+    {
+      "name": "farcaster_quote_cast",
+      "description": "Quote a specific Farcaster cast with additional commentary.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The commentary text to add when quoting the cast"
+          },
+          "quoted_cast_hash": {
+            "type": "string",
+            "description": "The hash of the cast to quote"
+          },
+          "channel_id": {
+            "type": "string",
+            "description": "Optional. The ID of the Farcaster channel to post the quote in"
+          },
+          "embed_urls": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Optional. A list of URLs to embed in the quote cast"
+          }
+        },
+        "required": ["text", "quoted_cast_hash"],
+        "additionalProperties": false
+      },
+      "executor": "farcaster_quote_cast_tool"
     }
   ]
 }

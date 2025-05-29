@@ -17,10 +17,52 @@ class MessageBus:
         self._subscribers: Dict[str, List[Callable]] = defaultdict(list)
         # Add task_mapping for tracking task-callback pairs
         self.task_mapping: Dict[tuple, asyncio.Task] = {}
+        # Track pending subscriptions that need tasks created
+        self._pending_subscriptions: List[tuple] = []
+        self._tasks_started = False
         logger.info("MessageBus initialized.")
+
+    def _create_listener_task(self, event_key: str, callback: Callable, queue: asyncio.Queue) -> None:
+        """Creates a listener task for a specific subscription."""
+        async def listener():
+            while not self._stop_event.is_set():
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=1.0)
+                    if event:
+                        await callback(event)
+                        queue.task_done()
+                except asyncio.TimeoutError:
+                    continue
+                except Exception as e:
+                    logger.error(f"Error in listener for '{event_key}' with callback {callback.__name__}: {e}")
+        
+        task = asyncio.create_task(listener())
+        self.subscriber_tasks.append(task)
+        self.task_mapping[(event_key, callback)] = task
+        logger.debug(f"Created listener task for {callback.__name__} on '{event_key}'. Task: {task.get_name()}")
+
+    def start_tasks(self) -> None:
+        """Start all pending subscription tasks. Call this when the event loop is running."""
+        if self._tasks_started:
+            return
+            
+        logger.info(f"Starting {len(self._pending_subscriptions)} pending subscription tasks...")
+        
+        for event_key, callback, queue in self._pending_subscriptions:
+            self._create_listener_task(event_key, callback, queue)
+        
+        self._pending_subscriptions.clear()
+        self._tasks_started = True
+        logger.info("All subscription tasks started.")
+
+    async def _ensure_tasks_started(self) -> None:
+        """Ensure tasks are started before publishing events."""
+        if not self._tasks_started:
+            self.start_tasks()
 
     async def publish(self, event: BaseEvent) -> None:
         """Publishes an event to all subscribers of its event_type."""
+        await self._ensure_tasks_started()
         event_key = event.event_type.value if isinstance(event.event_type, EventType) else str(event.event_type)
         if not self.topics[event_key]:
             logger.debug(f"No subscribers for event type '{event_key}'.")
@@ -37,21 +79,14 @@ class MessageBus:
         # Track the callback in _subscribers
         self._subscribers[event_key].append(callback)
         
-        async def listener():
-            while not self._stop_event.is_set():
-                try:
-                    event = await asyncio.wait_for(queue.get(), timeout=1.0)
-                    if event:
-                        await callback(event)
-                        queue.task_done()
-                except asyncio.TimeoutError:
-                    continue
-                except Exception as e:
-                    logger.error(f"Error in listener for '{event_type}' with callback {callback.__name__}: {e}")
-        task = asyncio.create_task(listener())
-        self.subscriber_tasks.append(task)
-        self.task_mapping[(event_key, callback)] = task
-        logger.debug(f"Subscribed {callback.__name__} to '{event_type}'. Task: {task.get_name()}")
+        # Store subscription info for later task creation
+        self._pending_subscriptions.append((event_key, callback, queue))
+        
+        logger.debug(f"Subscribed {callback.__name__} to '{event_type}' (task will be created when event loop starts)")
+        
+        # If tasks are already started, create the task immediately
+        if self._tasks_started:
+            self._create_listener_task(event_key, callback, queue)
 
     def unsubscribe(self, event_type: EventType | str, callback: Callable[[BaseEvent], Any]) -> None:
         """Unsubscribes a callback from an event type."""

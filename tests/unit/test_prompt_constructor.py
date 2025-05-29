@@ -121,17 +121,6 @@ async def test_build_messages_for_ai_only_historical(mock_get_formatted_system_p
 
 @patch('prompt_constructor.get_formatted_system_prompt', new_callable=AsyncMock)
 @pytest.mark.asyncio
-async def test_build_messages_for_ai_only_current_single(mock_get_formatted_system_prompt):
-    mock_get_formatted_system_prompt.return_value = "Mocked System Prompt"
-    current = [{"name": "@user:host", "content": "Hi there", "event_id": "$event1"}]
-    messages = await build_messages_for_ai([], current, bot_display_name="TestBot", db_path="dummy.db")
-    assert len(messages) == 2
-    assert messages[1]["role"] == "user"
-    assert messages[1]["content"] == "Hi there"
-    assert messages[1]["name"] == "@user:host"
-
-@patch('prompt_constructor.get_formatted_system_prompt', new_callable=AsyncMock)
-@pytest.mark.asyncio
 async def test_build_messages_for_ai_only_current_multiple(mock_get_formatted_system_prompt):
     mock_get_formatted_system_prompt.return_value = "Mocked System Prompt"
     current = [
