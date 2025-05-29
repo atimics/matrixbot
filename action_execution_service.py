@@ -53,6 +53,8 @@ class ActionExecutionService:
         if not request_id:
             request_id = str(uuid.uuid4())
         
+        logger.info(f"ActionExecution: Starting action plan execution {request_id}")
+        
         results = {
             "request_id": request_id,
             "channel_results": [],

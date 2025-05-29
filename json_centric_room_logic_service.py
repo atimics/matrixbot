@@ -209,6 +209,41 @@ class JsonCentricRoomLogicService:
         if not config or not config.get('pending_batch'):
             return
 
+        # Check if there's already a turn in progress
+        existing_turn_context = config.get('current_turn_context')
+        if existing_turn_context:
+            thinking_request_id = existing_turn_context.get('thinking_request_id')
+            planning_request_id = existing_turn_context.get('planning_request_id')
+            follow_up_context = existing_turn_context.get('follow_up_context', {})
+            follow_up_thinking_id = follow_up_context.get('follow_up_thinking_request_id')
+            follow_up_planning_id = follow_up_context.get('follow_up_planning_request_id')
+            
+            logger.info(f"JsonCentricRLS: [{room_id}] Overlap check - existing context with thinking_id={thinking_request_id}, planning_id={planning_request_id}, follow_up_thinking={follow_up_thinking_id} (deprecated), follow_up_planning={follow_up_planning_id}")
+            
+            if thinking_request_id or planning_request_id or follow_up_thinking_id or follow_up_planning_id:
+                pending_requests = []
+                if thinking_request_id:
+                    pending_requests.append(f"thinking {thinking_request_id}")
+                if planning_request_id:
+                    pending_requests.append(f"planning {planning_request_id}")
+                if follow_up_thinking_id:
+                    pending_requests.append(f"follow-up thinking {follow_up_thinking_id} (deprecated)")
+                if follow_up_planning_id:
+                    pending_requests.append(f"follow-up planning {follow_up_planning_id}")
+                
+                logger.info(f"JsonCentricRLS: [{room_id}] Delaying batch processing - existing turn in progress with: {', '.join(pending_requests)}")
+                
+                # Cancel any existing batch task and reschedule processing for later
+                if 'batch_task' in config:
+                    config['batch_task'].cancel()
+                    
+                config['batch_task'] = asyncio.create_task(
+                    self._delayed_batch_processing(room_id, 2.0)
+                )
+                return
+        else:
+            logger.info(f"JsonCentricRLS: [{room_id}] No existing turn context found, proceeding with new turn")
+
         logger.info(f"JsonCentricRLS: [{room_id}] Processing batch with {len(config['pending_batch'])} messages")
 
         # Set typing indicator
@@ -233,6 +268,8 @@ class JsonCentricRoomLogicService:
                 'context_batch': context_batch,
                 'pending_batch': config['pending_batch'].copy()
             }
+            
+            logger.info(f"JsonCentricRLS: [{room_id}] Created new turn context with thinking_request_id={thinking_request_id}")
 
             await self.bus.publish(thinking_request)
             logger.info(f"JsonCentricRLS: [{room_id}] Sent thinking request {thinking_request_id}")
@@ -395,11 +432,17 @@ class JsonCentricRoomLogicService:
         room_id = None
         config = None
         
+        logger.info(f"JsonCentricRLS: Looking for thinking response {event.request_id} in room contexts")
+        
         for rid, cfg in self.room_activity_config.items():
             turn_context = cfg.get('current_turn_context', {})
-            if turn_context.get('thinking_request_id') == event.request_id:
+            current_thinking_id = turn_context.get('thinking_request_id')
+            logger.info(f"JsonCentricRLS: Room {rid} has thinking_request_id={current_thinking_id}")
+            
+            if current_thinking_id == event.request_id:
                 room_id = rid
                 config = cfg
+                logger.info(f"JsonCentricRLS: Found matching room {room_id} for thinking response {event.request_id}")
                 break
 
         if not room_id or not config:
@@ -441,8 +484,15 @@ class JsonCentricRoomLogicService:
         """Handle response from Planner AI and execute actions (both regular and follow-up)."""
         # Check if this is a follow-up planning response
         if event.original_request_payload.get("is_follow_up"):
-            await self._handle_follow_up_planning_response(event)
-            return
+            logger.debug(f"JsonCentricRLS: Routing follow-up planning response {event.request_id} to follow-up handler")
+            try:
+                await self._handle_follow_up_planning_response(event)
+                return
+            except Exception as e:
+                logger.error(f"JsonCentricRLS: Error in follow-up planning handler: {e}")
+                return
+
+        logger.debug(f"JsonCentricRLS: Processing regular planning response {event.request_id}")
 
         # Find the room that initiated this planning request
         room_id = None
@@ -557,9 +607,66 @@ class JsonCentricRoomLogicService:
         # For now, just log that it would happen
         logger.info(f"JsonCentricRLS: [{room_id}] Summary generation needed (not implemented yet)")
 
+    async def _cancel_all_pending_tasks(self):
+        """Cancel all pending tasks across all rooms to ensure clean startup."""
+        logger.info("JsonCentricRLS: Cancelling all pending tasks from previous sessions...")
+        
+        cancelled_count = 0
+        for room_id, config in self.room_activity_config.items():
+            try:
+                # Cancel batch processing tasks
+                if 'batch_task' in config:
+                    batch_task = config['batch_task']
+                    if not batch_task.done():
+                        batch_task.cancel()
+                        logger.info(f"JsonCentricRLS: [{room_id}] Cancelled pending batch task")
+                        cancelled_count += 1
+                    config.pop('batch_task', None)
+                
+                # Clear any turn contexts that might have pending requests
+                turn_context = config.get('current_turn_context')
+                if turn_context:
+                    thinking_id = turn_context.get('thinking_request_id')
+                    planning_id = turn_context.get('planning_request_id')
+                    follow_up_context = turn_context.get('follow_up_context', {})
+                    follow_up_thinking_id = follow_up_context.get('follow_up_thinking_request_id')
+                    follow_up_planning_id = follow_up_context.get('follow_up_planning_request_id')
+                    
+                    if thinking_id or planning_id or follow_up_thinking_id or follow_up_planning_id:
+                        pending_requests = []
+                        if thinking_id:
+                            pending_requests.append(f"thinking {thinking_id}")
+                        if planning_id:
+                            pending_requests.append(f"planning {planning_id}")
+                        if follow_up_thinking_id:
+                            pending_requests.append(f"follow-up thinking {follow_up_thinking_id}")
+                        if follow_up_planning_id:
+                            pending_requests.append(f"follow-up planning {follow_up_planning_id}")
+                        
+                        logger.info(f"JsonCentricRLS: [{room_id}] Clearing orphaned turn context with pending: {', '.join(pending_requests)}")
+                        config.pop('current_turn_context', None)
+                        cancelled_count += 1
+                
+                # Clear pending batches to prevent stale processing
+                if config.get('pending_batch'):
+                    batch_size = len(config['pending_batch'])
+                    config['pending_batch'].clear()
+                    logger.info(f"JsonCentricRLS: [{room_id}] Cleared {batch_size} pending messages from previous session")
+                
+            except Exception as e:
+                logger.error(f"JsonCentricRLS: Error cancelling tasks for room {room_id}: {e}")
+        
+        if cancelled_count > 0:
+            logger.info(f"JsonCentricRLS: Successfully cancelled {cancelled_count} pending tasks/contexts")
+        else:
+            logger.info("JsonCentricRLS: No pending tasks found to cancel")
+
     async def run(self):
         """Main run loop for the service."""
         logger.info("JsonCentricRoomLogicService: Starting...")
+        
+        # Cancel all pending tasks from previous sessions to ensure clean startup
+        await self._cancel_all_pending_tasks()
         
         self.bus.subscribe(MatrixMessageReceivedEvent.get_event_type(), self._handle_matrix_message)
         self.bus.subscribe(MatrixImageReceivedEvent.get_event_type(), self._handle_matrix_image)
@@ -577,8 +684,12 @@ class JsonCentricRoomLogicService:
         logger.info("JsonCentricRoomLogicService: Stopped.")
 
     async def stop(self):
-        """Stop the service."""
+        """Stop the service and cancel all pending tasks."""
         logger.info("JsonCentricRoomLogicService: Stop requested.")
+        
+        # Cancel all pending tasks before stopping
+        await self._cancel_all_pending_tasks()
+        
         self._stop_event.set()
 
     async def _initiate_follow_up_processing(self, room_id: str, action_results: List[Dict[str, Any]], 
@@ -670,61 +781,60 @@ class JsonCentricRoomLogicService:
 
         if not event.needs_follow_up:
             logger.info(f"JsonCentricRLS: [{room_id}] No follow-up needed according to AI analysis. Reason: {event.follow_up_reasoning}")
-            # Clear follow-up context as we're done
-            turn_context.pop('follow_up_context', None)
-            return
+            # Check if there are pending follow-up requests before clearing context
+            follow_up_thinking_id = follow_up_context.get('follow_up_thinking_request_id')
+            follow_up_planning_id = follow_up_context.get('follow_up_planning_request_id')
+            
+            if follow_up_thinking_id or follow_up_planning_id:
+                pending_requests = []
+                if follow_up_thinking_id:
+                    pending_requests.append(f"thinking {follow_up_thinking_id}")
+                if follow_up_planning_id:
+                    pending_requests.append(f"planning {follow_up_planning_id}")
+                logger.info(f"JsonCentricRLS: [{room_id}] Pending follow-up requests: {', '.join(pending_requests)}, keeping context until responses arrive")
+                # Mark that no further follow-up is needed after current requests complete
+                follow_up_context['no_further_follow_up'] = True
+                return
+            else:
+                # Clear follow-up context as we're done and no pending requests
+                turn_context.pop('follow_up_context', None)
+                return
 
-        # AI determined follow-up is needed - proceed with the recommended type
-        recommended_type = event.recommended_follow_up_type or "thinking"
-        logger.info(f"JsonCentricRLS: [{room_id}] Follow-up needed: {recommended_type}. Reason: {event.follow_up_reasoning}")
+        # AI determined follow-up is needed - always use planning with original thoughts (no re-thinking)
+        logger.info(f"JsonCentricRLS: [{room_id}] Follow-up needed, proceeding with planning using original thoughts. Reason: {event.follow_up_reasoning}")
 
         try:
-            if recommended_type == "thinking":
-                # Start with thinking phase for follow-up
-                await self._initiate_follow_up_thinking(room_id, config, phase_number + 1)
-            elif recommended_type == "planning":
-                # Jump directly to planning with existing thoughts
-                await self._initiate_follow_up_planning(room_id, config, phase_number + 1)
-            else:
-                logger.warning(f"JsonCentricRLS: [{room_id}] Unknown follow-up type: {recommended_type}")
+            # Always go directly to planning with existing thoughts (no thinking phase)
+            await self._initiate_follow_up_planning(room_id, config, phase_number + 1)
 
         except Exception as e:
             logger.error(f"JsonCentricRLS: [{room_id}] Error proceeding with follow-up: {e}")
 
     async def _initiate_follow_up_thinking(self, room_id: str, config: Dict[str, Any], phase_number: int):
-        """Initiate follow-up thinking phase based on action results."""
-        turn_context = config['current_turn_context']
-        follow_up_context = turn_context['follow_up_context']
+        """DEPRECATED: Initiate follow-up thinking phase based on action results.
         
-        thinking_request_id = str(uuid.uuid4())
-        
-        thinking_request = FollowUpThinkingRequestEvent(
-            request_id=thinking_request_id,
-            original_context=turn_context['context_batch'],
-            previous_thoughts=turn_context.get('thoughts', []),
-            action_results=follow_up_context['action_results'],
-            phase_number=phase_number,
-            model_name=self.thinker_model
-        )
-
-        # Update follow-up context
-        follow_up_context['follow_up_thinking_request_id'] = thinking_request_id
-        follow_up_context['phase_number'] = phase_number
-
-        await self.bus.publish(thinking_request)
-        logger.info(f"JsonCentricRLS: [{room_id}] Sent follow-up thinking request {thinking_request_id} for phase {phase_number}")
+        This method is no longer used as we now reuse original thoughts for follow-up 
+        planning to prevent overthinking.
+        """
+        logger.warning(f"JsonCentricRLS: [{room_id}] _initiate_follow_up_thinking called but this method is deprecated - should use _initiate_follow_up_planning directly")
+        # Redirect to planning with existing thoughts
+        await self._initiate_follow_up_planning(room_id, config, phase_number)
 
     async def _initiate_follow_up_planning(self, room_id: str, config: Dict[str, Any], phase_number: int):
-        """Initiate follow-up planning phase with updated thoughts."""
+        """Initiate follow-up planning phase with original thoughts (no re-thinking)."""
         turn_context = config['current_turn_context']
         follow_up_context = turn_context['follow_up_context']
         
         planning_request_id = str(uuid.uuid4())
         actions_schema = self.action_registry.generate_planner_schema()
         
+        # Use original thoughts from the initial thinking phase
+        original_thoughts = turn_context.get('thoughts', [])
+        logger.info(f"JsonCentricRLS: [{room_id}] Follow-up planning will reuse {len(original_thoughts)} original thoughts")
+        
         planning_request = FollowUpPlanningRequestEvent(
             request_id=planning_request_id,
-            updated_thoughts=turn_context.get('thoughts', []),
+            updated_thoughts=original_thoughts,  # Actually original thoughts, kept for API compatibility
             original_context=turn_context['context_batch'],
             previous_action_results=follow_up_context['action_results'],
             phase_number=phase_number,
@@ -767,10 +877,21 @@ class JsonCentricRoomLogicService:
             turn_context = config['current_turn_context']
             follow_up_context = turn_context['follow_up_context']
             
-            # Update thoughts with the new thinking
-            turn_context['thoughts'] = event.thoughts
+            # Check if follow-up was already determined to be unnecessary
+            if follow_up_context.get('no_further_follow_up'):
+                logger.info(f"JsonCentricRLS: [{room_id}] Follow-up thinking completed but no further follow-up needed, clearing context")
+                # Clear the follow-up context as we're done
+                turn_context.pop('follow_up_context', None)
+                return
             
-            # Proceed to follow-up planning
+            # Clear the thinking request ID as we've handled it
+            follow_up_context.pop('follow_up_thinking_request_id', None)
+            
+            # DO NOT update thoughts - keep using original thoughts to prevent overthinking
+            # turn_context['thoughts'] = event.thoughts  # REMOVED - we reuse original thoughts
+            logger.info(f"JsonCentricRLS: [{room_id}] Keeping original thoughts instead of updating with follow-up thinking")
+            
+            # Proceed to follow-up planning with original thoughts
             await self._initiate_follow_up_planning(room_id, config, follow_up_context['phase_number'])
 
         except Exception as e:
@@ -778,8 +899,11 @@ class JsonCentricRoomLogicService:
 
     async def _handle_follow_up_planning_response(self, event: StructuredPlanningResponseEvent):
         """Handle response from follow-up planning phase and execute actions."""
+        logger.debug(f"JsonCentricRLS: Processing follow-up planning response {event.request_id}")
+        
         # Check if this is a follow-up planning response
         if not event.original_request_payload.get("is_follow_up"):
+            logger.warning(f"JsonCentricRLS: _handle_follow_up_planning_response called for non-follow-up response {event.request_id}")
             # Not a follow-up response, let the regular handler deal with it
             return
 
@@ -808,6 +932,17 @@ class JsonCentricRoomLogicService:
         try:
             turn_context = config['current_turn_context']
             follow_up_context = turn_context['follow_up_context']
+            
+            # Check if follow-up was already determined to be unnecessary
+            if follow_up_context.get('no_further_follow_up'):
+                logger.info(f"JsonCentricRLS: [{room_id}] Follow-up planning completed but no further follow-up needed, clearing context")
+                # Clear the follow-up context as we're done
+                turn_context.pop('follow_up_context', None)
+                return
+            
+            # Clear the planning request ID as we've handled it
+            follow_up_context.pop('follow_up_planning_request_id', None)
+            
             phase_number = follow_up_context['phase_number']
 
             # Execute the follow-up action plan

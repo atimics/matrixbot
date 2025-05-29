@@ -221,7 +221,7 @@ async def get_formatted_system_prompt(
                 if value.get("unread_mention_count", 0) > 0:
                     farcaster_parts.append(f"Unread Mentions: {value['unread_mention_count']}")
                 if value.get("recent_mentions_summary"):
-                    mentions_preview = value["recent_mentions_summary"][:100] + "..." if len(value["recent_mentions_summary"]) > 100 else value["recent_mentions_summary"]
+                    mentions_preview = value["recent_mentions_summary"][:500] + "..." if len(value["recent_mentions_summary"]) > 500 else value["recent_mentions_summary"]
                     farcaster_parts.append(f"Recent Mentions: {mentions_preview}")
                 
                 farcaster_status = " | ".join(farcaster_parts) if farcaster_parts else "No active status"

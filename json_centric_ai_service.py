@@ -803,55 +803,28 @@ Translate the intentions and steps from the thought process into concrete action
         self._stop_event.set()
 
     async def _handle_follow_up_thinking_request(self, event) -> None:
-        """Handle follow-up thinking request based on action results."""
-        logger.info(f"JsonCentricAI: Processing follow-up thinking request {event.request_id} (phase {event.phase_number})")
+        """DEPRECATED: Handle follow-up thinking request based on action results.
         
-        try:
-            # Build follow-up thinking prompt that includes action results analysis
-            thinking_messages = await self._build_follow_up_thinking_prompt(event)
-            
-            # Make request to Thinker AI for follow-up analysis
-            success, thoughts_text, error_msg = await self._make_openrouter_request(
-                event.model_name,
-                thinking_messages
-            )
-            
-            if success and thoughts_text:
-                logger.info(f"JsonCentricAI: ✅ Follow-up thinking response received for {event.request_id}")
-                
-                # Parse thoughts for each channel
-                thoughts = self._parse_thinking_response(thoughts_text, event.original_context)
-                
-                response_event = ThinkingResponseEvent(
-                    request_id=event.request_id,
-                    success=True,
-                    thoughts=thoughts,
-                    original_request_payload={
-                        "context_batch": event.original_context.model_dump(),
-                        "model_name": event.model_name,
-                        "phase_number": event.phase_number,
-                        "action_results": event.action_results,
-                        "follow_up_type": "thinking"
-                    }
-                )
-            else:
-                logger.error(f"JsonCentricAI: ❌ Follow-up thinking failed for {event.request_id}: {error_msg}")
-                response_event = ThinkingResponseEvent(
-                    request_id=event.request_id,
-                    success=False,
-                    error_message=error_msg or "Failed to generate follow-up thinking"
-                )
-            
-            await self.bus.publish(response_event)
-            
-        except Exception as e:
-            logger.error(f"JsonCentricAI: Error in follow-up thinking request {event.request_id}: {e}")
-            error_response = ThinkingResponseEvent(
-                request_id=event.request_id,
-                success=False,
-                error_message=str(e)
-            )
-            await self.bus.publish(error_response)
+        This handler is deprecated as we now reuse original thoughts for follow-up 
+        planning to prevent overthinking.
+        """
+        logger.warning(f"JsonCentricAI: Received deprecated follow-up thinking request {event.request_id} (phase {event.phase_number}) - this should not happen")
+        
+        # For backward compatibility, return a response that indicates no new thinking
+        response_event = ThinkingResponseEvent(
+            request_id=event.request_id,
+            success=True,
+            thoughts=[],  # Return empty thoughts to indicate no new thinking
+            error_message=None,
+            original_request_payload={
+                "follow_up_type": "thinking",
+                "deprecated": True,
+                "phase_number": event.phase_number
+            }
+        )
+        
+        await self.bus.publish(response_event)
+        logger.info(f"JsonCentricAI: ✅ Sent deprecated follow-up thinking response for {event.request_id} (empty thoughts)")
 
     async def _handle_follow_up_planning_request(self, event) -> None:
         """Handle follow-up planning request with updated thoughts."""

@@ -337,7 +337,7 @@ class FarcasterService:
         return " | ".join(summary_parts)
     
     def _summarize_notifications(self, notifications: List[Dict[str, Any]]) -> str:
-        """Create a brief summary of notifications."""
+        """Create a detailed summary of notifications including cast hashes for replies."""
         if not notifications:
             return ""
         
@@ -346,14 +346,41 @@ class FarcasterService:
         likes = [n for n in notifications if n.get("type") == "like"]
         
         summary_parts = []
+        
+        # Include mentions with cast hashes for replies
         if mentions:
-            summary_parts.append(f"{len(mentions)} mentions")
+            mention_details = []
+            for mention in mentions[:3]:  # Limit to 3 most recent mentions
+                cast = mention.get("cast", {})
+                cast_hash = cast.get("hash", "unknown")
+                author = cast.get("author", {}).get("username", "unknown")
+                text_preview = (cast.get("text", "")[:50] + "...") if len(cast.get("text", "")) > 50 else cast.get("text", "")
+                mention_details.append(f"@{author} (hash: {cast_hash}): {text_preview}")
+            
+            if mention_details:
+                summary_parts.append(f"Recent mentions: {' | '.join(mention_details)}")
+            else:
+                summary_parts.append(f"{len(mentions)} mentions")
+        
+        # Include replies with cast hashes
         if replies:
-            summary_parts.append(f"{len(replies)} replies")
+            reply_details = []
+            for reply in replies[:2]:  # Limit to 2 most recent replies
+                cast = reply.get("cast", {})
+                cast_hash = cast.get("hash", "unknown")
+                author = cast.get("author", {}).get("username", "unknown")
+                text_preview = (cast.get("text", "")[:50] + "...") if len(cast.get("text", "")) > 50 else cast.get("text", "")
+                reply_details.append(f"@{author} (hash: {cast_hash}): {text_preview}")
+            
+            if reply_details:
+                summary_parts.append(f"Recent replies: {' | '.join(reply_details)}")
+            else:
+                summary_parts.append(f"{len(replies)} replies")
+        
         if likes:
             summary_parts.append(f"{len(likes)} likes")
         
-        return ", ".join(summary_parts)
+        return " | ".join(summary_parts)
     
     async def _trigger_context_summarization(self, new_activity: str) -> None:
         """Trigger Farcaster context summarization (placeholder for now)."""
