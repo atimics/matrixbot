@@ -215,22 +215,46 @@ class ContextAwareOrchestrator:
                 action.parameters
             )
             
-            # Record successful execution
-            tool_result = {
-                "action_type": action.action_type,
-                "parameters": action.parameters,
-                "result": result,
-                "status": "success",
-                "timestamp": time.time()
-            }
+            # Check if the result contains status information from the executor
+            if isinstance(result, dict) and "status" in result:
+                # Use the actual status returned by the executor
+                actual_status = result["status"]
+                
+                if actual_status == "success":
+                    tool_result = {
+                        "action_type": action.action_type,
+                        "parameters": action.parameters,
+                        "result": result.get("message", str(result)),
+                        "status": "success",
+                        "timestamp": time.time()
+                    }
+                    logger.info(f"Executed action {action.action_type} successfully")
+                else:
+                    # Action failed - record the failure
+                    tool_result = {
+                        "action_type": action.action_type,
+                        "parameters": action.parameters,
+                        "error": result.get("error", str(result)),
+                        "status": "failed",
+                        "timestamp": time.time()
+                    }
+                    logger.error(f"Action {action.action_type} failed: {result.get('error', str(result))}")
+            else:
+                # Legacy support: if result doesn't contain status, assume success
+                tool_result = {
+                    "action_type": action.action_type,
+                    "parameters": action.parameters,
+                    "result": str(result),
+                    "status": "success",
+                    "timestamp": time.time()
+                }
+                logger.info(f"Executed action {action.action_type} successfully (legacy result format)")
             
             await self.context_manager.add_tool_result(
                 channel_id, 
                 action.action_type, 
                 tool_result
             )
-            
-            logger.info(f"Executed action {action.action_type} successfully")
             
         except Exception as e:
             logger.error(f"Error executing action {action.action_type}: {e}")

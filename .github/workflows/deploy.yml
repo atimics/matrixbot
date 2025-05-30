@@ -24,17 +24,17 @@ jobs:
           fi
       - name: Stop existing bot process
         run: |
-          pkill -f main_orchestrator.py || true
+          pkill -f "python3 -m chatbot.main" || true
           sleep 2
       - name: Start the bot
         run: |
           echo "Starting bot at $(date)"
-          nohup python3 main_orchestrator.py > bot.log 2>&1 &
+          nohup python3 -m chatbot.main > bot.log 2>&1 &
           echo "Bot started with PID: $!"
           sleep 3
       - name: Check if bot started successfully
         run: |
-          if pgrep -f main_orchestrator.py > /dev/null; then
+          if pgrep -f "python3 -m chatbot.main" > /dev/null; then
             echo "✓ Bot is running successfully"
             echo "Recent log output:"
             tail -n 10 bot.log || echo "No log output yet"

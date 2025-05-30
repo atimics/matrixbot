@@ -13,7 +13,7 @@ The world state includes:
 import asyncio
 import logging
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timezone
 
