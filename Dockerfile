@@ -38,7 +38,7 @@ COPY scripts/ ./scripts/
 COPY README.md ./
 
 # Copy control panel from scripts to root for Docker service
-COPY scripts/control_panel.py ./control_panel.py
+COPY control_panel.py ./control_panel.py
 
 # Production stage
 FROM python:3.11-slim-bookworm as production
