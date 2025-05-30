@@ -1,0 +1,66 @@
+# Git
+.git
+.gitignore
+.github
+
+# Documentation
+docs/
+
+# Keep README.md for Docker build
+# *.md
+
+# Development files
+.vscode/
+.idea/
+*.pyc
+__pycache__/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment and config
+.env
+.env.local
+.env.example
+env.example
+*.log
+
+# Data directories
+data/
+logs/
+matrix_store/
+context_storage/
+dummy.db
+chatbot.db
+*.db
+
+# Python
+.python-version
+.pyenv
+venv/
+env/
+dist/
+build/
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test files
+test_*.py
+*_test.py
+tests/
+coverage.xml
+pytest.ini
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Other
+*.tmp
+*.bak
+*.swp
+*.swo

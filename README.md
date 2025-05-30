@@ -10,38 +10,86 @@ A context-aware chatbot system that manages conversation state and integrates wi
 - **State Management**: Persistent storage of conversation context and world state
 - **AI-Powered Decision Making**: Intelligent response generation with context awareness
 
-## Installation
+## Quick Start
+
+### Docker Deployment (Recommended)
+
+1. **Setup environment**:
+```bash
+cp env.example .env
+nano .env  # Fill in your API keys and credentials
+```
+
+2. **Deploy with Docker**:
+```bash
+./scripts/deploy.sh
+```
+
+3. **Monitor logs**:
+```bash
+docker-compose logs -f chatbot
+```
 
 ### Development Setup
 
-1. Install dependencies:
+1. **Install dependencies**:
 ```bash
 pip install -e .
 ```
 
-2. Configure your environment:
-   - Copy configuration files and update with your credentials
-   - Set up Matrix and/or Farcaster integration tokens
+2. **Configure environment**:
+```bash
+cp env.example .env
+nano .env  # Add your credentials
+```
 
-3. Run the system:
+3. **Run the system**:
 ```bash
 python -m chatbot.main
 ```
 
-### Using Poetry (Recommended)
+### Using Poetry
 
 ```bash
 poetry install
 poetry run python -m chatbot.main
 ```
 
+## Docker Setup in Dev Container
+
+If you're using a dev container and need Docker support:
+
+1. **Configure Docker support**:
+```bash
+./scripts/setup-docker.sh
+```
+
+2. **Rebuild your dev container**:
+   - Open VS Code Command Palette (Ctrl+Shift+P)
+   - Run: "Dev Containers: Rebuild Container"
+
+3. **Validate setup**:
+```bash
+./scripts/validate-docker.sh
+```
+
 ## Configuration
 
-The system requires configuration for:
-- Matrix homeserver and credentials
-- Farcaster account and API keys
-- AI inference service (OpenRouter, Ollama, etc.)
-- Storage backend
+Required environment variables:
+- `MATRIX_HOMESERVER` - Your Matrix server URL
+- `MATRIX_USER_ID` - Bot's Matrix user ID
+- `MATRIX_PASSWORD` - Bot's Matrix password
+- `OPENROUTER_API_KEY` - OpenRouter API key for AI inference
+- `NEYNAR_API_KEY` - (Optional) Farcaster API key
+
+## Docker Commands
+
+- **Start services**: `docker-compose up -d`
+- **View logs**: `docker-compose logs -f chatbot`
+- **Stop services**: `docker-compose down`
+- **Restart bot**: `docker-compose restart chatbot`
+- **Shell access**: `docker-compose exec chatbot bash`
+- **Web interface**: http://localhost:8000 (if enabled)
 
 ## Architecture
 
