@@ -41,20 +41,17 @@ class Channel:
     
     # Matrix-specific details
     canonical_alias: Optional[str] = None  # #room:server.com
-    alt_aliases: List[str] = None  # Alternative aliases
+    alt_aliases: List[str] = field(default_factory=list)  # Alternative aliases
     topic: Optional[str] = None  # Room topic/description
     avatar_url: Optional[str] = None  # Room avatar
     member_count: int = 0  # Number of members
     encrypted: bool = False  # Is room encrypted
     public: bool = True  # Is room publicly joinable
-    power_levels: Dict[str, int] = None  # User power levels
+    power_levels: Dict[str, int] = field(default_factory=dict)  # User power levels
     creation_time: Optional[float] = None  # When room was created
     
     def __post_init__(self):
-        if self.alt_aliases is None:
-            self.alt_aliases = []
-        if self.power_levels is None:
-            self.power_levels = {}
+        pass
 
 @dataclass
 class ActionHistory:
