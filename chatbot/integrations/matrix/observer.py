@@ -14,7 +14,7 @@ from typing import Optional, Dict, Any
 from pathlib import Path
 import json
 
-from nio import AsyncClient, MatrixRoom, RoomMessageText, LoginResponse
+from nio import AsyncClient, MatrixRoom, RoomMessageText, LoginResponse, RoomSendResponse, RoomSendError
 from dotenv import load_dotenv
 
 from ...core.world_state import WorldStateManager, Message, Channel
@@ -349,8 +349,6 @@ class MatrixObserver:
             return {"success": False, "error": "Matrix client not connected"}
         
         try:
-            from nio import RoomSendResponse
-            
             response = await self.client.room_send(
                 room_id=room_id,
                 message_type="m.room.message",
@@ -389,9 +387,12 @@ class MatrixObserver:
             logger.error("Matrix client not connected")
             return {"success": False, "error": "Matrix client not connected"}
         
+        # Validate message content and length
+        if len(content) > 4000:  # Matrix has message size limits
+            logger.warning(f"Message too long ({len(content)} chars), truncating...")
+            content = content[:3997] + "..."
+        
         try:
-            from nio import RoomSendResponse
-            
             # Format as a reply with Matrix reply formatting
             reply_content = {
                 "msgtype": "m.text",
@@ -405,40 +406,78 @@ class MatrixObserver:
             
             logger.info(f"Sending reply with content: {reply_content}")
             
-            response = await self.client.room_send(
-                room_id=room_id,
-                message_type="m.room.message",
-                content=reply_content
-            )
-            
-            logger.info(f"Matrix client room_send response: {response} (type: {type(response)})")
-            
-            if isinstance(response, RoomSendResponse):
-                logger.info(f"MatrixObserver: Sent reply to {room_id} (event: {response.event_id}, reply_to: {reply_to_event_id})")
-                return {
-                    "success": True,
-                    "event_id": response.event_id,
-                    "room_id": room_id,
-                    "reply_to_event_id": reply_to_event_id
-                }
-            else:
-                # Log more detailed error information
-                logger.error(f"MatrixObserver: Failed to send reply: {response}")
-                logger.error(f"Response attributes: {dir(response)}")
-                if hasattr(response, 'message'):
-                    logger.error(f"Error message: {response.message}")
-                if hasattr(response, 'status_code'):
-                    logger.error(f"Status code: {response.status_code}")
-                if hasattr(response, 'retry_after_ms'):
-                    logger.error(f"Retry after: {response.retry_after_ms}")
-                return {
-                    "success": False,
-                    "error": str(response)
-                }
+            # Add retry logic with exponential backoff
+            max_retries = 3
+            for attempt in range(max_retries):
+                response = await self.client.room_send(
+                    room_id=room_id,
+                    message_type="m.room.message",
+                    content=reply_content
+                )
                 
-        except Exception as e:
-            logger.error(f"MatrixObserver: Error sending reply: {e}")
+                logger.info(f"Matrix client room_send response (attempt {attempt + 1}): {response} (type: {type(response)})")
+                
+                if isinstance(response, RoomSendResponse):
+                    logger.info(f"MatrixObserver: Sent reply to {room_id} (event: {response.event_id}, reply_to: {reply_to_event_id})")
+                    return {
+                        "success": True,
+                        "event_id": response.event_id,
+                        "room_id": room_id,
+                        "reply_to_event_id": reply_to_event_id
+                    }
+                elif isinstance(response, RoomSendError):
+                    # Enhanced error logging for RoomSendError
+                    error_details = {
+                        "message": getattr(response, 'message', 'unknown error'),
+                        "status_code": getattr(response, 'status_code', None),
+                        "retry_after_ms": getattr(response, 'retry_after_ms', None),
+                        "transport_response": str(getattr(response, 'transport_response', None))
+                    }
+                    
+                    logger.error(f"MatrixObserver: RoomSendError (attempt {attempt + 1}/{max_retries}): {error_details}")
+                    
+                    # Handle rate limiting
+                    if error_details["retry_after_ms"]:
+                        wait_time = error_details["retry_after_ms"] / 1000
+                        logger.info(f"Rate limited, waiting {wait_time}s before retry")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    
+                    # For other errors, wait with exponential backoff
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** attempt
+                        logger.info(f"Waiting {wait_time}s before retry")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    
+                    # Final attempt failed
+                    return {
+                        "success": False,
+                        "error": f"RoomSendError: {error_details['message']} (Status: {error_details['status_code']})"
+                    }
+                else:
+                    # Unknown response type
+                    logger.error(f"MatrixObserver: Unknown response type: {type(response)}, value: {response}")
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** attempt
+                        logger.info(f"Waiting {wait_time}s before retry")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    
+                    return {
+                        "success": False,
+                        "error": f"Unknown response type: {type(response)} - {str(response)}"
+                    }
+            
+            # Should not reach here, but just in case
             return {
                 "success": False,
-                "error": str(e)
+                "error": f"Failed after {max_retries} attempts"
+            }
+                
+        except Exception as e:
+            logger.error(f"MatrixObserver: Exception while sending reply: {e}", exc_info=True)
+            return {
+                "success": False,
+                "error": f"Exception: {str(e)}"
             }
