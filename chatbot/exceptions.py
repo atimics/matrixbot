@@ -10,13 +10,20 @@ from typing import Optional
 
 class ChatbotBaseException(Exception):
     """Base exception for the chatbot application."""
+
     pass
 
 
 class ActionExecutionError(ChatbotBaseException):
     """Raised when an action fails to execute."""
-    
-    def __init__(self, action_type: str, params: dict, original_error: Exception, message: Optional[str] = None):
+
+    def __init__(
+        self,
+        action_type: str,
+        params: dict,
+        original_error: Exception,
+        message: Optional[str] = None,
+    ):
         self.action_type = action_type
         self.params = params
         self.original_error = original_error
@@ -29,19 +36,23 @@ class ActionExecutionError(ChatbotBaseException):
 
 class MatrixIntegrationError(ChatbotBaseException):
     """Raised for errors specific to Matrix integration."""
+
     pass
 
 
 class AIResponseError(ChatbotBaseException):
     """Raised for errors in processing AI responses."""
+
     pass
 
 
 class ConfigurationError(ChatbotBaseException):
     """Raised for configuration problems."""
+
     pass
 
 
 class FarcasterIntegrationError(ChatbotBaseException):
     """Raised for errors specific to Farcaster integration."""
+
     pass

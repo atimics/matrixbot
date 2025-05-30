@@ -5,17 +5,16 @@ This module provides centralized configuration management using Pydantic BaseSet
 to load and validate all configuration from environment variables and .env files.
 """
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class AppConfig(BaseSettings):
     """Centralized application configuration loaded from environment variables."""
-    
+
     model_config = SettingsConfigDict(
-        env_file='.env', 
-        env_file_encoding='utf-8', 
-        extra='ignore'
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
 
     # Chatbot Core
@@ -30,7 +29,9 @@ class AppConfig(BaseSettings):
     MATRIX_HOMESERVER: str
     MATRIX_USER_ID: str
     MATRIX_PASSWORD: str
-    MATRIX_ROOM_ID: str = "#robot-laboratory:chat.ratimics.com"  # Default initial room to monitor
+    MATRIX_ROOM_ID: str = (
+        "#robot-laboratory:chat.ratimics.com"  # Default initial room to monitor
+    )
     MATRIX_DEVICE_ID: Optional[str] = None
     DEVICE_NAME: str = "ratichat_bot"
 

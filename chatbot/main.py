@@ -6,8 +6,8 @@ import asyncio
 import logging
 from pathlib import Path
 
-from chatbot.core.orchestrator import ContextAwareOrchestrator, OrchestratorConfig
 from chatbot.config import settings
+from chatbot.core.orchestrator import ContextAwareOrchestrator, OrchestratorConfig
 
 
 def setup_logging() -> None:
@@ -26,9 +26,9 @@ async def main() -> None:
     """Main application entry point."""
     setup_logging()
     logger = logging.getLogger(__name__)
-    
+
     logger.info("Starting chatbot application...")
-    
+
     # Load configuration with more responsive settings
     config = OrchestratorConfig(
         db_path=settings.CHATBOT_DB_PATH,
@@ -36,10 +36,10 @@ async def main() -> None:
         max_cycles_per_hour=settings.MAX_CYCLES_PER_HOUR,
         ai_model=settings.AI_MODEL,
     )
-    
+
     # Create and start orchestrator
     orchestrator = ContextAwareOrchestrator(config)
-    
+
     try:
         await orchestrator.start()
     except KeyboardInterrupt:
