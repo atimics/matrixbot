@@ -1,0 +1,116 @@
+services:
+  chatbot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: ratimics-chatbot
+    restart: unless-stopped
+    
+    # Environment variables (override with .env file)
+    environment:
+      - CHATBOT_ENV=production
+      - CHATBOT_DB_PATH=/app/data/chatbot.db
+      - OBSERVATION_INTERVAL=${OBSERVATION_INTERVAL:-2}
+      - MAX_CYCLES_PER_HOUR=${MAX_CYCLES_PER_HOUR:-300}
+      - AI_MODEL=${AI_MODEL:-openai/gpt-4o-mini}
+      
+      # Matrix configuration
+      - MATRIX_HOMESERVER=${MATRIX_HOMESERVER}
+      - MATRIX_USER_ID=${MATRIX_USER_ID}
+      - MATRIX_PASSWORD=${MATRIX_PASSWORD}
+      - MATRIX_ROOM_ID=${MATRIX_ROOM_ID:-#robot-laboratory:chat.ratimics.com}
+      - MATRIX_DEVICE_ID=${MATRIX_DEVICE_ID}
+      - DEVICE_NAME=${DEVICE_NAME:-ratichat_bot}
+      
+      # OpenRouter API
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      
+      # Farcaster (optional)
+      - NEYNAR_API_KEY=${NEYNAR_API_KEY}
+    
+    # Volume mounts for persistence
+    volumes:
+      - chatbot_data:/app/data
+      - chatbot_logs:/app/logs
+      - chatbot_matrix_store:/app/matrix_store
+      - chatbot_context:/app/context_storage
+    
+    # Network configuration
+    networks:
+      - chatbot_network
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.1'
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sqlite3; sqlite3.connect('/app/data/chatbot.db').execute('SELECT 1')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Optional: Web interface for monitoring
+  web-interface:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: ratimics-chatbot-web
+    restart: unless-stopped
+    command: ["python", "control_panel.py"]
+    
+    environment:
+      - CHATBOT_ENV=production
+      - CHATBOT_DB_PATH=/app/data/chatbot.db
+      
+    volumes:
+      - chatbot_data:/app/data:ro
+      - chatbot_logs:/app/logs:ro
+      
+    ports:
+      - "8000:8000"
+      
+    networks:
+      - chatbot_network
+      
+    depends_on:
+      chatbot:
+        condition: service_healthy
+    
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.2'
+
+# Named volumes for data persistence
+volumes:
+  chatbot_data:
+    driver: local
+  chatbot_logs:
+    driver: local
+  chatbot_matrix_store:
+    driver: local
+  chatbot_context:
+    driver: local
+
+# Network for service communication
+networks:
+  chatbot_network:
+    driver: bridge

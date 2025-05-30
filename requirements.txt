@@ -15,6 +15,7 @@ markdown
 # confluent-kafka      # For Kafka
 ollama
 httpx # Added for asynchronous HTTP requests
+colorlog # Added for colorful logging
 
 # Testing dependencies
 pytest>=7.0.0

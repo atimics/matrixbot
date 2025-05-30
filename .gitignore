@@ -130,6 +130,22 @@ cython_debug/
 # VSCode
 .vscode/
 
+# Docker
+.env
+.env.local
+.env.production
+docker-compose.override.yml
+
+# Application data and logs
+data/
+logs/
+matrix_store/
+context_storage/
+*.db
+*.log
+bot_output.log
+chatbot.log
+
 # Databases
 *.db
 *.sqlite
@@ -143,3 +159,8 @@ cython_debug/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+matrix_token.json
+<coroutine*
+state_change_
+context_storage/state_change_*

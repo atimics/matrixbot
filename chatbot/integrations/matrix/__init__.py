@@ -1,0 +1,1 @@
+"""Matrix integration components."""
