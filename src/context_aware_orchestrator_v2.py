@@ -95,29 +95,9 @@ class ContextAwareOrchestrator:
             room_id = os.getenv("MATRIX_ROOM_ID", "#robot-laboratory:chat.ratimics.com")
             self.matrix_observer.add_channel(room_id, "Robot Laboratory")
             
-            # Set up message handler to integrate with context manager
-            original_handle_message = self.matrix_observer.handle_message
-            
-            async def enhanced_handle_message(room_id: str, sender_id: str, message_content: str, event_id: str, timestamp: float):
-                # Call original handler
-                await original_handle_message(room_id, sender_id, message_content, event_id, timestamp)
-                
-                # Add to context manager
-                user_message = {
-                    "content": message_content,
-                    "sender": sender_id,
-                    "event_id": event_id,
-                    "timestamp": timestamp,
-                    "room_id": room_id
-                }
-                await self.context_manager.add_user_message(room_id, user_message)
-                logger.debug(f"Added user message to context: {room_id}")
-            
-            # Replace the handler
-            self.matrix_observer.handle_message = enhanced_handle_message
-            
             await self.matrix_observer.start()
             self.action_executor.set_matrix_observer(self.matrix_observer)
+            logger.info("Matrix observer started")
             logger.info("Enhanced Matrix observer started")
         
         if os.getenv("NEYNAR_API_KEY"):

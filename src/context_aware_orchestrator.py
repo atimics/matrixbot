@@ -95,33 +95,264 @@ class ContextAwareOrchestrator:
             room_id = os.getenv("MATRIX_ROOM_ID", "#robot-laboratory:chat.ratimics.com")
             self.matrix_observer.add_channel(room_id, "Robot Laboratory")
             
-            # Set up message handler to integrate with context manager
-            original_handle_message = self.matrix_observer.handle_message
-            
-            async def enhanced_handle_message(room_id: str, sender_id: str, message_content: str, event_id: str, timestamp: float):
-                # Call original handler
-                await original_handle_message(room_id, sender_id, message_content, event_id, timestamp)
-                
-                # Add to context manager
-                user_message = {
-                    "content": message_content,
-                    "sender": sender_id,
-                    "event_id": event_id,
-                    "timestamp": timestamp,
-                    "room_id": room_id
-                }
-                await self.context_manager.add_user_message(room_id, user_message)
-                logger.debug(f"Added user message to context: {room_id}")
-            
-            # Replace the handler
-            self.matrix_observer.handle_message = enhanced_handle_message
-            
             await self.matrix_observer.start()
             self.action_executor.set_matrix_observer(self.matrix_observer)
-            logger.info("Enhanced Matrix observer started")
+            logger.info("Matrix observer started")
         
         if os.getenv("NEYNAR_API_KEY"):
             self.farcaster_observer = FarcasterObserver(self.world_state)
             await self.farcaster_observer.start()
             self.action_executor.set_farcaster_observer(self.farcaster_observer)
-            logger.info("Farcaster observer started")\n    \n    async def _main_event_loop(self):\n        """Main event loop with context-aware decision making"""\n        logger.info("Starting main event loop...")\n        \n        while self.running:\n            try:\n                cycle_start = time.time()\n                \n                # Check if enough time has passed since last cycle (rate limiting)\n                if cycle_start - getattr(self, 'last_cycle_time', 0) < self.min_cycle_interval:\n                    await asyncio.sleep(1)\n                    continue\n                \n                # Get current world state\n                current_state = self.world_state.get_state()\n                \n                # Check if state has changed\n                current_hash = self._hash_state(current_state)\n                if current_hash == self.last_state_hash:\n                    await asyncio.sleep(self.observation_interval)\n                    continue\n                \n                logger.info(f"World state changed, triggering AI decision cycle {self.cycle_count}")\n                \n                # Get active channels with recent activity\n                active_channels = self._get_active_channels(current_state)\n                \n                # Process each active channel\n                for channel_id in active_channels:\n                    await self._process_channel_cycle(channel_id, current_state)\n                \n                # Update state tracking\n                self.last_state_hash = current_hash\n                self.cycle_count += 1\n                self.last_cycle_time = cycle_start\n                \n                # Log cycle completion\n                cycle_duration = time.time() - cycle_start\n                logger.info(f"Cycle {self.cycle_count} completed in {cycle_duration:.2f}s")\n                \n            except Exception as e:\n                logger.error(f"Error in event loop cycle {self.cycle_count}: {e}")\n                await asyncio.sleep(5)  # Brief pause before retrying\n    \n    async def _process_channel_cycle(self, channel_id: str, world_state: Dict[str, Any]):\n        """Process a single channel's decision cycle"""\n        try:\n            # Get conversation messages with evolving world state system prompt\n            messages = await self.context_manager.get_conversation_messages(channel_id)\n            \n            # Make AI decision using context-aware prompt\n            decision_result = await self._make_ai_decision(channel_id, messages, world_state)\n            \n            if decision_result:\n                # Add AI response to context\n                ai_response = {\n                    "content": json.dumps({\n                        "observations": decision_result.observations,\n                        "potential_actions": decision_result.potential_actions,\n                        "selected_actions": decision_result.selected_actions,\n                        "reasoning": decision_result.reasoning\n                    }),\n                    "timestamp": decision_result.timestamp,\n                    "channel_id": channel_id\n                }\n                await self.context_manager.add_assistant_message(channel_id, ai_response)\n                \n                # Execute selected actions\n                await self._execute_selected_actions(decision_result)\n                \n        except Exception as e:\n            logger.error(f"Error processing channel {channel_id}: {e}")\n    \n    async def _make_ai_decision(self, channel_id: str, messages: List[Dict[str, Any]], world_state: Dict[str, Any]) -> Optional[EnhancedDecisionResult]:\n        """Make AI decision using the context manager's structured prompts"""\n        try:\n            # Use the AI engine with the context-aware messages\n            # The context manager already provides the system prompt with embedded world state\n            decision = await self.ai_engine.make_decision(messages)\n            \n            if decision:\n                # Parse the structured response\n                response_content = decision.selected_actions[0].parameters.get('content', '') if decision.selected_actions else ''\n                \n                try:\n                    structured_response = json.loads(response_content)\n                    \n                    # Convert to enhanced format\n                    enhanced_result = EnhancedDecisionResult(\n                        observations=structured_response.get('observations', decision.observations),\n                        potential_actions=[\n                            {\n                                "action_type": action.action_type,\n                                "parameters": action.parameters,\n                                "reasoning": action.reasoning,\n                                "priority": action.priority\n                            } for action in getattr(decision, 'potential_actions', [])\n                        ],\n                        selected_actions=[\n                            {\n                                "action_type": action.action_type,\n                                "parameters": action.parameters\n                            } for action in decision.selected_actions\n                        ],\n                        reasoning=structured_response.get('reasoning', decision.reasoning),\n                        channel_id=channel_id,\n                        timestamp=time.time()\n                    )\n                    \n                    return enhanced_result\n                    \n                except json.JSONDecodeError:\n                    # Fall back to basic decision format\n                    logger.debug("AI response not in structured format, using basic decision")\n                    \n            return None\n            \n        except Exception as e:\n            logger.error(f"Error making AI decision for {channel_id}: {e}")\n            return None\n    \n    async def _execute_selected_actions(self, decision_result: EnhancedDecisionResult):\n        """Execute the selected actions and record results"""\n        for action in decision_result.selected_actions:\n            try:\n                action_type = action["action_type"]\n                parameters = action["parameters"]\n                \n                # Execute the action\n                result = await self.action_executor.execute_action(action_type, parameters)\n                \n                # Record the tool execution result\n                tool_result = {\n                    "action_type": action_type,\n                    "parameters": parameters,\n                    "result": result,\n                    "status": "success",\n                    "timestamp": time.time()\n                }\n                \n                await self.context_manager.add_tool_result(\n                    decision_result.channel_id, \n                    action_type, \n                    tool_result\n                )\n                \n                logger.info(f"Executed action {action_type} successfully")\n                \n            except Exception as e:\n                logger.error(f"Error executing action {action.get('action_type', 'unknown')}: {e}")\n                \n                # Record the failed execution\n                error_result = {\n                    "action_type": action.get("action_type", "unknown"),\n                    "parameters": action.get("parameters", {}),\n                    "error": str(e),\n                    "status": "failed",\n                    "timestamp": time.time()\n                }\n                \n                await self.context_manager.add_tool_result(\n                    decision_result.channel_id,\n                    action.get("action_type", "unknown"),\n                    error_result\n                )\n    \n    def _get_active_channels(self, world_state: Dict[str, Any]) -> List[str]:\n        """Get list of channels with recent activity"""\n        active_channels = []\n        \n        # Get channels from world state\n        channels = world_state.get('channels', {})\n        current_time = time.time()\n        \n        for channel_id, channel_data in channels.items():\n            # Check if channel has had recent activity (last 10 minutes)\n            last_activity = channel_data.get('last_message_time', 0)\n            if current_time - last_activity < 600:  # 10 minutes\n                active_channels.append(channel_id)\n        \n        # If no channels have recent activity, include all monitored channels\n        if not active_channels and channels:\n            active_channels = list(channels.keys())\n        \n        return active_channels\n    \n    def _hash_state(self, state: Dict[str, Any]) -> str:\n        """Generate a hash of the current state for change detection"""\n        import hashlib\n        state_str = json.dumps(state, sort_keys=True)\n        return hashlib.sha256(state_str.encode()).hexdigest()\n    \n    async def stop(self):\n        """Stop the orchestrator and cleanup"""\n        logger.info("Stopping context-aware orchestrator...")\n        self.running = False\n        \n        if self.matrix_observer:\n            await self.matrix_observer.stop()\n        \n        if self.farcaster_observer:\n            await self.farcaster_observer.stop()\n        \n        logger.info("Context-aware orchestrator stopped")\n    \n    async def export_training_data(self, output_path: str) -> str:\n        """Export all state changes for training purposes"""\n        return await self.context_manager.export_state_changes_for_training(output_path)\n    \n    async def get_context_summary(self, channel_id: str) -> Dict[str, Any]:\n        """Get summary of context for a specific channel"""\n        return await self.context_manager.get_context_summary(channel_id)\n    \n    async def clear_context(self, channel_id: str):\n        """Clear conversation context for a channel"""\n        await self.context_manager.clear_context(channel_id)\n\nif __name__ == "__main__":\n    import argparse\n    \n    parser = argparse.ArgumentParser(description="Context-Aware Event Orchestrator")\n    parser.add_argument("--db-path", default="matrix_bot.db", help="Database path")\n    parser.add_argument("--export", help="Export training data to specified path")\n    parser.add_argument("--summary", help="Get context summary for channel ID")\n    parser.add_argument("--clear", help="Clear context for channel ID")\n    \n    args = parser.parse_args()\n    \n    async def main():\n        orchestrator = ContextAwareOrchestrator(args.db_path)\n        \n        if args.export:\n            result = await orchestrator.export_training_data(args.export)\n            print(f"Exported training data to: {result}")\n        elif args.summary:\n            summary = await orchestrator.get_context_summary(args.summary)\n            print(f"Context summary for {args.summary}:")\n            print(json.dumps(summary, indent=2))\n        elif args.clear:\n            await orchestrator.clear_context(args.clear)\n            print(f"Cleared context for {args.clear}")\n        else:\n            await orchestrator.start()\n    \n    # Set up logging\n    logging.basicConfig(\n        level=logging.INFO,\n        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'\n    )\n    \n    asyncio.run(main())
+            logger.info("Farcaster observer started")
+    
+    async def _main_event_loop(self):
+        """Main event loop with context-aware decision making"""
+        logger.info("Starting main event loop...")
+        
+        while self.running:
+            try:
+                cycle_start = time.time()
+                
+                # Check if enough time has passed since last cycle (rate limiting)
+                if cycle_start - getattr(self, 'last_cycle_time', 0) < self.min_cycle_interval:
+                    await asyncio.sleep(1)
+                    continue
+                
+                # Get current world state
+                current_state = self.world_state.get_state()
+                
+                # Check if state has changed
+                current_hash = self._hash_state(current_state)
+                if current_hash == self.last_state_hash:
+                    await asyncio.sleep(self.observation_interval)
+                    continue
+                
+                logger.info(f"World state changed, triggering AI decision cycle {self.cycle_count}")
+                
+                # Get active channels with recent activity
+                active_channels = self._get_active_channels(current_state)
+                
+                # Process each active channel
+                for channel_id in active_channels:
+                    await self._process_channel_cycle(channel_id, current_state)
+                
+                # Update state tracking
+                self.last_state_hash = current_hash
+                self.cycle_count += 1
+                self.last_cycle_time = cycle_start
+                
+                # Log cycle completion
+                cycle_duration = time.time() - cycle_start
+                logger.info(f"Cycle {self.cycle_count} completed in {cycle_duration:.2f}s")
+                
+            except Exception as e:
+                logger.error(f"Error in event loop cycle {self.cycle_count}: {e}")
+                await asyncio.sleep(5)  # Brief pause before retrying
+    
+    async def _process_channel_cycle(self, channel_id: str, world_state: Dict[str, Any]):
+        """Process a single channel's decision cycle"""
+        try:
+            # Get conversation messages with evolving world state system prompt
+            messages = await self.context_manager.get_conversation_messages(channel_id)
+            
+            # Make AI decision using context-aware prompt
+            decision_result = await self._make_ai_decision(channel_id, messages, world_state)
+            
+            if decision_result:
+                # Add AI response to context
+                ai_response = {
+                    "content": json.dumps({
+                        "observations": decision_result.observations,
+                        "potential_actions": decision_result.potential_actions,
+                        "selected_actions": decision_result.selected_actions,
+                        "reasoning": decision_result.reasoning
+                    }),
+                    "timestamp": decision_result.timestamp,
+                    "channel_id": channel_id
+                }
+                await self.context_manager.add_assistant_message(channel_id, ai_response)
+                
+                # Execute selected actions
+                await self._execute_selected_actions(decision_result)
+                
+        except Exception as e:
+            logger.error(f"Error processing channel {channel_id}: {e}")
+    
+    async def _make_ai_decision(self, channel_id: str, messages: List[Dict[str, Any]], world_state: Dict[str, Any]) -> Optional[EnhancedDecisionResult]:
+        """Make AI decision using the context manager's structured prompts"""
+        try:
+            # Use the AI engine with the context-aware messages
+            # The context manager already provides the system prompt with embedded world state
+            decision = await self.ai_engine.make_decision(messages)
+            
+            if decision:
+                # Parse the structured response
+                response_content = decision.selected_actions[0].parameters.get('content', '') if decision.selected_actions else ''
+                
+                try:
+                    structured_response = json.loads(response_content)
+                    
+                    # Convert to enhanced format
+                    enhanced_result = EnhancedDecisionResult(
+                        observations=structured_response.get('observations', decision.observations),
+                        potential_actions=[
+                            {
+                                "action_type": action.action_type,
+                                "parameters": action.parameters,
+                                "reasoning": action.reasoning,
+                                "priority": action.priority
+                            } for action in getattr(decision, 'potential_actions', [])
+                        ],
+                        selected_actions=[
+                            {
+                                "action_type": action.action_type,
+                                "parameters": action.parameters
+                            } for action in decision.selected_actions
+                        ],
+                        reasoning=structured_response.get('reasoning', decision.reasoning),
+                        channel_id=channel_id,
+                        timestamp=time.time()
+                    )
+                    
+                    return enhanced_result
+                    
+                except json.JSONDecodeError:
+                    # Fall back to basic decision format
+                    logger.debug("AI response not in structured format, using basic decision")
+                    
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error making AI decision for {channel_id}: {e}")
+            return None
+    
+    async def _execute_selected_actions(self, decision_result: EnhancedDecisionResult):
+        """Execute the selected actions and record results"""
+        for action in decision_result.selected_actions:
+            try:
+                action_type = action["action_type"]
+                parameters = action["parameters"]
+                
+                # Execute the action
+                result = await self.action_executor.execute_action(action_type, parameters)
+                
+                # Record the tool execution result
+                tool_result = {
+                    "action_type": action_type,
+                    "parameters": parameters,
+                    "result": result,
+                    "status": "success",
+                    "timestamp": time.time()
+                }
+                
+                await self.context_manager.add_tool_result(
+                    decision_result.channel_id, 
+                    action_type, 
+                    tool_result
+                )
+                
+                logger.info(f"Executed action {action_type} successfully")
+                
+            except Exception as e:
+                logger.error(f"Error executing action {action.get('action_type', 'unknown')}: {e}")
+                
+                # Record the failed execution
+                error_result = {
+                    "action_type": action.get("action_type", "unknown"),
+                    "parameters": action.get("parameters", {}),
+                    "error": str(e),
+                    "status": "failed",
+                    "timestamp": time.time()
+                }
+                
+                await self.context_manager.add_tool_result(
+                    decision_result.channel_id,
+                    action.get("action_type", "unknown"),
+                    error_result
+                )
+    
+    def _get_active_channels(self, world_state: Dict[str, Any]) -> List[str]:
+        """Get list of channels with recent activity"""
+        active_channels = []
+        
+        # Get channels from world state
+        channels = world_state.get('channels', {})
+        current_time = time.time()
+        
+        for channel_id, channel_data in channels.items():
+            # Check if channel has had recent activity (last 10 minutes)
+            last_activity = channel_data.get('last_message_time', 0)
+            if current_time - last_activity < 600:  # 10 minutes
+                active_channels.append(channel_id)
+        
+        # If no channels have recent activity, include all monitored channels
+        if not active_channels and channels:
+            active_channels = list(channels.keys())
+        
+        return active_channels
+    
+    def _hash_state(self, state: Dict[str, Any]) -> str:
+        """Generate a hash of the current state for change detection"""
+        import hashlib
+        state_str = json.dumps(state, sort_keys=True)
+        return hashlib.sha256(state_str.encode()).hexdigest()
+    
+    async def stop(self):
+        """Stop the orchestrator and cleanup"""
+        logger.info("Stopping context-aware orchestrator...")
+        self.running = False
+        
+        if self.matrix_observer:
+            await self.matrix_observer.stop()
+        
+        if self.farcaster_observer:
+            await self.farcaster_observer.stop()
+        
+        logger.info("Context-aware orchestrator stopped")
+    
+    async def export_training_data(self, output_path: str) -> str:
+        """Export all state changes for training purposes"""
+        return await self.context_manager.export_state_changes_for_training(output_path)
+    
+    async def get_context_summary(self, channel_id: str) -> Dict[str, Any]:
+        """Get summary of context for a specific channel"""
+        return await self.context_manager.get_context_summary(channel_id)
+    
+    async def clear_context(self, channel_id: str):
+        """Clear conversation context for a channel"""
+        await self.context_manager.clear_context(channel_id)
+
+if __name__ == "__main__":
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Context-Aware Event Orchestrator")
+    parser.add_argument("--db-path", default="matrix_bot.db", help="Database path")
+    parser.add_argument("--export", help="Export training data to specified path")
+    parser.add_argument("--summary", help="Get context summary for channel ID")
+    parser.add_argument("--clear", help="Clear context for channel ID")
+    
+    args = parser.parse_args()
+    
+    async def main():
+        orchestrator = ContextAwareOrchestrator(args.db_path)
+        
+        if args.export:
+            result = await orchestrator.export_training_data(args.export)
+            print(f"Exported training data to: {result}")
+        elif args.summary:
+            summary = await orchestrator.get_context_summary(args.summary)
+            print(f"Context summary for {args.summary}:")
+            print(json.dumps(summary, indent=2))
+        elif args.clear:
+            await orchestrator.clear_context(args.clear)
+            print(f"Cleared context for {args.clear}")
+        else:
+            await orchestrator.start()
+    
+    # Set up logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
+    asyncio.run(main())

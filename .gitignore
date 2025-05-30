@@ -146,3 +146,5 @@ Thumbs.db
 
 matrix_token.json
 <coroutine*
+state_change_
+context_storage/state_change_*
