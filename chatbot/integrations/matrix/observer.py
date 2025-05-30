@@ -17,6 +17,7 @@ import json
 from nio import AsyncClient, MatrixRoom, RoomMessageText, LoginResponse, RoomSendResponse, RoomSendError
 from dotenv import load_dotenv
 
+from ...config import settings
 from ...core.world_state import WorldStateManager, Message, Channel
 
 logger = logging.getLogger(__name__)
@@ -27,9 +28,9 @@ class MatrixObserver:
     
     def __init__(self, world_state_manager: WorldStateManager):
         self.world_state = world_state_manager
-        self.homeserver = os.getenv("MATRIX_HOMESERVER")
-        self.user_id = os.getenv("MATRIX_USER_ID")
-        self.password = os.getenv("MATRIX_PASSWORD")
+        self.homeserver = settings.MATRIX_HOMESERVER
+        self.user_id = settings.MATRIX_USER_ID
+        self.password = settings.MATRIX_PASSWORD
         self.client: Optional[AsyncClient] = None
         self.sync_task: Optional[asyncio.Task] = None
         self.channels_to_monitor = []
@@ -54,8 +55,8 @@ class MatrixObserver:
         logger.info("MatrixObserver: Starting Matrix client...")
         
         # Create client with device configuration and store path
-        device_name = os.getenv("DEVICE_NAME", "ratichat_bot")
-        device_id = os.getenv("MATRIX_DEVICE_ID")
+        device_name = settings.DEVICE_NAME
+        device_id = settings.MATRIX_DEVICE_ID
         
         self.client = AsyncClient(
             self.homeserver, 

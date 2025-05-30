@@ -6,12 +6,12 @@ The main orchestrator that coordinates all chatbot components with context manag
 
 import asyncio
 import logging
-import os
 import time
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..config import settings
 from ..core.world_state import WorldStateManager
 from ..core.ai_engine import AIDecisionEngine
 from ..core.context import ContextManager
@@ -41,7 +41,7 @@ class ContextAwareOrchestrator:
         self.world_state = WorldStateManager()
         self.context_manager = ContextManager(self.world_state, self.config.db_path)
         self.ai_engine = AIDecisionEngine(
-            api_key=os.getenv("OPENROUTER_API_KEY"),
+            api_key=settings.OPENROUTER_API_KEY,
             model=self.config.ai_model
         )
         self.action_executor = ActionExecutor()
@@ -98,10 +98,10 @@ class ContextAwareOrchestrator:
     async def _initialize_observers(self) -> None:
         """Initialize available observers based on environment configuration."""
         # Initialize Matrix observer if credentials available
-        if os.getenv("MATRIX_USER_ID") and os.getenv("MATRIX_PASSWORD"):
+        if settings.MATRIX_USER_ID and settings.MATRIX_PASSWORD:
             try:
                 self.matrix_observer = MatrixObserver(self.world_state)
-                room_id = os.getenv("MATRIX_ROOM_ID", "#robot-laboratory:chat.ratimics.com")
+                room_id = settings.MATRIX_ROOM_ID
                 self.matrix_observer.add_channel(room_id, "Robot Laboratory")
                 await self.matrix_observer.start()
                 self.action_executor.set_matrix_observer(self.matrix_observer)
@@ -110,7 +110,7 @@ class ContextAwareOrchestrator:
                 logger.error(f"Failed to initialize Matrix observer: {e}")
         
         # Initialize Farcaster observer if credentials available
-        if os.getenv("NEYNAR_API_KEY"):
+        if settings.NEYNAR_API_KEY:
             try:
                 self.farcaster_observer = FarcasterObserver(self.world_state)
                 await self.farcaster_observer.start()
