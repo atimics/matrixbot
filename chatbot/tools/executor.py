@@ -34,7 +34,7 @@ class ActionExecutor:
         self.farcaster_observer = observer
         logger.info("Farcaster observer set in action executor")
     
-    async def execute_action(self, action_type: str, parameters: Dict[str, Any]) -> str:
+    async def execute_action(self, action_type: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a single action and return the result"""
         logger.info(f"Executing action: {action_type}")
         
@@ -55,18 +55,21 @@ class ActionExecutor:
                 return await self._send_farcaster_reply(parameters)
             
             else:
-                raise ValueError(f"Unknown action type: {action_type}")
+                error_msg = f"Unknown action type: {action_type}"
+                logger.error(error_msg)
+                return {"status": "failure", "error": error_msg}
                 
         except Exception as e:
             error_msg = f"Failed to execute {action_type}: {str(e)}"
             logger.error(error_msg)
-            return error_msg
+            return {"status": "failure", "error": error_msg}
     
-    async def _wait_action(self, params: Dict[str, Any]) -> str:
+    async def _wait_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Wait and observe - no action taken"""
         duration = params.get("duration", 1)
         await asyncio.sleep(duration)
-        return f"Waited {duration} seconds and observed"
+        message = f"Waited {duration} seconds and observed"
+        return {"status": "success", "message": message}
     
     async def _send_matrix_message(self, params: Dict[str, Any]) -> str:
         """Send a message to a Matrix channel"""
@@ -91,13 +94,13 @@ class ActionExecutor:
         except Exception as e:
             return f"Error sending Matrix message: {str(e)}"
     
-    async def _send_matrix_reply(self, params: Dict[str, Any]) -> str:
+    async def _send_matrix_reply(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Send a reply to a Matrix message"""
         logger.info(f"_send_matrix_reply called with params: {params}")
         
         if not self.matrix_observer:
             logger.error("Matrix observer not configured")
-            return "Error: Matrix observer not configured"
+            return {"status": "failure", "error": "Matrix observer not configured"}
         
         # Handle both parameter naming conventions
         room_id = params.get("room_id") or params.get("channel_id")
@@ -112,7 +115,7 @@ class ActionExecutor:
             if not content: missing.append("content") 
             if not reply_to_event_id: missing.append("reply_to_event_id/reply_to_id")
             logger.error(f"Missing required parameters: {missing}")
-            return f"Error: Missing required parameters for Matrix reply: {missing}"
+            return {"status": "failure", "error": f"Missing required parameters for Matrix reply: {missing}"}
         
         try:
             logger.info(f"Calling matrix_observer.send_reply with room_id={room_id}, content_length={len(content)}, reply_to={reply_to_event_id}")
@@ -123,18 +126,24 @@ class ActionExecutor:
                 event_id = result.get("event_id", "unknown")
                 success_msg = f"Sent Matrix reply to {room_id} (event: {event_id})"
                 logger.info(success_msg)
-                return success_msg
+                return {
+                    "status": "success", 
+                    "message": success_msg,
+                    "event_id": event_id,
+                    "room_id": room_id,
+                    "reply_to_event_id": reply_to_event_id
+                }
             else:
                 error_msg = f"Failed to send Matrix reply: {result.get('error', 'unknown error')}"
                 logger.error(error_msg)
-                return error_msg
+                return {"status": "failure", "error": error_msg}
                 
         except Exception as e:
             error_msg = f"Error sending Matrix reply: {str(e)}"
             logger.error(error_msg)
             import traceback
             logger.error(f"Full traceback: {traceback.format_exc()}")
-            return error_msg
+            return {"status": "failure", "error": error_msg}
     
     async def _send_farcaster_post(self, params: Dict[str, Any]) -> str:
         """Send a post to Farcaster"""
