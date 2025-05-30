@@ -140,7 +140,9 @@ class ContextAwareOrchestrator:
                 # Rate limiting
                 if cycle_start - self.last_cycle_time < self.min_cycle_interval:
                     logger.debug(f"Rate limiting: {cycle_start - self.last_cycle_time:.2f}s < {self.min_cycle_interval:.2f}s")
-                    await asyncio.sleep(1)
+                    remaining_time = self.min_cycle_interval - (cycle_start - self.last_cycle_time)
+                    if remaining_time > 0:
+                        await asyncio.sleep(remaining_time)
                     continue
                 
                 # Get current world state
