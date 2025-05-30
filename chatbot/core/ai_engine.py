@@ -135,11 +135,9 @@ Based on this world state, what actions (if any) should you take? Remember you c
                 # Parse the JSON response
                 try:
                     # Clean up the response (remove markdown formatting if present)
-                    cleaned_response = ai_response.strip()
-                    if cleaned_response.startswith("```json"):
-                        cleaned_response = cleaned_response[7:]
-                    if cleaned_response.endswith("```"):
-                        cleaned_response = cleaned_response[:-3]
+                    import re
+                    # Use regex to strip markdown code block markers
+                    cleaned_response = re.sub(r"^\s*```json\s*|\s*```\s*$", "", ai_response.strip(), flags=re.DOTALL)
                     
                     decision_data = json.loads(cleaned_response)
                     
