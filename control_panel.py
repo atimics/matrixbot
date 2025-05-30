@@ -78,7 +78,9 @@ app.add_middleware(
 async def startup_event():
     """Initialize the orchestrator"""
     global orchestrator
-    orchestrator = ContextAwareOrchestrator("control_panel.db")
+    from chatbot.core.orchestrator import OrchestratorConfig
+    config = OrchestratorConfig(db_path="control_panel.db")
+    orchestrator = ContextAwareOrchestrator(config)
     logger.info("Control panel started")
 
 @app.on_event("shutdown")
