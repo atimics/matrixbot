@@ -96,17 +96,19 @@ class Channel:
         pass
 
     def get_activity_summary(self) -> Dict[str, Any]:
-        """Get a summary of recent channel activity."""
+        """Get a summary of recent channel activity with timestamp range."""
         if not self.recent_messages:
             return {
                 "message_count": 0,
                 "last_activity": None,
                 "active_users": [],
-                "summary": "No recent activity"
+                "summary": "No recent activity",
+                "timestamp_range": None
             }
         
         active_users = list(set(msg.sender_username or msg.sender for msg in self.recent_messages[-5:]))
         last_msg = self.recent_messages[-1]
+        first_msg = self.recent_messages[0]
         
         return {
             "message_count": len(self.recent_messages),
@@ -114,7 +116,12 @@ class Channel:
             "last_message": last_msg.content[:100] + "..." if len(last_msg.content) > 100 else last_msg.content,
             "last_sender": last_msg.sender_username or last_msg.sender,
             "active_users": active_users[:5],  # Top 5 active users
-            "summary": f"Last: {last_msg.sender_username or last_msg.sender}: {last_msg.content[:50]}..."
+            "summary": f"Last: {last_msg.sender_username or last_msg.sender}: {last_msg.content[:50]}...",
+            "timestamp_range": {
+                "start": first_msg.timestamp,
+                "end": last_msg.timestamp,
+                "span_hours": round((last_msg.timestamp - first_msg.timestamp) / 3600, 2)
+            }
         }
 
 
@@ -288,10 +295,15 @@ class WorldState:
         from ..config import settings
         
         # Sort channels by activity (most recent message first)
+        # Give special priority to Farcaster channels to ensure minimum visibility
         sorted_channels = sorted(
             self.channels.items(),
-            key=lambda x: x[1].recent_messages[-1].timestamp if x[1].recent_messages else 0,
-            reverse=True
+            key=lambda x: (
+                # Primary sort: Farcaster channels get priority boost
+                0 if x[1].type == 'farcaster' else 1,
+                # Secondary sort: Most recent activity first
+                -(x[1].recent_messages[-1].timestamp if x[1].recent_messages else 0)
+            )
         )
         
         channels_payload = {}
@@ -306,7 +318,11 @@ class WorldState:
             
             # Decide if this channel gets detailed treatment
             is_primary = (ch_id == primary_channel_id)
-            include_detailed = is_primary or detailed_count < max_other_channels
+            # Always include key Farcaster channels for minimum visibility
+            is_key_farcaster = ch_data.type == 'farcaster' and (
+                'home' in ch_id or 'notification' in ch_id or 'reply' in ch_id
+            )
+            include_detailed = is_primary or is_key_farcaster or detailed_count < max_other_channels
             
             if include_detailed and filtered_messages:
                 # Full detail for priority channels
@@ -314,6 +330,18 @@ class WorldState:
                     msg.to_ai_summary_dict() if not include_detailed_user_info else asdict(msg)
                     for msg in filtered_messages[-max_messages_per_channel:]
                 ]
+                
+                # Calculate timestamp range for the included messages
+                truncated_messages = filtered_messages[-max_messages_per_channel:]
+                timestamp_range = None
+                if truncated_messages:
+                    timestamp_range = {
+                        "start": truncated_messages[0].timestamp,
+                        "end": truncated_messages[-1].timestamp,
+                        "span_hours": round((truncated_messages[-1].timestamp - truncated_messages[0].timestamp) / 3600, 2),
+                        "total_available_messages": len(filtered_messages),
+                        "included_messages": len(truncated_messages)
+                    }
                 
                 channels_payload[ch_id] = {
                     "id": ch_data.id,
@@ -324,9 +352,11 @@ class WorldState:
                     "topic": ch_data.topic[:100] if ch_data.topic else None,
                     "member_count": ch_data.member_count,
                     "activity_summary": ch_data.get_activity_summary(),
-                    "priority": "detailed" if is_primary else "secondary"
+                    "priority": "detailed" if is_primary else "secondary",
+                    "message_timestamp_range": timestamp_range
                 }
-                if not is_primary:
+                # Only count towards detailed limit if it's not primary or key Farcaster
+                if not is_primary and not is_key_farcaster:
                     detailed_count += 1
             else:
                 # Summary only for less active channels
@@ -542,13 +572,15 @@ class WorldStateManager:
             cast_hash: The hash of the cast to check
             
         Returns:
-            True if the AI has already replied to this cast
+            True if the AI has successfully replied to this cast (not just scheduled)
         """
         for action in self.state.action_history:
             if action.action_type == "send_farcaster_reply":
                 reply_to_hash = action.parameters.get("reply_to_hash")
                 if reply_to_hash == cast_hash:
-                    return True
+                    # Only count as replied if it was actually successful, not just scheduled
+                    if action.result not in ["scheduled", "failure"]:
+                        return True
         return False
 
     def has_quoted_cast(self, cast_hash: str) -> bool:
@@ -613,3 +645,7 @@ class WorldStateManager:
             bot_fid=settings.FARCASTER_BOT_FID,
             bot_username=settings.FARCASTER_BOT_USERNAME
         )
+
+    def get_channel(self, channel_id: str) -> Optional[Channel]:
+        """Get a channel by ID"""
+        return self.state.channels.get(channel_id)

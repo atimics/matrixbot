@@ -98,9 +98,32 @@ class FarcasterObserver:
         while True:
             content, channel = await self.post_queue.get()
             try:
-                await self.post_cast(content, channel)
+                result = await self.post_cast(content, channel)
+                # Update world state manager with actual result after sending
+                if hasattr(self, 'world_state_manager') and self.world_state_manager:
+                    if result.get("success"):
+                        self.world_state_manager.add_action_result(
+                            action_type="send_farcaster_post",
+                            parameters={"content": content, "channel": channel},
+                            result="success",
+                        )
+                        logger.info(f"Successfully sent scheduled post to channel {channel or 'default'}")
+                    else:
+                        self.world_state_manager.add_action_result(
+                            action_type="send_farcaster_post",
+                            parameters={"content": content, "channel": channel},
+                            result=f"failure: {result.get('error', 'unknown error')}",
+                        )
+                        logger.error(f"Failed to send scheduled post: {result.get('error', 'unknown error')}")
             except Exception as e:
                 logger.error(f"Error sending scheduled post: {e}")
+                # Update world state manager with exception result
+                if hasattr(self, 'world_state_manager') and self.world_state_manager:
+                    self.world_state_manager.add_action_result(
+                        action_type="send_farcaster_post",
+                        parameters={"content": content, "channel": channel},
+                        result=f"failure: {str(e)}",
+                    )
             await asyncio.sleep(self.scheduler_interval)
 
     async def _send_replies_loop(self) -> None:
@@ -108,9 +131,32 @@ class FarcasterObserver:
         while True:
             content, reply_to_hash = await self.reply_queue.get()
             try:
-                await self.reply_to_cast(content, reply_to_hash)
+                result = await self.reply_to_cast(content, reply_to_hash)
+                # Update world state manager with actual result after sending
+                if hasattr(self, 'world_state_manager') and self.world_state_manager:
+                    if result.get("success"):
+                        self.world_state_manager.add_action_result(
+                            action_type="send_farcaster_reply",
+                            parameters={"content": content, "reply_to_hash": reply_to_hash},
+                            result="success",
+                        )
+                        logger.info(f"Successfully sent scheduled reply to cast {reply_to_hash}")
+                    else:
+                        self.world_state_manager.add_action_result(
+                            action_type="send_farcaster_reply",
+                            parameters={"content": content, "reply_to_hash": reply_to_hash},
+                            result=f"failure: {result.get('error', 'unknown error')}",
+                        )
+                        logger.error(f"Failed to send scheduled reply to cast {reply_to_hash}: {result.get('error', 'unknown error')}")
             except Exception as e:
                 logger.error(f"Error sending scheduled reply: {e}")
+                # Update world state manager with exception result
+                if hasattr(self, 'world_state_manager') and self.world_state_manager:
+                    self.world_state_manager.add_action_result(
+                        action_type="send_farcaster_reply",
+                        parameters={"content": content, "reply_to_hash": reply_to_hash},
+                        result=f"failure: {str(e)}",
+                    )
             await asyncio.sleep(self.scheduler_interval)
 
     async def observe_feeds(

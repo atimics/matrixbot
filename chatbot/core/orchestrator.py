@@ -29,7 +29,14 @@ from ..tools.farcaster_tools import (
     UnfollowFarcasterUserTool,
     SendFarcasterDMTool,
 )
-from ..tools.matrix_tools import SendMatrixMessageTool, SendMatrixReplyTool
+from ..tools.matrix_tools import (
+    SendMatrixMessageTool,
+    SendMatrixReplyTool,
+    JoinMatrixRoomTool,
+    LeaveMatrixRoomTool,
+    AcceptMatrixInviteTool,
+    GetMatrixInvitesTool,
+)
 from ..tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
@@ -202,12 +209,12 @@ class ContextAwareOrchestrator:
                     # Observe external feeds for new content
                     await self._observe_external_feeds()
 
-                    # Get active channels
+                    # Get active channels to determine primary focus
                     active_channels = self._get_active_channels(current_state)
 
-                    # Process each active channel
-                    for channel_id in active_channels:
-                        await self._process_channel(channel_id)
+                    # Process all channels in a single AI decision cycle
+                    # This is more efficient than running AI for each channel separately
+                    await self._process_world_state(active_channels)
 
                     # Update tracking
                     last_state_hash = current_hash
@@ -229,43 +236,68 @@ class ContextAwareOrchestrator:
             self.state_changed_event.set()
             logger.debug("State change event triggered by external caller")
 
-    async def _process_channel(self, channel_id: str) -> None:
-        """Process a single channel for AI decision making."""
+    async def _process_world_state(self, active_channels: List[str]) -> None:
+        """Process the entire world state in a single AI decision cycle."""
         try:
-            # Get conversation messages with world state in system prompt
-            messages = await self.context_manager.get_conversation_messages(channel_id)
+            # Determine primary channel (most recently active)
+            primary_channel_id = None
+            if active_channels:
+                # Sort by recent activity to get most active channel as primary
+                channel_activity = []
+                for channel_id in active_channels:
+                    channel_data = self.world_state.get_channel(channel_id)
+                    if channel_data and channel_data.recent_messages:
+                        last_msg_time = channel_data.recent_messages[-1].timestamp
+                        channel_activity.append((channel_id, last_msg_time))
+                
+                if channel_activity:
+                    # Primary channel is the one with most recent activity
+                    channel_activity.sort(key=lambda x: x[1], reverse=True)
+                    primary_channel_id = channel_activity[0][0]
 
             # Get optimized world state for AI decision making
-            world_state_for_ai = self.world_state.get_ai_optimized_payload(primary_channel_id=channel_id)
+            world_state_for_ai = self.world_state.get_ai_optimized_payload(primary_channel_id=primary_channel_id)
             
             # Log payload size for monitoring
             payload_stats = world_state_for_ai.get("payload_stats", {})
-            logger.info(f"AI payload stats for {channel_id}: {payload_stats}")
+            logger.info(f"AI payload stats for cycle {self.cycle_count}: {payload_stats}")
             
-            cycle_id = f"cycle_{self.cycle_count}_{channel_id}"
+            cycle_id = f"cycle_{self.cycle_count}_unified"
 
-            # Make AI decision
+            # Make comprehensive AI decision for entire world state
             decision = await self.ai_engine.make_decision(world_state_for_ai, cycle_id)
 
             if decision and decision.selected_actions:
-                # Record AI response in context
-                ai_response = {
-                    "content": f"Decision: {decision.reasoning}",
-                    "timestamp": time.time(),
-                    "channel_id": channel_id,
-                }
-                await self.context_manager.add_assistant_message(
-                    channel_id, ai_response
+                logger.info(
+                    f"AI Decision for cycle {self.cycle_count}: {len(decision.selected_actions)} actions selected"
                 )
-
-                # Execute selected actions
+                
+                # Execute all selected actions
                 for action in decision.selected_actions:
-                    await self._execute_action(channel_id, action)
+                    try:
+                        await self._execute_action(action)
+                    except Exception as e:
+                        logger.error(f"Error executing action {action.tool_name}: {e}")
+                        # Continue with other actions
+            else:
+                logger.debug(f"AI Decision for cycle {self.cycle_count}: No actions selected")
 
         except Exception as e:
-            logger.error(f"Error processing channel {channel_id}: {e}")
+            logger.error(f"Error in unified world state processing for cycle {self.cycle_count}: {e}")
 
-    async def _execute_action(self, channel_id: str, action: Any) -> None:
+    async def _process_channel(self, channel_id: str) -> None:
+        """
+        DEPRECATED: Process a single channel for AI decision making.
+        
+        This method is now deprecated in favor of _process_world_state which
+        handles all channels in a single comprehensive AI decision cycle.
+        Keeping for backward compatibility if needed.
+        """
+        logger.warning(f"_process_channel called for {channel_id} - this method is deprecated, use _process_world_state instead")
+        # For backward compatibility, delegate to unified processing
+        await self._process_world_state([channel_id])
+
+    async def _execute_action(self, action: Any) -> None:
         """Execute a single action using the ToolRegistry."""
         tool_name = action.action_type
         params = action.parameters
@@ -273,6 +305,8 @@ class ContextAwareOrchestrator:
         tool = self.tool_registry.get_tool(tool_name)
         if not tool:
             logger.error(f"Attempted to execute unknown tool: {tool_name}")
+            # Extract channel_id from parameters if available for context logging
+            channel_id = params.get("channel_id", "unknown")
             # Record this as a failed tool execution in context manager
             await self.context_manager.add_tool_result(
                 channel_id,
@@ -307,7 +341,14 @@ class ContextAwareOrchestrator:
 
         # Ensure result always has a timestamp and status for consistency
         result.setdefault("timestamp", time.time())
-        result.setdefault("status", "failure" if "error" in result else "success")
+        if "status" not in result:
+            if "error" in result:
+                result["status"] = "failure"
+            else:
+                result["status"] = "success"
+
+        # Extract channel_id from parameters or result for context logging
+        channel_id = params.get("channel_id") or result.get("channel_id", "unknown")
 
         # Record tool result
         tool_result_payload = {
@@ -317,15 +358,16 @@ class ContextAwareOrchestrator:
             "timestamp": result["timestamp"],
         }
 
-        if result["status"] == "success":
+        if result["status"] in ["success", "scheduled"]:
             tool_result_payload["result"] = result.get("message", str(result))
             logger.info(
                 f"Tool {tool_name} executed successfully: {tool_result_payload['result']}"
             )
 
-            # Handle AI Blindness Fix
+            # Handle AI Blindness Fix - only for successful sends, not scheduled
             if (
-                tool_name
+                result["status"] == "success"
+                and tool_name
                 in [
                     "send_matrix_message",
                     "send_matrix_reply",
@@ -484,6 +526,10 @@ class ContextAwareOrchestrator:
         # Register Matrix tools
         self.tool_registry.register_tool(SendMatrixReplyTool())
         self.tool_registry.register_tool(SendMatrixMessageTool())
+        self.tool_registry.register_tool(JoinMatrixRoomTool())
+        self.tool_registry.register_tool(LeaveMatrixRoomTool())
+        self.tool_registry.register_tool(AcceptMatrixInviteTool())
+        self.tool_registry.register_tool(GetMatrixInvitesTool())
 
         # Register Farcaster tools
         self.tool_registry.register_tool(SendFarcasterPostTool())

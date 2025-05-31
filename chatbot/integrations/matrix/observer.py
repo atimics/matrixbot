@@ -517,3 +517,184 @@ class MatrixObserver:
                 f"MatrixObserver: Exception while sending reply: {e}", exc_info=True
             )
             return {"success": False, "error": f"Exception: {str(e)}"}
+
+    async def join_room(self, room_identifier: str) -> Dict[str, Any]:
+        """Join a Matrix room by room ID or alias"""
+        logger.info(f"MatrixObserver.join_room called: room_identifier={room_identifier}")
+
+        if not self.client:
+            logger.error("Matrix client not connected")
+            return {"success": False, "error": "Matrix client not connected"}
+
+        try:
+            # Use the Matrix client to join the room
+            response = await self.client.join(room_identifier)
+
+            if hasattr(response, "room_id"):
+                # Successful join
+                room_id = response.room_id
+                logger.info(f"MatrixObserver: Successfully joined room {room_id} (identifier: {room_identifier})")
+
+                # Add to monitoring channels if it's not already there
+                if room_id not in self.channels_to_monitor:
+                    self.channels_to_monitor.append(room_id)
+
+                # Register the room in world state if not already known
+                if room_id not in self.world_state.state.channels:
+                    # Get room details after joining
+                    if room_id in self.client.rooms:
+                        room = self.client.rooms[room_id]
+                        room_details = self._extract_room_details(room)
+                        self._register_room(room_id, room_details)
+                    else:
+                        # Fallback registration
+                        self.world_state.add_channel(room_id, "matrix", f"Room {room_id}")
+
+                return {
+                    "success": True,
+                    "room_id": room_id,
+                    "room_identifier": room_identifier,
+                }
+            else:
+                error_msg = f"Failed to join room: {response}"
+                logger.error(f"MatrixObserver: {error_msg}")
+                return {"success": False, "error": error_msg}
+
+        except Exception as e:
+            error_msg = f"Exception while joining room: {str(e)}"
+            logger.error(f"MatrixObserver: {error_msg}", exc_info=True)
+            return {"success": False, "error": error_msg}
+
+    async def leave_room(self, room_id: str, reason: str = "Leaving room") -> Dict[str, Any]:
+        """Leave a Matrix room"""
+        logger.info(f"MatrixObserver.leave_room called: room_id={room_id}, reason={reason}")
+
+        if not self.client:
+            logger.error("Matrix client not connected")
+            return {"success": False, "error": "Matrix client not connected"}
+
+        try:
+            # Use the Matrix client to leave the room
+            response = await self.client.room_leave(room_id, reason)
+
+            if hasattr(response, "message") and "left" in response.message.lower():
+                # Successful leave - although nio doesn't return success indicator directly
+                logger.info(f"MatrixObserver: Left room {room_id}")
+
+                # Remove from monitoring channels
+                if room_id in self.channels_to_monitor:
+                    self.channels_to_monitor.remove(room_id)
+
+                # Remove from world state
+                if room_id in self.world_state.state.channels:
+                    del self.world_state.state.channels[room_id]
+                    logger.info(f"WorldState: Removed matrix channel {room_id}")
+
+                return {
+                    "success": True,
+                    "room_id": room_id,
+                    "reason": reason,
+                }
+            else:
+                # Assume success if no error was raised
+                logger.info(f"MatrixObserver: Left room {room_id} (response: {response})")
+
+                # Remove from monitoring and world state
+                if room_id in self.channels_to_monitor:
+                    self.channels_to_monitor.remove(room_id)
+                if room_id in self.world_state.state.channels:
+                    del self.world_state.state.channels[room_id]
+
+                return {
+                    "success": True,
+                    "room_id": room_id,
+                    "reason": reason,
+                }
+
+        except Exception as e:
+            error_msg = f"Exception while leaving room: {str(e)}"
+            logger.error(f"MatrixObserver: {error_msg}", exc_info=True)
+            return {"success": False, "error": error_msg}
+
+    async def accept_invite(self, room_id: str) -> Dict[str, Any]:
+        """Accept a Matrix room invitation"""
+        logger.info(f"MatrixObserver.accept_invite called: room_id={room_id}")
+
+        if not self.client:
+            logger.error("Matrix client not connected")
+            return {"success": False, "error": "Matrix client not connected"}
+
+        try:
+            # Check if we have an invite for this room
+            if room_id not in self.client.invited_rooms:
+                return {"success": False, "error": f"No pending invitation for room {room_id}"}
+
+            # Accept the invitation by joining the room
+            response = await self.client.join(room_id)
+
+            if hasattr(response, "room_id"):
+                # Successful acceptance
+                actual_room_id = response.room_id
+                logger.info(f"MatrixObserver: Successfully accepted invitation and joined room {actual_room_id}")
+
+                # Add to monitoring channels
+                if actual_room_id not in self.channels_to_monitor:
+                    self.channels_to_monitor.append(actual_room_id)
+
+                # Register the room in world state
+                if actual_room_id not in self.world_state.state.channels:
+                    if actual_room_id in self.client.rooms:
+                        room = self.client.rooms[actual_room_id]
+                        room_details = self._extract_room_details(room)
+                        self._register_room(actual_room_id, room_details)
+                    else:
+                        self.world_state.add_channel(actual_room_id, "matrix", f"Room {actual_room_id}")
+
+                return {
+                    "success": True,
+                    "room_id": actual_room_id,
+                }
+            else:
+                error_msg = f"Failed to accept invitation: {response}"
+                logger.error(f"MatrixObserver: {error_msg}")
+                return {"success": False, "error": error_msg}
+
+        except Exception as e:
+            error_msg = f"Exception while accepting invitation: {str(e)}"
+            logger.error(f"MatrixObserver: {error_msg}", exc_info=True)
+            return {"success": False, "error": error_msg}
+
+    async def get_invites(self) -> Dict[str, Any]:
+        """Get pending Matrix room invitations"""
+        logger.info("MatrixObserver.get_invites called")
+
+        if not self.client:
+            logger.error("Matrix client not connected")
+            return {"success": False, "error": "Matrix client not connected"}
+
+        try:
+            invites = []
+
+            for room_id, invite_room in self.client.invited_rooms.items():
+                invite_info = {
+                    "room_id": room_id,
+                    "name": getattr(invite_room, "display_name", None) or getattr(invite_room, "name", None) or "Unknown Room",
+                    "inviter": getattr(invite_room, "inviter", "Unknown"),
+                    "canonical_alias": getattr(invite_room, "canonical_alias", None),
+                    "topic": getattr(invite_room, "topic", None),
+                    "member_count": getattr(invite_room, "member_count", 0),
+                    "encrypted": getattr(invite_room, "encrypted", False),
+                }
+                invites.append(invite_info)
+
+            logger.info(f"MatrixObserver: Found {len(invites)} pending invitations")
+
+            return {
+                "success": True,
+                "invites": invites,
+            }
+
+        except Exception as e:
+            error_msg = f"Exception while getting invitations: {str(e)}"
+            logger.error(f"MatrixObserver: {error_msg}", exc_info=True)
+            return {"success": False, "error": error_msg}

@@ -91,11 +91,6 @@ class SendFarcasterPostTool(ToolInterface):
             logger.exception(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
-        except Exception as e:
-            error_msg = f"Error executing {self.name}: {str(e)}"
-            logger.exception(error_msg)
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
-
 
 class SendFarcasterReplyTool(ToolInterface):
     """
