@@ -50,6 +50,10 @@ class AppConfig(BaseSettings):
     OLLAMA_API_URL: Optional[str] = "http://localhost:11434"
     OLLAMA_DEFAULT_CHAT_MODEL: Optional[str] = "llama3"
     OLLAMA_DEFAULT_SUMMARY_MODEL: Optional[str] = "llama3"
+    # AI payload truncation settings
+    AI_CONVERSATION_HISTORY_LENGTH: int = 10  # Max messages per channel for AI payload
+    AI_ACTION_HISTORY_LENGTH: int = 5       # Max actions in history for AI payload
+    AI_THREAD_HISTORY_LENGTH: int = 5       # Max thread messages for AI payload
 
 
 # Global settings instance

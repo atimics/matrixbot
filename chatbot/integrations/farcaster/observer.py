@@ -81,6 +81,10 @@ class FarcasterObserver:
 
     def schedule_reply(self, content: str, reply_to_hash: str) -> None:
         """Schedule a Farcaster reply for sending."""
+        # Prevent replying twice to the same cast
+        if reply_to_hash in self.last_seen_hashes:
+            logger.debug(f"Already replied to cast {reply_to_hash}, skipping schedule")
+            return
         # Prevent duplicate replies in queue
         for queued in list(self.reply_queue._queue):  # type: ignore
             if queued[1] == reply_to_hash:
@@ -682,6 +686,8 @@ class FarcasterObserver:
                     data = response.json()
                     cast_hash = data.get("cast", {}).get("hash", "")
                     logger.info(f"Successfully posted cast: {cast_hash}")
+                    # Prevent duplicate posts of same content by using seen hashes
+                    self.last_seen_hashes.add(cast_hash)
                     return {"success": True, "cast_hash": cast_hash}
                 else:
                     error_msg = f"API error: {response.status_code}"
@@ -694,7 +700,7 @@ class FarcasterObserver:
 
     async def reply_to_cast(self, content: str, reply_to_hash: str, channel: str = None) -> Dict[str, Any]:
         """
-        Reply to a specific Farcaster cast (threading a reply).
+        Reply to a specific Farcaster cast (threading a reply), with duplicate detection.
 
         Args:
             content: Text content of the reply
@@ -704,8 +710,16 @@ class FarcasterObserver:
         Returns:
             Result dictionary with success status and reply cast hash
         """
+        # Prevent duplicate replies at observer level
+        if reply_to_hash in self.last_seen_hashes:
+            logger.warning(f"Skipping duplicate reply to cast {reply_to_hash}")
+            return {"success": False, "error": "duplicate reply", "cast_hash": None}
         # Use post_cast with parent reply_to parameter
-        return await self.post_cast(content=content, channel=channel, reply_to=reply_to_hash)
+        result = await self.post_cast(content=content, channel=channel, reply_to=reply_to_hash)
+        # Record that we've replied to this cast to prevent future duplicates
+        if result.get("success"):
+            self.last_seen_hashes.add(reply_to_hash)
+        return result
 
     async def like_cast(self, cast_hash: str) -> Dict[str, Any]:
         """

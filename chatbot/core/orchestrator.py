@@ -6,6 +6,7 @@ The main orchestrator that coordinates all chatbot components with context manag
 
 import asyncio
 import logging
+import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
