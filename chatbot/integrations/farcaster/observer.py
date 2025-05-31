@@ -260,6 +260,22 @@ class FarcasterObserver:
             logger.error(f"Error posting cast: {e}")
             return {"success": False, "error": str(e)}
 
+    async def reply_to_cast(
+        self, content: str, reply_to_hash: str
+    ) -> Dict[str, Any]:
+        """
+        Reply to a cast on Farcaster
+
+        Args:
+            content: Text content of the reply
+            reply_to_hash: Hash of the cast to reply to
+
+        Returns:
+            Result dictionary with success status and cast hash
+        """
+        # For replies, we use post_cast with the reply_to parameter
+        return await self.post_cast(content, reply_to=reply_to_hash)
+
     def is_connected(self) -> bool:
         """Check if the Farcaster observer is connected and ready"""
         return self.api_key is not None

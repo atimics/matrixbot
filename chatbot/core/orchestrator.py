@@ -129,8 +129,9 @@ class ContextAwareOrchestrator:
         # Initialize Farcaster observer if credentials available
         if settings.NEYNAR_API_KEY:
             try:
-                self.farcaster_observer = FarcasterObserver(self.world_state)
+                self.farcaster_observer = FarcasterObserver(settings.NEYNAR_API_KEY)
                 await self.farcaster_observer.start()
+                self.world_state.update_system_status({"farcaster_connected": True})
                 logger.info("Farcaster observer initialized and started")
                 logger.info("Farcaster observer available for tools.")
             except Exception as e:
