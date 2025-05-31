@@ -108,6 +108,8 @@ class ContextAwareOrchestrator:
                 logger.info("Matrix observer initialized and started")
             except Exception as e:
                 logger.error(f"Failed to initialize Matrix observer: {e}")
+                logger.error(f"Matrix configuration - User: {settings.MATRIX_USER_ID}, Server: {getattr(settings, 'MATRIX_SERVER', 'not configured')}")
+                logger.info("Continuing without Matrix integration. Check Matrix credentials and server configuration.")
 
         # Initialize Farcaster observer if credentials available
         if settings.NEYNAR_API_KEY:
@@ -118,6 +120,8 @@ class ContextAwareOrchestrator:
                 logger.info("Farcaster observer initialized and started")
             except Exception as e:
                 logger.error(f"Failed to initialize Farcaster observer: {e}")
+                logger.error(f"Farcaster configuration - API Key present: {bool(settings.NEYNAR_API_KEY)}")
+                logger.info("Continuing without Farcaster integration. Check Neynar API key configuration.")
 
     async def _main_event_loop(self) -> None:
         """Main event loop for processing world state changes."""

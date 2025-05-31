@@ -87,8 +87,9 @@ class TestActionExecutor:
         # Use the correct action name that exists in the executor
         result = await executor.execute_action("send_farcaster_post", params)
         
-        # The executor returns a string for Farcaster actions
-        assert "Posted to Farcaster" in result
+        # The executor returns a dict with message field
+        assert result["status"] == "success"
+        assert "Posted to Farcaster" in result["message"]
         mock_observer.post_cast.assert_called_once_with("Hello Farcaster", None)
     
     @pytest.mark.asyncio

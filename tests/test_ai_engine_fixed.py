@@ -48,20 +48,16 @@ class TestAIDecisionEngine:
             }]
         }
         
+        # Use MagicMock for response to avoid coroutine issues
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = mock_response_data
-        mock_response.raise_for_status = MagicMock()
+        mock_response.raise_for_status.return_value = None
         
-        # Mock httpx.AsyncClient properly
-        with patch('httpx.AsyncClient') as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=mock_response)
-            
-            # Set up the async context manager
-            mock_client_class.return_value = mock_client
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
+        with patch('httpx.AsyncClient') as mock_client:
+            mock_context = AsyncMock()
+            mock_context.__aenter__.return_value.post = AsyncMock(return_value=mock_response)
+            mock_client.return_value = mock_context
             
             result = await engine.make_decision({"test": "state"}, "test_cycle")
             
