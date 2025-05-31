@@ -76,13 +76,20 @@ class WorldState:
         self.channels: Dict[str, Channel] = {}
         self.action_history: List[ActionHistory] = []
         self.system_status: Dict[str, Any] = {}
-        self.threads: Dict[str, List[Message]] = {}  # Map root cast id to thread messages
+        self.threads: Dict[str, List[Message]] = {}       # Map root cast id to thread messages
+        self.thread_roots: Dict[str, Message] = {}       # Root message for each thread
+        self.seen_messages: set[str] = set()             # Deduplication of message IDs
         self.last_update: float = time.time()
 
     def add_message(self, message: Message):
         """Add a message to the world state"""
         channel_id = message.channel_id
 
+        # Deduplicate across channels
+        if message.id in self.seen_messages:
+            logger.debug(f"Deduplicated message {message.id}")
+            return
+        self.seen_messages.add(message.id)
         # Create channel if it doesn't exist
         if channel_id not in self.channels:
             self.channels[channel_id] = Channel(
@@ -208,6 +215,9 @@ class WorldStateManager:
 
     def __init__(self):
         self.state = WorldState()
+        # Deduplication and thread roots initialization
+        self.state.seen_messages = set()
+        # thread_roots is initialized in WorldState
         # Initialize thread storage for conversation threads
         self.state.threads = {}
 
@@ -233,6 +243,11 @@ class WorldStateManager:
 
     def add_message(self, channel_id: str, message: Message):
         """Add a new message to a channel"""
+        # Deduplicate across channels
+        if message.id in self.state.seen_messages:
+            logger.debug(f"WorldStateManager: Deduplicated message {message.id}")
+            return
+        self.state.seen_messages.add(message.id)
         # Handle None channel_id gracefully
         if not channel_id:
             channel_id = f"{message.channel_type}:unknown"
