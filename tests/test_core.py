@@ -153,7 +153,7 @@ class TestOrchestrator:
         assert orchestrator.world_state is not None
         assert orchestrator.context_manager is not None
         assert orchestrator.ai_engine is not None
-        assert orchestrator.action_executor is not None
+        assert orchestrator.tool_registry is not None  # Updated for new architecture
         assert not orchestrator.running
     
     def test_config_defaults(self):

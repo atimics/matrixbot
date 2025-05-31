@@ -49,8 +49,8 @@ class AIDecisionEngine:
         self.base_url = "https://openrouter.ai/api/v1/chat/completions"
         self.max_actions_per_cycle = 3
 
-        # System prompt that defines the AI's role and capabilities
-        self.system_prompt = """You are an AI agent observing and acting in a digital world. You can see messages from Matrix and Farcaster channels, and you can take actions to respond or post content.
+        # Base system prompt without hardcoded tools
+        self.base_system_prompt = """You are an AI agent observing and acting in a digital world. You can see messages from Matrix and Farcaster channels, and you can take actions to respond or post content.
 
 Your role is to:
 1. Observe the current world state
@@ -58,32 +58,50 @@ Your role is to:
 3. Plan up to 3 actions you could take this cycle
 4. Select the most important actions to execute
 
-Available actions:
-- send_matrix_message: Send a message to a Matrix channel
-- send_matrix_reply: Reply to a specific Matrix message  
-- send_farcaster_post: Post to Farcaster
-- wait: Do nothing this cycle (use when no action is needed)
-
 You should respond with JSON in this format:
 {
   "observations": "What you notice about the current state",
   "potential_actions": [
     {
-      "action_type": "send_matrix_reply",
-      "parameters": {"channel_id": "...", "reply_to_id": "...", "content": "..."},
+      "action_type": "tool_name_here",
+      "parameters": {"param1": "value1", ...},
       "reasoning": "Why this action makes sense",
       "priority": 8
     }
   ],
   "selected_actions": [
-    // The top 1-3 actions you want to execute this cycle
+    // The top 1-3 actions you want to execute this cycle, matching potential_actions structure
   ],
   "reasoning": "Overall reasoning for your selections"
 }
 
 Be thoughtful about when to act vs when to wait and observe. Don't feel compelled to act every cycle."""
 
+        # Dynamic tool prompt part that gets updated by tool registry
+        self.dynamic_tool_prompt_part = "No tools currently available."
+        
+        # Build the full system prompt
+        self._build_full_system_prompt()
+        
         logger.info(f"AIDecisionEngine: Initialized with model {model}")
+
+    def _build_full_system_prompt(self):
+        """Build the complete system prompt including dynamic tool descriptions."""
+        self.system_prompt = f"{self.base_system_prompt}\n\n{self.dynamic_tool_prompt_part}"
+
+    def update_system_prompt_with_tools(self, tool_registry):
+        """
+        Update the system prompt with descriptions of available tools.
+        
+        Args:
+            tool_registry: ToolRegistry instance containing available tools
+        """
+        from ..tools.registry import ToolRegistry  # Import here to avoid circular imports
+        
+        self.dynamic_tool_prompt_part = tool_registry.get_tool_descriptions_for_ai()
+        self._build_full_system_prompt()
+        logger.info("AIDecisionEngine: System prompt updated with dynamic tool descriptions.")
+        logger.debug(f"Tool descriptions: {self.dynamic_tool_prompt_part}")
 
     async def make_decision(
         self, world_state: Dict[str, Any], cycle_id: str

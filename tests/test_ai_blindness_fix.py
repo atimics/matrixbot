@@ -2,7 +2,7 @@
 """
 Test for AI Blindness Fix
 
-This test verifies that the bot's own sent messages are properly recorded
+This test verifies that the bot's messages are properly recorded
 in both WorldStateManager and ContextManager so the AI can see its own messages.
 """
 
@@ -27,25 +27,43 @@ class TestAIBlindnessFix:
     
     @pytest.fixture
     def mock_matrix_observer(self):
-        """Create a mock matrix observer."""
+        """Create a mock matrix observer with flexible return values."""
         observer = Mock()
-        observer.send_reply = AsyncMock(return_value={
-            "success": True,
-            "event_id": "test_event_123",
-            "error": None
-        })
-        observer.send_message = AsyncMock(return_value={
-            "success": True,
-            "event_id": "test_event_456",
-            "error": None
-        })
+        
+        # Create a function that returns appropriate content based on the call
+        def make_reply_return(*args, **kwargs):
+            content = kwargs.get("content", "default test content")
+            reply_to = kwargs.get("reply_to_event_id", "default_reply_to")
+            room_id = kwargs.get("room_id", "!test:example.com")
+            return {
+                "success": True,
+                "event_id": "test_event_123",
+                "room_id": room_id,
+                "reply_to_event_id": reply_to,
+                "sent_content": content,
+                "error": None
+            }
+            
+        def make_message_return(*args, **kwargs):
+            content = kwargs.get("content", "default test content")
+            room_id = kwargs.get("room_id", "!test:example.com")
+            return {
+                "success": True,
+                "event_id": "test_event_456",
+                "room_id": room_id,
+                "sent_content": content,
+                "error": None
+            }
+        
+        observer.send_reply = AsyncMock(side_effect=make_reply_return)
+        observer.send_message = AsyncMock(side_effect=make_message_return)
         return observer
     
     @pytest.mark.asyncio
     async def test_matrix_reply_recorded_in_world_state(self, orchestrator, mock_matrix_observer):
         """Test that bot's matrix reply is recorded in WorldStateManager."""
-        # Setup
-        orchestrator.action_executor.set_matrix_observer(mock_matrix_observer)
+        # Setup - set the matrix observer directly on the orchestrator
+        orchestrator.matrix_observer = mock_matrix_observer
         channel_id = "!test:example.com"
         test_content = "This is a test reply"
         
@@ -53,9 +71,9 @@ class TestAIBlindnessFix:
         action = ActionPlan(
             action_type="send_matrix_reply",
             parameters={
-                "room_id": channel_id,
+                "channel_id": channel_id,  # Updated parameter name for new tool interface
                 "content": test_content,
-                "reply_to_event_id": "original_event_123"
+                "reply_to_id": "original_event_123"  # Updated parameter name for new tool interface
             },
             reasoning="Test action",
             priority=5
@@ -86,8 +104,8 @@ class TestAIBlindnessFix:
     @pytest.mark.asyncio
     async def test_matrix_reply_recorded_in_context(self, orchestrator, mock_matrix_observer):
         """Test that bot's matrix reply is recorded in ContextManager."""
-        # Setup
-        orchestrator.action_executor.set_matrix_observer(mock_matrix_observer)
+        # Setup - set the matrix observer directly on the orchestrator
+        orchestrator.matrix_observer = mock_matrix_observer
         channel_id = "!test:example.com"
         test_content = "This is a test reply for context"
         
@@ -95,9 +113,9 @@ class TestAIBlindnessFix:
         action = ActionPlan(
             action_type="send_matrix_reply",
             parameters={
-                "room_id": channel_id,
+                "channel_id": channel_id,  # Updated parameter name
                 "content": test_content,
-                "reply_to_event_id": "original_event_456"
+                "reply_to_id": "original_event_456"  # Updated parameter name
             },
             reasoning="Test action for context",
             priority=5
@@ -125,8 +143,8 @@ class TestAIBlindnessFix:
     @pytest.mark.asyncio
     async def test_matrix_message_recorded_in_both_stores(self, orchestrator, mock_matrix_observer):
         """Test that bot's matrix message is recorded in both WorldState and Context."""
-        # Setup
-        orchestrator.action_executor.set_matrix_observer(mock_matrix_observer)
+        # Setup - set the matrix observer directly on the orchestrator
+        orchestrator.matrix_observer = mock_matrix_observer
         channel_id = "!test:example.com"
         test_content = "This is a test message"
         
@@ -134,7 +152,7 @@ class TestAIBlindnessFix:
         action = ActionPlan(
             action_type="send_matrix_message",
             parameters={
-                "room_id": channel_id,
+                "channel_id": channel_id,  # Updated parameter name for new tool interface
                 "content": test_content
             },
             reasoning="Test message action",
@@ -170,7 +188,7 @@ class TestAIBlindnessFix:
             "success": False,
             "error": "Test failure"
         })
-        orchestrator.action_executor.set_matrix_observer(mock_matrix_observer)
+        orchestrator.matrix_observer = mock_matrix_observer  # Updated for new architecture
         
         channel_id = "!test:example.com"
         test_content = "This message will fail"
@@ -179,9 +197,9 @@ class TestAIBlindnessFix:
         action = ActionPlan(
             action_type="send_matrix_reply",
             parameters={
-                "room_id": channel_id,
+                "channel_id": channel_id,  # Updated parameter name
                 "content": test_content,
-                "reply_to_event_id": "original_event_789"
+                "reply_to_id": "original_event_789"  # Updated parameter name
             },
             reasoning="Test failed action",
             priority=5

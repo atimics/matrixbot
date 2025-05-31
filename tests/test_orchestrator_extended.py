@@ -28,7 +28,7 @@ class TestOrchestratorExtended:
         assert self.orchestrator.world_state is not None
         assert self.orchestrator.context_manager is not None
         assert self.orchestrator.ai_engine is not None
-        assert self.orchestrator.action_executor is not None
+        assert self.orchestrator.tool_registry is not None  # Updated for new architecture
         assert self.orchestrator.running is False
     
     def test_observer_management(self):
@@ -37,20 +37,15 @@ class TestOrchestratorExtended:
         matrix_observer = AsyncMock()
         farcaster_observer = AsyncMock()
         
-        # Set observers directly on orchestrator and action executor
+        # Set observers directly on orchestrator (new architecture)
         self.orchestrator.matrix_observer = matrix_observer
         self.orchestrator.farcaster_observer = farcaster_observer
-        
-        # Set observers on action executor using individual methods
-        self.orchestrator.action_executor.set_matrix_observer(matrix_observer)
-        self.orchestrator.action_executor.set_farcaster_observer(farcaster_observer)
         
         assert self.orchestrator.matrix_observer is matrix_observer
         assert self.orchestrator.farcaster_observer is farcaster_observer
         
-        # Verify observers are set on action executor
-        assert self.orchestrator.action_executor.matrix_observer is matrix_observer
-        assert self.orchestrator.action_executor.farcaster_observer is farcaster_observer
+        # Verify tools can access observers via ActionContext
+        # (This would be tested in tool-specific unit tests)
     
     @pytest.mark.asyncio
     async def test_start_stop_without_observers(self):
@@ -124,28 +119,33 @@ class TestOrchestratorExtended:
     @pytest.mark.asyncio
     async def test_action_execution_with_mocked_action(self):
         """Test action execution through _execute_action."""
-        # Mock observers
+        # Mock observers with proper return structure for AI Blindness Fix
         mock_matrix = AsyncMock()
-        mock_matrix.send_reply.return_value = {"success": True, "event_id": "event_123"}
+        mock_matrix.send_reply.return_value = {
+            "success": True, 
+            "event_id": "event_123",
+            "room_id": "test_room",
+            "reply_to_event_id": "original_event",
+            "sent_content": "AI generated response"  # Required for AI Blindness Fix
+        }
         
-        # Set observers directly
+        # Set observers directly (new architecture)
         self.orchestrator.matrix_observer = mock_matrix
-        self.orchestrator.action_executor.set_matrix_observer(mock_matrix)
         
         # Create a mock action object with action_type and parameters
         mock_action = MagicMock()
         mock_action.action_type = "send_matrix_reply"
         mock_action.parameters = {
-            "channel_id": "test_room",
+            "channel_id": "test_room",  # Updated parameter name for new tool interface
             "content": "AI generated response",
-            "reply_to_event_id": "original_event"
+            "reply_to_id": "original_event"  # Updated parameter name for new tool interface
         }
         
         # Execute action
         await self.orchestrator._execute_action("test_room", mock_action)
         
-        # Verify action was attempted
-        # Note: actual verification depends on action executor implementation
+        # Verify the matrix observer's send_reply method was called
+        mock_matrix.send_reply.assert_called_once_with("test_room", "AI generated response", "original_event")
     
     @pytest.mark.asyncio
     async def test_error_handling_in_channel_processing(self):
@@ -182,19 +182,24 @@ class TestOrchestratorExtended:
         """Test that executed actions are handled properly."""
         # Mock matrix observer
         mock_matrix = AsyncMock()
-        mock_matrix.send_reply.return_value = {"success": True, "event_id": "event_123"}
+        mock_matrix.send_reply.return_value = {
+            "success": True, 
+            "event_id": "event_123",
+            "room_id": "test_room",
+            "reply_to_event_id": "original_event",
+            "sent_content": "Test response"  # Required for AI Blindness Fix
+        }
         
-        # Set observers directly
+        # Set observer directly on the orchestrator
         self.orchestrator.matrix_observer = mock_matrix
-        self.orchestrator.action_executor.set_matrix_observer(mock_matrix)
         
-        # Create a mock action
+        # Create a mock action with the new parameter schema
         mock_action = MagicMock()
         mock_action.action_type = "send_matrix_reply"
         mock_action.parameters = {
-            "channel_id": "test_room",
+            "channel_id": "test_room",  # Updated parameter name for new tool interface
             "content": "Test response",
-            "reply_to_event_id": "original_event"
+            "reply_to_id": "original_event"  # Updated parameter name for new tool interface
         }
         
         # Execute action 

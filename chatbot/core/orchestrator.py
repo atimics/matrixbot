@@ -17,7 +17,11 @@ from ..core.context import ContextManager
 from ..core.world_state import WorldStateManager
 from ..integrations.farcaster.observer import FarcasterObserver
 from ..integrations.matrix.observer import MatrixObserver
-from ..tools.executor import ActionExecutor
+from ..tools.registry import ToolRegistry
+from ..tools.base import ActionContext
+from ..tools.core_tools import WaitTool
+from ..tools.matrix_tools import SendMatrixReplyTool, SendMatrixMessageTool
+from ..tools.farcaster_tools import SendFarcasterPostTool, SendFarcasterReplyTool
 
 logger = logging.getLogger(__name__)
 
@@ -41,10 +45,14 @@ class ContextAwareOrchestrator:
         # Initialize core components
         self.world_state = WorldStateManager()
         self.context_manager = ContextManager(self.world_state, self.config.db_path)
+        
+        # Tool Registry Initialization
+        self.tool_registry = ToolRegistry()
+        
+        # AI Engine with dynamic tool support
         self.ai_engine = AIDecisionEngine(
             api_key=settings.OPENROUTER_API_KEY, model=self.config.ai_model
         )
-        self.action_executor = ActionExecutor()
 
         # Observers (initialized when credentials available)
         self.matrix_observer: Optional[MatrixObserver] = None
@@ -58,6 +66,9 @@ class ContextAwareOrchestrator:
 
         # Event-driven processing
         self.state_changed_event = asyncio.Event()
+
+        # Initialize tools after all components are set up
+        self._initialize_tools()
 
         logger.info("Context-aware orchestrator initialized")
 
@@ -104,8 +115,8 @@ class ContextAwareOrchestrator:
                 room_id = settings.MATRIX_ROOM_ID
                 self.matrix_observer.add_channel(room_id, "Robot Laboratory")
                 await self.matrix_observer.start()
-                self.action_executor.set_matrix_observer(self.matrix_observer)
                 logger.info("Matrix observer initialized and started")
+                logger.info("Matrix observer available for tools.")
             except Exception as e:
                 logger.error(f"Failed to initialize Matrix observer: {e}")
                 logger.error(f"Matrix configuration - User: {settings.MATRIX_USER_ID}, Server: {getattr(settings, 'MATRIX_SERVER', 'not configured')}")
@@ -116,8 +127,8 @@ class ContextAwareOrchestrator:
             try:
                 self.farcaster_observer = FarcasterObserver(self.world_state)
                 await self.farcaster_observer.start()
-                self.action_executor.set_farcaster_observer(self.farcaster_observer)
                 logger.info("Farcaster observer initialized and started")
+                logger.info("Farcaster observer available for tools.")
             except Exception as e:
                 logger.error(f"Failed to initialize Farcaster observer: {e}")
                 logger.error(f"Farcaster configuration - API Key present: {bool(settings.NEYNAR_API_KEY)}")
@@ -225,86 +236,72 @@ class ContextAwareOrchestrator:
             logger.error(f"Error processing channel {channel_id}: {e}")
 
     async def _execute_action(self, channel_id: str, action: Any) -> None:
-        """Execute a single action and record the result."""
-        try:
-            result = await self.action_executor.execute_action(
-                action.action_type, action.parameters
-            )
-
-            # Check if the result contains status information from the executor
-            if isinstance(result, dict) and "status" in result:
-                # Use the actual status returned by the executor
-                actual_status = result["status"]
-
-                if actual_status == "success":
-                    tool_result = {
-                        "action_type": action.action_type,
-                        "parameters": action.parameters,
-                        "result": result.get("message", str(result)),
-                        "status": "success",
-                        "timestamp": time.time(),
-                    }
-                    logger.info(f"Executed action {action.action_type} successfully")
-
-                    # Handle AI Blindness Fix: Feed back bot's sent messages
-                    if (
-                        action.action_type
-                        in [
-                            "send_matrix_message",
-                            "send_matrix_reply",
-                            "send_farcaster_post",
-                            "send_farcaster_reply",
-                        ]
-                        and "sent_content" in result
-                    ):
-                        await self._record_bot_sent_message(
-                            channel_id, action.action_type, result
-                        )
-
-                else:
-                    # Action failed - record the failure
-                    tool_result = {
-                        "action_type": action.action_type,
-                        "parameters": action.parameters,
-                        "error": result.get("error", str(result)),
-                        "status": "failed",
-                        "timestamp": time.time(),
-                    }
-                    logger.error(
-                        f"Action {action.action_type} failed: {result.get('error', str(result))}"
-                    )
-            else:
-                # Legacy support: if result doesn't contain status, assume success
-                tool_result = {
-                    "action_type": action.action_type,
-                    "parameters": action.parameters,
-                    "result": str(result),
-                    "status": "success",
-                    "timestamp": time.time(),
+        """Execute a single action using the ToolRegistry."""
+        tool_name = action.action_type
+        params = action.parameters
+        
+        tool = self.tool_registry.get_tool(tool_name)
+        if not tool:
+            logger.error(f"Attempted to execute unknown tool: {tool_name}")
+            # Record this as a failed tool execution in context manager
+            await self.context_manager.add_tool_result(
+                channel_id,
+                tool_name,
+                {
+                    "action_type": tool_name,
+                    "parameters": params,
+                    "error": f"Unknown tool: {tool_name}",
+                    "status": "failed",
+                    "timestamp": time.time()
                 }
-                logger.info(
-                    f"Executed action {action.action_type} successfully (legacy result format)"
-                )
-
-            await self.context_manager.add_tool_result(
-                channel_id, action.action_type, tool_result
             )
+            return
 
+        logger.info(f"Executing tool '{tool_name}' with parameters: {params}")
+        
+        # Create ActionContext to pass to the tool
+        action_context = ActionContext(
+            matrix_observer=self.matrix_observer,
+            farcaster_observer=self.farcaster_observer,
+            world_state_manager=self.world_state,
+            context_manager=self.context_manager
+        )
+
+        try:
+            result = await tool.execute(params, action_context)
         except Exception as e:
-            logger.error(f"Error executing action {action.action_type}: {e}")
+            logger.error(f"Exception during execution of tool {tool_name}: {e}", exc_info=True)
+            result = {"status": "failure", "error": str(e)}
+        
+        # Ensure result always has a timestamp and status for consistency
+        result.setdefault("timestamp", time.time())
+        result.setdefault("status", "failure" if "error" in result else "success")
 
-            # Record failed execution
-            error_result = {
-                "action_type": action.action_type,
-                "parameters": getattr(action, "parameters", {}),
-                "error": str(e),
-                "status": "failed",
-                "timestamp": time.time(),
-            }
+        # Record tool result
+        tool_result_payload = {
+            "action_type": tool_name,
+            "parameters": params,
+            "status": result["status"],
+            "timestamp": result["timestamp"],
+        }
+        
+        if result["status"] == "success":
+            tool_result_payload["result"] = result.get("message", str(result))
+            logger.info(f"Tool {tool_name} executed successfully: {tool_result_payload['result']}")
+            
+            # Handle AI Blindness Fix
+            if tool_name in [
+                "send_matrix_message", "send_matrix_reply",
+                "send_farcaster_post", "send_farcaster_reply"
+            ] and "sent_content" in result:
+                await self._record_bot_sent_message(channel_id, tool_name, result)
+        else:
+            tool_result_payload["error"] = result.get("error", "Unknown tool execution error")
+            logger.error(f"Tool {tool_name} failed: {tool_result_payload['error']}")
 
-            await self.context_manager.add_tool_result(
-                channel_id, action.action_type, error_result
-            )
+        await self.context_manager.add_tool_result(
+            channel_id, tool_name, tool_result_payload
+        )
 
     async def _record_bot_sent_message(
         self, channel_id: str, action_type: str, result: Dict[str, Any]
@@ -401,6 +398,24 @@ class ContextAwareOrchestrator:
 
         state_str = json.dumps(state, sort_keys=True, default=str)
         return hashlib.sha256(state_str.encode()).hexdigest()
+
+    def _initialize_tools(self):
+        """Register all available tools in the tool registry."""
+        # Register core tools
+        self.tool_registry.register_tool(WaitTool())
+        
+        # Register Matrix tools
+        self.tool_registry.register_tool(SendMatrixReplyTool())
+        self.tool_registry.register_tool(SendMatrixMessageTool())
+        
+        # Register Farcaster tools
+        self.tool_registry.register_tool(SendFarcasterPostTool())
+        self.tool_registry.register_tool(SendFarcasterReplyTool())
+        
+        # Update AI engine with tool descriptions
+        self.ai_engine.update_system_prompt_with_tools(self.tool_registry)
+        
+        logger.info(f"Initialized {len(self.tool_registry.get_all_tools())} tools: {', '.join(self.tool_registry.get_tool_names())}")
 
     # Public API methods
     async def add_user_message(self, channel_id: str, message: Dict[str, Any]) -> None:
