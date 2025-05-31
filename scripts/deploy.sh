@@ -9,8 +9,8 @@ echo "======================================"
 # Check if .env file exists
 if [ ! -f .env ]; then
     echo "❌ .env file not found!"
-    echo "📝 Please copy env.example to .env and fill in your configuration:"
-    echo "   cp env.example .env"
+    echo "📝 Please copy .env.example to .env and fill in your configuration:"
+    echo "   cp .env.example .env"
     echo "   nano .env"
     exit 1
 fi

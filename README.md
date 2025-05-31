@@ -1,14 +1,45 @@
 # Chatbot System
 
-A context-aware chatbot system that manages conversation state and integrates with Matrix and Farcaster platforms.
+A context-aware chatbot system with a dynamic tool-based architecture that manages conversation state and integrates with Matrix and Farcaster platforms.
 
 ## Features
 
+- **Dynamic Tool Architecture**: Extensible tool system with runtime registration and AI integration
 - **Context-Aware Conversations**: Maintains evolving world state across conversations
-- **Multi-Platform Integration**: Support for Matrix and Farcaster
-- **Tool System**: Extensible tool execution framework
+- **Multi-Platform Integration**: Support for Matrix and Farcaster with standardized tool interfaces
+- **AI Blindness Fix**: Bot can see its own messages for improved conversation continuity
 - **State Management**: Persistent storage of conversation context and world state
-- **AI-Powered Decision Making**: Intelligent response generation with context awareness
+- **AI-Powered Decision Making**: Intelligent response generation with dynamic tool awareness
+
+## Architecture Overview
+
+The system has been architected with a dynamic tool-based design for maximum extensibility:
+
+### Core Components
+
+- **ToolRegistry**: Manages dynamic tool registration and provides AI-ready descriptions
+- **ToolInterface**: Abstract base class for all tools with standardized execution
+- **ActionContext**: Dependency injection for tools (observers, configurations)
+- **ContextAwareOrchestrator**: Main coordinator using the tool system
+- **AIDecisionEngine**: Updated to receive dynamic tool descriptions
+
+### Tool System
+
+All platform interactions are handled through standardized tools:
+
+- `WaitTool` - Observation and waiting actions
+- `SendMatrixReplyTool` - Matrix reply functionality
+- `SendMatrixMessageTool` - Matrix message sending
+- `SendFarcasterPostTool` - Farcaster posting
+- `SendFarcasterReplyTool` - Farcaster replying
+
+### Benefits
+
+- **Extensibility**: Add new tools by implementing `ToolInterface` and registering
+- **Maintainability**: Platform logic isolated in dedicated tool classes
+- **Testability**: Clean dependency injection via `ActionContext`
+- **AI Integration**: Tool descriptions automatically update AI capabilities
+- **Consistency**: Standardized parameter schemas across all tools
 
 ## Quick Start
 
@@ -93,10 +124,48 @@ Required environment variables:
 
 ## Architecture
 
-- `chatbot/core/` - Core system components (orchestrator, world state, context management)
-- `chatbot/integrations/` - Platform integrations (Matrix, Farcaster)
-- `chatbot/tools/` - Tool execution system
+### Directory Structure
+- `chatbot/core/` - Core system components (orchestrator, world state, context management, AI engine)
+- `chatbot/tools/` - Dynamic tool system with registry and implementations
+- `chatbot/integrations/` - Platform observers (Matrix, Farcaster)
 - `chatbot/storage/` - Data persistence layer
+
+### Tool Development
+
+To add a new tool:
+
+1. **Create the tool class**:
+```python
+from chatbot.tools.base import ToolInterface, ActionContext
+
+class MyCustomTool(ToolInterface):
+    @property
+    def name(self) -> str:
+        return "my_custom_action"
+    
+    @property  
+    def description(self) -> str:
+        return "Description of what this tool does"
+    
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "param1": "string (description)",
+            "param2": "int (description)"
+        }
+    
+    async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
+        # Implementation here
+        return {"success": True, "message": "Action completed"}
+```
+
+2. **Register the tool**:
+```python
+# In orchestrator's _initialize_tools method
+self.tool_registry.register_tool(MyCustomTool())
+```
+
+The AI will automatically receive the tool description and can use it in decisions.
 
 ## Testing
 
