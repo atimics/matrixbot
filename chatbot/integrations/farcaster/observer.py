@@ -158,11 +158,13 @@ class FarcasterObserver:
                 headers = {"accept": "application/json", "api_key": self.api_key}
 
                 # Get recent casts from home feed of followed accounts
+                # Parameters for the "following" (home) feed
                 params = {
                     "fid": self.bot_fid,
                     "feed_type": "following",
                     "limit": 25,
                     "include_replies": True,
+                    "with_recasts": True,  # include recasts in feed items
                 }
                 response = await client.get(
                     f"{self.base_url}/farcaster/feed",
@@ -174,7 +176,11 @@ class FarcasterObserver:
                 self._update_rate_limits(response)
 
                 if response.status_code != 200:
-                    logger.error(f"Farcaster API error for home feed: {response.status_code}")
+                    # Log full error for debugging
+                    err_text = response.text if hasattr(response, 'text') else ''
+                    logger.error(
+                        f"Farcaster API error for home feed (following): {response.status_code} - {err_text}"
+                    )
                     return []
 
                 data = response.json()
@@ -633,6 +639,21 @@ class FarcasterObserver:
             logger.error(f"Error posting cast: {e}")
             return {"success": False, "error": str(e)}
 
+    async def reply_to_cast(self, content: str, reply_to_hash: str, channel: str = None) -> Dict[str, Any]:
+        """
+        Reply to a specific Farcaster cast (threading a reply).
+
+        Args:
+            content: Text content of the reply
+            reply_to_hash: Hash of the cast to reply to
+            channel: Optional channel ID for context
+
+        Returns:
+            Result dictionary with success status and reply cast hash
+        """
+        # Use post_cast with parent reply_to parameter
+        return await self.post_cast(content=content, channel=channel, reply_to=reply_to_hash)
+
     async def like_cast(self, cast_hash: str) -> Dict[str, Any]:
         """
         Like a cast (reaction) on Farcaster
@@ -777,10 +798,16 @@ class FarcasterObserver:
                     
                     # Update world state with rate limit info
                     world_state = self.world_state_manager.state
-                    if not hasattr(world_state, 'rate_limits'):
-                        world_state.rate_limits = {}
-                    
+                    world_state.rate_limits = getattr(world_state, 'rate_limits', {})
                     world_state.rate_limits['farcaster_api'] = rate_limit_info
+                    
+                    # Propagate to system_status for AI visibility
+                    try:
+                        self.world_state_manager.update_system_status({
+                            'rate_limits': world_state.rate_limits
+                        })
+                    except Exception as e:
+                        logger.debug(f"Error updating system_status with rate limits: {e}")
                     
                     # Log if we're approaching limits
                     remaining = rate_limit_info.get('remaining', float('inf'))
