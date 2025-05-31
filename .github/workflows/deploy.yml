@@ -9,39 +9,70 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-      - name: Install dependencies
-        run: |
-          pip3 install -r requirements.txt
+      
       - name: Check for .env file
         run: |
           if [ ! -f .env ]; then
             echo "Warning: .env file not found. Please create one based on .env.example"
             echo "The bot may fail to start without proper configuration."
-          fi
-      - name: Stop existing bot process
-        run: |
-          pkill -f "python3 -m chatbot.main" || true
-          sleep 2
-      - name: Start the bot
-        run: |
-          echo "Starting bot at $(date)"
-          nohup python3 -m chatbot.main > bot.log 2>&1 &
-          echo "Bot started with PID: $!"
-          sleep 3
-      - name: Check if bot started successfully
-        run: |
-          if pgrep -f "python3 -m chatbot.main" > /dev/null; then
-            echo "✓ Bot is running successfully"
-            echo "Recent log output:"
-            tail -n 10 bot.log || echo "No log output yet"
-          else
-            echo "✗ Bot failed to start"
-            echo "Error log output:"
-            cat bot.log || echo "No log file found"
             exit 1
           fi
+      
+      - name: Validate environment configuration
+        run: |
+          source .env
+          required_vars=("MATRIX_HOMESERVER" "MATRIX_USER_ID" "MATRIX_PASSWORD" "OPENROUTER_API_KEY")
+          missing_vars=()
+          
+          for var in "${required_vars[@]}"; do
+            if [ -z "${!var}" ]; then
+              missing_vars+=("$var")
+            fi
+          done
+          
+          if [ ${#missing_vars[@]} -ne 0 ]; then
+            echo "❌ Missing required environment variables:"
+            printf '   - %s\n' "${missing_vars[@]}"
+            echo "📝 Please update your .env file"
+            exit 1
+          fi
+          echo "✅ Configuration validated successfully"
+      
+      - name: Stop existing services
+        run: |
+          echo "🛑 Stopping existing services..."
+          docker-compose down || true
+          sleep 3
+      
+      - name: Build and deploy with Docker
+        run: |
+          echo "🏗️  Building Docker images..."
+          docker-compose build
+          
+          echo "🚀 Starting chatbot services..."
+          docker-compose up -d
+          
+          echo "⏳ Waiting for services to start..."
+          sleep 10
+      
+      - name: Check deployment status
+        run: |
+          echo "📊 Checking service status..."
+          docker-compose ps
+          
+          echo "🔍 Checking if chatbot is healthy..."
+          if docker-compose ps chatbot | grep -q "Up"; then
+            echo "✅ Chatbot service is running"
+            echo "📋 Recent logs:"
+            docker-compose logs --tail=20 chatbot
+          else
+            echo "❌ Chatbot service failed to start"
+            echo "🔍 Error logs:"
+            docker-compose logs chatbot
+            exit 1
+          fi
+          
+          echo ""
+          echo "🎉 Deployment completed successfully!"
+          echo "🌐 Control panel: http://localhost:8000"
 

@@ -837,7 +837,8 @@ def get_control_panel_html() -> str:
 </html>
 """
 
-if __name__ == "__main__":
+def main():
+    """Main entry point for the control panel."""
     # Set up logging
     logging.basicConfig(
         level=logging.INFO,
@@ -876,3 +877,7 @@ Press Ctrl+C to stop the server.
         port=args.port,
         reload=args.reload
     )
+
+
+if __name__ == "__main__":
+    main()
