@@ -417,3 +417,13 @@ class WorldStateManager:
                 if liked_cast_hash == cast_hash:
                     return True
         return False
+    def has_sent_farcaster_post(self, content: str) -> bool:
+        """
+        Check if the AI has already sent a Farcaster post with identical content.
+        """
+        for action in self.state.action_history:
+            if action.action_type == "send_farcaster_post":
+                sent_content = action.parameters.get("content")
+                if sent_content == content:
+                    return True
+        return False

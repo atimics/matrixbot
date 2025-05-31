@@ -53,50 +53,28 @@ class SendFarcasterPostTool(ToolInterface):
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
+        # Prevent duplicate posts with identical content
+        if context.world_state_manager and context.world_state_manager.has_sent_farcaster_post(content):
+            error_msg = "Already sent Farcaster post with identical content. Skipping duplicate."
+            logger.warning(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
         try:
-            # Use the observer's post_cast method for low-level interaction
-            result = await context.farcaster_observer.post_cast(content, channel)
-            logger.info(f"Farcaster observer post_cast returned: {result}")
-
-            if result.get("success"):
-                cast_hash = result.get("cast_hash", "unknown")
-                success_msg = f"Sent Farcaster post (hash: {cast_hash})"
-                # Record bot's own post in world state for thread context
-                try:
-                    from chatbot.core.world_state import Message
-                    channel_id = params.get("channel") or f"user_{context.farcaster_observer.signer_uuid}"
-                    bot_message = Message(
-                        id=cast_hash,
-                        channel_id=channel_id,
-                        channel_type="farcaster",
-                        sender=context.farcaster_observer.signer_uuid or "bot",
-                        content=content,
-                        timestamp=time.time(),
-                    )
-                    if context.world_state_manager:
-                        context.world_state_manager.add_message(channel_id, bot_message)
-                except Exception:
-                    logger.warning("Failed to record bot's own Farcaster post in world state")
-                if channel:
-                    success_msg += f" to channel {channel}"
-                logger.info(success_msg)
-
-                return {
-                    "status": "success",
-                    "message": success_msg,
-                    "cast_hash": cast_hash,
-                    "channel": channel,
-                    "sent_content": content,  # For AI Blindness Fix
-                    "timestamp": time.time(),
-                }
-            else:
-                error_msg = f"Failed to send Farcaster post via observer: {result.get('error', 'unknown error')}"
-                logger.error(error_msg)
-                return {
-                    "status": "failure",
-                    "error": error_msg,
-                    "timestamp": time.time(),
-                }
+            # Schedule the post via observer scheduler to avoid duplicates and rate limits
+            context.farcaster_observer.schedule_post(content, channel)
+            success_msg = "Scheduled Farcaster post via scheduler"
+            logger.info(success_msg)
+            return {
+                "status": "scheduled",
+                "message": success_msg,
+                "content": content,
+                "channel": channel,
+                "timestamp": time.time(),
+            }
+        except Exception as e:
+            error_msg = f"Error scheduling Farcaster post: {e}"
+            logger.exception(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
         except Exception as e:
             error_msg = f"Error executing {self.name}: {str(e)}"
@@ -160,52 +138,21 @@ class SendFarcasterReplyTool(ToolInterface):
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
         try:
-            # Use the observer's reply_to_cast method for low-level interaction
-            result = await context.farcaster_observer.reply_to_cast(
-                content, reply_to_hash
-            )
-            logger.info(f"Farcaster observer reply_to_cast returned: {result}")
-
-            if result.get("success"):
-                cast_hash = result.get("cast_hash", "unknown")
-                success_msg = (
-                    f"Sent Farcaster reply (hash: {cast_hash}) to cast {reply_to_hash}"
-                )
-                logger.info(success_msg)
-                # Record bot's reply in world state for threading
-                try:
-                    from chatbot.core.world_state import Message
-
-                    bot_message = Message(
-                        id=cast_hash,
-                        channel_id=reply_to_hash,
-                        channel_type="farcaster",
-                        sender=context.farcaster_observer.signer_uuid or "bot",
-                        content=content,
-                        timestamp=time.time(),
-                        reply_to=reply_to_hash,
-                    )
-                    if context.world_state_manager:
-                        context.world_state_manager.add_message(reply_to_hash, bot_message)
-                except Exception:
-                    logger.warning("Failed to record bot's Farcaster reply in world state")
-
-                return {
-                    "status": "success",
-                    "message": success_msg,
-                    "cast_hash": cast_hash,
-                    "reply_to_hash": reply_to_hash,
-                    "sent_content": content,  # For AI Blindness Fix
-                    "timestamp": time.time(),
-                }
-            else:
-                error_msg = f"Failed to send Farcaster reply via observer: {result.get('error', 'unknown error')}"
-                logger.error(error_msg)
-                return {
-                    "status": "failure",
-                    "error": error_msg,
-                    "timestamp": time.time(),
-                }
+            # Schedule the reply via observer scheduler to avoid duplicates and rate limits
+            context.farcaster_observer.schedule_reply(content, reply_to_hash)
+            success_msg = f"Scheduled Farcaster reply to cast {reply_to_hash}"
+            logger.info(success_msg)
+            return {
+                "status": "scheduled",
+                "message": success_msg,
+                "reply_to_hash": reply_to_hash,
+                "content": content,
+                "timestamp": time.time(),
+            }
+        except Exception as e:
+            error_msg = f"Error scheduling Farcaster reply: {e}"
+            logger.exception(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
         except Exception as e:
             error_msg = f"Error executing {self.name}: {str(e)}"

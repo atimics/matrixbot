@@ -39,6 +39,12 @@ class FarcasterObserver:
         self.last_check_time = time.time()
         self.observed_channels = set()  # Track which channels we're monitoring
         self.last_seen_hashes = set()  # Track seen post hashes to avoid duplicates
+        # Scheduling system to avoid rapid duplicate posts/replies
+        self.post_queue: asyncio.Queue[tuple[str, Optional[str]]] = asyncio.Queue()
+        self.reply_queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue()
+        self.scheduler_interval: float = 60.0  # seconds between scheduled sends
+        self._post_task: Optional[asyncio.Task] = None
+        self._reply_task: Optional[asyncio.Task] = None
 
         logger.info("Farcaster observer initialized")
 
@@ -48,13 +54,60 @@ class FarcasterObserver:
             logger.warning("No Farcaster API key provided - observer will be inactive")
             return
 
-        logger.info("Starting Farcaster observer...")
+        logger.info("Starting Farcaster observer with scheduler...")
         # TODO: Initialize API connection, validate credentials
+        # Launch background loops for scheduled posts and replies
+        self._post_task = asyncio.create_task(self._send_posts_loop())
+        self._reply_task = asyncio.create_task(self._send_replies_loop())
 
     async def stop(self):
         """Stop the Farcaster observer"""
-        logger.info("Stopping Farcaster observer...")
+        logger.info("Stopping Farcaster observer and cancelling scheduler tasks...")
         # TODO: Cleanup connections
+        if self._post_task:
+            self._post_task.cancel()
+        if self._reply_task:
+            self._reply_task.cancel()
+
+    def schedule_post(self, content: str, channel: Optional[str] = None) -> None:
+        """Schedule a new Farcaster post for sending."""
+        # Prevent duplicate content in queue
+        for queued in list(self.post_queue._queue):  # type: ignore
+            if queued[0] == content:
+                logger.debug("Duplicate content in post queue, skipping schedule")
+                return
+        self.post_queue.put_nowait((content, channel))
+        logger.info("Scheduled Farcaster post")
+
+    def schedule_reply(self, content: str, reply_to_hash: str) -> None:
+        """Schedule a Farcaster reply for sending."""
+        # Prevent duplicate replies in queue
+        for queued in list(self.reply_queue._queue):  # type: ignore
+            if queued[1] == reply_to_hash:
+                logger.debug("Duplicate reply in queue, skipping schedule")
+                return
+        self.reply_queue.put_nowait((content, reply_to_hash))
+        logger.info("Scheduled Farcaster reply")
+
+    async def _send_posts_loop(self) -> None:
+        """Background loop to send scheduled posts at controlled intervals."""
+        while True:
+            content, channel = await self.post_queue.get()
+            try:
+                await self.post_cast(content, channel)
+            except Exception as e:
+                logger.error(f"Error sending scheduled post: {e}")
+            await asyncio.sleep(self.scheduler_interval)
+
+    async def _send_replies_loop(self) -> None:
+        """Background loop to send scheduled replies at controlled intervals."""
+        while True:
+            content, reply_to_hash = await self.reply_queue.get()
+            try:
+                await self.reply_to_cast(content, reply_to_hash)
+            except Exception as e:
+                logger.error(f"Error sending scheduled reply: {e}")
+            await asyncio.sleep(self.scheduler_interval)
 
     async def observe_feeds(
         self,
