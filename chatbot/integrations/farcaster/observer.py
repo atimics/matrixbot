@@ -21,8 +21,11 @@ logger = logging.getLogger(__name__)
 class FarcasterObserver:
     """Observes Farcaster feeds and converts posts to messages"""
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(
+        self, api_key: Optional[str] = None, signer_uuid: Optional[str] = None
+    ):
         self.api_key = api_key
+        self.signer_uuid = signer_uuid
         self.base_url = "https://api.neynar.com/v2"  # Neynar API for Farcaster
         self.last_check_time = time.time()
         self.observed_channels = set()  # Track which channels we're monitoring
@@ -226,6 +229,9 @@ class FarcasterObserver:
         if not self.api_key:
             return {"success": False, "error": "No API key configured"}
 
+        if not self.signer_uuid:
+            return {"success": False, "error": "No signer UUID configured"}
+
         try:
             async with httpx.AsyncClient() as client:
                 headers = {
@@ -234,7 +240,7 @@ class FarcasterObserver:
                     "content-type": "application/json",
                 }
 
-                payload = {"text": content}
+                payload = {"text": content, "signer_uuid": self.signer_uuid}
 
                 if channel:
                     payload["channel_id"] = channel
@@ -260,9 +266,7 @@ class FarcasterObserver:
             logger.error(f"Error posting cast: {e}")
             return {"success": False, "error": str(e)}
 
-    async def reply_to_cast(
-        self, content: str, reply_to_hash: str
-    ) -> Dict[str, Any]:
+    async def reply_to_cast(self, content: str, reply_to_hash: str) -> Dict[str, Any]:
         """
         Reply to a cast on Farcaster
 
@@ -278,7 +282,7 @@ class FarcasterObserver:
 
     def is_connected(self) -> bool:
         """Check if the Farcaster observer is connected and ready"""
-        return self.api_key is not None
+        return self.api_key is not None and self.signer_uuid is not None
 
     def get_status(self) -> Dict[str, Any]:
         """Get current observer status"""

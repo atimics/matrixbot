@@ -135,7 +135,7 @@ Based on this world state, what actions (if any) should you take? Remember you c
                         "model": self.model,
                         "messages": messages,
                         "temperature": 0.7,
-                        "max_tokens": 2000,
+                        "max_tokens": 3500,
                     },
                     headers={
                         "Authorization": f"Bearer {self.api_key}",

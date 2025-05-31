@@ -129,7 +129,9 @@ class ContextAwareOrchestrator:
         # Initialize Farcaster observer if credentials available
         if settings.NEYNAR_API_KEY:
             try:
-                self.farcaster_observer = FarcasterObserver(settings.NEYNAR_API_KEY)
+                self.farcaster_observer = FarcasterObserver(
+                    settings.NEYNAR_API_KEY, settings.FARCASTER_BOT_SIGNER_UUID
+                )
                 await self.farcaster_observer.start()
                 self.world_state.update_system_status({"farcaster_connected": True})
                 logger.info("Farcaster observer initialized and started")
@@ -137,7 +139,7 @@ class ContextAwareOrchestrator:
             except Exception as e:
                 logger.error(f"Failed to initialize Farcaster observer: {e}")
                 logger.error(
-                    f"Farcaster configuration - API Key present: {bool(settings.NEYNAR_API_KEY)}"
+                    f"Farcaster configuration - API Key present: {bool(settings.NEYNAR_API_KEY)}, Signer UUID present: {bool(settings.FARCASTER_BOT_SIGNER_UUID)}"
                 )
                 logger.info(
                     "Continuing without Farcaster integration. Check Neynar API key configuration."
