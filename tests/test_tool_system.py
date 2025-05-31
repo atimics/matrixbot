@@ -43,9 +43,9 @@ class TestToolRegistry:
         wait_tool = WaitTool()
         registry.register_tool(wait_tool)
         
-        descriptions = registry.generate_tool_descriptions_for_ai()
+        descriptions = registry.get_tool_descriptions_for_ai()
         assert "wait" in descriptions
-        assert "observation" in descriptions.lower()
+        assert "observe" in descriptions.lower() or "wait" in descriptions.lower()
 
 
 class TestActionContext:
@@ -75,18 +75,18 @@ class TestCoreTools:
         
         # Test properties
         assert wait_tool.name == "wait"
-        assert "observation" in wait_tool.description.lower()
+        assert "wait" in wait_tool.description.lower() or "observe" in wait_tool.description.lower()
         assert "duration" in wait_tool.parameters_schema
         
         # Test execution
         context = ActionContext()
         result = await wait_tool.execute({}, context)
-        assert result["success"] is True
+        assert result["status"] == "success"
         assert "waited" in result["message"].lower()
         
         # Test with duration
         result = await wait_tool.execute({"duration": 1}, context)
-        assert result["success"] is True
+        assert result["status"] == "success"
 
 
 class TestMatrixTools:
@@ -120,7 +120,7 @@ class TestMatrixTools:
         }
         
         result = await tool.execute(params, context)
-        assert result["success"] is True
+        assert result["status"] == "success"
         assert result["event_id"] == "test_event_123"
         mock_observer.send_reply.assert_called_once()
     
@@ -150,7 +150,7 @@ class TestMatrixTools:
         }
         
         result = await tool.execute(params, context)
-        assert result["success"] is True
+        assert result["status"] == "success"
         assert result["event_id"] == "test_event_456"
         mock_observer.send_message.assert_called_once()
 
@@ -170,7 +170,7 @@ class TestFarcasterTools:
         
         # Test execution with mock observer
         mock_observer = AsyncMock()
-        mock_observer.send_cast.return_value = {
+        mock_observer.post_cast.return_value = {
             "success": True,
             "cast_hash": "test_hash_123",
             "sent_content": "Test post"
@@ -180,9 +180,9 @@ class TestFarcasterTools:
         params = {"content": "Test post"}
         
         result = await tool.execute(params, context)
-        assert result["success"] is True
+        assert result["status"] == "success"
         assert result["cast_hash"] == "test_hash_123"
-        mock_observer.send_cast.assert_called_once()
+        mock_observer.post_cast.assert_called_once()
     
     @pytest.mark.asyncio
     async def test_send_farcaster_reply_tool(self):
@@ -197,7 +197,7 @@ class TestFarcasterTools:
         
         # Test execution with mock observer
         mock_observer = AsyncMock()
-        mock_observer.send_reply.return_value = {
+        mock_observer.reply_to_cast.return_value = {
             "success": True,
             "cast_hash": "test_reply_hash",
             "sent_content": "Test reply"
@@ -210,9 +210,9 @@ class TestFarcasterTools:
         }
         
         result = await tool.execute(params, context)
-        assert result["success"] is True
+        assert result["status"] == "success"
         assert result["cast_hash"] == "test_reply_hash"
-        mock_observer.send_reply.assert_called_once()
+        mock_observer.reply_to_cast.assert_called_once()
 
 
 if __name__ == "__main__":

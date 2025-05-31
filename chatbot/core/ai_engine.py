@@ -79,28 +79,34 @@ Be thoughtful about when to act vs when to wait and observe. Don't feel compelle
 
         # Dynamic tool prompt part that gets updated by tool registry
         self.dynamic_tool_prompt_part = "No tools currently available."
-        
+
         # Build the full system prompt
         self._build_full_system_prompt()
-        
+
         logger.info(f"AIDecisionEngine: Initialized with model {model}")
 
     def _build_full_system_prompt(self):
         """Build the complete system prompt including dynamic tool descriptions."""
-        self.system_prompt = f"{self.base_system_prompt}\n\n{self.dynamic_tool_prompt_part}"
+        self.system_prompt = (
+            f"{self.base_system_prompt}\n\n{self.dynamic_tool_prompt_part}"
+        )
 
     def update_system_prompt_with_tools(self, tool_registry):
         """
         Update the system prompt with descriptions of available tools.
-        
+
         Args:
             tool_registry: ToolRegistry instance containing available tools
         """
-        from ..tools.registry import ToolRegistry  # Import here to avoid circular imports
-        
+        from ..tools.registry import (  # Import here to avoid circular imports
+            ToolRegistry,
+        )
+
         self.dynamic_tool_prompt_part = tool_registry.get_tool_descriptions_for_ai()
         self._build_full_system_prompt()
-        logger.info("AIDecisionEngine: System prompt updated with dynamic tool descriptions.")
+        logger.info(
+            "AIDecisionEngine: System prompt updated with dynamic tool descriptions."
+        )
         logger.debug(f"Tool descriptions: {self.dynamic_tool_prompt_part}")
 
     async def make_decision(

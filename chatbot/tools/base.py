@@ -10,12 +10,13 @@ class ActionContext:
     Provides context to tools during execution, including access to observers,
     world state manager, and other shared resources.
     """
+
     def __init__(
-        self, 
-        matrix_observer=None, 
-        farcaster_observer=None, 
+        self,
+        matrix_observer=None,
+        farcaster_observer=None,
         world_state_manager=None,
-        context_manager=None
+        context_manager=None,
     ):
         self.matrix_observer = matrix_observer
         self.farcaster_observer = farcaster_observer
@@ -29,7 +30,7 @@ class ToolInterface(ABC):
     Tools are self-contained units of capability that can be dynamically
     registered and executed by the orchestrator.
     """
-    
+
     @property
     @abstractmethod
     def name(self) -> str:
@@ -57,14 +58,16 @@ class ToolInterface(ABC):
         pass
 
     @abstractmethod
-    async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
+    async def execute(
+        self, params: Dict[str, Any], context: ActionContext
+    ) -> Dict[str, Any]:
         """
         Executes the tool with the given parameters and context.
-        
+
         Args:
             params: Dictionary of parameters for the tool
             context: ActionContext providing access to observers and managers
-            
+
         Returns:
             Dictionary with status and result/error information:
             - status: "success" or "failure"

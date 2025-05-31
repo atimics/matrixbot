@@ -17,11 +17,11 @@ from ..core.context import ContextManager
 from ..core.world_state import WorldStateManager
 from ..integrations.farcaster.observer import FarcasterObserver
 from ..integrations.matrix.observer import MatrixObserver
-from ..tools.registry import ToolRegistry
 from ..tools.base import ActionContext
 from ..tools.core_tools import WaitTool
-from ..tools.matrix_tools import SendMatrixReplyTool, SendMatrixMessageTool
 from ..tools.farcaster_tools import SendFarcasterPostTool, SendFarcasterReplyTool
+from ..tools.matrix_tools import SendMatrixMessageTool, SendMatrixReplyTool
+from ..tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -45,10 +45,10 @@ class ContextAwareOrchestrator:
         # Initialize core components
         self.world_state = WorldStateManager()
         self.context_manager = ContextManager(self.world_state, self.config.db_path)
-        
+
         # Tool Registry Initialization
         self.tool_registry = ToolRegistry()
-        
+
         # AI Engine with dynamic tool support
         self.ai_engine = AIDecisionEngine(
             api_key=settings.OPENROUTER_API_KEY, model=self.config.ai_model
@@ -119,8 +119,12 @@ class ContextAwareOrchestrator:
                 logger.info("Matrix observer available for tools.")
             except Exception as e:
                 logger.error(f"Failed to initialize Matrix observer: {e}")
-                logger.error(f"Matrix configuration - User: {settings.MATRIX_USER_ID}, Server: {getattr(settings, 'MATRIX_SERVER', 'not configured')}")
-                logger.info("Continuing without Matrix integration. Check Matrix credentials and server configuration.")
+                logger.error(
+                    f"Matrix configuration - User: {settings.MATRIX_USER_ID}, Server: {getattr(settings, 'MATRIX_SERVER', 'not configured')}"
+                )
+                logger.info(
+                    "Continuing without Matrix integration. Check Matrix credentials and server configuration."
+                )
 
         # Initialize Farcaster observer if credentials available
         if settings.NEYNAR_API_KEY:
@@ -131,8 +135,12 @@ class ContextAwareOrchestrator:
                 logger.info("Farcaster observer available for tools.")
             except Exception as e:
                 logger.error(f"Failed to initialize Farcaster observer: {e}")
-                logger.error(f"Farcaster configuration - API Key present: {bool(settings.NEYNAR_API_KEY)}")
-                logger.info("Continuing without Farcaster integration. Check Neynar API key configuration.")
+                logger.error(
+                    f"Farcaster configuration - API Key present: {bool(settings.NEYNAR_API_KEY)}"
+                )
+                logger.info(
+                    "Continuing without Farcaster integration. Check Neynar API key configuration."
+                )
 
     async def _main_event_loop(self) -> None:
         """Main event loop for processing world state changes."""
@@ -239,7 +247,7 @@ class ContextAwareOrchestrator:
         """Execute a single action using the ToolRegistry."""
         tool_name = action.action_type
         params = action.parameters
-        
+
         tool = self.tool_registry.get_tool(tool_name)
         if not tool:
             logger.error(f"Attempted to execute unknown tool: {tool_name}")
@@ -252,27 +260,29 @@ class ContextAwareOrchestrator:
                     "parameters": params,
                     "error": f"Unknown tool: {tool_name}",
                     "status": "failed",
-                    "timestamp": time.time()
-                }
+                    "timestamp": time.time(),
+                },
             )
             return
 
         logger.info(f"Executing tool '{tool_name}' with parameters: {params}")
-        
+
         # Create ActionContext to pass to the tool
         action_context = ActionContext(
             matrix_observer=self.matrix_observer,
             farcaster_observer=self.farcaster_observer,
             world_state_manager=self.world_state,
-            context_manager=self.context_manager
+            context_manager=self.context_manager,
         )
 
         try:
             result = await tool.execute(params, action_context)
         except Exception as e:
-            logger.error(f"Exception during execution of tool {tool_name}: {e}", exc_info=True)
+            logger.error(
+                f"Exception during execution of tool {tool_name}: {e}", exc_info=True
+            )
             result = {"status": "failure", "error": str(e)}
-        
+
         # Ensure result always has a timestamp and status for consistency
         result.setdefault("timestamp", time.time())
         result.setdefault("status", "failure" if "error" in result else "success")
@@ -284,19 +294,29 @@ class ContextAwareOrchestrator:
             "status": result["status"],
             "timestamp": result["timestamp"],
         }
-        
+
         if result["status"] == "success":
             tool_result_payload["result"] = result.get("message", str(result))
-            logger.info(f"Tool {tool_name} executed successfully: {tool_result_payload['result']}")
-            
+            logger.info(
+                f"Tool {tool_name} executed successfully: {tool_result_payload['result']}"
+            )
+
             # Handle AI Blindness Fix
-            if tool_name in [
-                "send_matrix_message", "send_matrix_reply",
-                "send_farcaster_post", "send_farcaster_reply"
-            ] and "sent_content" in result:
+            if (
+                tool_name
+                in [
+                    "send_matrix_message",
+                    "send_matrix_reply",
+                    "send_farcaster_post",
+                    "send_farcaster_reply",
+                ]
+                and "sent_content" in result
+            ):
                 await self._record_bot_sent_message(channel_id, tool_name, result)
         else:
-            tool_result_payload["error"] = result.get("error", "Unknown tool execution error")
+            tool_result_payload["error"] = result.get(
+                "error", "Unknown tool execution error"
+            )
             logger.error(f"Tool {tool_name} failed: {tool_result_payload['error']}")
 
         await self.context_manager.add_tool_result(
@@ -403,19 +423,21 @@ class ContextAwareOrchestrator:
         """Register all available tools in the tool registry."""
         # Register core tools
         self.tool_registry.register_tool(WaitTool())
-        
+
         # Register Matrix tools
         self.tool_registry.register_tool(SendMatrixReplyTool())
         self.tool_registry.register_tool(SendMatrixMessageTool())
-        
+
         # Register Farcaster tools
         self.tool_registry.register_tool(SendFarcasterPostTool())
         self.tool_registry.register_tool(SendFarcasterReplyTool())
-        
+
         # Update AI engine with tool descriptions
         self.ai_engine.update_system_prompt_with_tools(self.tool_registry)
-        
-        logger.info(f"Initialized {len(self.tool_registry.get_all_tools())} tools: {', '.join(self.tool_registry.get_tool_names())}")
+
+        logger.info(
+            f"Initialized {len(self.tool_registry.get_all_tools())} tools: {', '.join(self.tool_registry.get_tool_names())}"
+        )
 
     # Public API methods
     async def add_user_message(self, channel_id: str, message: Dict[str, Any]) -> None:
