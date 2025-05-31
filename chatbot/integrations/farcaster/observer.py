@@ -146,18 +146,25 @@ class FarcasterObserver:
 
     async def _observe_home_feed(self) -> List[Message]:
         """Observe the global Farcaster home feed"""
+        # Home feed requires bot FID and feed_type
+        if not self.bot_fid:
+            logger.warning("FarcasterObserver: bot_fid not configured - skipping home feed")
+            return []
         try:
             async with httpx.AsyncClient() as client:
                 headers = {"accept": "application/json", "api_key": self.api_key}
 
-                # Get recent casts from global feed
+                # Get recent casts from home feed of followed accounts
+                params = {
+                    "fid": self.bot_fid,
+                    "feed_type": "following",
+                    "limit": 25,
+                    "include_replies": True,
+                }
                 response = await client.get(
                     f"{self.base_url}/farcaster/feed",
                     headers=headers,
-                    params={
-                        "limit": 25,
-                        "include_replies": True,
-                    },
+                    params=params,
                 )
 
                 if response.status_code != 200:
@@ -538,6 +545,24 @@ class FarcasterObserver:
         except Exception as e:
             logger.error(f"Error posting cast: {e}")
             return {"success": False, "error": str(e)}
+
+    def _update_rate_limits(self, response: httpx.Response) -> None:
+        """
+        Parse rate limit headers from a Neynar API response and store them.
+        """
+        headers = response.headers
+        limit = headers.get("x-ratelimit-limit")
+        remaining = headers.get("x-ratelimit-remaining")
+        reset = headers.get("x-ratelimit-reset")
+        try:
+            self.rate_limits = {
+                "limit": int(limit) if limit is not None else None,
+                "remaining": int(remaining) if remaining is not None else None,
+                "reset_timestamp": int(reset) if reset is not None else None,
+            }
+        except ValueError:
+            # Skip parsing errors
+            self.rate_limits = {}
 
     async def reply_to_cast(self, content: str, reply_to_hash: str) -> Dict[str, Any]:
         """
