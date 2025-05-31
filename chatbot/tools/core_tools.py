@@ -46,9 +46,6 @@ class WaitTool(ToolInterface):
                 logger.warning(
                     "Negative duration provided for wait tool. Using default 1.0s."
                 )
-            elif duration > 60:  # Reasonable upper limit
-                duration = 60.0
-                logger.warning("Duration too long for wait tool. Capping at 60s.")
         except (ValueError, TypeError):
             logger.warning(
                 f"Invalid duration '{params.get('duration')}' for wait tool. Using default 1.0s."

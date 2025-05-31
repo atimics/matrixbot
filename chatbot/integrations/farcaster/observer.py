@@ -338,6 +338,9 @@ class FarcasterObserver:
                         username = author.get("username", "unknown")
                         display_name = author.get("display_name", username)
                         fid = author.get("fid")
+                        # Skip notifications from the bot itself
+                        if self.bot_fid and str(fid) == str(self.bot_fid):
+                            continue
                         
                         # For Farcaster, prefer username for sender (for tagging)
                         sender = username
@@ -441,6 +444,9 @@ class FarcasterObserver:
                         username = author.get("username", "unknown")
                         display_name = author.get("display_name", username)
                         fid = author.get("fid")
+                        # Skip mentions from the bot itself
+                        if self.bot_fid and str(fid) == str(self.bot_fid):
+                            continue
                         
                         # For Farcaster, prefer username for sender (for tagging)
                         sender = username
@@ -499,6 +505,11 @@ class FarcasterObserver:
                 cast_hash = cast.get("hash", "")
                 if cast_hash in self.last_seen_hashes:
                     continue
+                # Skip messages from the bot itself
+                author = cast.get("author", {})
+                fid = author.get("fid")
+                if self.bot_fid and fid == self.bot_fid:
+                    continue
 
                 # Only process casts newer than our last check
                 cast_timestamp = self._parse_timestamp(cast.get("timestamp", ""))
@@ -511,10 +522,8 @@ class FarcasterObserver:
                     continue
 
                 # Get sender info
-                author = cast.get("author", {})
                 username = author.get("username", "unknown")
                 display_name = author.get("display_name", username)
-                fid = author.get("fid")
                 
                 # For Farcaster, prefer username for sender (for tagging)
                 sender = username

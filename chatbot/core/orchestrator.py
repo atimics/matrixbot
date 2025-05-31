@@ -41,7 +41,7 @@ class OrchestratorConfig:
 
     db_path: str = "chatbot.db"
     observation_interval: float = 2.0  # More responsive default
-    max_cycles_per_hour: int = 300  # Allow up to 5 responses per minute
+    max_cycles_per_hour: int = settings.MAX_CYCLES_PER_HOUR  # Use config setting
     ai_model: str = "openai/gpt-4o-mini"  # More reliable default model
 
 
@@ -235,12 +235,17 @@ class ContextAwareOrchestrator:
             # Get conversation messages with world state in system prompt
             messages = await self.context_manager.get_conversation_messages(channel_id)
 
-            # Get current world state for AI decision making
-            world_state = self.world_state.to_dict()
+            # Get optimized world state for AI decision making
+            world_state_for_ai = self.world_state.get_ai_optimized_payload(primary_channel_id=channel_id)
+            
+            # Log payload size for monitoring
+            payload_stats = world_state_for_ai.get("payload_stats", {})
+            logger.info(f"AI payload stats for {channel_id}: {payload_stats}")
+            
             cycle_id = f"cycle_{self.cycle_count}_{channel_id}"
 
             # Make AI decision
-            decision = await self.ai_engine.make_decision(world_state, cycle_id)
+            decision = await self.ai_engine.make_decision(world_state_for_ai, cycle_id)
 
             if decision and decision.selected_actions:
                 # Record AI response in context

@@ -39,6 +39,7 @@ class AppConfig(BaseSettings):
     NEYNAR_API_KEY: Optional[str] = None
     FARCASTER_BOT_FID: Optional[str] = None
     FARCASTER_BOT_SIGNER_UUID: Optional[str] = None
+    FARCASTER_BOT_USERNAME: Optional[str] = None  # Bot's username for filtering
 
     # OpenRouter specific from original .env.example (these might be for other services or documentation)
     OPENROUTER_MODEL: str = "openai/gpt-4o-mini"  # Matches AI_MODEL typically
@@ -54,6 +55,12 @@ class AppConfig(BaseSettings):
     AI_CONVERSATION_HISTORY_LENGTH: int = 10  # Max messages per channel for AI payload
     AI_ACTION_HISTORY_LENGTH: int = 5       # Max actions in history for AI payload
     AI_THREAD_HISTORY_LENGTH: int = 5       # Max thread messages for AI payload
+    AI_OTHER_CHANNELS_SUMMARY_COUNT: int = 3  # How many other active channels to summarize
+    AI_OTHER_CHANNELS_MESSAGE_SNIPPET_LENGTH: int = 75  # Length of snippet for other channels
+    AI_INCLUDE_DETAILED_USER_INFO: bool = True  # Include full user metadata or summarize
+
+    # Rate limiting and cycle control
+    MAX_CYCLES_PER_HOUR: int = 120  # 30 second minimum interval between cycles
 
 
 # Global settings instance

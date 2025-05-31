@@ -58,6 +58,24 @@ Your role is to:
 3. Plan up to 3 actions you could take this cycle
 4. Select the most important actions to execute
 
+WORLD STATE STRUCTURE:
+The world state you receive is optimized for your decision-making:
+- "current_processing_channel_id": The primary channel for this cycle's focus
+- "channels": Contains channel data with different detail levels:
+  * Channels with "priority": "detailed" have full recent message history (truncated for efficiency)
+  * Channels with "priority": "summary_only" have activity summaries but no full messages
+  * The primary channel gets the most detailed view for informed responses
+- "action_history": Recent actions taken (truncated to last few items)
+- "threads": Conversation threads relevant to the current channel (truncated)
+- "system_status": Includes rate_limits for API awareness
+- "payload_stats": Information about data filtering applied
+
+RATE LIMIT AWARENESS:
+Check system_status.rate_limits before taking actions that use external APIs:
+- "farcaster_api": Neynar/Farcaster API limits
+- "matrix_homeserver": Matrix server rate limits
+If remaining requests are low, prefer wait actions or prioritize most important responses.
+
 You should respond with JSON in this format:
 {
   "observations": "What you notice about the current state",
@@ -75,7 +93,7 @@ You should respond with JSON in this format:
   "reasoning": "Overall reasoning for your selections"
 }
 
-Be thoughtful about when to act vs when to wait and observe. Don't feel compelled to act every cycle."""
+Be thoughtful about when to act vs when to wait and observe. Focus primarily on the current_processing_channel_id but use other channel summaries for context. Don't feel compelled to act every cycle."""
 
         # Dynamic tool prompt part that gets updated by tool registry
         self.dynamic_tool_prompt_part = "No tools currently available."
