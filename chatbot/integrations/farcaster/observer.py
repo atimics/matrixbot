@@ -57,7 +57,11 @@ class FarcasterObserver:
         # TODO: Cleanup connections
 
     async def observe_feeds(
-        self, fids: List[int] = None, channels: List[str] = None, include_notifications: bool = False
+        self,
+        fids: List[int] = None,
+        channels: List[str] = None,
+        include_notifications: bool = False,
+        include_home_feed: bool = False,
     ) -> List[Message]:
         """
         Observe Farcaster feeds for new posts
@@ -88,6 +92,10 @@ class FarcasterObserver:
                 for channel in channels:
                     channel_messages = await self._observe_channel_feed(channel)
                     new_messages.extend(channel_messages)
+            # Observe global home feed if requested
+            if include_home_feed:
+                home_messages = await self._observe_home_feed()
+                new_messages.extend(home_messages)
                     
             # Observe notifications if requested and we have bot FID
             if include_notifications and self.bot_fid:

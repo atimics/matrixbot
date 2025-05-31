@@ -61,6 +61,22 @@ class SendFarcasterPostTool(ToolInterface):
             if result.get("success"):
                 cast_hash = result.get("cast_hash", "unknown")
                 success_msg = f"Sent Farcaster post (hash: {cast_hash})"
+                # Record bot's own post in world state for thread context
+                try:
+                    from chatbot.core.world_state import Message
+                    channel_id = params.get("channel") or f"user_{context.farcaster_observer.signer_uuid}"
+                    bot_message = Message(
+                        id=cast_hash,
+                        channel_id=channel_id,
+                        channel_type="farcaster",
+                        sender=context.farcaster_observer.signer_uuid or "bot",
+                        content=content,
+                        timestamp=time.time(),
+                    )
+                    if context.world_state_manager:
+                        context.world_state_manager.add_message(channel_id, bot_message)
+                except Exception:
+                    logger.warning("Failed to record bot's own Farcaster post in world state")
                 if channel:
                     success_msg += f" to channel {channel}"
                 logger.info(success_msg)
@@ -156,6 +172,23 @@ class SendFarcasterReplyTool(ToolInterface):
                     f"Sent Farcaster reply (hash: {cast_hash}) to cast {reply_to_hash}"
                 )
                 logger.info(success_msg)
+                # Record bot's reply in world state for threading
+                try:
+                    from chatbot.core.world_state import Message
+
+                    bot_message = Message(
+                        id=cast_hash,
+                        channel_id=reply_to_hash,
+                        channel_type="farcaster",
+                        sender=context.farcaster_observer.signer_uuid or "bot",
+                        content=content,
+                        timestamp=time.time(),
+                        reply_to=reply_to_hash,
+                    )
+                    if context.world_state_manager:
+                        context.world_state_manager.add_message(reply_to_hash, bot_message)
+                except Exception:
+                    logger.warning("Failed to record bot's Farcaster reply in world state")
 
                 return {
                     "status": "success",

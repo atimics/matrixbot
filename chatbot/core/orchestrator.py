@@ -420,7 +420,8 @@ class ContextAwareOrchestrator:
                 # Observe popular Farcaster channels, home feed, and notifications
                 new_messages = await self.farcaster_observer.observe_feeds(
                     channels=["dev", "warpcast", "base"],  # Popular channels
-                    include_notifications=True  # Include replies and mentions to AI
+                    include_notifications=True,  # Include replies and mentions to AI
+                    include_home_feed=True  # Also include the global (home) feed
                 )
                 
                 # Add new messages to world state

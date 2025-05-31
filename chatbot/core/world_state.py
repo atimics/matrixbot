@@ -76,6 +76,7 @@ class WorldState:
         self.channels: Dict[str, Channel] = {}
         self.action_history: List[ActionHistory] = []
         self.system_status: Dict[str, Any] = {}
+        self.threads: Dict[str, List[Message]] = {}  # Map root cast id to thread messages
         self.last_update: float = time.time()
 
     def add_message(self, message: Message):
@@ -94,6 +95,10 @@ class WorldState:
 
         # Add message to channel
         self.channels[channel_id].recent_messages.append(message)
+        # Thread management: group Farcaster messages by root cast
+        if message.channel_type == "farcaster":
+            thread_id = message.reply_to or message.id
+            self.threads.setdefault(thread_id, []).append(message)
 
         # Keep only last 50 messages per channel
         if len(self.channels[channel_id].recent_messages) > 50:
@@ -157,6 +162,10 @@ class WorldState:
             "action_history": [asdict(action) for action in self.action_history],
             "system_status": self.system_status,
             "last_update": self.last_update,
+            "threads": {
+                thread_id: [asdict(msg) for msg in msgs]
+                for thread_id, msgs in self.threads.items()
+            },
         }
 
     def get_recent_activity(self, lookback_seconds: int = 300) -> Dict[str, Any]:
@@ -199,6 +208,8 @@ class WorldStateManager:
 
     def __init__(self):
         self.state = WorldState()
+        # Initialize thread storage for conversation threads
+        self.state.threads = {}
 
         # Initialize system status
         self.state.system_status = {
@@ -241,6 +252,11 @@ class WorldStateManager:
 
         channel.last_checked = time.time()
         self.state.last_update = time.time()
+        # Thread management: group Farcaster messages by root cast
+        if message.channel_type == 'farcaster':
+            thread_id = message.reply_to or message.id
+            self.state.threads.setdefault(thread_id, []).append(message)
+            logger.info(f"WorldStateManager: Added message to thread '{thread_id}'")
 
         logger.info(
             f"WorldState: New message in {channel.name}: {message.sender}: {message.content[:100]}..."
@@ -278,6 +294,11 @@ class WorldStateManager:
     def get_observation_data(self, lookback_seconds: int = 300) -> Dict[str, Any]:
         """Get current world state data for AI observation"""
         observation = self.state.get_recent_activity(lookback_seconds)
+        # Include thread context for AI to follow conversation threads
+        observation["threads"] = {
+            thread_id: [asdict(msg) for msg in msgs]
+            for thread_id, msgs in self.state.threads.items()
+        }
 
         # Increment observation cycle counter
         self.state.system_status["total_cycles"] += 1
