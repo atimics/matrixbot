@@ -27,10 +27,22 @@ class Message:
     id: str
     channel_id: str
     channel_type: str  # 'matrix' or 'farcaster'
-    sender: str
+    sender: str  # Display name for Matrix, username for Farcaster
     content: str
     timestamp: float
     reply_to: Optional[str] = None
+    
+    # Enhanced user information for social platforms like Farcaster
+    sender_username: Optional[str] = None  # @username for tagging (Farcaster)
+    sender_display_name: Optional[str] = None  # Human-readable display name
+    sender_fid: Optional[int] = None  # Farcaster ID number
+    sender_pfp_url: Optional[str] = None  # Profile picture URL
+    sender_bio: Optional[str] = None  # User bio/description
+    sender_follower_count: Optional[int] = None  # Number of followers
+    sender_following_count: Optional[int] = None  # Number of following
+    
+    # Platform-specific metadata
+    metadata: Dict[str, Any] = field(default_factory=dict)  # Additional platform-specific data
 
 
 @dataclass
@@ -79,6 +91,7 @@ class WorldState:
         self.threads: Dict[str, List[Message]] = {}       # Map root cast id to thread messages
         self.thread_roots: Dict[str, Message] = {}       # Root message for each thread
         self.seen_messages: set[str] = set()             # Deduplication of message IDs
+        self.rate_limits: Dict[str, Dict[str, Any]] = {} # API rate limit information
         self.last_update: float = time.time()
 
     def add_message(self, message: Message):

@@ -129,6 +129,9 @@ class FarcasterObserver:
                     params={"fid": fid, "limit": 25, "include_replies": True},
                 )
 
+                # Update rate limit tracking
+                self._update_rate_limits(response)
+
                 if response.status_code != 200:
                     logger.error(
                         f"Farcaster API error for user {fid}: {response.status_code}"
@@ -167,6 +170,9 @@ class FarcasterObserver:
                     params=params,
                 )
 
+                # Update rate limit tracking
+                self._update_rate_limits(response)
+
                 if response.status_code != 200:
                     logger.error(f"Farcaster API error for home feed: {response.status_code}")
                     return []
@@ -194,6 +200,9 @@ class FarcasterObserver:
                         "include_replies": True,
                     },
                 )
+
+                # Update rate limit tracking
+                self._update_rate_limits(response)
 
                 if response.status_code != 200:
                     logger.error(
@@ -225,6 +234,9 @@ class FarcasterObserver:
                         "limit": 25,
                     },
                 )
+
+                # Update rate limit tracking
+                self._update_rate_limits(response)
 
                 if response.status_code != 200:
                     logger.error(
@@ -260,7 +272,12 @@ class FarcasterObserver:
 
                         # Get sender info
                         author = cast_data.get("author", {})
-                        sender = author.get("display_name", author.get("username", "unknown"))
+                        username = author.get("username", "unknown")
+                        display_name = author.get("display_name", username)
+                        fid = author.get("fid")
+                        
+                        # For Farcaster, prefer username for sender (for tagging)
+                        sender = username
 
                         # Determine notification type and channel ID
                         notif_type = notification.get("type", "unknown")
@@ -271,7 +288,7 @@ class FarcasterObserver:
                         if cast_data.get("parent_hash"):
                             reply_to = cast_data.get("parent_hash")
 
-                        # Create standardized message
+                        # Create standardized message with enhanced user info
                         message = Message(
                             id=notif_hash,
                             channel_id=channel_id,
@@ -280,6 +297,18 @@ class FarcasterObserver:
                             content=content,
                             timestamp=cast_timestamp,
                             reply_to=reply_to,
+                            sender_username=username,
+                            sender_display_name=display_name,
+                            sender_fid=fid,
+                            sender_pfp_url=author.get("pfp_url"),
+                            sender_bio=author.get("profile", {}).get("bio", {}).get("text"),
+                            sender_follower_count=author.get("follower_count"),
+                            sender_following_count=author.get("following_count"),
+                            metadata={
+                                "notification_type": notif_type,
+                                "verified_addresses": author.get("verified_addresses", {}),
+                                "power_badge": author.get("power_badge", False),
+                            }
                         )
 
                         messages.append(message)
@@ -313,6 +342,9 @@ class FarcasterObserver:
                     },
                 )
 
+                # Update rate limit tracking
+                self._update_rate_limits(response)
+
                 if response.status_code != 200:
                     logger.warning(
                         f"Farcaster API error for mentions (trying alternative): {response.status_code}"
@@ -343,14 +375,19 @@ class FarcasterObserver:
 
                         # Get sender info
                         author = cast.get("author", {})
-                        sender = author.get("display_name", author.get("username", "unknown"))
+                        username = author.get("username", "unknown")
+                        display_name = author.get("display_name", username)
+                        fid = author.get("fid")
+                        
+                        # For Farcaster, prefer username for sender (for tagging)
+                        sender = username
 
                         # Check for replies
                         reply_to = None
                         if cast.get("parent_hash"):
                             reply_to = cast.get("parent_hash")
 
-                        # Create standardized message for mentions
+                        # Create standardized message for mentions with enhanced user info
                         message = Message(
                             id=cast_hash,
                             channel_id="farcaster:mentions",
@@ -359,6 +396,18 @@ class FarcasterObserver:
                             content=content,
                             timestamp=cast_timestamp,
                             reply_to=reply_to,
+                            sender_username=username,
+                            sender_display_name=display_name,
+                            sender_fid=fid,
+                            sender_pfp_url=author.get("pfp_url"),
+                            sender_bio=author.get("profile", {}).get("bio", {}).get("text"),
+                            sender_follower_count=author.get("follower_count"),
+                            sender_following_count=author.get("following_count"),
+                            metadata={
+                                "cast_type": "mention",
+                                "verified_addresses": author.get("verified_addresses", {}),
+                                "power_badge": author.get("power_badge", False),
+                            }
                         )
 
                         messages.append(message)
@@ -400,14 +449,19 @@ class FarcasterObserver:
 
                 # Get sender info
                 author = cast.get("author", {})
-                sender = author.get("display_name", author.get("username", "unknown"))
+                username = author.get("username", "unknown")
+                display_name = author.get("display_name", username)
+                fid = author.get("fid")
+                
+                # For Farcaster, prefer username for sender (for tagging)
+                sender = username
 
                 # Check for replies
                 reply_to = None
                 if cast.get("parent_hash"):
                     reply_to = cast.get("parent_hash")
 
-                # Create standardized message
+                # Create standardized message with enhanced user info
                 message = Message(
                     id=cast_hash,
                     channel_id=channel_id,
@@ -416,6 +470,19 @@ class FarcasterObserver:
                     content=content,
                     timestamp=cast_timestamp,
                     reply_to=reply_to,
+                    sender_username=username,
+                    sender_display_name=display_name,
+                    sender_fid=fid,
+                    sender_pfp_url=author.get("pfp_url"),
+                    sender_bio=author.get("profile", {}).get("bio", {}).get("text"),
+                    sender_follower_count=author.get("follower_count"),
+                    sender_following_count=author.get("following_count"),
+                    metadata={
+                        "cast_type": "normal",
+                        "verified_addresses": author.get("verified_addresses", {}),
+                        "power_badge": author.get("power_badge", False),
+                        "channel": channel_id,
+                    }
                 )
 
                 messages.append(message)
@@ -454,15 +521,20 @@ class FarcasterObserver:
                 if not content:
                     continue
 
-                # Get sender info
-                sender = actor.get("display_name", actor.get("username", "unknown"))
+                # Get sender info (actor is the person who triggered the notification)
+                username = actor.get("username", "unknown")
+                display_name = actor.get("display_name", username)
+                fid = actor.get("fid")
+                
+                # For Farcaster, prefer username for sender (for tagging)
+                sender = username
 
                 # Check for replies
                 reply_to = None
                 if cast.get("parent_hash"):
                     reply_to = cast.get("parent_hash")
 
-                # Create standardized message
+                # Create standardized message with enhanced user info
                 message = Message(
                     id=cast.get("hash", ""),
                     channel_id=f"notification_{notification_type}",
@@ -471,6 +543,18 @@ class FarcasterObserver:
                     content=content,
                     timestamp=self._parse_timestamp(cast.get("timestamp", "")),
                     reply_to=reply_to,
+                    sender_username=username,
+                    sender_display_name=display_name,
+                    sender_fid=fid,
+                    sender_pfp_url=actor.get("pfp_url"),
+                    sender_bio=actor.get("profile", {}).get("bio", {}).get("text"),
+                    sender_follower_count=actor.get("follower_count"),
+                    sender_following_count=actor.get("following_count"),
+                    metadata={
+                        "notification_type": notification_type,
+                        "verified_addresses": actor.get("verified_addresses", {}),
+                        "power_badge": actor.get("power_badge", False),
+                    }
                 )
 
                 messages.append(message)
@@ -532,6 +616,9 @@ class FarcasterObserver:
                     f"{self.base_url}/farcaster/cast", headers=headers, json=payload
                 )
 
+                # Update rate limit tracking
+                self._update_rate_limits(response)
+
                 if response.status_code == 200:
                     data = response.json()
                     cast_hash = data.get("cast", {}).get("hash", "")
@@ -546,41 +633,9 @@ class FarcasterObserver:
             logger.error(f"Error posting cast: {e}")
             return {"success": False, "error": str(e)}
 
-    def _update_rate_limits(self, response: httpx.Response) -> None:
-        """
-        Parse rate limit headers from a Neynar API response and store them.
-        """
-        headers = response.headers
-        limit = headers.get("x-ratelimit-limit")
-        remaining = headers.get("x-ratelimit-remaining")
-        reset = headers.get("x-ratelimit-reset")
-        try:
-            self.rate_limits = {
-                "limit": int(limit) if limit is not None else None,
-                "remaining": int(remaining) if remaining is not None else None,
-                "reset_timestamp": int(reset) if reset is not None else None,
-            }
-        except ValueError:
-            # Skip parsing errors
-            self.rate_limits = {}
-
-    async def reply_to_cast(self, content: str, reply_to_hash: str) -> Dict[str, Any]:
-        """
-        Reply to a cast on Farcaster
-
-        Args:
-            content: Text content of the reply
-            reply_to_hash: Hash of the cast to reply to
-
-        Returns:
-            Result dictionary with success status and cast hash
-        """
-        # For replies, we use post_cast with the reply_to parameter
-        return await self.post_cast(content, reply_to=reply_to_hash)
-
     async def like_cast(self, cast_hash: str) -> Dict[str, Any]:
         """
-        Like (react to) a cast on Farcaster
+        Like a cast (reaction) on Farcaster
 
         Args:
             cast_hash: Hash of the cast to like
@@ -611,6 +666,9 @@ class FarcasterObserver:
                 response = await client.post(
                     f"{self.base_url}/farcaster/reaction", headers=headers, json=payload
                 )
+
+                # Update rate limit tracking
+                self._update_rate_limits(response)
 
                 if response.status_code == 200:
                     logger.info(f"Successfully liked cast: {cast_hash}")
@@ -663,6 +721,9 @@ class FarcasterObserver:
                     f"{self.base_url}/farcaster/cast", headers=headers, json=payload
                 )
 
+                # Update rate limit tracking
+                self._update_rate_limits(response)
+
                 if response.status_code == 200:
                     data = response.json()
                     cast_hash = data.get("cast", {}).get("hash", "")
@@ -677,6 +738,96 @@ class FarcasterObserver:
             logger.error(f"Error posting quote cast: {e}")
             return {"success": False, "error": str(e)}
 
+    def _update_rate_limits(self, response: httpx.Response) -> None:
+        """
+        Update rate limit tracking from API response headers
+        
+        Args:
+            response: HTTP response object containing rate limit headers
+        """
+        try:
+            # Common rate limit headers from Farcaster/Neynar API
+            rate_limit_headers = {
+                'x-ratelimit-limit': 'limit',
+                'x-ratelimit-remaining': 'remaining', 
+                'x-ratelimit-reset': 'reset_time',
+                'x-ratelimit-retry-after': 'retry_after',
+                'ratelimit-limit': 'limit',
+                'ratelimit-remaining': 'remaining',
+                'ratelimit-reset': 'reset_time'
+            }
+            
+            rate_limit_info = {}
+            for header_name, info_key in rate_limit_headers.items():
+                header_value = response.headers.get(header_name)
+                if header_value:
+                    if info_key in ['limit', 'remaining']:
+                        rate_limit_info[info_key] = int(header_value)
+                    elif info_key == 'reset_time':
+                        # Could be Unix timestamp or seconds until reset
+                        rate_limit_info[info_key] = int(header_value)
+                    elif info_key == 'retry_after':
+                        rate_limit_info[info_key] = int(header_value)
+            
+            if rate_limit_info:
+                # Store in world state for AI system awareness
+                if hasattr(self, 'world_state_manager') and self.world_state_manager:
+                    current_time = time.time()
+                    rate_limit_info['last_updated'] = current_time
+                    
+                    # Update world state with rate limit info
+                    world_state = self.world_state_manager.state
+                    if not hasattr(world_state, 'rate_limits'):
+                        world_state.rate_limits = {}
+                    
+                    world_state.rate_limits['farcaster_api'] = rate_limit_info
+                    
+                    # Log if we're approaching limits
+                    remaining = rate_limit_info.get('remaining', float('inf'))
+                    limit = rate_limit_info.get('limit', 0)
+                    
+                    if limit > 0:
+                        usage_percent = ((limit - remaining) / limit) * 100
+                        if usage_percent > 80:
+                            logger.warning(f"Farcaster API rate limit usage high: {usage_percent:.1f}% ({remaining}/{limit} remaining)")
+                        elif usage_percent > 50:
+                            logger.info(f"Farcaster API rate limit usage: {usage_percent:.1f}% ({remaining}/{limit} remaining)")
+                            
+        except Exception as e:
+            logger.debug(f"Error parsing rate limit headers: {e}")
+
+    def get_rate_limit_status(self) -> Dict[str, Any]:
+        """
+        Get current rate limit status
+        
+        Returns:
+            Dictionary with rate limit information
+        """
+        if not hasattr(self, 'world_state_manager') or not self.world_state_manager:
+            return {"available": False, "reason": "No world state manager"}
+            
+        world_state = self.world_state_manager.state
+        if not hasattr(world_state, 'rate_limits') or 'farcaster_api' not in world_state.rate_limits:
+            return {"available": False, "reason": "No rate limit data"}
+            
+        rate_limit_info = world_state.rate_limits['farcaster_api']
+        current_time = time.time()
+        
+        # Check if data is stale (older than 5 minutes)
+        last_updated = rate_limit_info.get('last_updated', 0)
+        if current_time - last_updated > 300:
+            return {"available": False, "reason": "Rate limit data is stale"}
+            
+        return {
+            "available": True,
+            "limit": rate_limit_info.get('limit'),
+            "remaining": rate_limit_info.get('remaining'),
+            "reset_time": rate_limit_info.get('reset_time'),
+            "retry_after": rate_limit_info.get('retry_after'),
+            "last_updated": last_updated,
+            "age_seconds": current_time - last_updated
+        }
+
     def is_connected(self) -> bool:
         """Check if the Farcaster observer is connected and ready"""
         return self.api_key is not None and self.signer_uuid is not None
@@ -687,7 +838,7 @@ class FarcasterObserver:
 
     def get_status(self) -> Dict[str, Any]:
         """Get current observer status"""
-        return {
+        status = {
             "connected": self.is_connected(),
             "can_observe_notifications": self.can_observe_notifications(),
             "last_check_time": self.last_check_time,
@@ -695,3 +846,118 @@ class FarcasterObserver:
             "seen_hashes_count": len(self.last_seen_hashes),
             "bot_fid": self.bot_fid,
         }
+        
+        # Add rate limit status
+        rate_limit_status = self.get_rate_limit_status()
+        status["rate_limits"] = rate_limit_status
+        
+        return status
+
+    def format_user_mention(self, message: Message) -> str:
+        """
+        Format a user mention for Farcaster replies
+        
+        Args:
+            message: Message object containing user information
+            
+        Returns:
+            Properly formatted mention string (e.g., "@username")
+        """
+        if message.channel_type != "farcaster":
+            return message.sender
+            
+        username = message.sender_username or message.sender
+        if username and not username.startswith("@"):
+            return f"@{username}"
+        return username or message.sender
+
+    def get_user_context(self, message: Message) -> Dict[str, Any]:
+        """
+        Get comprehensive user context for AI decision making
+        
+        Args:
+            message: Message object containing user information
+            
+        Returns:
+            Dictionary with user context including engagement levels, verification status, etc.
+        """
+        if message.channel_type != "farcaster":
+            return {"platform": "matrix", "username": message.sender}
+            
+        context = {
+            "platform": "farcaster",
+            "username": message.sender_username or message.sender,
+            "display_name": message.sender_display_name,
+            "fid": message.sender_fid,
+            "follower_count": message.sender_follower_count or 0,
+            "following_count": message.sender_following_count or 0,
+            "verified": bool(message.metadata.get("verified_addresses", {})),
+            "power_badge": message.metadata.get("power_badge", False),
+            "engagement_level": self._calculate_engagement_level(message),
+            "taggable_mention": self.format_user_mention(message),
+        }
+        
+        return context
+
+    def _calculate_engagement_level(self, message: Message) -> str:
+        """
+        Calculate user engagement level based on follower count and other metrics
+        
+        Args:
+            message: Message object with user information
+            
+        Returns:
+            Engagement level: "low", "medium", "high", "influencer"
+        """
+        follower_count = message.sender_follower_count or 0
+        power_badge = message.metadata.get("power_badge", False)
+        
+        if power_badge or follower_count > 10000:
+            return "influencer"
+        elif follower_count > 1000:
+            return "high"
+        elif follower_count > 100:
+            return "medium"
+        else:
+            return "low"
+
+    def get_thread_context(self, message: Message) -> Dict[str, Any]:
+        """
+        Get thread context for a message to understand conversation flow
+        
+        Args:
+            message: Message object
+            
+        Returns:
+            Dictionary with thread context information
+        """
+        if not self.world_state_manager:
+            return {"thread_available": False}
+            
+        world_state = self.world_state_manager.state
+        
+        # For replies, get the thread context
+        if message.reply_to:
+            thread_messages = world_state.threads.get(message.reply_to, [])
+            thread_root = world_state.thread_roots.get(message.reply_to)
+            
+            return {
+                "thread_available": True,
+                "is_reply": True,
+                "thread_length": len(thread_messages),
+                "thread_root": {
+                    "sender": thread_root.sender_username if thread_root else None,
+                    "content_preview": thread_root.content[:100] + "..." if thread_root and len(thread_root.content) > 100 else thread_root.content if thread_root else None,
+                } if thread_root else None,
+                "recent_participants": list(set([msg.sender_username for msg in thread_messages[-5:] if msg.sender_username]))
+            }
+        else:
+            # This is a root message, check if it has replies
+            thread_messages = world_state.threads.get(message.id, [])
+            return {
+                "thread_available": True,
+                "is_reply": False,
+                "has_replies": len(thread_messages) > 1,  # > 1 because root message is included
+                "reply_count": max(0, len(thread_messages) - 1),
+                "participants": list(set([msg.sender_username for msg in thread_messages if msg.sender_username]))
+            }
