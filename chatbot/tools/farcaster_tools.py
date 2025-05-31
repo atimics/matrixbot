@@ -59,20 +59,35 @@ class SendFarcasterPostTool(ToolInterface):
             logger.warning(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
+        # If observer supports scheduling (has a real asyncio.Queue), enqueue; otherwise, execute immediately
+        import asyncio
+        post_q = getattr(context.farcaster_observer, 'post_queue', None)
+        if isinstance(post_q, asyncio.Queue):
+            try:
+                context.farcaster_observer.schedule_post(content, channel)
+                success_msg = "Scheduled Farcaster post via scheduler"
+                logger.info(success_msg)
+                return {
+                    "status": "scheduled",
+                    "message": success_msg,
+                    "content": content,
+                    "channel": channel,
+                    "timestamp": time.time(),
+                }
+            except Exception as e:
+                error_msg = f"Error scheduling Farcaster post: {e}"
+                logger.exception(error_msg)
+                return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+        # Immediate execution fallback
         try:
-            # Schedule the post via observer scheduler to avoid duplicates and rate limits
-            context.farcaster_observer.schedule_post(content, channel)
-            success_msg = "Scheduled Farcaster post via scheduler"
-            logger.info(success_msg)
-            return {
-                "status": "scheduled",
-                "message": success_msg,
-                "content": content,
-                "channel": channel,
-                "timestamp": time.time(),
-            }
+            result = await context.farcaster_observer.post_cast(content, channel)
+            logger.info(f"Farcaster observer post_cast returned: {result}")
+            if result.get("success"):
+                return {"status": "success", **result}
+            else:
+                return {"status": "failure", "error": result.get("error", "unknown"), "timestamp": time.time()}
         except Exception as e:
-            error_msg = f"Error scheduling Farcaster post: {e}"
+            error_msg = f"Error executing send_farcaster_post: {e}"
             logger.exception(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
@@ -137,25 +152,42 @@ class SendFarcasterReplyTool(ToolInterface):
             logger.warning(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
+        import asyncio
+        reply_q = getattr(context.farcaster_observer, 'reply_queue', None)
+        # If scheduling supported, enqueue
+        if isinstance(reply_q, asyncio.Queue):
+            try:
+                context.farcaster_observer.schedule_reply(content, reply_to_hash)
+                success_msg = f"Scheduled Farcaster reply to cast {reply_to_hash}"
+                logger.info(success_msg)
+                # Record scheduling
+                if context.world_state_manager:
+                    context.world_state_manager.add_action_result(
+                        action_type=self.name,
+                        parameters={"content": content, "reply_to_hash": reply_to_hash},
+                        result="scheduled",
+                    )
+                return {
+                    "status": "scheduled",
+                    "message": success_msg,
+                    "reply_to_hash": reply_to_hash,
+                    "content": content,
+                    "timestamp": time.time(),
+                }
+            except Exception as e:
+                error_msg = f"Error scheduling Farcaster reply: {e}"
+                logger.exception(error_msg)
+                return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+        # Fallback immediate execution
         try:
-            # Schedule the reply via observer scheduler to avoid duplicates and rate limits
-            context.farcaster_observer.schedule_reply(content, reply_to_hash)
-            success_msg = f"Scheduled Farcaster reply to cast {reply_to_hash}"
-            logger.info(success_msg)
-            return {
-                "status": "scheduled",
-                "message": success_msg,
-                "reply_to_hash": reply_to_hash,
-                "content": content,
-                "timestamp": time.time(),
-            }
+            result = await context.farcaster_observer.reply_to_cast(content, reply_to_hash)
+            logger.info(f"Farcaster observer reply_to_cast returned: {result}")
+            if result.get("success"):
+                return {"status": "success", **result}
+            else:
+                return {"status": "failure", "error": result.get("error", "unknown"), "timestamp": time.time()}
         except Exception as e:
-            error_msg = f"Error scheduling Farcaster reply: {e}"
-            logger.exception(error_msg)
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
-
-        except Exception as e:
-            error_msg = f"Error executing {self.name}: {str(e)}"
+            error_msg = f"Error executing send_farcaster_reply: {e}"
             logger.exception(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
