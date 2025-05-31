@@ -19,7 +19,7 @@ from ..integrations.farcaster.observer import FarcasterObserver
 from ..integrations.matrix.observer import MatrixObserver
 from ..tools.base import ActionContext
 from ..tools.core_tools import WaitTool
-from ..tools.farcaster_tools import SendFarcasterPostTool, SendFarcasterReplyTool
+from ..tools.farcaster_tools import SendFarcasterPostTool, SendFarcasterReplyTool, LikeFarcasterPostTool, QuoteFarcasterPostTool
 from ..tools.matrix_tools import SendMatrixMessageTool, SendMatrixReplyTool
 from ..tools.registry import ToolRegistry
 
@@ -130,7 +130,9 @@ class ContextAwareOrchestrator:
         if settings.NEYNAR_API_KEY:
             try:
                 self.farcaster_observer = FarcasterObserver(
-                    settings.NEYNAR_API_KEY, settings.FARCASTER_BOT_SIGNER_UUID
+                    settings.NEYNAR_API_KEY, 
+                    settings.FARCASTER_BOT_SIGNER_UUID,
+                    settings.FARCASTER_BOT_FID
                 )
                 await self.farcaster_observer.start()
                 self.world_state.update_system_status({"farcaster_connected": True})
@@ -187,6 +189,9 @@ class ContextAwareOrchestrator:
                     logger.info(
                         f"World state changed, processing cycle {self.cycle_count}"
                     )
+
+                    # Observe external feeds for new content
+                    await self._observe_external_feeds()
 
                     # Get active channels
                     active_channels = self._get_active_channels(current_state)
@@ -339,7 +344,7 @@ class ContextAwareOrchestrator:
 
             # Determine channel details based on action type
             if action_type in ["send_matrix_message", "send_matrix_reply"]:
-                room_id_for_msg = result.get("room_id", channel_id)
+                room_id_for_msg = result.get("room_id") or channel_id
                 channel_type = "matrix"
                 reply_to_id = (
                     result.get("reply_to_event_id")
@@ -347,7 +352,7 @@ class ContextAwareOrchestrator:
                     else None
                 )
             elif action_type in ["send_farcaster_post", "send_farcaster_reply"]:
-                room_id_for_msg = result.get("channel", channel_id)
+                room_id_for_msg = result.get("channel") or channel_id or "farcaster:home"
                 channel_type = "farcaster"
                 reply_to_id = (
                     result.get("reply_to")
@@ -359,6 +364,11 @@ class ContextAwareOrchestrator:
                     f"Unknown action type for bot message recording: {action_type}"
                 )
                 return
+
+            # Ensure we always have a valid room_id_for_msg
+            if not room_id_for_msg:
+                room_id_for_msg = f"{channel_type}:unknown"
+                logger.warning(f"No channel ID found for {action_type}, using fallback: {room_id_for_msg}")
 
             # 1. Add to WorldStateManager
             from chatbot.core.world_state import Message as WorldStateMessage
@@ -395,6 +405,35 @@ class ContextAwareOrchestrator:
         except Exception as e:
             logger.error(f"Error recording bot sent message: {e}")
             # Don't re-raise - this is supplementary functionality
+
+    async def _observe_external_feeds(self) -> None:
+        """
+        Observe external feeds (Farcaster) for new content.
+        
+        This includes:
+        - Popular channel feeds (dev, warpcast, base)
+        - Notifications (replies to AI's casts, reactions, etc.)
+        - Mentions and replies to the AI bot
+        """
+        if self.farcaster_observer:
+            try:
+                # Observe popular Farcaster channels, home feed, and notifications
+                new_messages = await self.farcaster_observer.observe_feeds(
+                    channels=["dev", "warpcast", "base"],  # Popular channels
+                    include_notifications=True  # Include replies and mentions to AI
+                )
+                
+                # Add new messages to world state
+                for message in new_messages:
+                    self.world_state.add_message(message.channel_id, message)
+                    
+                # Trigger state change if we got new messages
+                if new_messages:
+                    self.trigger_state_change()
+                    logger.info(f"Observed {len(new_messages)} new Farcaster messages (including notifications)")
+                    
+            except Exception as e:
+                logger.error(f"Error observing Farcaster feeds: {e}")
 
     def _get_active_channels(self, world_state: Dict[str, Any]) -> List[str]:
         """Get list of channels with recent activity."""
@@ -434,6 +473,8 @@ class ContextAwareOrchestrator:
         # Register Farcaster tools
         self.tool_registry.register_tool(SendFarcasterPostTool())
         self.tool_registry.register_tool(SendFarcasterReplyTool())
+        self.tool_registry.register_tool(LikeFarcasterPostTool())
+        self.tool_registry.register_tool(QuoteFarcasterPostTool())
 
         # Update AI engine with tool descriptions
         self.ai_engine.update_system_prompt_with_tools(self.tool_registry)

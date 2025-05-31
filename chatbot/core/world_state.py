@@ -133,7 +133,7 @@ class WorldState:
         all_messages = []
         for channel in self.channels.values():
             all_messages.extend(channel.recent_messages)
-        return sorted(all_messages, key=lambda x: x.timestamp)
+        return sorted(all_messages, key=lambda x: x.timestamp or 0)
 
     def to_json(self) -> str:
         """Convert world state to JSON for AI consumption"""
@@ -174,8 +174,8 @@ class WorldState:
         ]
 
         # Sort by timestamp
-        recent_messages.sort(key=lambda x: x.timestamp)
-        recent_actions.sort(key=lambda x: x.timestamp)
+        recent_messages.sort(key=lambda x: x.timestamp or 0)
+        recent_actions.sort(key=lambda x: x.timestamp or 0)
 
         return {
             "recent_messages": [asdict(msg) for msg in recent_messages],
@@ -222,6 +222,11 @@ class WorldStateManager:
 
     def add_message(self, channel_id: str, message: Message):
         """Add a new message to a channel"""
+        # Handle None channel_id gracefully
+        if not channel_id:
+            channel_id = f"{message.channel_type}:unknown"
+            logger.warning(f"None channel_id provided, using fallback: {channel_id}")
+        
         if channel_id not in self.state.channels:
             # Auto-create channel if it doesn't exist
             logger.info(f"WorldState: Auto-creating unknown channel {channel_id}")
@@ -299,20 +304,67 @@ class WorldStateManager:
         return self.state.get_all_messages()
 
     def add_action_history(self, action_data: Dict[str, Any]):
-        """Add action to history"""
+        """Add a new action to the history"""
         action = ActionHistory(
-            action_type=action_data["action_type"],
-            parameters=action_data["parameters"],
-            result=action_data["result"],
-            timestamp=action_data["timestamp"],
+            action_type=action_data.get("action_type", "unknown"),
+            parameters=action_data.get("parameters", {}),
+            result=action_data.get("result", ""),
+            timestamp=time.time(),
         )
 
         self.state.action_history.append(action)
 
-        # Keep only last 100 actions
+        # Limit action history size
         if len(self.state.action_history) > 100:
             self.state.action_history = self.state.action_history[-100:]
 
-        self.state.last_update = time.time()
+    def has_replied_to_cast(self, cast_hash: str) -> bool:
+        """
+        Check if the AI has already replied to a specific cast.
+        
+        Args:
+            cast_hash: The hash of the cast to check
+            
+        Returns:
+            True if the AI has already replied to this cast
+        """
+        for action in self.state.action_history:
+            if action.action_type == "send_farcaster_reply":
+                reply_to_hash = action.parameters.get("reply_to_hash")
+                if reply_to_hash == cast_hash:
+                    return True
+        return False
 
-        logger.info(f"Added action history: {action_data['action_type']}")
+    def has_quoted_cast(self, cast_hash: str) -> bool:
+        """
+        Check if the AI has already quoted a specific cast.
+        
+        Args:
+            cast_hash: The hash of the cast to check
+            
+        Returns:
+            True if the AI has already quoted this cast
+        """
+        for action in self.state.action_history:
+            if action.action_type == "quote_farcaster_post":
+                quoted_cast_hash = action.parameters.get("quoted_cast_hash")
+                if quoted_cast_hash == cast_hash:
+                    return True
+        return False
+
+    def has_liked_cast(self, cast_hash: str) -> bool:
+        """
+        Check if the AI has already liked a specific cast.
+        
+        Args:
+            cast_hash: The hash of the cast to check
+            
+        Returns:
+            True if the AI has already liked this cast
+        """
+        for action in self.state.action_history:
+            if action.action_type == "like_farcaster_post":
+                liked_cast_hash = action.parameters.get("cast_hash")
+                if liked_cast_hash == cast_hash:
+                    return True
+        return False
