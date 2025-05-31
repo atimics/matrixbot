@@ -759,6 +759,167 @@ class FarcasterObserver:
             logger.error(f"Error posting quote cast: {e}")
             return {"success": False, "error": str(e)}
 
+    async def follow_user(self, fid: int) -> Dict[str, Any]:
+        """
+        Follow a Farcaster user by FID
+        """
+        if not self.api_key:
+            return {"success": False, "error": "No API key configured"}
+        try:
+            async with httpx.AsyncClient() as client:
+                headers = {"accept": "application/json", "api_key": self.api_key, "content-type": "application/json"}
+                payload = {"signer_uuid": self.signer_uuid, "fid": fid}
+                response = await client.post(f"{self.base_url}/farcaster/follow", headers=headers, json=payload)
+                self._update_rate_limits(response)
+                if response.status_code == 200:
+                    logger.info(f"Successfully followed user: {fid}")
+                    return {"success": True, "fid": fid}
+                else:
+                    error = f"API error: {response.status_code}"
+                    logger.error(f"Failed to follow user: {error}")
+                    return {"success": False, "error": error}
+        except Exception as e:
+            logger.error(f"Error following user: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def unfollow_user(self, fid: int) -> Dict[str, Any]:
+        """
+        Unfollow a Farcaster user by FID
+        """
+        if not self.api_key:
+            return {"success": False, "error": "No API key configured"}
+        try:
+            async with httpx.AsyncClient() as client:
+                headers = {"accept": "application/json", "api_key": self.api_key, "content-type": "application/json"}
+                payload = {"signer_uuid": self.signer_uuid, "fid": fid}
+                response = await client.post(f"{self.base_url}/farcaster/unfollow", headers=headers, json=payload)
+                self._update_rate_limits(response)
+                if response.status_code == 200:
+                    logger.info(f"Successfully unfollowed user: {fid}")
+                    return {"success": True, "fid": fid}
+                else:
+                    error = f"API error: {response.status_code}"
+                    logger.error(f"Failed to unfollow user: {error}")
+                    return {"success": False, "error": error}
+        except Exception as e:
+            logger.error(f"Error unfollowing user: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def send_dm(self, fid: int, content: str) -> Dict[str, Any]:
+        """
+        Send a direct message to a Farcaster user
+        """
+        if not self.api_key:
+            return {"success": False, "error": "No API key configured"}
+        try:
+            async with httpx.AsyncClient() as client:
+                headers = {"accept": "application/json", "api_key": self.api_key, "content-type": "application/json"}
+                payload = {"signer_uuid": self.signer_uuid, "recipient_fid": fid, "text": content}
+                response = await client.post(f"{self.base_url}/farcaster/dm", headers=headers, json=payload)
+                self._update_rate_limits(response)
+                if response.status_code == 200:
+                    data = response.json()
+                    msg_id = data.get("message", {}).get("id", "")
+                    logger.info(f"Successfully sent DM to {fid}: {msg_id}")
+                    return {"success": True, "message_id": msg_id}
+                else:
+                    error = f"API error: {response.status_code}"
+                    logger.error(f"Failed to send DM: {error}")
+                    return {"success": False, "error": error}
+        except Exception as e:
+            logger.error(f"Error sending DM: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def follow_user(self, fid: int) -> Dict[str, Any]:
+        """
+        Follow a Farcaster user by FID
+
+        Args:
+            fid: Farcaster user ID to follow
+
+        Returns:
+            Result dict with success status
+        """
+        if not self.api_key:
+            return {"success": False, "error": "No API key configured"}
+        try:
+            async with httpx.AsyncClient() as client:
+                headers = {"accept": "application/json", "api_key": self.api_key, "content-type": "application/json"}
+                payload = {"signer_uuid": self.signer_uuid, "fid": fid}
+                response = await client.post(f"{self.base_url}/farcaster/follow", headers=headers, json=payload)
+                self._update_rate_limits(response)
+                if response.status_code == 200:
+                    logger.info(f"Successfully followed user: {fid}")
+                    return {"success": True, "fid": fid}
+                else:
+                    error = f"API error: {response.status_code}"
+                    logger.error(f"Failed to follow user: {error}")
+                    return {"success": False, "error": error}
+        except Exception as e:
+            logger.error(f"Error following user: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def unfollow_user(self, fid: int) -> Dict[str, Any]:
+        """
+        Unfollow a Farcaster user by FID
+
+        Args:
+            fid: Farcaster user ID to unfollow
+
+        Returns:
+            Result dict with success status
+        """
+        if not self.api_key:
+            return {"success": False, "error": "No API key configured"}
+        try:
+            async with httpx.AsyncClient() as client:
+                headers = {"accept": "application/json", "api_key": self.api_key, "content-type": "application/json"}
+                payload = {"signer_uuid": self.signer_uuid, "fid": fid}
+                response = await client.post(f"{self.base_url}/farcaster/unfollow", headers=headers, json=payload)
+                self._update_rate_limits(response)
+                if response.status_code == 200:
+                    logger.info(f"Successfully unfollowed user: {fid}")
+                    return {"success": True, "fid": fid}
+                else:
+                    error = f"API error: {response.status_code}"
+                    logger.error(f"Failed to unfollow user: {error}")
+                    return {"success": False, "error": error}
+        except Exception as e:
+            logger.error(f"Error unfollowing user: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def send_dm(self, fid: int, content: str) -> Dict[str, Any]:
+        """
+        Send a direct message to a Farcaster user
+
+        Args:
+            fid: Recipient Farcaster user ID
+            content: Text content of the DM
+
+        Returns:
+            Result dict with success status and message id
+        """
+        if not self.api_key:
+            return {"success": False, "error": "No API key configured"}
+        try:
+            async with httpx.AsyncClient() as client:
+                headers = {"accept": "application/json", "api_key": self.api_key, "content-type": "application/json"}
+                payload = {"signer_uuid": self.signer_uuid, "recipient_fid": fid, "text": content}
+                response = await client.post(f"{self.base_url}/farcaster/dm", headers=headers, json=payload)
+                self._update_rate_limits(response)
+                if response.status_code == 200:
+                    data = response.json()
+                    msg_id = data.get("message", {}).get("id", "")
+                    logger.info(f"Successfully sent DM to {fid}: {msg_id}")
+                    return {"success": True, "message_id": msg_id}
+                else:
+                    error = f"API error: {response.status_code}"
+                    logger.error(f"Failed to send DM: {error}")
+                    return {"success": False, "error": error}
+        except Exception as e:
+            logger.error(f"Error sending DM: {e}")
+            return {"success": False, "error": str(e)}
+
     def _update_rate_limits(self, response: httpx.Response) -> None:
         """
         Update rate limit tracking from API response headers

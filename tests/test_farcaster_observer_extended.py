@@ -119,3 +119,34 @@ async def test_quote_and_like_methods(observer, monkeypatch):
     assert res_quote['quoted_cast'] == 'cast123'
 
 # Note: More tests can be added for _observe_user_feed, _observe_channel_feed, _observe_notifications, _observe_mentions using similar monkeypatch patterns.
+
+@pytest.mark.asyncio
+async def test_follow_unfollow_and_dm_methods(observer, monkeypatch):
+    """Test follow_user, unfollow_user, and send_dm observer methods"""
+    # Dummy HTTP client to return predefined DummyResponse
+    class DummyClient:
+        def __init__(self, response):
+            self._response = response
+        async def __aenter__(self): return self
+        async def __aexit__(self, exc_type, exc, tb): pass
+        async def post(self, url, headers=None, json=None):
+            return self._response
+
+    # Follow user
+    res_follow = DummyResponse(status_code=200)
+    monkeypatch.setattr(httpx, 'AsyncClient', lambda: DummyClient(res_follow))
+    out1 = await observer.follow_user(999)
+    assert out1['success'] is True and out1['fid'] == 999
+
+    # Unfollow user
+    res_unfollow = DummyResponse(status_code=200)
+    monkeypatch.setattr(httpx, 'AsyncClient', lambda: DummyClient(res_unfollow))
+    out2 = await observer.unfollow_user(999)
+    assert out2['success'] is True and out2['fid'] == 999
+
+    # Send direct message
+    dm_payload = {'message': {'id': 'dm123'}}
+    res_dm = DummyResponse(status_code=200, json_data=dm_payload)
+    monkeypatch.setattr(httpx, 'AsyncClient', lambda: DummyClient(res_dm))
+    out3 = await observer.send_dm(1000, 'Hello DM')
+    assert out3['success'] is True and out3['message_id'] == 'dm123'

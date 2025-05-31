@@ -382,3 +382,100 @@ class QuoteFarcasterPostTool(ToolInterface):
             error_msg = f"Error executing {self.name}: {str(e)}"
             logger.exception(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+class FollowFarcasterUserTool(ToolInterface):
+    """
+    Tool for following a Farcaster user.
+    """
+    @property
+    def name(self) -> str:
+        return "follow_farcaster_user"
+
+    @property
+    def description(self) -> str:
+        return "Follow a Farcaster user by FID."
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {"fid": "integer - The Farcaster ID of the user to follow"}
+
+    async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
+        logger.info(f"Executing tool '{self.name}' with params: {params}")
+        if not context.farcaster_observer:
+            err = "Farcaster integration not configured."
+            logger.error(err)
+            return {"status": "failure", "error": err, "timestamp": time.time()}
+        fid = params.get("fid")
+        if fid is None:
+            err = "Missing required parameter: fid"
+            logger.error(err)
+            return {"status": "failure", "error": err, "timestamp": time.time()}
+        result = await context.farcaster_observer.follow_user(fid)
+        if result.get("success"):
+            return {"status": "success", "fid": fid, "timestamp": time.time()}
+        return {"status": "failure", "error": result.get("error"), "timestamp": time.time()}
+
+class UnfollowFarcasterUserTool(ToolInterface):
+    """
+    Tool for unfollowing a Farcaster user.
+    """
+    @property
+    def name(self) -> str:
+        return "unfollow_farcaster_user"
+
+    @property
+    def description(self) -> str:
+        return "Unfollow a Farcaster user by FID."
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {"fid": "integer - The Farcaster ID of the user to unfollow"}
+
+    async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
+        logger.info(f"Executing tool '{self.name}' with params: {params}")
+        if not context.farcaster_observer:
+            err = "Farcaster integration not configured."
+            logger.error(err)
+            return {"status": "failure", "error": err, "timestamp": time.time()}
+        fid = params.get("fid")
+        if fid is None:
+            err = "Missing required parameter: fid"
+            logger.error(err)
+            return {"status": "failure", "error": err, "timestamp": time.time()}
+        result = await context.farcaster_observer.unfollow_user(fid)
+        if result.get("success"):
+            return {"status": "success", "fid": fid, "timestamp": time.time()}
+        return {"status": "failure", "error": result.get("error"), "timestamp": time.time()}
+
+class SendFarcasterDMTool(ToolInterface):
+    """
+    Tool for sending a direct message (DM) to a Farcaster user.
+    """
+    @property
+    def name(self) -> str:
+        return "send_farcaster_dm"
+
+    @property
+    def description(self) -> str:
+        return "Send a direct message to a Farcaster user by FID."
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {"fid": "integer - The Farcaster ID of the recipient", "content": "string - The DM content"}
+
+    async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
+        logger.info(f"Executing tool '{self.name}' with params: {params}")
+        if not context.farcaster_observer:
+            err = "Farcaster integration not configured."
+            logger.error(err)
+            return {"status": "failure", "error": err, "timestamp": time.time()}
+        fid = params.get("fid")
+        content = params.get("content")
+        if fid is None or not content:
+            err = "Missing required parameters: fid and content"
+            logger.error(err)
+            return {"status": "failure", "error": err, "timestamp": time.time()}
+        result = await context.farcaster_observer.send_dm(fid, content)
+        if result.get("success"):
+            return {"status": "success", "message_id": result.get("message_id"), "timestamp": time.time()}
+        return {"status": "failure", "error": result.get("error"), "timestamp": time.time()}

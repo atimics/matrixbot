@@ -19,7 +19,15 @@ from ..integrations.farcaster.observer import FarcasterObserver
 from ..integrations.matrix.observer import MatrixObserver
 from ..tools.base import ActionContext
 from ..tools.core_tools import WaitTool
-from ..tools.farcaster_tools import SendFarcasterPostTool, SendFarcasterReplyTool, LikeFarcasterPostTool, QuoteFarcasterPostTool
+from ..tools.farcaster_tools import (
+    SendFarcasterPostTool,
+    SendFarcasterReplyTool,
+    LikeFarcasterPostTool,
+    QuoteFarcasterPostTool,
+    FollowFarcasterUserTool,
+    UnfollowFarcasterUserTool,
+    SendFarcasterDMTool,
+)
 from ..tools.matrix_tools import SendMatrixMessageTool, SendMatrixReplyTool
 from ..tools.registry import ToolRegistry
 
@@ -476,6 +484,10 @@ class ContextAwareOrchestrator:
         self.tool_registry.register_tool(SendFarcasterReplyTool())
         self.tool_registry.register_tool(LikeFarcasterPostTool())
         self.tool_registry.register_tool(QuoteFarcasterPostTool())
+        # Follow/unfollow and direct message tools
+        self.tool_registry.register_tool(FollowFarcasterUserTool())
+        self.tool_registry.register_tool(UnfollowFarcasterUserTool())
+        self.tool_registry.register_tool(SendFarcasterDMTool())
 
         # Update AI engine with tool descriptions
         self.ai_engine.update_system_prompt_with_tools(self.tool_registry)
