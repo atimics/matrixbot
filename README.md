@@ -587,7 +587,7 @@ This project is licensed under the Creative Commons Attribution-NonCommercial 4.
 
 For commercial licensing, partnerships, or any revenue-generating use of this software, please contact us for permission. We're open to discussing commercial licensing terms for qualified use cases.
 
-**Contact**: @ratimics
+**Contact**: github.com/cenetex
 
 See the [LICENSE](LICENSE) file for full terms and conditions.
 
