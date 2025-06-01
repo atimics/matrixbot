@@ -100,32 +100,41 @@ class GenerateImageTool(ToolInterface):
                     service_used = "replicate"
                     logger.info(f"Generated image using Replicate: {prompt[:50]}...")
 
-                    if image_url:
-                        result = {
-                            "status": "success",
-                            "s3_image_url": image_url,  # Replicate returns direct URL
-                            "prompt_used": prompt,
-                            "service_used": service_used,
-                            "aspect_ratio": aspect_ratio,
-                        }
+                    if image_url and hasattr(context, "s3_service"):
+                        # Ensure the image is uploaded to S3 and return CloudFront URL
+                        try:
+                            s3_url = await context.s3_service.ensure_s3_url(image_url)
+                            
+                            if s3_url:
+                                result = {
+                                    "status": "success",
+                                    "s3_image_url": s3_url,  # Always S3/CloudFront URL
+                                    "prompt_used": prompt,
+                                    "service_used": service_used,
+                                    "aspect_ratio": aspect_ratio,
+                                }
 
-                        # Record this action result in world state for AI visibility
-                        context.world_state_manager.add_action_result(
-                            action_type="generate_image",
-                            parameters={"prompt": prompt, "aspect_ratio": aspect_ratio},
-                            result=f"Generated image using {service_used}: {image_url}"
-                        )
+                                # Record this action result in world state for AI visibility
+                                context.world_state_manager.add_action_result(
+                                    action_type="generate_image",
+                                    parameters={"prompt": prompt, "aspect_ratio": aspect_ratio},
+                                    result=f"Generated image using {service_used}, uploaded to S3: {s3_url}"
+                                )
 
-                        # Record in generated media library
-                        context.world_state_manager.record_generated_media(
-                            media_url=image_url,
-                            media_type="image",
-                            prompt=prompt,
-                            service_used=service_used,
-                            aspect_ratio=aspect_ratio
-                        )
+                                # Record in generated media library
+                                context.world_state_manager.record_generated_media(
+                                    media_url=s3_url,
+                                    media_type="image",
+                                    prompt=prompt,
+                                    service_used=service_used,
+                                    aspect_ratio=aspect_ratio
+                                )
 
-                        return result
+                                return result
+                            else:
+                                logger.error("Failed to ensure image is on S3")
+                        except Exception as s3_error:
+                            logger.error(f"Failed to upload Replicate image to S3: {s3_error}")
                 except Exception as e:
                     logger.error(f"Replicate image generation failed: {e}")
 
@@ -138,7 +147,7 @@ class GenerateImageTool(ToolInterface):
 
                     # Upload to S3
                     s3_url = await context.s3_service.upload_image_data(
-                        image_data, filename, content_type="image/png"
+                        image_data, filename
                     )
 
                     if s3_url:
@@ -280,7 +289,7 @@ class GenerateVideoTool(ToolInterface):
                     filename = f"generated_video_{timestamp}.mp4"
 
                     s3_url = await context.s3_service.upload_image_data(
-                        video_data, filename, content_type="video/mp4"
+                        video_data, filename
                     )
 
                     if s3_url:
