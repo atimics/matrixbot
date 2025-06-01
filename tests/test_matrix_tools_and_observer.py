@@ -25,7 +25,7 @@ async def test_send_matrix_reply_tool_success():
     context = ActionContext(matrix_observer=dummy_obs)
     tool = SendMatrixReplyTool()
 
-    params = {"channel_id": "!room:server", "content": "Hello!", "reply_to_id": "origevt"}
+    params = {"channel_id": "!room:server", "content": "Hello!", "reply_to_id": "origevt", "format_as_markdown": False}
     result = await tool.execute(params, context)
 
     assert result["status"] == "success"
@@ -52,7 +52,7 @@ async def test_send_matrix_message_tool_success():
 
     context = ActionContext(matrix_observer=dummy_obs)
     tool = SendMatrixMessageTool()
-    params = {"channel_id": "!room:server", "content": "Announcement"}
+    params = {"channel_id": "!room:server", "content": "Announcement", "format_as_markdown": False}
     result = await tool.execute(params, context)
 
     assert result["status"] == "success"

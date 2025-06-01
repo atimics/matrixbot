@@ -544,10 +544,10 @@ class ContextAwareOrchestrator:
             return
 
         # Channel-specific rate limiting for messaging tools
-        if tool_name in ['SendMatrixMessageTool', 'SendMatrixReplyTool', 'SendFarcasterPostTool', 
-                        'SendFarcasterReplyTool', 'SendFarcasterDMTool']:
+        if tool_name in ['send_matrix_message', 'send_matrix_reply', 'send_farcaster_post', 
+                        'send_farcaster_reply', 'send_farcaster_dm']:
             channel_id = params.get("channel_id", "unknown")
-            channel_type = "matrix" if "Matrix" in tool_name else "farcaster"
+            channel_type = "matrix" if "matrix" in tool_name else "farcaster"
             
             can_send, channel_limit_reason = self.rate_limiter.can_send_to_channel(
                 channel_id, channel_type, current_time
@@ -572,8 +572,8 @@ class ContextAwareOrchestrator:
         self.rate_limiter.record_action(tool_name, current_time)
         
         # If it's a channel message, record that too
-        if tool_name in ['SendMatrixMessageTool', 'SendMatrixReplyTool', 'SendFarcasterPostTool', 
-                        'SendFarcasterReplyTool', 'SendFarcasterDMTool']:
+        if tool_name in ['send_matrix_message', 'send_matrix_reply', 'send_farcaster_post', 
+                        'send_farcaster_reply', 'send_farcaster_dm']:
             channel_id = params.get("channel_id", "unknown")
             self.rate_limiter.record_channel_message(channel_id, current_time)
 

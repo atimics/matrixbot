@@ -116,7 +116,8 @@ class TestMatrixTools:
         params = {
             "channel_id": "!test:example.com",
             "content": "Test reply",
-            "reply_to_id": "original_event"
+            "reply_to_id": "original_event",
+            "format_as_markdown": False
         }
         
         result = await tool.execute(params, context)
@@ -146,7 +147,8 @@ class TestMatrixTools:
         context = ActionContext(matrix_observer=mock_observer)
         params = {
             "channel_id": "!test:example.com",
-            "content": "Test message"
+            "content": "Test message",
+            "format_as_markdown": False
         }
         
         result = await tool.execute(params, context)

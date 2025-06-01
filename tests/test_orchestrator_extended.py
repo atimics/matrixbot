@@ -138,7 +138,8 @@ class TestOrchestratorExtended:
         mock_action.parameters = {
             "channel_id": "test_room",  # Updated parameter name for new tool interface
             "content": "AI generated response",
-            "reply_to_id": "original_event"  # Updated parameter name for new tool interface
+            "reply_to_id": "original_event",  # Updated parameter name for new tool interface
+            "format_as_markdown": False
         }
         
         # Execute action
@@ -199,6 +200,13 @@ class TestOrchestratorExtended:
             "reply_to_event_id": "original_event",
             "sent_content": "Test response"  # Required for AI Blindness Fix
         }
+        mock_matrix.send_formatted_reply.return_value = {
+            "success": True, 
+            "event_id": "event_123",
+            "room_id": "test_room",
+            "reply_to_event_id": "original_event",
+            "sent_content": "Test response"  # Required for AI Blindness Fix
+        }
         
         # Set observer directly on the orchestrator
         self.orchestrator.matrix_observer = mock_matrix
@@ -209,7 +217,8 @@ class TestOrchestratorExtended:
         mock_action.parameters = {
             "channel_id": "test_room",  # Updated parameter name for new tool interface
             "content": "Test response",
-            "reply_to_id": "original_event"  # Updated parameter name for new tool interface
+            "reply_to_id": "original_event",  # Updated parameter name for new tool interface
+            "format_as_markdown": False
         }
         
         # Execute action 
