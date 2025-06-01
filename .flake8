@@ -1,0 +1,20 @@
+[flake8]
+max-line-length = 88
+extend-ignore = 
+    E203,  # whitespace before ':' (conflicts with black)
+    E501,  # line too long (handled by black)
+    W503,  # line break before binary operator (conflicts with black)
+    W291,  # trailing whitespace (handled by black)
+    W293,  # blank line contains whitespace (handled by black)
+exclude = 
+    .git,
+    __pycache__,
+    .venv,
+    venv,
+    build,
+    dist,
+    *.egg-info,
+    .pytest_cache,
+    htmlcov
+per-file-ignores =
+    __init__.py:F401  # unused imports in __init__.py files are often intentional

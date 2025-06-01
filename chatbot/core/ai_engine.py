@@ -89,6 +89,15 @@ Check system_status.rate_limits before taking actions that use external APIs:
 - "matrix_homeserver": Matrix server rate limits
 If remaining requests are low, prefer wait actions or prioritize most important responses.
 
+RATE LIMITING AWARENESS:
+* Your actions are subject to sophisticated rate limiting to ensure responsible platform usage
+* Action-specific limits: Each tool type has hourly limits (e.g., 100 Matrix messages, 50 Farcaster posts)
+* Channel-specific limits: Each channel has messaging limits per hour
+* Adaptive limits: During high activity periods, processing may slow down automatically
+* Burst detection: Rapid consecutive actions trigger cooldown periods
+* When rate limited, prefer Wait actions or focus on highest-priority responses only
+* Rate limit status is logged periodically - failed actions will indicate rate limiting
+
 You should respond with JSON in this format:
 {
   "observations": "What you notice about the current state",

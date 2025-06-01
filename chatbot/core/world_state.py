@@ -1,13 +1,31 @@
 #!/usr/bin/env python3
 """
-World State Management
+World State Management System
 
-This module manages the current state of the world that the AI observes and acts upon.
-The world state includes:
-- Matrix channels and recent messages
-- Farcaster feed and recent posts  
-- System status and capabilities
-- Recent action history
+This module implements a sophisticated world state management system that maintains
+comprehensive awareness of all platform activities, conversations, and bot interactions.
+The world state serves as the central knowledge base for AI decision-making and provides
+context-aware conversation management across multiple platforms.
+
+Key Features:
+- Multi-platform message and channel management (Matrix, Farcaster)
+- Advanced message deduplication across channels and platforms
+- Intelligent conversation thread tracking and context preservation
+- Rich user profiling with social media metadata
+- Comprehensive action history with deduplication
+- Rate limiting integration and enforcement
+- AI payload optimization for efficient token usage
+- Real-time activity monitoring and analytics
+
+Architecture:
+- Message: Unified message model supporting platform-specific metadata
+- Channel: Comprehensive channel/room representation with activity tracking
+- ActionHistory: Complete audit trail of bot actions and results
+- WorldState: Central state container with intelligent organization
+- WorldStateManager: High-level interface for state manipulation and querying
+
+The system is designed for high performance with automatic cleanup, memory management,
+and optimized data structures for fast access and minimal resource usage.
 """
 
 import asyncio
@@ -22,7 +40,42 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class Message:
-    """Represents a message in any channel"""
+    """
+    Represents a unified message from any supported platform with comprehensive metadata.
+    
+    This class provides a standardized interface for messages across Matrix and Farcaster
+    platforms while preserving platform-specific information in a structured way.
+    
+    Attributes:
+        id: Unique message identifier (event_id for Matrix, cast hash for Farcaster)
+        channel_id: Channel/room identifier where the message was posted
+        channel_type: Platform type ('matrix' or 'farcaster')
+        sender: Display name (Matrix) or username (Farcaster) of the message author
+        content: The text content of the message
+        timestamp: Unix timestamp when the message was created
+        reply_to: Optional ID of the message this is replying to
+        
+    Enhanced Social Media Attributes:
+        sender_username: Platform-specific username for tagging (@username)
+        sender_display_name: Human-readable display name
+        sender_fid: Farcaster ID number for user identification
+        sender_pfp_url: Profile picture URL for rich display
+        sender_bio: User biography/description text
+        sender_follower_count: Number of followers (social influence metric)
+        sender_following_count: Number of accounts the user follows
+        
+    Platform Metadata:
+        metadata: Dictionary containing additional platform-specific data such as:
+                 - power_badge: Whether user has verification/power badge
+                 - is_bot: Whether the sender is identified as a bot
+                 - cast_type: Type of Farcaster cast (cast, recast, etc.)
+                 - encryption_info: Matrix encryption details
+                 - edit_history: Message edit tracking
+    
+    Methods:
+        to_ai_summary_dict(): Returns optimized version for AI consumption
+        is_from_bot(): Checks if message originated from the bot itself
+    """
 
     id: str
     channel_id: str
@@ -47,7 +100,20 @@ class Message:
     )  # Additional platform-specific data
 
     def to_ai_summary_dict(self) -> Dict[str, Any]:
-        """Return a summarized version for AI payload to reduce token usage."""
+        """
+        Return a summarized version of the message optimized for AI consumption.
+        
+        This method reduces token usage by truncating long content and focusing on
+        the most relevant metadata for AI decision-making. It preserves essential
+        context while removing verbose or unnecessary details.
+        
+        Returns:
+            Dictionary with key message information optimized for AI prompts:
+            - Truncated content (250 chars max)
+            - Essential user identification
+            - Key social signals (follower count, verification status)
+            - Platform-specific flags (bot status, power badges)
+        """
         return {
             "id": self.id,
             "channel_id": self.channel_id,
@@ -73,7 +139,23 @@ class Message:
     def is_from_bot(
         self, bot_fid: Optional[str] = None, bot_username: Optional[str] = None
     ) -> bool:
-        """Check if this message is from the bot itself."""
+        """
+        Check if this message is from the bot itself.
+        
+        This method supports multiple identification strategies to handle different
+        platform identity mechanisms and edge cases in user identification.
+        
+        Args:
+            bot_fid: Bot's Farcaster ID for precise identification
+            bot_username: Bot's username for fallback identification
+            
+        Returns:
+            True if the message originated from the bot, False otherwise
+            
+        Note:
+            Uses multiple matching strategies to handle platform differences
+            and ensure reliable bot message detection for conversation context.
+        """
         if bot_fid and str(self.sender_fid) == str(bot_fid):
             return True
         if bot_username and (
@@ -85,7 +167,34 @@ class Message:
 
 @dataclass
 class Channel:
-    """Represents a communication channel with full metadata"""
+    """
+    Represents a communication channel with comprehensive metadata and activity tracking.
+    
+    This class provides a unified interface for channels/rooms across different platforms
+    while maintaining platform-specific details and providing intelligent activity analysis.
+    
+    Attributes:
+        id: Unique channel identifier (room ID for Matrix, channel ID for Farcaster)
+        type: Platform type ('matrix' or 'farcaster')
+        name: Human-readable channel name or title
+        recent_messages: List of recent Message objects with automatic size management
+        last_checked: Unix timestamp of last observation cycle
+        
+    Matrix-Specific Attributes:
+        canonical_alias: Primary room alias (#room:server.com)
+        alt_aliases: List of alternative room aliases
+        topic: Room topic/description text
+        avatar_url: Room avatar image URL
+        member_count: Current number of room members
+        encrypted: Whether the room uses end-to-end encryption
+        public: Whether the room is publicly joinable
+        power_levels: Dictionary mapping user IDs to power levels
+        creation_time: Unix timestamp when the room was created
+        
+    Methods:
+        get_activity_summary(): Provides comprehensive activity analysis
+        __post_init__(): Performs post-initialization validation and setup
+    """
 
     id: str  # Room ID for Matrix, channel ID for Farcaster
     type: str  # 'matrix' or 'farcaster'
@@ -105,10 +214,35 @@ class Channel:
     creation_time: Optional[float] = None  # When room was created
 
     def __post_init__(self):
+        """
+        Perform post-initialization validation and setup.
+        
+        This method can be extended to add validation logic, default value
+        assignment, or other initialization tasks that require the full object state.
+        """
         pass
 
     def get_activity_summary(self) -> Dict[str, Any]:
-        """Get a summary of recent channel activity with timestamp range."""
+        """
+        Generate a comprehensive summary of recent channel activity.
+        
+        This method provides detailed analytics about channel engagement, user activity,
+        and temporal patterns that can inform AI decision-making about channel priority
+        and engagement strategies.
+        
+        Returns:
+            Dictionary containing:
+            - message_count: Total number of recent messages
+            - last_activity: Timestamp of most recent message
+            - last_message: Preview of the most recent message content
+            - last_sender: Username of the most recent message author
+            - active_users: List of recently active usernames (top 5)
+            - summary: Human-readable activity summary
+            - timestamp_range: Detailed temporal analysis including:
+                - start: Timestamp of oldest tracked message
+                - end: Timestamp of newest tracked message
+                - span_hours: Duration of activity period in hours
+        """
         if not self.recent_messages:
             return {
                 "message_count": 0,
@@ -145,7 +279,25 @@ class Channel:
 
 @dataclass
 class ActionHistory:
-    """Represents a completed action"""
+    """
+    Represents a completed or scheduled action with comprehensive tracking.
+    
+    This class maintains a complete audit trail of bot actions, enabling deduplication,
+    performance monitoring, and intelligent decision-making about future actions.
+    
+    Attributes:
+        action_type: Type of action performed (e.g., 'send_farcaster_reply', 'like_farcaster_post')
+        parameters: Dictionary of parameters used for the action execution
+        result: Result or status of the action ('success', 'failure', 'scheduled', etc.)
+        timestamp: Unix timestamp when the action was completed or updated
+        action_id: Unique identifier for tracking and updating scheduled actions
+        
+    Usage:
+        - Deduplication: Prevents duplicate likes, follows, and replies
+        - Performance Monitoring: Tracks success rates and execution times
+        - State Consistency: Ensures actions are properly recorded and updated
+        - AI Context: Provides historical context for future decision-making
+    """
 
     action_type: str
     parameters: Dict[str, Any]
@@ -155,10 +307,45 @@ class ActionHistory:
 
 
 class WorldState:
-    """The complete observable state of the world"""
+    """
+    The complete observable state of the world with advanced management capabilities.
+    
+    This class serves as the central knowledge base for the AI system, maintaining
+    comprehensive awareness of all platform activities, conversations, and bot interactions.
+    It provides intelligent organization, deduplication, and optimization features for
+    efficient AI decision-making.
+    
+    Core Components:
+        - channels: Dictionary mapping channel IDs to Channel objects
+        - action_history: Chronological list of completed actions
+        - system_status: Current system health and connection status
+        - threads: Conversation thread tracking for platforms supporting threading
+        - seen_messages: Set for cross-platform message deduplication
+        - rate_limits: API rate limiting information and enforcement data
+        - pending_matrix_invites: Matrix room invitations awaiting response
+        
+    Key Features:
+        - Automatic message deduplication across all platforms
+        - Intelligent conversation thread management
+        - AI payload optimization for efficient token usage
+        - Comprehensive action tracking with deduplication
+        - Real-time activity monitoring and analytics
+        - Memory management with automatic cleanup
+        
+    Performance Optimizations:
+        - Message rotation to prevent memory bloat (50 messages per channel)
+        - Action history limits (100 actions maximum)
+        - Smart filtering for AI payloads
+        - Efficient data structures for fast access
+    """
 
     def __init__(self):
-        """Initialize empty world state"""
+        """
+        Initialize empty world state with optimized data structures.
+        
+        Sets up all necessary containers and tracking mechanisms for efficient
+        operation across multiple platforms and conversation contexts.
+        """
         self.channels: Dict[str, Channel] = {}
         self.action_history: List[ActionHistory] = []
         self.system_status: Dict[str, Any] = {}
