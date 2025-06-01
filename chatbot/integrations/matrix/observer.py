@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import httpx
 from dotenv import load_dotenv
 from nio import (
     AsyncClient,
@@ -27,6 +28,7 @@ from nio import (
 
 from ...config import settings
 from ...core.world_state import Channel, Message, WorldStateManager
+from ...tools.s3_service import s3_service
 
 logger = logging.getLogger(__name__)
 load_dotenv()
@@ -172,13 +174,32 @@ class MatrixObserver:
                 try:
                     # Convert MXC URI to HTTP URL (await the coroutine)
                     http_url = await self.client.mxc_to_http(mxc_uri)
-                    if http_url:  # Only add if conversion was successful
-                        image_urls_list.append(http_url)
-                        logger.debug(f"MatrixObserver: Detected image {http_url} in message {event.event_id}")
+                    if http_url:
+                        # Create authenticated HTTP client for Matrix media download
+                        auth_headers = {
+                            "Authorization": f"Bearer {self.client.access_token}"
+                        }
+                        
+                        async with httpx.AsyncClient(headers=auth_headers) as auth_client:
+                            # Upload Matrix image to S3 for public access
+                            original_filename = getattr(event, 'body', 'matrix_image.jpg')
+                            s3_url = await s3_service.upload_image_from_url(
+                                http_url, 
+                                original_filename, 
+                                auth_client
+                            )
+                            
+                            if s3_url:
+                                image_urls_list.append(s3_url)
+                                logger.info(f"MatrixObserver: Uploaded Matrix image to S3: {s3_url}")
+                            else:
+                                # Fallback to original Matrix URL if S3 upload fails
+                                image_urls_list.append(http_url)
+                                logger.warning(f"MatrixObserver: S3 upload failed, using Matrix URL: {http_url}")
                     else:
                         logger.warning(f"MatrixObserver: Could not convert MXC URI {mxc_uri} to HTTP URL")
                 except Exception as e:
-                    logger.error(f"MatrixObserver: Failed to convert MXC URI {mxc_uri} to HTTP: {e}")
+                    logger.error(f"MatrixObserver: Failed to process Matrix image {mxc_uri}: {e}")
             
             # For image messages, use the body as content (usually contains filename or description)
             content = getattr(event, 'body', 'Image')
