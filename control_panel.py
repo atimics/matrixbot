@@ -23,12 +23,9 @@ from pydantic import BaseModel
 import uvicorn
 
 # Import our context management components
-import sys
-sys.path.append(str(Path(__file__).parent / "src"))
-
-from context_manager import ContextManager, StateChangeBlock
-from context_aware_orchestrator_v2 import ContextAwareOrchestrator
-from world_state import WorldStateManager
+from chatbot.core.context import ContextManager
+from chatbot.core.orchestrator import ContextAwareOrchestrator
+from chatbot.core.world_state import WorldStateManager
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +78,9 @@ app.add_middleware(
 async def startup_event():
     """Initialize the orchestrator"""
     global orchestrator
-    orchestrator = ContextAwareOrchestrator("control_panel.db")
+    from chatbot.core.orchestrator import OrchestratorConfig
+    config = OrchestratorConfig(db_path="control_panel.db")
+    orchestrator = ContextAwareOrchestrator(config)
     logger.info("Control panel started")
 
 @app.on_event("shutdown")
@@ -838,7 +837,8 @@ def get_control_panel_html() -> str:
 </html>
 """
 
-if __name__ == "__main__":
+def main():
+    """Main entry point for the control panel."""
     # Set up logging
     logging.basicConfig(
         level=logging.INFO,
@@ -877,3 +877,7 @@ Press Ctrl+C to stop the server.
         port=args.port,
         reload=args.reload
     )
+
+
+if __name__ == "__main__":
+    main()

@@ -8,43 +8,48 @@ This module handles the AI decision-making process:
 3. Selects specific actions to execute (max 3 per cycle)
 """
 
-import asyncio
 import json
 import logging
-import time
-from typing import Dict, List, Any, Optional
-import httpx
+import re
 from dataclasses import dataclass
+from typing import Any, Dict, List
+
+import httpx
 
 logger = logging.getLogger(__name__)
+
 
 @dataclass
 class ActionPlan:
     """Represents a planned action"""
+
     action_type: str
     parameters: Dict[str, Any]
     reasoning: str
     priority: int  # 1-10, higher is more important
 
+
 @dataclass
 class DecisionResult:
     """Result of AI decision making"""
+
     selected_actions: List[ActionPlan]
     reasoning: str
     observations: str
     cycle_id: str
 
+
 class AIDecisionEngine:
     """Handles AI decision making and action planning"""
-    
+
     def __init__(self, api_key: str, model: str = "openai/gpt-4o-mini"):
         self.api_key = api_key
         self.model = model
         self.base_url = "https://openrouter.ai/api/v1/chat/completions"
         self.max_actions_per_cycle = 3
-        
-        # System prompt that defines the AI's role and capabilities
-        self.system_prompt = """You are an AI agent observing and acting in a digital world. You can see messages from Matrix and Farcaster channels, and you can take actions to respond or post content.
+
+        # Base system prompt without hardcoded tools
+        self.base_system_prompt = """You are an AI agent observing and acting in a digital world. You can see messages from Matrix and Farcaster channels, and you can take actions to respond or post content.
 
 Your role is to:
 1. Observe the current world state
@@ -52,37 +57,139 @@ Your role is to:
 3. Plan up to 3 actions you could take this cycle
 4. Select the most important actions to execute
 
-Available actions:
-- send_matrix_message: Send a message to a Matrix channel
-- send_matrix_reply: Reply to a specific Matrix message  
-- send_farcaster_post: Post to Farcaster
-- wait: Do nothing this cycle (use when no action is needed)
+WORLD STATE STRUCTURE:
+The world state you receive is optimized for your decision-making:
+- "current_processing_channel_id": The primary channel for this cycle's focus
+- "channels": Contains channel data with different detail levels:
+  * Channels with "priority": "detailed" have full recent message history (truncated for efficiency)
+  * Channels with "priority": "summary_only" have activity summaries but no full messages
+  * The primary channel gets the most detailed view for informed responses
+- "action_history": Recent actions taken (truncated to last few items)
+- "threads": Conversation threads relevant to the current channel (truncated)
+- "system_status": Includes rate_limits for API awareness
+- "pending_matrix_invites": Matrix room invitations waiting for your response (if any)
+- "payload_stats": Information about data filtering applied
+
+MATRIX ROOM MANAGEMENT:
+You can manage Matrix rooms using available tools:
+- Join rooms by ID or alias using join_matrix_room
+- Leave rooms you no longer want to participate in using leave_matrix_room
+- Accept pending invitations from pending_matrix_invites using accept_matrix_invite
+- Get current invitations using get_matrix_invites
+- React to messages with emoji using react_to_matrix_message (use this for quick acknowledgments)
+
+If you see pending_matrix_invites in the world state, you should consider whether to accept them based on:
+- The inviter's identity and trustworthiness
+- The room name/topic (if available)
+- Your current participation in similar rooms
+
+FARCASTER CONTENT DISCOVERY:
+You have powerful content discovery tools to proactively explore and engage with Farcaster:
+- get_user_timeline: View recent casts from any user (by username or FID) to understand their interests
+- search_casts: Find casts matching keywords, optionally within specific channels
+- get_trending_casts: Discover popular content based on engagement metrics
+- get_cast_by_url: Resolve cast details from Warpcast URLs for context
+
+Use these tools to:
+- Research users before engaging to understand their interests and posting patterns
+- Find relevant conversations to join based on your interests or expertise
+- Discover trending topics to engage with popular content
+- Analyze specific casts when URLs are mentioned in conversations
+
+Examples of proactive discovery:
+- Before replying to someone, check their timeline to understand their perspective
+- Search for casts about topics you're knowledgeable about to provide value
+- Check trending content in relevant channels to stay informed
+- Resolve cast URLs mentioned in Matrix rooms to provide context
+
+IMAGE UNDERSTANDING:
+If a message in `channels` includes `image_urls` (a list of image URLs), you can understand the content of these images.
+To do this, use the `describe_image` tool for each relevant image URL.
+Provide the `image_url` from the message to the tool. You can also provide an optional `prompt_text` if you have a specific question about the image.
+The tool will return a textual description of the image. Use this description to inform your response, make observations, or decide on further actions.
+
+Example: A message has `image_urls: ["http://example.com/photo.jpg"]`.
+Potential Action:
+{
+  "action_type": "describe_image",
+  "parameters": {"image_url": "http://example.com/photo.jpg", "prompt_text": "What is happening in this picture?"},
+  "reasoning": "To understand the shared image content before replying.",
+  "priority": 7
+}
+After receiving the description, you can then formulate a relevant response or action.
+
+RATE LIMIT AWARENESS:
+Check system_status.rate_limits before taking actions that use external APIs:
+- "farcaster_api": Neynar/Farcaster API limits
+- "matrix_homeserver": Matrix server rate limits
+If remaining requests are low, prefer wait actions or prioritize most important responses.
+
+RATE LIMITING AWARENESS:
+* Your actions are subject to sophisticated rate limiting to ensure responsible platform usage
+* Action-specific limits: Each tool type has hourly limits (e.g., 100 Matrix messages, 50 Farcaster posts)
+* Channel-specific limits: Each channel has messaging limits per hour
+* Adaptive limits: During high activity periods, processing may slow down automatically
+* Burst detection: Rapid consecutive actions trigger cooldown periods
+* When rate limited, prefer Wait actions or focus on highest-priority responses only
+* Rate limit status is logged periodically - failed actions will indicate rate limiting
 
 You should respond with JSON in this format:
 {
   "observations": "What you notice about the current state",
   "potential_actions": [
     {
-      "action_type": "send_matrix_reply",
-      "parameters": {"channel_id": "...", "reply_to_id": "...", "content": "..."},
+      "action_type": "tool_name_here",
+      "parameters": {"param1": "value1", ...},
       "reasoning": "Why this action makes sense",
       "priority": 8
     }
   ],
   "selected_actions": [
-    // The top 1-3 actions you want to execute this cycle
+    // The top 1-3 actions you want to execute this cycle, matching potential_actions structure
   ],
   "reasoning": "Overall reasoning for your selections"
 }
 
-Be thoughtful about when to act vs when to wait and observe. Don't feel compelled to act every cycle."""
+Be thoughtful about when to act vs when to wait and observe. Focus primarily on the current_processing_channel_id but use other channel summaries for context. Don't feel compelled to act every cycle."""
+
+        # Dynamic tool prompt part that gets updated by tool registry
+        self.dynamic_tool_prompt_part = "No tools currently available."
+
+        # Build the full system prompt
+        self._build_full_system_prompt()
 
         logger.info(f"AIDecisionEngine: Initialized with model {model}")
-    
-    async def make_decision(self, world_state: Dict[str, Any], cycle_id: str) -> DecisionResult:
+
+    def _build_full_system_prompt(self):
+        """Build the complete system prompt including dynamic tool descriptions."""
+        self.system_prompt = (
+            f"{self.base_system_prompt}\n\n{self.dynamic_tool_prompt_part}"
+        )
+
+    def update_system_prompt_with_tools(self, tool_registry):
+        """
+        Update the system prompt with descriptions of available tools.
+
+        Args:
+            tool_registry: ToolRegistry instance containing available tools
+        """
+        from ..tools.registry import (  # Import here to avoid circular imports
+            ToolRegistry,
+        )
+
+        self.dynamic_tool_prompt_part = tool_registry.get_tool_descriptions_for_ai()
+        self._build_full_system_prompt()
+        logger.info(
+            "AIDecisionEngine: System prompt updated with dynamic tool descriptions."
+        )
+        logger.debug(f"Tool descriptions: {self.dynamic_tool_prompt_part}")
+
+    async def make_decision(
+        self, world_state: Dict[str, Any], cycle_id: str
+    ) -> DecisionResult:
         """Make a decision based on current world state"""
         logger.info(f"AIDecisionEngine: Starting decision cycle {cycle_id}")
-        
+
         # Construct the prompt
         user_prompt = f"""Current World State:
 {json.dumps(world_state, indent=2)}
@@ -91,9 +198,9 @@ Based on this world state, what actions (if any) should you take? Remember you c
 
         messages = [
             {"role": "system", "content": self.system_prompt},
-            {"role": "user", "content": user_prompt}
+            {"role": "user", "content": user_prompt},
         ]
-        
+
         try:
             # Make API request with proper OpenRouter headers
             async with httpx.AsyncClient(timeout=60.0) as client:
@@ -103,96 +210,292 @@ Based on this world state, what actions (if any) should you take? Remember you c
                         "model": self.model,
                         "messages": messages,
                         "temperature": 0.7,
-                        "max_tokens": 2000
+                        "max_tokens": 3500,
                     },
                     headers={
                         "Authorization": f"Bearer {self.api_key}",
                         "Content-Type": "application/json",
                         "HTTP-Referer": "https://github.com/ratimics/chatbot",
-                        "X-Title": "Ratimics Chatbot"
-                    }
+                        "X-Title": "Ratimics Chatbot",
+                    },
                 )
-                
+
                 # Check for HTTP errors and log response details
                 if response.status_code != 200:
                     error_details = response.text
-                    logger.error(f"AIDecisionEngine: HTTP {response.status_code} error: {error_details}")
+                    logger.error(
+                        f"AIDecisionEngine: HTTP {response.status_code} error: {error_details}"
+                    )
                     return DecisionResult(
                         selected_actions=[],
                         reasoning=f"API Error: {response.status_code}",
                         observations=f"HTTP Error: {error_details}",
-                        cycle_id=cycle_id
+                        cycle_id=cycle_id,
                     )
-                
+
                 response.raise_for_status()
-                
+
                 result = response.json()
                 ai_response = result["choices"][0]["message"]["content"]
-                
+
                 logger.info(f"AIDecisionEngine: Received response for cycle {cycle_id}")
                 logger.debug(f"AIDecisionEngine: Raw response: {ai_response[:500]}...")
-                
+
                 # Parse the JSON response
                 try:
-                    # Clean up the response (remove markdown formatting if present)
-                    import re
-                    # Use regex to strip markdown code block markers
-                    cleaned_response = re.sub(r"^\s*```json\s*|\s*```\s*$", "", ai_response.strip(), flags=re.DOTALL)
-                    
-                    decision_data = json.loads(cleaned_response)
-                    
+                    decision_data = self._extract_json_from_response(ai_response)
+                    logger.debug(
+                        f"AIDecisionEngine: Parsed decision data keys: {list(decision_data.keys())}"
+                    )
+
+                    # Validate basic structure
+                    if not isinstance(decision_data, dict):
+                        raise ValueError(f"Expected dict, got {type(decision_data)}")
+
+                    if "selected_actions" not in decision_data:
+                        logger.warning(
+                            "AIDecisionEngine: No 'selected_actions' field in response, using empty list"
+                        )
+                        decision_data["selected_actions"] = []
+
                     # Convert to ActionPlan objects
                     selected_actions = []
                     for action_data in decision_data.get("selected_actions", []):
-                        action_plan = ActionPlan(
-                            action_type=action_data["action_type"],
-                            parameters=action_data["parameters"],
-                            reasoning=action_data["reasoning"],
-                            priority=action_data.get("priority", 5)
-                        )
-                        selected_actions.append(action_plan)
-                    
+                        try:
+                            action_plan = ActionPlan(
+                                action_type=action_data.get("action_type", "unknown"),
+                                parameters=action_data.get("parameters", {}),
+                                reasoning=action_data.get(
+                                    "reasoning", "No reasoning provided"
+                                ),
+                                priority=action_data.get("priority", 5),
+                            )
+                            selected_actions.append(action_plan)
+                        except Exception as e:
+                            logger.warning(
+                                f"AIDecisionEngine: Skipping malformed action: {e}"
+                            )
+                            logger.debug(
+                                f"AIDecisionEngine: Malformed action data: {action_data}"
+                            )
+                            continue
+
                     # Limit to max actions
                     if len(selected_actions) > self.max_actions_per_cycle:
-                        logger.warning(f"AIDecisionEngine: AI selected {len(selected_actions)} actions, "
-                                     f"limiting to {self.max_actions_per_cycle}")
+                        logger.warning(
+                            f"AIDecisionEngine: AI selected {len(selected_actions)} actions, "
+                            f"limiting to {self.max_actions_per_cycle}"
+                        )
                         # Sort by priority and take top N
                         selected_actions.sort(key=lambda x: x.priority, reverse=True)
-                        selected_actions = selected_actions[:self.max_actions_per_cycle]
-                    
+                        selected_actions = selected_actions[
+                            : self.max_actions_per_cycle
+                        ]
+
                     result = DecisionResult(
                         selected_actions=selected_actions,
                         reasoning=decision_data.get("reasoning", ""),
                         observations=decision_data.get("observations", ""),
-                        cycle_id=cycle_id
+                        cycle_id=cycle_id,
                     )
-                    
-                    logger.info(f"AIDecisionEngine: Cycle {cycle_id} complete - "
-                              f"selected {len(result.selected_actions)} actions")
-                    
+
+                    logger.info(
+                        f"AIDecisionEngine: Cycle {cycle_id} complete - "
+                        f"selected {len(result.selected_actions)} actions"
+                    )
+
                     for i, action in enumerate(result.selected_actions):
-                        logger.info(f"AIDecisionEngine: Action {i+1}: {action.action_type} "
-                                  f"(priority {action.priority})")
-                    
+                        logger.info(
+                            f"AIDecisionEngine: Action {i+1}: {action.action_type} "
+                            f"(priority {action.priority})"
+                        )
+
                     return result
-                    
+
                 except json.JSONDecodeError as e:
-                    logger.error(f"AIDecisionEngine: Failed to parse AI response as JSON: {e}")
+                    logger.error(
+                        f"AIDecisionEngine: Failed to parse AI response as JSON: {e}"
+                    )
                     logger.error(f"AIDecisionEngine: Raw response was: {ai_response}")
-                    
+
                     # Return empty decision
                     return DecisionResult(
                         selected_actions=[],
                         reasoning="Failed to parse AI response",
                         observations="Error in AI response parsing",
-                        cycle_id=cycle_id
+                        cycle_id=cycle_id,
                     )
-                
+
+                except Exception as e:
+                    logger.error(f"AIDecisionEngine: Error processing AI response: {e}")
+                    logger.error(f"AIDecisionEngine: Raw response was: {ai_response}")
+
+                    # Return empty decision
+                    return DecisionResult(
+                        selected_actions=[],
+                        reasoning=f"Error processing response: {str(e)}",
+                        observations="Error in AI response processing",
+                        cycle_id=cycle_id,
+                    )
+
         except Exception as e:
             logger.error(f"AIDecisionEngine: Error in decision cycle {cycle_id}: {e}")
             return DecisionResult(
                 selected_actions=[],
                 reasoning=f"Error: {str(e)}",
                 observations="Error during decision making",
-                cycle_id=cycle_id
+                cycle_id=cycle_id,
             )
+
+    def _extract_json_from_response(self, response: str) -> Dict[str, Any]:
+        """
+        Robust JSON extraction that handles various response formats:
+        - Pure JSON
+        - JSON wrapped in markdown code blocks
+        - JSON embedded in explanatory text
+        - Multiple JSON blocks (takes the largest/most complete one)
+        - JSON missing opening/closing braces
+        """
+
+        # Strategy 1: Try to parse as pure JSON first
+        response_stripped = response.strip()
+        if response_stripped.startswith("{") and response_stripped.endswith("}"):
+            try:
+                return json.loads(response_stripped)
+            except json.JSONDecodeError:
+                pass
+
+        # Strategy 2: Look for JSON code blocks
+        json_blocks = re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", response, re.DOTALL)
+        for block in json_blocks:
+            try:
+                return json.loads(block.strip())
+            except json.JSONDecodeError:
+                continue
+
+        # Strategy 3: Try to fix common JSON formatting issues
+        # Check if it looks like JSON but is missing opening/closing braces
+        response_clean = response_stripped
+        
+        # Case 1: Missing opening brace
+        if not response_clean.startswith("{") and ("observations" in response_clean or "selected_actions" in response_clean):
+            # Try adding opening brace
+            response_clean = "{" + response_clean
+            
+        # Case 2: Missing closing brace
+        if response_clean.startswith("{") and not response_clean.endswith("}"):
+            # Count braces to see if we need to add closing brace(s)
+            open_count = response_clean.count("{")
+            close_count = response_clean.count("}")
+            if open_count > close_count:
+                response_clean += "}" * (open_count - close_count)
+        
+        # Try parsing the cleaned version
+        if response_clean != response_stripped:
+            try:
+                return json.loads(response_clean)
+            except json.JSONDecodeError:
+                pass
+
+        # Strategy 4: Look for any JSON-like structure (most permissive)
+        # Find all potential JSON objects in the text by looking for balanced braces
+        def find_json_objects(text):
+            """Find JSON objects with proper brace balancing."""
+            potential_jsons = []
+            i = 0
+            while i < len(text):
+                if text[i] == "{":
+                    # Found start of potential JSON, now find the matching closing brace
+                    brace_count = 1
+                    start = i
+                    i += 1
+                    while i < len(text) and brace_count > 0:
+                        if text[i] == "{":
+                            brace_count += 1
+                        elif text[i] == "}":
+                            brace_count -= 1
+                        i += 1
+
+                    if brace_count == 0:  # Found complete JSON object
+                        candidate = text[start:i]
+                        try:
+                            parsed = json.loads(candidate)
+                            if isinstance(parsed, dict) and any(
+                                key in parsed
+                                for key in [
+                                    "selected_actions",
+                                    "observations",
+                                    "potential_actions",
+                                ]
+                            ):
+                                potential_jsons.append((len(candidate), parsed))
+                        except json.JSONDecodeError:
+                            pass
+                else:
+                    i += 1
+            return potential_jsons
+
+        potential_jsons = find_json_objects(response)
+
+        # Return the largest/most complete JSON found
+        if potential_jsons:
+            potential_jsons.sort(key=lambda x: x[0], reverse=True)  # Sort by size
+            return potential_jsons[0][1]
+
+        # Strategy 5: Try to extract JSON from between common markers
+        markers = [
+            (r"```json\s*(.*?)\s*```", re.DOTALL),
+            (r"```\s*(.*?)\s*```", re.DOTALL),
+            (r"(\{.*?\})", re.DOTALL),
+        ]
+
+        for pattern, flags in markers:
+            matches = re.findall(pattern, response, flags)
+            for match in matches:
+                cleaned = match.strip()
+                if cleaned.startswith("{") and cleaned.endswith("}"):
+                    try:
+                        return json.loads(cleaned)
+                    except json.JSONDecodeError:
+                        continue
+
+        # Strategy 6: Last resort - try to reconstruct JSON from likely content
+        # Look for key patterns and try to build a minimal valid JSON
+        if any(key in response for key in ["observations", "selected_actions", "potential_actions"]):
+            logger.warning("Attempting last-resort JSON reconstruction from malformed response")
+            
+            # Try to find the content between quotes after key indicators
+            reconstructed = {}
+            
+            # Extract observations
+            obs_match = re.search(r'"observations":\s*"([^"]*(?:\\.[^"]*)*)"', response, re.DOTALL)
+            if obs_match:
+                reconstructed["observations"] = obs_match.group(1)
+            
+            # Extract selected_actions (this is complex, so we'll provide an empty list if not found properly)
+            actions_match = re.search(r'"selected_actions":\s*(\[.*?\])', response, re.DOTALL)
+            if actions_match:
+                try:
+                    reconstructed["selected_actions"] = json.loads(actions_match.group(1))
+                except json.JSONDecodeError:
+                    reconstructed["selected_actions"] = []
+            else:
+                reconstructed["selected_actions"] = []
+            
+            # Extract reasoning
+            reasoning_match = re.search(r'"reasoning":\s*"([^"]*(?:\\.[^"]*)*)"', response, re.DOTALL)
+            if reasoning_match:
+                reconstructed["reasoning"] = reasoning_match.group(1)
+            else:
+                reconstructed["reasoning"] = "Unable to extract reasoning from malformed response"
+            
+            if reconstructed:
+                logger.info(f"Successfully reconstructed JSON with keys: {list(reconstructed.keys())}")
+                return reconstructed
+
+        # If all else fails, raise an error with helpful context
+        raise json.JSONDecodeError(
+            f"Could not extract valid JSON from response. Response preview: {response[:200]}...",
+            response,
+            0,
+        )

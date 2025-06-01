@@ -4,9 +4,9 @@ Main entry point for the chatbot application.
 
 import asyncio
 import logging
-import os
 from pathlib import Path
 
+from chatbot.config import settings
 from chatbot.core.orchestrator import ContextAwareOrchestrator, OrchestratorConfig
 
 
@@ -26,20 +26,20 @@ async def main() -> None:
     """Main application entry point."""
     setup_logging()
     logger = logging.getLogger(__name__)
-    
+
     logger.info("Starting chatbot application...")
-    
+
     # Load configuration with more responsive settings
     config = OrchestratorConfig(
-        db_path=os.getenv("CHATBOT_DB_PATH", "chatbot.db"),
-        observation_interval=float(os.getenv("OBSERVATION_INTERVAL", "2")),  # Check every 2 seconds
-        max_cycles_per_hour=int(os.getenv("MAX_CYCLES_PER_HOUR", "300")),  # Allow up to 5 per minute
-        ai_model=os.getenv("AI_MODEL", "openai/gpt-4o-mini"),
+        db_path=settings.CHATBOT_DB_PATH,
+        observation_interval=settings.OBSERVATION_INTERVAL,
+        max_cycles_per_hour=settings.MAX_CYCLES_PER_HOUR,
+        ai_model=settings.AI_MODEL,
     )
-    
+
     # Create and start orchestrator
     orchestrator = ContextAwareOrchestrator(config)
-    
+
     try:
         await orchestrator.start()
     except KeyboardInterrupt:
