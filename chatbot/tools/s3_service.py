@@ -6,10 +6,10 @@ This service handles uploading images to S3 via a proxy API and returns public U
 that can be accessed by external services like AI models.
 """
 
+import json
 import logging
 import os
 import uuid
-import json
 from typing import Optional
 
 import httpx
@@ -22,31 +22,33 @@ logger = logging.getLogger(__name__)
 
 class S3Service:
     """Service for uploading images to S3 and getting public URLs."""
-    
+
     def __init__(self):
         self.s3_api_endpoint = os.getenv("S3_API_ENDPOINT")
         self.s3_api_key = os.getenv("S3_API_KEY")
         self.cloudfront_domain = os.getenv("CLOUDFRONT_DOMAIN")
-        
+
         if not all([self.s3_api_endpoint, self.s3_api_key]):
-            raise ValueError("S3_API_ENDPOINT and S3_API_KEY must be set in environment")
-            
+            raise ValueError(
+                "S3_API_ENDPOINT and S3_API_KEY must be set in environment"
+            )
+
         logger.info(f"S3Service initialized with endpoint: {self.s3_api_endpoint}")
 
     async def upload_image_from_url(
-        self, 
-        image_url: str, 
+        self,
+        image_url: str,
         original_filename: Optional[str] = None,
-        http_client: Optional[httpx.AsyncClient] = None
+        http_client: Optional[httpx.AsyncClient] = None,
     ) -> Optional[str]:
         """
         Download an image from a URL and upload it to S3, returning the public CloudFront URL.
-        
+
         Args:
             image_url: The URL to download the image from
             original_filename: Optional original filename for the image
             http_client: Optional httpx client with authentication (for Matrix URLs)
-            
+
         Returns:
             Public CloudFront URL if successful, None otherwise
         """
@@ -54,39 +56,37 @@ class S3Service:
             # Generate a unique filename
             file_extension = self._get_file_extension(image_url, original_filename)
             unique_filename = f"{uuid.uuid4()}{file_extension}"
-            
+
             # Download the image
             image_data = await self._download_image(image_url, http_client)
             if not image_data:
                 logger.error(f"Failed to download image from {image_url}")
                 return None
-                
+
             # Upload to S3
             s3_url = await self._upload_to_s3(image_data, unique_filename)
             if not s3_url:
                 logger.error("Failed to upload image to S3")
                 return None
-                
+
             # The API returns the full CloudFront URL, so return it directly
             logger.info(f"Successfully uploaded image to S3: {s3_url}")
             return s3_url
-            
+
         except Exception as e:
             logger.error(f"Error uploading image from URL {image_url}: {e}")
             return None
 
     async def upload_image_data(
-        self, 
-        image_data: bytes, 
-        filename: Optional[str] = None
+        self, image_data: bytes, filename: Optional[str] = None
     ) -> Optional[str]:
         """
         Upload image data directly to S3, returning the public CloudFront URL.
-        
+
         Args:
             image_data: Raw image bytes
             filename: Optional filename for the image
-            
+
         Returns:
             Public CloudFront URL if successful, None otherwise
         """
@@ -94,25 +94,23 @@ class S3Service:
             # Generate a unique filename
             file_extension = self._get_file_extension_from_filename(filename)
             unique_filename = f"{uuid.uuid4()}{file_extension}"
-            
+
             # Upload to S3
             s3_url = await self._upload_to_s3(image_data, unique_filename)
             if not s3_url:
                 logger.error("Failed to upload image to S3")
                 return None
-                
+
             # The API returns the full CloudFront URL, so return it directly
             logger.info(f"Successfully uploaded image data to S3: {s3_url}")
             return s3_url
-            
+
         except Exception as e:
             logger.error(f"Error uploading image data: {e}")
             return None
 
     async def _download_image(
-        self, 
-        image_url: str, 
-        http_client: Optional[httpx.AsyncClient] = None
+        self, image_url: str, http_client: Optional[httpx.AsyncClient] = None
     ) -> Optional[bytes]:
         """Download image from URL."""
         try:
@@ -122,16 +120,16 @@ class S3Service:
             else:
                 async with httpx.AsyncClient() as client:
                     response = await client.get(image_url)
-                    
+
             response.raise_for_status()
-            
+
             # Verify it's an image
             content_type = response.headers.get("content-type", "")
             if not content_type.startswith("image/"):
                 logger.warning(f"URL does not appear to be an image: {content_type}")
-                
+
             return response.content
-            
+
         except Exception as e:
             logger.error(f"Error downloading image from {image_url}: {e}")
             return None
@@ -141,41 +139,35 @@ class S3Service:
         try:
             # Convert to base64 (matching JavaScript implementation)
             import base64
-            image_base64 = base64.b64encode(image_data).decode('utf-8')
-            
+
+            image_base64 = base64.b64encode(image_data).decode("utf-8")
+
             # Extract image type from filename
-            image_type = filename.split('.')[-1].lower() if '.' in filename else 'jpg'
-            
+            image_type = filename.split(".")[-1].lower() if "." in filename else "jpg"
+
             # Validate image type
-            valid_image_types = ['png', 'jpg', 'jpeg', 'gif', 'mp4']
+            valid_image_types = ["png", "jpg", "jpeg", "gif", "mp4"]
             if image_type not in valid_image_types:
-                logger.warning(f"Unsupported image type: {image_type}, defaulting to jpg")
-                image_type = 'jpg'
-            
+                logger.warning(
+                    f"Unsupported image type: {image_type}, defaulting to jpg"
+                )
+                image_type = "jpg"
+
             # Prepare JSON payload (matching JavaScript implementation)
-            payload = {
-                'image': image_base64,
-                'imageType': image_type
-            }
-            
-            headers = {
-                'Content-Type': 'application/json',
-                'x-api-key': self.s3_api_key
-            }
-            
+            payload = {"image": image_base64, "imageType": image_type}
+
+            headers = {"Content-Type": "application/json", "x-api-key": self.s3_api_key}
+
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    self.s3_api_endpoint,
-                    json=payload,
-                    headers=headers,
-                    timeout=30.0
+                    self.s3_api_endpoint, json=payload, headers=headers, timeout=30.0
                 )
-                
+
                 response.raise_for_status()
                 result = response.json()
-                
+
                 # Handle nested response structure from JavaScript
-                response_data = result.get('body')
+                response_data = result.get("body")
                 if response_data and isinstance(response_data, str):
                     try:
                         response_data = json.loads(response_data)
@@ -183,15 +175,19 @@ class S3Service:
                         response_data = result
                 else:
                     response_data = result
-                
+
                 # Extract URL from response
-                if not response_data or not response_data.get('url'):
-                    logger.error(f"Invalid S3 response format - missing URL. Response: {result}")
+                if not response_data or not response_data.get("url"):
+                    logger.error(
+                        f"Invalid S3 response format - missing URL. Response: {result}"
+                    )
                     return None
-                    
+
                 logger.info(f"S3 upload successful! Image URL: {response_data['url']}")
-                return response_data['url']  # Return the full CloudFront URL from the API response
-                
+                return response_data[
+                    "url"
+                ]  # Return the full CloudFront URL from the API response
+
         except Exception as e:
             logger.error(f"Error uploading to S3: {e}")
             return None
@@ -200,24 +196,24 @@ class S3Service:
         """Extract file extension from URL or filename."""
         if filename:
             return self._get_file_extension_from_filename(filename)
-            
+
         # Try to extract from URL
-        url_parts = url.split('/')[-1].split('?')[0]  # Remove query params
-        if '.' in url_parts:
-            return '.' + url_parts.split('.')[-1].lower()
-            
+        url_parts = url.split("/")[-1].split("?")[0]  # Remove query params
+        if "." in url_parts:
+            return "." + url_parts.split(".")[-1].lower()
+
         # Default to .jpg if can't determine
-        return '.jpg'
+        return ".jpg"
 
     def _get_file_extension_from_filename(self, filename: Optional[str]) -> str:
         """Extract file extension from filename."""
         if not filename:
-            return '.jpg'
-            
-        if '.' in filename:
-            return '.' + filename.split('.')[-1].lower()
-            
-        return '.jpg'
+            return ".jpg"
+
+        if "." in filename:
+            return "." + filename.split(".")[-1].lower()
+
+        return ".jpg"
 
 
 # Create a singleton instance

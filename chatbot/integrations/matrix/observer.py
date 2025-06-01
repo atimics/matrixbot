@@ -20,8 +20,8 @@ from nio import (
     AsyncClient,
     LoginResponse,
     MatrixRoom,
-    RoomMessageText,
     RoomMessageImage,
+    RoomMessageText,
     RoomSendError,
     RoomSendResponse,
 )
@@ -83,10 +83,10 @@ class MatrixObserver:
         # Set up event callbacks
         self.client.add_event_callback(self._on_message, RoomMessageText)
         self.client.add_event_callback(self._on_message, RoomMessageImage)
-        
+
         # Import required Matrix event types
         from nio import InviteMemberEvent, RoomMemberEvent
-        
+
         self.client.add_event_callback(self._on_invite, InviteMemberEvent)
         self.client.add_event_callback(self._on_membership_change, RoomMemberEvent)
 
@@ -166,7 +166,7 @@ class MatrixObserver:
         # Detect image URLs
         image_urls_list = []
         content = ""
-        
+
         if isinstance(event, RoomMessageImage):
             # Handle image messages
             mxc_uri = event.url
@@ -174,44 +174,55 @@ class MatrixObserver:
                 try:
                     # Use nio client's built-in download method which handles authentication
                     download_response = await self.client.download(mxc_uri)
-                    
-                    if hasattr(download_response, 'body') and download_response.body:
+
+                    if hasattr(download_response, "body") and download_response.body:
                         # Upload Matrix image data directly to S3 for public access
-                        original_filename = getattr(event, 'body', 'matrix_image.jpg')
-                        
+                        original_filename = getattr(event, "body", "matrix_image.jpg")
+
                         # Use the content-type from download response if available
-                        content_type = getattr(download_response, 'content_type', 'image/jpeg')
-                        
-                        s3_url = await s3_service.upload_image_data(
-                            download_response.body,
-                            original_filename
+                        content_type = getattr(
+                            download_response, "content_type", "image/jpeg"
                         )
-                        
+
+                        s3_url = await s3_service.upload_image_data(
+                            download_response.body, original_filename
+                        )
+
                         if s3_url:
                             image_urls_list.append(s3_url)
-                            logger.info(f"MatrixObserver: Uploaded Matrix image to S3: {s3_url}")
+                            logger.info(
+                                f"MatrixObserver: Uploaded Matrix image to S3: {s3_url}"
+                            )
                         else:
                             # Fallback to MXC URI if S3 upload fails (AI won't be able to access it, but it's better than nothing)
                             http_url = await self.client.mxc_to_http(mxc_uri)
                             if http_url:
                                 image_urls_list.append(http_url)
-                                logger.warning(f"MatrixObserver: S3 upload failed, using Matrix URL: {http_url}")
+                                logger.warning(
+                                    f"MatrixObserver: S3 upload failed, using Matrix URL: {http_url}"
+                                )
                             else:
-                                logger.warning(f"MatrixObserver: Both S3 upload and MXC conversion failed for {mxc_uri}")
+                                logger.warning(
+                                    f"MatrixObserver: Both S3 upload and MXC conversion failed for {mxc_uri}"
+                                )
                     else:
-                        logger.warning(f"MatrixObserver: Failed to download Matrix image {mxc_uri}: {download_response}")
+                        logger.warning(
+                            f"MatrixObserver: Failed to download Matrix image {mxc_uri}: {download_response}"
+                        )
                 except Exception as e:
-                    logger.error(f"MatrixObserver: Failed to process Matrix image {mxc_uri}: {e}")
-            
+                    logger.error(
+                        f"MatrixObserver: Failed to process Matrix image {mxc_uri}: {e}"
+                    )
+
             # For image messages, use the body as content (usually contains filename or description)
-            content = getattr(event, 'body', 'Image')
-            
+            content = getattr(event, "body", "Image")
+
         elif isinstance(event, RoomMessageText):
             # Handle text messages
             content = event.body
         else:
             # Handle other message types
-            content = getattr(event, 'body', str(event.content))
+            content = getattr(event, "body", str(event.content))
 
         # Create message object
         message = Message(
@@ -224,8 +235,8 @@ class MatrixObserver:
             reply_to=None,  # TODO: Extract reply information if present
             image_urls=image_urls_list if image_urls_list else None,
             metadata={
-                "matrix_event_type": getattr(event, 'msgtype', type(event).__name__)
-            }
+                "matrix_event_type": getattr(event, "msgtype", type(event).__name__)
+            },
         )
 
         # Add to world state
@@ -234,7 +245,7 @@ class MatrixObserver:
         log_content = content[:100] + "..." if len(content) > 100 else content
         if image_urls_list:
             log_content += f" [Image: {image_urls_list[0]}]"
-            
+
         logger.info(
             f"MatrixObserver: New message in {room.display_name or room.room_id}: "
             f"{event.sender}: {log_content}"
@@ -243,57 +254,65 @@ class MatrixObserver:
     async def _on_invite(self, room, event):
         """Handle incoming Matrix room invites"""
         from nio import InviteMemberEvent
-        
+
         # Check if this is an invite for our user
         if not isinstance(event, InviteMemberEvent):
             return
-            
+
         if event.state_key != self.user_id or event.membership != "invite":
             return
-            
-        logger.info(f"MatrixObserver: Received room invite for {room.room_id} from {event.sender}")
-        
+
+        logger.info(
+            f"MatrixObserver: Received room invite for {room.room_id} from {event.sender}"
+        )
+
         try:
             # Create invite info for world state
             invite_info = {
                 "room_id": room.room_id,
                 "inviter": event.sender,
-                "room_name": getattr(room, "display_name", None) 
-                           or getattr(room, "name", None) 
-                           or getattr(room, "canonical_alias", None)
-                           or "Unknown Room",
+                "room_name": getattr(room, "display_name", None)
+                or getattr(room, "name", None)
+                or getattr(room, "canonical_alias", None)
+                or "Unknown Room",
                 "timestamp": time.time(),
                 # InviteMemberEvent doesn't have event_id, use a combination of room_id and timestamp
                 "event_id": f"invite_{room.room_id}_{int(time.time() * 1000)}",
             }
-            
+
             # Add to world state manager
             if hasattr(self, "world_state") and self.world_state:
                 self.world_state.add_pending_matrix_invite(invite_info)
-                logger.info(f"MatrixObserver: Added pending invite to world state: {invite_info}")
+                logger.info(
+                    f"MatrixObserver: Added pending invite to world state: {invite_info}"
+                )
             else:
-                logger.warning("MatrixObserver: No world state manager available for invite")
-                
+                logger.warning(
+                    "MatrixObserver: No world state manager available for invite"
+                )
+
         except Exception as e:
             logger.error(f"MatrixObserver: Error processing invite: {e}", exc_info=True)
 
     async def _on_membership_change(self, room, event):
         """Handle Matrix room membership changes (joins, leaves, kicks, bans)"""
         from nio import RoomMemberEvent
-        
+
         if not isinstance(event, RoomMemberEvent):
             return
-            
+
         # Only track changes involving our bot user
         if event.state_key != self.user_id:
             return
-            
+
         room_id = room.room_id
         membership = event.membership
         sender = event.sender
-        
-        logger.info(f"MatrixObserver: Membership change in {room_id}: {membership} by {sender}")
-        
+
+        logger.info(
+            f"MatrixObserver: Membership change in {room_id}: {membership} by {sender}"
+        )
+
         try:
             if membership == "leave":
                 # Determine if this was a self-leave, kick, or ban
@@ -304,50 +323,67 @@ class MatrixObserver:
                 else:
                     # Check if it was a ban by looking at the event content
                     reason = event.content.get("reason", "")
-                    if "ban" in reason.lower() or event.content.get("membership") == "ban":
+                    if (
+                        "ban" in reason.lower()
+                        or event.content.get("membership") == "ban"
+                    ):
                         status = "banned"
-                        logger.warning(f"MatrixObserver: Bot was banned from room {room_id} by {sender}. Reason: {reason}")
+                        logger.warning(
+                            f"MatrixObserver: Bot was banned from room {room_id} by {sender}. Reason: {reason}"
+                        )
                     else:
                         status = "kicked"
-                        logger.warning(f"MatrixObserver: Bot was kicked from room {room_id} by {sender}. Reason: {reason}")
-                
+                        logger.warning(
+                            f"MatrixObserver: Bot was kicked from room {room_id} by {sender}. Reason: {reason}"
+                        )
+
                 # Update world state
                 if hasattr(self, "world_state") and self.world_state:
                     self.world_state.update_channel_status(room_id, status)
-                
+
                 # Remove from monitoring if kicked/banned (but not if we left voluntarily)
-                if status in ["kicked", "banned"] and room_id in self.channels_to_monitor:
+                if (
+                    status in ["kicked", "banned"]
+                    and room_id in self.channels_to_monitor
+                ):
                     self.channels_to_monitor.remove(room_id)
-                    logger.info(f"MatrixObserver: Removed {room_id} from monitoring due to {status}")
-                    
+                    logger.info(
+                        f"MatrixObserver: Removed {room_id} from monitoring due to {status}"
+                    )
+
             elif membership == "join":
                 # Bot joined a room (usually handled by join/accept methods, but this catches edge cases)
                 logger.info(f"MatrixObserver: Bot joined room {room_id}")
-                
+
                 # Ensure room is in monitoring if not already
                 if room_id not in self.channels_to_monitor:
                     self.channels_to_monitor.append(room_id)
-                
+
                 # Remove any pending invite for this room
                 if hasattr(self, "world_state") and self.world_state:
                     self.world_state.remove_pending_matrix_invite(room_id)
                     self.world_state.update_channel_status(room_id, "joined")
-                    
+
             elif membership == "ban":
                 # Explicit ban event
                 status = "banned"
                 reason = event.content.get("reason", "")
-                logger.warning(f"MatrixObserver: Bot was banned from room {room_id} by {sender}. Reason: {reason}")
-                
+                logger.warning(
+                    f"MatrixObserver: Bot was banned from room {room_id} by {sender}. Reason: {reason}"
+                )
+
                 # Update world state and remove from monitoring
                 if hasattr(self, "world_state") and self.world_state:
                     self.world_state.update_channel_status(room_id, status)
-                
+
                 if room_id in self.channels_to_monitor:
                     self.channels_to_monitor.remove(room_id)
-                    
+
         except Exception as e:
-            logger.error(f"MatrixObserver: Error processing membership change: {e}", exc_info=True)
+            logger.error(
+                f"MatrixObserver: Error processing membership change: {e}",
+                exc_info=True,
+            )
 
     def _extract_room_details(self, room: MatrixRoom) -> Dict[str, Any]:
         """Extract comprehensive details from a Matrix room"""
@@ -695,91 +731,89 @@ class MatrixObserver:
             )
             return {"success": False, "error": f"Exception: {str(e)}"}
 
-    async def send_formatted_message(self, room_id: str, plain_content: str, html_content: str) -> Dict[str, Any]:
+    async def send_formatted_message(
+        self, room_id: str, plain_content: str, html_content: str
+    ) -> Dict[str, Any]:
         """Send a formatted message with both plain text and HTML versions."""
         try:
             logger.info(f"MatrixObserver.send_formatted_message called: room={room_id}")
-            
+
             # Create formatted message content
             content = {
                 "msgtype": "m.text",
                 "body": plain_content,  # Fallback plain text
                 "format": "org.matrix.custom.html",
-                "formatted_body": html_content
-            }
-            
-            response = await self.client.room_send(
-                room_id=room_id,
-                message_type="m.room.message",
-                content=content
-            )
-            
-            if isinstance(response, RoomSendResponse):
-                logger.info(f"MatrixObserver: Successfully sent formatted message to {room_id}")
-                return {
-                    "success": True,
-                    "event_id": response.event_id,
-                    "room_id": room_id
-                }
-            else:
-                logger.error(f"MatrixObserver: Failed to send formatted message: {response}")
-                return {
-                    "success": False,
-                    "error": str(response)
-                }
-                
-        except Exception as e:
-            logger.error(f"MatrixObserver: Error sending formatted message: {e}")
-            return {
-                "success": False,
-                "error": str(e)
+                "formatted_body": html_content,
             }
 
-    async def send_formatted_reply(self, room_id: str, plain_content: str, html_content: str, reply_to_event_id: str) -> Dict[str, Any]:
-        """Send a formatted reply with both plain text and HTML versions."""
-        try:
-            logger.info(f"MatrixObserver.send_formatted_reply called: room={room_id}, reply_to={reply_to_event_id}")
-            
-            # Create formatted reply content with reply metadata
-            content = {
-                "msgtype": "m.text",
-                "body": plain_content,
-                "format": "org.matrix.custom.html", 
-                "formatted_body": html_content,
-                "m.relates_to": {
-                    "m.in_reply_to": {
-                        "event_id": reply_to_event_id
-                    }
-                }
-            }
-            
             response = await self.client.room_send(
-                room_id=room_id,
-                message_type="m.room.message",
-                content=content
+                room_id=room_id, message_type="m.room.message", content=content
             )
-            
+
             if isinstance(response, RoomSendResponse):
-                logger.info(f"MatrixObserver: Successfully sent formatted reply to {room_id}")
+                logger.info(
+                    f"MatrixObserver: Successfully sent formatted message to {room_id}"
+                )
                 return {
                     "success": True,
                     "event_id": response.event_id,
                     "room_id": room_id,
-                    "reply_to": reply_to_event_id
                 }
             else:
-                logger.error(f"MatrixObserver: Failed to send formatted reply: {response}")
+                logger.error(
+                    f"MatrixObserver: Failed to send formatted message: {response}"
+                )
+                return {"success": False, "error": str(response)}
+
+        except Exception as e:
+            logger.error(f"MatrixObserver: Error sending formatted message: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def send_formatted_reply(
+        self,
+        room_id: str,
+        plain_content: str,
+        html_content: str,
+        reply_to_event_id: str,
+    ) -> Dict[str, Any]:
+        """Send a formatted reply with both plain text and HTML versions."""
+        try:
+            logger.info(
+                f"MatrixObserver.send_formatted_reply called: room={room_id}, reply_to={reply_to_event_id}"
+            )
+
+            # Create formatted reply content with reply metadata
+            content = {
+                "msgtype": "m.text",
+                "body": plain_content,
+                "format": "org.matrix.custom.html",
+                "formatted_body": html_content,
+                "m.relates_to": {"m.in_reply_to": {"event_id": reply_to_event_id}},
+            }
+
+            response = await self.client.room_send(
+                room_id=room_id, message_type="m.room.message", content=content
+            )
+
+            if isinstance(response, RoomSendResponse):
+                logger.info(
+                    f"MatrixObserver: Successfully sent formatted reply to {room_id}"
+                )
                 return {
-                    "success": False,
-                    "error": str(response)
+                    "success": True,
+                    "event_id": response.event_id,
+                    "room_id": room_id,
+                    "reply_to": reply_to_event_id,
                 }
-                
+            else:
+                logger.error(
+                    f"MatrixObserver: Failed to send formatted reply: {response}"
+                )
+                return {"success": False, "error": str(response)}
+
         except Exception as e:
             logger.error(f"MatrixObserver: Error sending formatted reply: {e}")
-            return {
-                "success": False,
-                "error": str(e)
-            }
+            return {"success": False, "error": str(e)}
 
     async def join_room(self, room_identifier: str) -> Dict[str, Any]:
         """Join a Matrix room by room ID or alias"""
@@ -857,7 +891,7 @@ class MatrixObserver:
                 # Remove from monitoring channels
                 if room_id in self.channels_to_monitor:
                     self.channels_to_monitor.remove(room_id)
-                    
+
                 if hasattr(self, "world_state") and self.world_state:
                     self.world_state.update_channel_status(room_id, "left_by_bot")
 
@@ -875,7 +909,7 @@ class MatrixObserver:
                 # Remove from monitoring and update status
                 if room_id in self.channels_to_monitor:
                     self.channels_to_monitor.remove(room_id)
-                    
+
                 if hasattr(self, "world_state") and self.world_state:
                     self.world_state.update_channel_status(room_id, "left_by_bot")
 
@@ -930,7 +964,7 @@ class MatrixObserver:
                         self.world_state.add_channel(
                             actual_room_id, "matrix", f"Room {actual_room_id}"
                         )
-                        
+
                 # Remove from pending invites in world state
                 if hasattr(self, "world_state") and self.world_state:
                     self.world_state.remove_pending_matrix_invite(actual_room_id)
@@ -975,7 +1009,7 @@ class MatrixObserver:
                     "source": "client",
                 }
                 invites.append(invite_info)
-                
+
             # Also get invites from world state (in case they were missed by sync)
             if hasattr(self, "world_state") and self.world_state:
                 world_state_invites = self.world_state.get_pending_matrix_invites()
@@ -999,19 +1033,23 @@ class MatrixObserver:
             logger.error(f"MatrixObserver: {error_msg}", exc_info=True)
             return {"success": False, "error": error_msg}
 
-    async def react_to_message(self, room_id: str, event_id: str, emoji: str) -> Dict[str, Any]:
+    async def react_to_message(
+        self, room_id: str, event_id: str, emoji: str
+    ) -> Dict[str, Any]:
         """
         React to a Matrix message with an emoji.
-        
+
         Args:
             room_id: The room ID where the message is located
             event_id: The event ID of the message to react to
             emoji: The emoji to react with
-            
+
         Returns:
             Dict with success status and optional error message
         """
-        logger.info(f"MatrixObserver.react_to_message called: room={room_id}, event={event_id}, emoji={emoji}")
+        logger.info(
+            f"MatrixObserver.react_to_message called: room={room_id}, event={event_id}, emoji={emoji}"
+        )
 
         if not self.client:
             logger.error("Matrix client not connected")
@@ -1020,16 +1058,16 @@ class MatrixObserver:
         try:
             # Import the reaction event type
             from nio import RoomSendError, RoomSendResponse
-            
+
             # Create reaction content
             reaction_content = {
                 "m.relates_to": {
-                    "rel_type": "m.annotation", 
+                    "rel_type": "m.annotation",
                     "event_id": event_id,
-                    "key": emoji
+                    "key": emoji,
                 }
             }
-            
+
             # Send the reaction
             response = await self.client.room_send(
                 room_id=room_id,
@@ -1039,13 +1077,15 @@ class MatrixObserver:
             )
 
             if isinstance(response, RoomSendResponse):
-                logger.info(f"MatrixObserver: Successfully reacted to {event_id} with {emoji}")
+                logger.info(
+                    f"MatrixObserver: Successfully reacted to {event_id} with {emoji}"
+                )
                 return {
                     "success": True,
                     "event_id": response.event_id,
                     "room_id": room_id,
                     "reacted_to": event_id,
-                    "emoji": emoji
+                    "emoji": emoji,
                 }
             elif isinstance(response, RoomSendError):
                 error_msg = f"Failed to send reaction: {response.message}"
@@ -1064,26 +1104,22 @@ class MatrixObserver:
     async def get_pending_invites_from_world_state(self) -> Dict[str, Any]:
         """
         Get pending Matrix invites directly from the world state.
-        
+
         Returns:
             Dict with success status and invites list
         """
         logger.info("MatrixObserver.get_pending_invites_from_world_state called")
-        
+
         try:
             if hasattr(self, "world_state") and self.world_state:
                 invites = self.world_state.get_pending_matrix_invites()
-                return {
-                    "success": True,
-                    "invites": invites,
-                    "count": len(invites)
-                }
+                return {"success": True, "invites": invites, "count": len(invites)}
             else:
                 return {
                     "success": False,
                     "error": "World state not available",
                     "invites": [],
-                    "count": 0
+                    "count": 0,
                 }
         except Exception as e:
             error_msg = f"Exception while getting world state invites: {str(e)}"

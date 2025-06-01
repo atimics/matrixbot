@@ -9,22 +9,24 @@ import time
 from typing import Any, Dict, List, Optional
 
 from ...core.world_state import Message
-from .neynar_api_client import NeynarAPIClient
 from .farcaster_data_converter import (
-    parse_farcaster_timestamp,
-    extract_cast_hash_from_url,
     convert_api_casts_to_messages,
     convert_api_notifications_to_messages,
     convert_single_api_cast_to_message,
+    extract_cast_hash_from_url,
+    parse_farcaster_timestamp,
 )
 from .farcaster_scheduler import FarcasterScheduler
+from .neynar_api_client import NeynarAPIClient
 
 logger = logging.getLogger(__name__)
+
 
 class FarcasterObserver:
     """
     Orchestrates Farcaster API, data conversion, and scheduling.
     """
+
     def __init__(
         self,
         api_key: Optional[str] = None,
@@ -39,13 +41,22 @@ class FarcasterObserver:
         self.api_client: Optional[NeynarAPIClient] = None
         self.scheduler: Optional[FarcasterScheduler] = None
         if self.api_key:
-            self.api_client = NeynarAPIClient(api_key=self.api_key, signer_uuid=self.signer_uuid, bot_fid=self.bot_fid)
+            self.api_client = NeynarAPIClient(
+                api_key=self.api_key, signer_uuid=self.signer_uuid, bot_fid=self.bot_fid
+            )
             if self.world_state_manager:
-                self.scheduler = FarcasterScheduler(api_client=self.api_client, world_state_manager=self.world_state_manager)
+                self.scheduler = FarcasterScheduler(
+                    api_client=self.api_client,
+                    world_state_manager=self.world_state_manager,
+                )
             else:
-                logger.warning("WorldStateManager not provided to FarcasterObserver; scheduler actions will not be recorded in WSM.")
+                logger.warning(
+                    "WorldStateManager not provided to FarcasterObserver; scheduler actions will not be recorded in WSM."
+                )
         else:
-            logger.warning("No Farcaster API key provided - observer will be largely inactive.")
+            logger.warning(
+                "No Farcaster API key provided - observer will be largely inactive."
+            )
         self.last_check_time = time.time()
         self.observed_channels = set()
         self.last_seen_hashes = set()
@@ -53,7 +64,9 @@ class FarcasterObserver:
 
     async def start(self):
         if not self.api_client:
-            logger.warning("Cannot start Farcaster observer: API client not initialized (missing API key).")
+            logger.warning(
+                "Cannot start Farcaster observer: API client not initialized (missing API key)."
+            )
             return
         if self.scheduler:
             await self.scheduler.start()
@@ -69,7 +82,12 @@ class FarcasterObserver:
             await self.api_client.close()
         logger.info("Farcaster observer stopped.")
 
-    def schedule_post(self, content: str, channel: Optional[str] = None, action_id: Optional[str] = None) -> None:
+    def schedule_post(
+        self,
+        content: str,
+        channel: Optional[str] = None,
+        action_id: Optional[str] = None,
+    ) -> None:
         if not self.scheduler:
             logger.error("Cannot schedule post: Scheduler not initialized.")
             return
@@ -77,9 +95,13 @@ class FarcasterObserver:
         if self.scheduler.schedule_post(content, channel, action_id):
             logger.info("Farcaster post scheduled successfully via observer.")
         else:
-            logger.warning("Farcaster post not scheduled (e.g. duplicate or other issue).")
+            logger.warning(
+                "Farcaster post not scheduled (e.g. duplicate or other issue)."
+            )
 
-    def schedule_reply(self, content: str, reply_to_hash: str, action_id: Optional[str] = None) -> None:
+    def schedule_reply(
+        self, content: str, reply_to_hash: str, action_id: Optional[str] = None
+    ) -> None:
         if not self.scheduler:
             logger.error("Cannot schedule reply: Scheduler not initialized.")
             return
@@ -87,7 +109,9 @@ class FarcasterObserver:
         if self.scheduler.schedule_reply(content, reply_to_hash, action_id):
             logger.info("Farcaster reply scheduled successfully via observer.")
         else:
-            logger.warning("Farcaster reply not scheduled (e.g. duplicate or other issue).")
+            logger.warning(
+                "Farcaster reply not scheduled (e.g. duplicate or other issue)."
+            )
 
     async def observe_feeds(
         self,
@@ -128,7 +152,8 @@ class FarcasterObserver:
             return []
 
     async def _observe_user_feed(self, fid: int) -> List[Message]:
-        if not self.api_client: return []
+        if not self.api_client:
+            return []
         logger.debug(f"Observing user feed for FID: {fid}")
         try:
             data = await self.api_client.get_casts_by_fid(fid)
@@ -138,32 +163,39 @@ class FarcasterObserver:
                 cast_type_metadata="user_feed",
                 bot_fid=self.bot_fid,
                 last_check_time_for_filtering=self.last_check_time,
-                last_seen_hashes=self.last_seen_hashes
+                last_seen_hashes=self.last_seen_hashes,
             )
         except Exception as e:
             logger.error(f"Error observing user feed {fid}: {e}", exc_info=True)
             return []
 
     async def _observe_channel_feed(self, channel_name: str) -> List[Message]:
-        if not self.api_client: return []
+        if not self.api_client:
+            return []
         logger.debug(f"Observing channel feed for: {channel_name}")
         try:
-            data = await self.api_client.get_feed_by_channel_ids(channel_ids=channel_name)
+            data = await self.api_client.get_feed_by_channel_ids(
+                channel_ids=channel_name
+            )
             return convert_api_casts_to_messages(
                 data.get("casts", []),
                 channel_id_prefix=f"farcaster:channel_{channel_name}",
                 cast_type_metadata="channel_feed",
                 bot_fid=self.bot_fid,
                 last_check_time_for_filtering=self.last_check_time,
-                last_seen_hashes=self.last_seen_hashes
+                last_seen_hashes=self.last_seen_hashes,
             )
         except Exception as e:
-            logger.error(f"Error observing channel feed {channel_name}: {e}", exc_info=True)
+            logger.error(
+                f"Error observing channel feed {channel_name}: {e}", exc_info=True
+            )
             return []
 
     async def _observe_home_feed(self) -> List[Message]:
         if not self.api_client or not self.bot_fid:
-            logger.warning("Home feed observation skipped: API client or bot_fid not configured.")
+            logger.warning(
+                "Home feed observation skipped: API client or bot_fid not configured."
+            )
             return []
         logger.debug("Observing home feed.")
         try:
@@ -174,7 +206,7 @@ class FarcasterObserver:
                 cast_type_metadata="home_feed",
                 bot_fid=self.bot_fid,
                 last_check_time_for_filtering=self.last_check_time,
-                last_seen_hashes=self.last_seen_hashes
+                last_seen_hashes=self.last_seen_hashes,
             )
         except Exception as e:
             logger.error(f"Error observing home feed: {e}", exc_info=True)
@@ -182,7 +214,9 @@ class FarcasterObserver:
 
     async def _observe_notifications(self) -> List[Message]:
         if not self.api_client or not self.bot_fid:
-            logger.warning("Notifications observation skipped: API client or bot_fid not configured.")
+            logger.warning(
+                "Notifications observation skipped: API client or bot_fid not configured."
+            )
             return []
         logger.debug("Observing notifications.")
         try:
@@ -191,7 +225,7 @@ class FarcasterObserver:
                 data.get("notifications", []),
                 bot_fid=self.bot_fid,
                 last_check_time_for_filtering=self.last_check_time,
-                last_seen_hashes=self.last_seen_hashes
+                last_seen_hashes=self.last_seen_hashes,
             )
         except Exception as e:
             logger.error(f"Error observing notifications: {e}", exc_info=True)
@@ -199,25 +233,29 @@ class FarcasterObserver:
 
     async def _observe_mentions(self) -> List[Message]:
         if not self.api_client or not self.bot_fid:
-            logger.warning("Mentions observation skipped: API client or bot_fid not configured.")
+            logger.warning(
+                "Mentions observation skipped: API client or bot_fid not configured."
+            )
             return []
         logger.debug("Observing mentions/replies to bot.")
         try:
-            data = await self.api_client.get_replies_and_recasts_for_user(fid=self.bot_fid, filter_type="replies")
+            data = await self.api_client.get_replies_and_recasts_for_user(
+                fid=self.bot_fid, filter_type="replies"
+            )
             return convert_api_casts_to_messages(
                 data.get("casts", []),
                 channel_id_prefix="farcaster:mentions_and_replies",
                 cast_type_metadata="mention_or_reply",
                 bot_fid=self.bot_fid,
                 last_check_time_for_filtering=self.last_check_time,
-                last_seen_hashes=self.last_seen_hashes
+                last_seen_hashes=self.last_seen_hashes,
             )
         except Exception as e:
             logger.error(f"Error observing mentions/replies: {e}", exc_info=True)
             return []
 
     # --- Direct Action Methods ---
-    
+
     async def post_cast(
         self,
         content: str,
@@ -231,7 +269,9 @@ class FarcasterObserver:
             return {"success": False, "error": "API client not initialized"}
         logger.info(f"🎯 FarcasterObserver.post_cast action_id={action_id}")
         embeds = [{"url": url} for url in embed_urls] if embed_urls else None
-        return await self.api_client.publish_cast(content, self.signer_uuid, channel, parent=reply_to, embeds=embeds)
+        return await self.api_client.publish_cast(
+            content, self.signer_uuid, channel, parent=reply_to, embeds=embeds
+        )
 
     async def reply_to_cast(
         self,
@@ -241,7 +281,9 @@ class FarcasterObserver:
     ) -> Dict[str, Any]:
         """Reply to a cast directly (not scheduled)."""
         logger.info(f"🎯 FarcasterObserver.reply_to_cast action_id={action_id}")
-        return await self.post_cast(content=content, channel=None, reply_to=reply_to_hash)
+        return await self.post_cast(
+            content=content, channel=None, reply_to=reply_to_hash
+        )
 
     async def like_cast(self, cast_hash: str) -> Dict[str, Any]:
         """Like a cast."""
@@ -259,7 +301,9 @@ class FarcasterObserver:
         """Quote a cast."""
         if not self.api_client:
             return {"success": False, "error": "API client not initialized"}
-        return await self.api_client.quote_cast(content, quoted_cast_hash, channel, embed_urls)
+        return await self.api_client.quote_cast(
+            content, quoted_cast_hash, channel, embed_urls
+        )
 
     async def follow_user(self, fid: int) -> Dict[str, Any]:
         """Follow a user."""
@@ -279,10 +323,16 @@ class FarcasterObserver:
             return {"success": False, "error": "API client not initialized"}
         return await self.api_client.send_dm(fid, content, self.signer_uuid)
 
-    async def get_user_casts(self, user_identifier: str, limit: int = 10) -> Dict[str, Any]:
+    async def get_user_casts(
+        self, user_identifier: str, limit: int = 10
+    ) -> Dict[str, Any]:
         """Get casts by a user."""
         if not self.api_client:
-            return {"success": False, "casts": [], "error": "API client not initialized"}
+            return {
+                "success": False,
+                "casts": [],
+                "error": "API client not initialized",
+            }
         try:
             try:
                 fid = int(user_identifier)
@@ -290,53 +340,90 @@ class FarcasterObserver:
                 # Try to resolve username to FID
                 user_data = await self.api_client.get_user_by_username(user_identifier)
                 if not user_data.get("users"):
-                    return {"success": False, "casts": [], "error": f"User '{user_identifier}' not found"}
+                    return {
+                        "success": False,
+                        "casts": [],
+                        "error": f"User '{user_identifier}' not found",
+                    }
                 fid = user_data["users"][0]["fid"]
-            
+
             data = await self.api_client.get_casts_by_fid(fid, limit=limit)
             messages = convert_api_casts_to_messages(
                 data.get("casts", []),
                 channel_id_prefix=f"farcaster:user_{fid}",
                 cast_type_metadata="user_feed",
-                bot_fid=self.bot_fid
+                bot_fid=self.bot_fid,
             )
-            return {"success": True, "casts": [msg.model_dump() for msg in messages], "error": None}
+            return {
+                "success": True,
+                "casts": [msg.model_dump() for msg in messages],
+                "error": None,
+            }
         except Exception as e:
-            logger.error(f"Error getting user casts for {user_identifier}: {e}", exc_info=True)
+            logger.error(
+                f"Error getting user casts for {user_identifier}: {e}", exc_info=True
+            )
             return {"success": False, "casts": [], "error": str(e)}
 
-    async def search_casts(self, query: str, channel_id: Optional[str] = None, limit: int = 10) -> Dict[str, Any]:
+    async def search_casts(
+        self, query: str, channel_id: Optional[str] = None, limit: int = 10
+    ) -> Dict[str, Any]:
         """Search for casts."""
         if not self.api_client:
-            return {"success": False, "casts": [], "error": "API client not initialized"}
-        
+            return {
+                "success": False,
+                "casts": [],
+                "error": "API client not initialized",
+            }
+
         try:
             data = await self.api_client.search_casts(query, channel_id, limit)
             messages = convert_api_casts_to_messages(
                 data.get("casts", []),
                 channel_id_prefix=f"farcaster:search_{query}",
                 cast_type_metadata="search_result",
-                bot_fid=self.bot_fid
+                bot_fid=self.bot_fid,
             )
-            return {"success": True, "casts": [msg.model_dump() for msg in messages], "error": None}
+            return {
+                "success": True,
+                "casts": [msg.model_dump() for msg in messages],
+                "error": None,
+            }
         except Exception as e:
-            logger.error(f"Error searching casts for query '{query}': {e}", exc_info=True)
+            logger.error(
+                f"Error searching casts for query '{query}': {e}", exc_info=True
+            )
             return {"success": False, "casts": [], "error": str(e)}
 
-    async def get_trending_casts(self, channel_id: Optional[str] = None, timeframe_hours: int = 24, limit: int = 10) -> Dict[str, Any]:
+    async def get_trending_casts(
+        self,
+        channel_id: Optional[str] = None,
+        timeframe_hours: int = 24,
+        limit: int = 10,
+    ) -> Dict[str, Any]:
         """Get trending casts."""
         if not self.api_client:
-            return {"success": False, "casts": [], "error": "API client not initialized"}
-        
+            return {
+                "success": False,
+                "casts": [],
+                "error": "API client not initialized",
+            }
+
         try:
-            data = await self.api_client.get_trending_casts(channel_id, timeframe_hours, limit)
+            data = await self.api_client.get_trending_casts(
+                channel_id, timeframe_hours, limit
+            )
             messages = convert_api_casts_to_messages(
                 data.get("casts", []),
                 channel_id_prefix=f"farcaster:trending_{channel_id or 'all'}",
                 cast_type_metadata="trending",
-                bot_fid=self.bot_fid
+                bot_fid=self.bot_fid,
             )
-            return {"success": True, "casts": [msg.model_dump() for msg in messages], "error": None}
+            return {
+                "success": True,
+                "casts": [msg.model_dump() for msg in messages],
+                "error": None,
+            }
         except Exception as e:
             logger.error(f"Error getting trending casts: {e}", exc_info=True)
             return {"success": False, "casts": [], "error": str(e)}
@@ -344,102 +431,126 @@ class FarcasterObserver:
     async def get_cast_by_url(self, farcaster_url: str) -> Dict[str, Any]:
         """Get cast details by Farcaster URL."""
         if not self.api_client:
-            return {"success": False, "cast": None, "error": "API client not initialized"}
-        
+            return {
+                "success": False,
+                "cast": None,
+                "error": "API client not initialized",
+            }
+
         try:
             cast_hash = extract_cast_hash_from_url(farcaster_url)
             if not cast_hash:
-                return {"success": False, "cast": None, "error": "Invalid Farcaster URL - could not extract cast hash"}
-            
+                return {
+                    "success": False,
+                    "cast": None,
+                    "error": "Invalid Farcaster URL - could not extract cast hash",
+                }
+
             result = await self.get_cast_details(cast_hash)
             return {
                 "success": result.get("cast") is not None,
                 "cast": result.get("cast"),
-                "error": result.get("error")
+                "error": result.get("error"),
             }
         except Exception as e:
-            logger.error(f"Error getting cast by URL '{farcaster_url}': {e}", exc_info=True)
+            logger.error(
+                f"Error getting cast by URL '{farcaster_url}': {e}", exc_info=True
+            )
             return {"success": False, "cast": None, "error": str(e)}
 
     async def get_cast_details(self, cast_hash: str) -> Dict[str, Any]:
         """Get cast details by hash."""
         if not self.api_client:
-            return {"success": False, "cast": None, "error": "API client not initialized"}
-        
+            return {
+                "success": False,
+                "cast": None,
+                "error": "API client not initialized",
+            }
+
         try:
             data = await self.api_client.get_cast_by_hash(cast_hash)
             if not data.get("cast"):
                 return {"success": False, "cast": None, "error": "Cast not found"}
-            
+
             message = convert_single_api_cast_to_message(
                 data["cast"],
                 channel_id_prefix="farcaster:cast_details",
                 cast_type_metadata="cast_detail",
-                bot_fid=self.bot_fid
+                bot_fid=self.bot_fid,
             )
-            return {"success": True, "cast": message.model_dump() if message else None, "error": None}
+            return {
+                "success": True,
+                "cast": message.model_dump() if message else None,
+                "error": None,
+            }
         except Exception as e:
-            logger.error(f"Error getting cast details for hash '{cast_hash}': {e}", exc_info=True)
+            logger.error(
+                f"Error getting cast details for hash '{cast_hash}': {e}", exc_info=True
+            )
             return {"success": False, "cast": None, "error": str(e)}
 
     def _update_rate_limits(self, response) -> None:
         """Update rate limit information from API response headers."""
         if not self.world_state_manager:
             return
-        
-        headers = getattr(response, 'headers', {})
+
+        headers = getattr(response, "headers", {})
         if not headers:
             return
-        
+
         # Extract rate limit info from headers
         rate_limit_info = {}
-        
-        if 'x-ratelimit-limit' in headers:
-            rate_limit_info['limit'] = int(headers['x-ratelimit-limit'])
-        if 'x-ratelimit-remaining' in headers:
-            rate_limit_info['remaining'] = int(headers['x-ratelimit-remaining'])
-        if 'x-ratelimit-reset' in headers:
-            rate_limit_info['reset_time'] = int(headers['x-ratelimit-reset'])
-        if 'x-ratelimit-retry-after' in headers:
-            rate_limit_info['retry_after'] = int(headers['x-ratelimit-retry-after'])
-        
+
+        if "x-ratelimit-limit" in headers:
+            rate_limit_info["limit"] = int(headers["x-ratelimit-limit"])
+        if "x-ratelimit-remaining" in headers:
+            rate_limit_info["remaining"] = int(headers["x-ratelimit-remaining"])
+        if "x-ratelimit-reset" in headers:
+            rate_limit_info["reset_time"] = int(headers["x-ratelimit-reset"])
+        if "x-ratelimit-retry-after" in headers:
+            rate_limit_info["retry_after"] = int(headers["x-ratelimit-retry-after"])
+
         if rate_limit_info:
-            rate_limit_info['last_updated'] = time.time()
-            self.world_state_manager.state.rate_limits['farcaster_api'] = rate_limit_info
+            rate_limit_info["last_updated"] = time.time()
+            self.world_state_manager.state.rate_limits[
+                "farcaster_api"
+            ] = rate_limit_info
             logger.debug(f"Updated Farcaster API rate limits: {rate_limit_info}")
 
     def get_rate_limit_status(self) -> Dict[str, Any]:
         """Get current rate limit status."""
         if not self.world_state_manager:
             return {"available": False, "reason": "No world state manager"}
-        
-        rate_limits = self.world_state_manager.state.rate_limits.get('farcaster_api', {})
-        
+
+        rate_limits = self.world_state_manager.state.rate_limits.get(
+            "farcaster_api", {}
+        )
+
         if not rate_limits:
             return {"available": False, "reason": "No rate limit information"}
-        
+
         # Check if information is stale (older than 5 minutes)
-        last_updated = rate_limits.get('last_updated', 0)
+        last_updated = rate_limits.get("last_updated", 0)
         if time.time() - last_updated > 300:  # 5 minutes
             return {"available": False, "reason": "Rate limit information is stale"}
-        
-        remaining = rate_limits.get('remaining', 0)
-        limit = rate_limits.get('limit', 0)
-        retry_after = rate_limits.get('retry_after', 0)
-        
+
+        remaining = rate_limits.get("remaining", 0)
+        limit = rate_limits.get("limit", 0)
+        retry_after = rate_limits.get("retry_after", 0)
+
         return {
             "available": remaining > 0,
             "limit": limit,
             "remaining": remaining,
             "retry_after": retry_after,
-            "last_updated": last_updated
+            "last_updated": last_updated,
         }
 
     def format_user_mention(self, message: Message) -> str:
         """Format a user mention from a message."""
-        if hasattr(message, 'sender_username') and message.sender_username:
+        if hasattr(message, "sender_username") and message.sender_username:
             return f"@{message.sender_username}"
-        elif hasattr(message, 'sender') and message.sender:
+        elif hasattr(message, "sender") and message.sender:
             return f"@{message.sender}"
         else:
             return "@unknown"
@@ -447,28 +558,28 @@ class FarcasterObserver:
     def get_user_context(self, message: Message) -> Dict[str, Any]:
         """Get user context information from a message."""
         context = {
-            "username": getattr(message, 'sender_username', 'unknown'),
-            "display_name": getattr(message, 'sender_display_name', 'Unknown'),
-            "fid": getattr(message, 'sender_fid', None),
-            "follower_count": getattr(message, 'sender_follower_count', 0),
-            "following_count": getattr(message, 'sender_following_count', 0),
+            "username": getattr(message, "sender_username", "unknown"),
+            "display_name": getattr(message, "sender_display_name", "Unknown"),
+            "fid": getattr(message, "sender_fid", None),
+            "follower_count": getattr(message, "sender_follower_count", 0),
+            "following_count": getattr(message, "sender_following_count", 0),
             "power_badge": False,
-            "verified_addresses": []
+            "verified_addresses": [],
         }
-        
+
         # Extract metadata if available
-        metadata = getattr(message, 'metadata', {})
+        metadata = getattr(message, "metadata", {})
         if isinstance(metadata, dict):
-            context["power_badge"] = metadata.get('power_badge', False)
-            context["verified_addresses"] = metadata.get('verified_addresses', {})
-        
+            context["power_badge"] = metadata.get("power_badge", False)
+            context["verified_addresses"] = metadata.get("verified_addresses", {})
+
         # Determine engagement level based on follower count
-        follower_count = context.get('follower_count', 0)
+        follower_count = context.get("follower_count", 0)
         if follower_count > 1000:
-            context["engagement_level"] = 'high'
+            context["engagement_level"] = "high"
         elif follower_count > 100:
-            context["engagement_level"] = 'medium'
+            context["engagement_level"] = "medium"
         else:
-            context["engagement_level"] = 'low'
-        
+            context["engagement_level"] = "low"
+
         return context

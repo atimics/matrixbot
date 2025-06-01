@@ -377,12 +377,14 @@ Based on this world state, what actions (if any) should you take? Remember you c
         # Strategy 3: Try to fix common JSON formatting issues
         # Check if it looks like JSON but is missing opening/closing braces
         response_clean = response_stripped
-        
+
         # Case 1: Missing opening brace
-        if not response_clean.startswith("{") and ("observations" in response_clean or "selected_actions" in response_clean):
+        if not response_clean.startswith("{") and (
+            "observations" in response_clean or "selected_actions" in response_clean
+        ):
             # Try adding opening brace
             response_clean = "{" + response_clean
-            
+
         # Case 2: Missing closing brace
         if response_clean.startswith("{") and not response_clean.endswith("}"):
             # Count braces to see if we need to add closing brace(s)
@@ -390,7 +392,7 @@ Based on this world state, what actions (if any) should you take? Remember you c
             close_count = response_clean.count("}")
             if open_count > close_count:
                 response_clean += "}" * (open_count - close_count)
-        
+
         # Try parsing the cleaned version
         if response_clean != response_stripped:
             try:
@@ -462,36 +464,53 @@ Based on this world state, what actions (if any) should you take? Remember you c
 
         # Strategy 6: Last resort - try to reconstruct JSON from likely content
         # Look for key patterns and try to build a minimal valid JSON
-        if any(key in response for key in ["observations", "selected_actions", "potential_actions"]):
-            logger.warning("Attempting last-resort JSON reconstruction from malformed response")
-            
+        if any(
+            key in response
+            for key in ["observations", "selected_actions", "potential_actions"]
+        ):
+            logger.warning(
+                "Attempting last-resort JSON reconstruction from malformed response"
+            )
+
             # Try to find the content between quotes after key indicators
             reconstructed = {}
-            
+
             # Extract observations
-            obs_match = re.search(r'"observations":\s*"([^"]*(?:\\.[^"]*)*)"', response, re.DOTALL)
+            obs_match = re.search(
+                r'"observations":\s*"([^"]*(?:\\.[^"]*)*)"', response, re.DOTALL
+            )
             if obs_match:
                 reconstructed["observations"] = obs_match.group(1)
-            
+
             # Extract selected_actions (this is complex, so we'll provide an empty list if not found properly)
-            actions_match = re.search(r'"selected_actions":\s*(\[.*?\])', response, re.DOTALL)
+            actions_match = re.search(
+                r'"selected_actions":\s*(\[.*?\])', response, re.DOTALL
+            )
             if actions_match:
                 try:
-                    reconstructed["selected_actions"] = json.loads(actions_match.group(1))
+                    reconstructed["selected_actions"] = json.loads(
+                        actions_match.group(1)
+                    )
                 except json.JSONDecodeError:
                     reconstructed["selected_actions"] = []
             else:
                 reconstructed["selected_actions"] = []
-            
+
             # Extract reasoning
-            reasoning_match = re.search(r'"reasoning":\s*"([^"]*(?:\\.[^"]*)*)"', response, re.DOTALL)
+            reasoning_match = re.search(
+                r'"reasoning":\s*"([^"]*(?:\\.[^"]*)*)"', response, re.DOTALL
+            )
             if reasoning_match:
                 reconstructed["reasoning"] = reasoning_match.group(1)
             else:
-                reconstructed["reasoning"] = "Unable to extract reasoning from malformed response"
-            
+                reconstructed[
+                    "reasoning"
+                ] = "Unable to extract reasoning from malformed response"
+
             if reconstructed:
-                logger.info(f"Successfully reconstructed JSON with keys: {list(reconstructed.keys())}")
+                logger.info(
+                    f"Successfully reconstructed JSON with keys: {list(reconstructed.keys())}"
+                )
                 return reconstructed
 
         # If all else fails, raise an error with helpful context

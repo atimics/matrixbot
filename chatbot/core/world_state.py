@@ -42,10 +42,10 @@ logger = logging.getLogger(__name__)
 class Message:
     """
     Represents a unified message from any supported platform with comprehensive metadata.
-    
+
     This class provides a standardized interface for messages across Matrix and Farcaster
     platforms while preserving platform-specific information in a structured way.
-    
+
     Attributes:
         id: Unique message identifier (event_id for Matrix, cast hash for Farcaster)
         channel_id: Channel/room identifier where the message was posted
@@ -54,7 +54,7 @@ class Message:
         content: The text content of the message
         timestamp: Unix timestamp when the message was created
         reply_to: Optional ID of the message this is replying to
-        
+
     Enhanced Social Media Attributes:
         sender_username: Platform-specific username for tagging (@username)
         sender_display_name: Human-readable display name
@@ -63,7 +63,7 @@ class Message:
         sender_bio: User biography/description text
         sender_follower_count: Number of followers (social influence metric)
         sender_following_count: Number of accounts the user follows
-        
+
     Platform Metadata:
         metadata: Dictionary containing additional platform-specific data such as:
                  - power_badge: Whether user has verification/power badge
@@ -71,7 +71,7 @@ class Message:
                  - cast_type: Type of Farcaster cast (cast, recast, etc.)
                  - encryption_info: Matrix encryption details
                  - edit_history: Message edit tracking
-    
+
     Methods:
         to_ai_summary_dict(): Returns optimized version for AI consumption
         is_from_bot(): Checks if message originated from the bot itself
@@ -98,22 +98,26 @@ class Message:
     metadata: Dict[str, Any] = field(
         default_factory=dict
     )  # Additional platform-specific data
-    
+
     # Image URLs found in the message
     image_urls: Optional[List[str]] = field(default_factory=list)
-    
+
     # v0.0.3: Media attachments and archival tracking
-    s3_media_attachments: Optional[List[Dict[str, str]]] = field(default_factory=list)  # [{"type": "image", "s3_url": "..."}, ...]
-    archived_media_tx_ids: Optional[List[str]] = field(default_factory=list)  # List of Arweave TXIDs if media archived
+    s3_media_attachments: Optional[List[Dict[str, str]]] = field(
+        default_factory=list
+    )  # [{"type": "image", "s3_url": "..."}, ...]
+    archived_media_tx_ids: Optional[List[str]] = field(
+        default_factory=list
+    )  # List of Arweave TXIDs if media archived
 
     def to_ai_summary_dict(self) -> Dict[str, Any]:
         """
         Return a summarized version of the message optimized for AI consumption.
-        
+
         This method reduces token usage by truncating long content and focusing on
         the most relevant metadata for AI decision-making. It preserves essential
         context while removing verbose or unnecessary details.
-        
+
         Returns:
             Dictionary with key message information optimized for AI prompts:
             - Truncated content (250 chars max)
@@ -149,17 +153,17 @@ class Message:
     ) -> bool:
         """
         Check if this message is from the bot itself.
-        
+
         This method supports multiple identification strategies to handle different
         platform identity mechanisms and edge cases in user identification.
-        
+
         Args:
             bot_fid: Bot's Farcaster ID for precise identification
             bot_username: Bot's username for fallback identification
-            
+
         Returns:
             True if the message originated from the bot, False otherwise
-            
+
         Note:
             Uses multiple matching strategies to handle platform differences
             and ensure reliable bot message detection for conversation context.
@@ -177,17 +181,17 @@ class Message:
 class Channel:
     """
     Represents a communication channel with comprehensive metadata and activity tracking.
-    
+
     This class provides a unified interface for channels/rooms across different platforms
     while maintaining platform-specific details and providing intelligent activity analysis.
-    
+
     Attributes:
         id: Unique channel identifier (room ID for Matrix, channel ID for Farcaster)
         type: Platform type ('matrix' or 'farcaster')
         name: Human-readable channel name or title
         recent_messages: List of recent Message objects with automatic size management
         last_checked: Unix timestamp of last observation cycle
-        
+
     Matrix-Specific Attributes:
         canonical_alias: Primary room alias (#room:server.com)
         alt_aliases: List of alternative room aliases
@@ -198,7 +202,7 @@ class Channel:
         public: Whether the room is publicly joinable
         power_levels: Dictionary mapping user IDs to power levels
         creation_time: Unix timestamp when the room was created
-        
+
     Methods:
         get_activity_summary(): Provides comprehensive activity analysis
         __post_init__(): Performs post-initialization validation and setup
@@ -220,15 +224,17 @@ class Channel:
     public: bool = True  # Is room publicly joinable
     power_levels: Dict[str, int] = field(default_factory=dict)  # User power levels
     creation_time: Optional[float] = None  # When room was created
-    
+
     # Channel status tracking
-    status: str = "active"  # Status: 'active', 'left_by_bot', 'kicked', 'banned', 'invited'
+    status: str = (
+        "active"  # Status: 'active', 'left_by_bot', 'kicked', 'banned', 'invited'
+    )
     last_status_update: float = 0.0  # When status was last updated
 
     def __post_init__(self):
         """
         Perform post-initialization validation and setup.
-        
+
         This method can be extended to add validation logic, default value
         assignment, or other initialization tasks that require the full object state.
         """
@@ -239,11 +245,11 @@ class Channel:
     def get_activity_summary(self) -> Dict[str, Any]:
         """
         Generate a comprehensive summary of recent channel activity.
-        
+
         This method provides detailed analytics about channel engagement, user activity,
         and temporal patterns that can inform AI decision-making about channel priority
         and engagement strategies.
-        
+
         Returns:
             Dictionary containing:
             - message_count: Total number of recent messages
@@ -295,17 +301,17 @@ class Channel:
 class ActionHistory:
     """
     Represents a completed or scheduled action with comprehensive tracking.
-    
+
     This class maintains a complete audit trail of bot actions, enabling deduplication,
     performance monitoring, and intelligent decision-making about future actions.
-    
+
     Attributes:
         action_type: Type of action performed (e.g., 'send_farcaster_reply', 'like_farcaster_post')
         parameters: Dictionary of parameters used for the action execution
         result: Result or status of the action ('success', 'failure', 'scheduled', etc.)
         timestamp: Unix timestamp when the action was completed or updated
         action_id: Unique identifier for tracking and updating scheduled actions
-        
+
     Usage:
         - Deduplication: Prevents duplicate likes, follows, and replies
         - Performance Monitoring: Tracks success rates and execution times
@@ -323,12 +329,12 @@ class ActionHistory:
 class WorldState:
     """
     The complete observable state of the world with advanced management capabilities.
-    
+
     This class serves as the central knowledge base for the AI system, maintaining
     comprehensive awareness of all platform activities, conversations, and bot interactions.
     It provides intelligent organization, deduplication, and optimization features for
     efficient AI decision-making.
-    
+
     Core Components:
         - channels: Dictionary mapping channel IDs to Channel objects
         - action_history: Chronological list of completed actions
@@ -337,7 +343,7 @@ class WorldState:
         - seen_messages: Set for cross-platform message deduplication
         - rate_limits: API rate limiting information and enforcement data
         - pending_matrix_invites: Matrix room invitations awaiting response
-        
+
     Key Features:
         - Automatic message deduplication across all platforms
         - Intelligent conversation thread management
@@ -345,7 +351,7 @@ class WorldState:
         - Comprehensive action tracking with deduplication
         - Real-time activity monitoring and analytics
         - Memory management with automatic cleanup
-        
+
     Performance Optimizations:
         - Message rotation to prevent memory bloat (50 messages per channel)
         - Action history limits (100 actions maximum)
@@ -356,7 +362,7 @@ class WorldState:
     def __init__(self):
         """
         Initialize empty world state with optimized data structures.
-        
+
         Sets up all necessary containers and tracking mechanisms for efficient
         operation across multiple platforms and conversation contexts.
         """
@@ -368,16 +374,20 @@ class WorldState:
         ] = {}  # Map root cast id to thread messages
         self.thread_roots: Dict[str, Message] = {}  # Root message for each thread
         self.seen_messages: set[str] = set()  # Deduplication of message IDs
-        
+
         # Rate limiting and API management
         self.rate_limits: Dict[str, Any] = {}  # API rate limiting information
-        
+
         # Matrix room management
-        self.pending_matrix_invites: List[Dict[str, Any]] = []  # Pending Matrix invitations
-        
+        self.pending_matrix_invites: List[
+            Dict[str, Any]
+        ] = []  # Pending Matrix invitations
+
         # v0.0.3: Bot media tracking for Farcaster engagement-based archival
-        self.bot_media_on_farcaster: Dict[str, Dict[str, Any]] = {}  # cast_hash -> media_info
-        
+        self.bot_media_on_farcaster: Dict[
+            str, Dict[str, Any]
+        ] = {}  # cast_hash -> media_info
+
         # Initialize timestamp tracking
         self.last_update = time.time()
 
@@ -696,7 +706,9 @@ class WorldStateManager:
         }
         logger.info("WorldStateManager: Initialized empty world state")
 
-    def add_channel(self, channel_id: str, channel_type: str, name: str, status: str = "active"):
+    def add_channel(
+        self, channel_id: str, channel_type: str, name: str, status: str = "active"
+    ):
         """Add a new channel to monitor"""
         self.state.channels[channel_id] = Channel(
             id=channel_id,
@@ -707,7 +719,9 @@ class WorldStateManager:
             status=status,
             last_status_update=time.time(),
         )
-        logger.info(f"WorldState: Added {channel_type} channel '{name}' ({channel_id}) with status '{status}'")
+        logger.info(
+            f"WorldState: Added {channel_type} channel '{name}' ({channel_id}) with status '{status}'"
+        )
 
     def add_message(self, channel_id: str, message: Message):
         """Add a new message to a channel"""
@@ -746,13 +760,17 @@ class WorldStateManager:
         )
 
     def add_action_result(
-        self, action_type: str, parameters: Dict[str, Any], result: str, action_id: Optional[str] = None
+        self,
+        action_type: str,
+        parameters: Dict[str, Any],
+        result: str,
+        action_id: Optional[str] = None,
     ) -> str:
         """Record the result of an executed action. Returns the action_id for tracking."""
         if not action_id:
             # Generate a unique ID for new actions
             action_id = f"{action_type}_{int(time.time() * 1000)}_{id(parameters)}"
-        
+
         action = ActionHistory(
             action_type=action_type,
             parameters=parameters,
@@ -769,26 +787,36 @@ class WorldStateManager:
 
         self.state.last_update = time.time()
 
-        logger.info(f"WorldState: Action completed - {action_type}: {result} (ID: {action_id})")
+        logger.info(
+            f"WorldState: Action completed - {action_type}: {result} (ID: {action_id})"
+        )
         return action_id
 
-    def update_action_result(self, action_id: str, new_result: str, cast_hash: Optional[str] = None) -> bool:
+    def update_action_result(
+        self, action_id: str, new_result: str, cast_hash: Optional[str] = None
+    ) -> bool:
         """Update the result of an existing action by ID. Returns True if found and updated."""
         for action in self.state.action_history:
             if action.action_id == action_id:
                 old_result = action.result
                 action.result = new_result
-                action.timestamp = time.time()  # Update timestamp to reflect completion time
-                
+                action.timestamp = (
+                    time.time()
+                )  # Update timestamp to reflect completion time
+
                 # If this is a Farcaster action and we have a cast hash, add it to parameters
                 if cast_hash and action.action_type.startswith("send_farcaster"):
                     action.parameters["cast_hash"] = cast_hash
-                
+
                 self.state.last_update = time.time()
-                logger.info(f"WorldState: Action {action_id} updated - {action.action_type}: {old_result} -> {new_result}")
+                logger.info(
+                    f"WorldState: Action {action_id} updated - {action.action_type}: {old_result} -> {new_result}"
+                )
                 return True
-        
-        logger.warning(f"WorldState: Could not find action with ID {action_id} to update")
+
+        logger.warning(
+            f"WorldState: Could not find action with ID {action_id} to update"
+        )
         return False
 
     def update_system_status(self, updates: Dict[str, Any]):
@@ -939,7 +967,7 @@ class WorldStateManager:
     def add_pending_matrix_invite(self, invite_info: Dict[str, Any]) -> None:
         """
         Add a pending Matrix room invite to the world state.
-        
+
         Args:
             invite_info: Dictionary with 'room_id', 'inviter', and optionally 'room_name', 'timestamp'
         """
@@ -947,40 +975,45 @@ class WorldStateManager:
         if not room_id:
             logger.warning("Cannot add Matrix invite without room_id")
             return
-            
+
         # Check for duplicates and update if existing
         for existing_invite in self.state.pending_matrix_invites:
             if existing_invite.get("room_id") == room_id:
                 # Update existing invite with new information
                 existing_invite.update(invite_info)
-                logger.info(f"WorldState: Updated existing pending invite for room {room_id} from {invite_info.get('inviter')}")
+                logger.info(
+                    f"WorldState: Updated existing pending invite for room {room_id} from {invite_info.get('inviter')}"
+                )
                 self.state.last_update = time.time()
                 return
-                
+
         # Add timestamp if not provided
         if "timestamp" not in invite_info:
             invite_info["timestamp"] = time.time()
-            
+
         self.state.pending_matrix_invites.append(invite_info)
         self.state.last_update = time.time()
-        logger.info(f"WorldState: Added new pending Matrix invite for room {room_id} from {invite_info.get('inviter')}")
+        logger.info(
+            f"WorldState: Added new pending Matrix invite for room {room_id} from {invite_info.get('inviter')}"
+        )
 
     def remove_pending_matrix_invite(self, room_id: str) -> bool:
         """
         Remove a pending Matrix invite from the world state.
-        
+
         Args:
             room_id: The room ID to remove from pending invites
-            
+
         Returns:
             True if invite was found and removed, False otherwise
         """
         original_count = len(self.state.pending_matrix_invites)
         self.state.pending_matrix_invites = [
-            invite for invite in self.state.pending_matrix_invites 
+            invite
+            for invite in self.state.pending_matrix_invites
             if invite.get("room_id") != room_id
         ]
-        
+
         removed = len(self.state.pending_matrix_invites) < original_count
         if removed:
             self.state.last_update = time.time()
@@ -989,10 +1022,12 @@ class WorldStateManager:
             logger.debug(f"No pending Matrix invite found for room {room_id}")
         return removed
 
-    def update_channel_status(self, channel_id: str, new_status: str, room_name: Optional[str] = None):
+    def update_channel_status(
+        self, channel_id: str, new_status: str, room_name: Optional[str] = None
+    ):
         """
         Update the status of a channel (e.g., 'left_by_bot', 'kicked', 'banned', 'active').
-        
+
         Args:
             channel_id: The channel ID to update
             new_status: New status for the channel
@@ -1003,28 +1038,34 @@ class WorldStateManager:
             self.state.channels[channel_id].status = new_status
             self.state.channels[channel_id].last_status_update = time.time()
             self.state.last_update = time.time()
-            logger.info(f"WorldState: Updated channel {channel_id} ({self.state.channels[channel_id].name}) status from '{old_status}' to '{new_status}'")
+            logger.info(
+                f"WorldState: Updated channel {channel_id} ({self.state.channels[channel_id].name}) status from '{old_status}' to '{new_status}'"
+            )
         elif room_name:
             # If channel not known, add it with the new status (e.g. for kicks from unknown rooms)
             self.add_channel(channel_id, "matrix", room_name, status=new_status)
         else:
-            logger.warning(f"Cannot update status for unknown channel {channel_id} without providing a room name.")
+            logger.warning(
+                f"Cannot update status for unknown channel {channel_id} without providing a room name."
+            )
 
     def get_pending_matrix_invites(self) -> List[Dict[str, Any]]:
         """
         Get all pending Matrix invites.
-        
+
         Returns:
             List of invite dictionaries
         """
         return self.state.pending_matrix_invites.copy()
 
     # v0.0.3: Bot Media Tracking Methods for Permaweb Archival
-    
-    def record_bot_media_post(self, cast_hash: str, s3_url: str, media_type: str, channel_id: str):
+
+    def record_bot_media_post(
+        self, cast_hash: str, s3_url: str, media_type: str, channel_id: str
+    ):
         """
         Record that the bot posted media to Farcaster for engagement tracking.
-        
+
         Args:
             cast_hash: Farcaster cast hash
             s3_url: S3 URL of the media
@@ -1037,14 +1078,14 @@ class WorldStateManager:
             "likes": 0,
             "arweave_tx_id": None,
             "posted_timestamp": time.time(),
-            "channel_id": channel_id
+            "channel_id": channel_id,
         }
         logger.info(f"WorldState: Recorded bot media post {cast_hash} ({media_type})")
-    
+
     def update_bot_media_likes(self, cast_hash: str, current_likes: int):
         """
         Update the like count for bot media on Farcaster.
-        
+
         Args:
             cast_hash: Farcaster cast hash
             current_likes: Current number of likes
@@ -1053,39 +1094,49 @@ class WorldStateManager:
             old_likes = self.state.bot_media_on_farcaster[cast_hash]["likes"]
             self.state.bot_media_on_farcaster[cast_hash]["likes"] = current_likes
             if current_likes > old_likes:
-                logger.debug(f"WorldState: Updated likes for {cast_hash}: {old_likes} -> {current_likes}")
-    
-    def get_top_bot_media_for_archival(self, media_type: str, like_threshold: int) -> Optional[tuple]:
+                logger.debug(
+                    f"WorldState: Updated likes for {cast_hash}: {old_likes} -> {current_likes}"
+                )
+
+    def get_top_bot_media_for_archival(
+        self, media_type: str, like_threshold: int
+    ) -> Optional[tuple]:
         """
         Find the top liked bot media of a specific type that hasn't been archived yet.
-        
+
         Args:
             media_type: 'image' or 'video'
             like_threshold: Minimum likes required for archival
-            
+
         Returns:
             Tuple of (cast_hash, media_info_dict) or None
         """
         candidates = []
         for cast_hash, media_info in self.state.bot_media_on_farcaster.items():
-            if (media_info["media_type"] == media_type and 
-                media_info["likes"] >= like_threshold and 
-                media_info["arweave_tx_id"] is None):
+            if (
+                media_info["media_type"] == media_type
+                and media_info["likes"] >= like_threshold
+                and media_info["arweave_tx_id"] is None
+            ):
                 candidates.append((cast_hash, media_info))
-        
+
         if candidates:
             # Return the one with the most likes
             return max(candidates, key=lambda x: x[1]["likes"])
         return None
-    
+
     def mark_bot_media_archived(self, cast_hash: str, arweave_tx_id: str):
         """
         Mark bot media as archived to Arweave.
-        
+
         Args:
             cast_hash: Farcaster cast hash
             arweave_tx_id: Arweave transaction ID
         """
         if cast_hash in self.state.bot_media_on_farcaster:
-            self.state.bot_media_on_farcaster[cast_hash]["arweave_tx_id"] = arweave_tx_id
-            logger.info(f"WorldState: Marked {cast_hash} as archived to Arweave: {arweave_tx_id}")
+            self.state.bot_media_on_farcaster[cast_hash][
+                "arweave_tx_id"
+            ] = arweave_tx_id
+            logger.info(
+                f"WorldState: Marked {cast_hash} as archived to Arweave: {arweave_tx_id}"
+            )

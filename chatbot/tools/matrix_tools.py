@@ -5,8 +5,8 @@ import logging
 import time
 from typing import Any, Dict
 
-from .base import ActionContext, ToolInterface
 from ..utils.markdown_utils import format_for_matrix
+from .base import ActionContext, ToolInterface
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,9 @@ class SendMatrixReplyTool(ToolInterface):
 
         # If reply_to_id is missing but we have channel_id and content, fall back to regular message
         if not reply_to_event_id:
-            logger.info(f"reply_to_id missing, falling back to regular message in {room_id}")
+            logger.info(
+                f"reply_to_id missing, falling back to regular message in {room_id}"
+            )
             try:
                 # Format content if markdown is enabled
                 if format_as_markdown:
@@ -75,8 +77,10 @@ class SendMatrixReplyTool(ToolInterface):
                         room_id, formatted["plain"], formatted["html"]
                     )
                 else:
-                    result = await context.matrix_observer.send_message(room_id, content)
-                
+                    result = await context.matrix_observer.send_message(
+                        room_id, content
+                    )
+
                 logger.info(f"Matrix observer send_message returned: {result}")
 
                 if result.get("success"):
@@ -103,9 +107,15 @@ class SendMatrixReplyTool(ToolInterface):
                     }
 
             except Exception as e:
-                error_msg = f"Error executing fallback message for {self.name}: {str(e)}"
+                error_msg = (
+                    f"Error executing fallback message for {self.name}: {str(e)}"
+                )
                 logger.exception(error_msg)
-                return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+                return {
+                    "status": "failure",
+                    "error": error_msg,
+                    "timestamp": time.time(),
+                }
 
         try:
             # Format content if markdown is enabled
@@ -209,7 +219,7 @@ class SendMatrixMessageTool(ToolInterface):
                 )
             else:
                 result = await context.matrix_observer.send_message(room_id, content)
-            
+
             logger.info(f"Matrix observer send_message returned: {result}")
 
             if result.get("success"):
@@ -580,7 +590,9 @@ class ReactToMatrixMessageTool(ToolInterface):
 
         try:
             # Use the observer's react_to_message method
-            result = await context.matrix_observer.react_to_message(room_id, event_id, emoji)
+            result = await context.matrix_observer.react_to_message(
+                room_id, event_id, emoji
+            )
             logger.info(f"Matrix observer react_to_message returned: {result}")
 
             if result.get("success"):
@@ -591,7 +603,11 @@ class ReactToMatrixMessageTool(ToolInterface):
                 if context.world_state_manager:
                     context.world_state_manager.add_action_result(
                         action_type=self.name,
-                        parameters={"room_id": room_id, "event_id": event_id, "emoji": emoji},
+                        parameters={
+                            "room_id": room_id,
+                            "event_id": event_id,
+                            "emoji": emoji,
+                        },
                         result="success",
                     )
 
@@ -606,12 +622,16 @@ class ReactToMatrixMessageTool(ToolInterface):
             else:
                 error_msg = f"Failed to react to Matrix message: {result.get('error', 'unknown error')}"
                 logger.error(error_msg)
-                
+
                 # Record this action failure in world state
                 if context.world_state_manager:
                     context.world_state_manager.add_action_result(
                         action_type=self.name,
-                        parameters={"room_id": room_id, "event_id": event_id, "emoji": emoji},
+                        parameters={
+                            "room_id": room_id,
+                            "event_id": event_id,
+                            "emoji": emoji,
+                        },
                         result=f"failure: {result.get('error', 'unknown error')}",
                     )
 
@@ -624,13 +644,17 @@ class ReactToMatrixMessageTool(ToolInterface):
         except Exception as e:
             error_msg = f"Error executing {self.name}: {str(e)}"
             logger.exception(error_msg)
-            
+
             # Record this action failure in world state
             if context.world_state_manager:
                 context.world_state_manager.add_action_result(
                     action_type=self.name,
-                    parameters={"room_id": room_id, "event_id": event_id, "emoji": emoji},
+                    parameters={
+                        "room_id": room_id,
+                        "event_id": event_id,
+                        "emoji": emoji,
+                    },
                     result=f"failure: {str(e)}",
                 )
-                
+
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}

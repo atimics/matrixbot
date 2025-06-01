@@ -43,7 +43,9 @@ class AppConfig(BaseSettings):
 
     # OpenRouter specific from original .env.example (these might be for other services or documentation)
     OPENROUTER_MODEL: str = "openai/gpt-4o-mini"  # Matches AI_MODEL typically
-    OPENROUTER_MULTIMODAL_MODEL: str = "openai/gpt-4o"  # Or your preferred OpenRouter multimodal model
+    OPENROUTER_MULTIMODAL_MODEL: str = (
+        "openai/gpt-4o"  # Or your preferred OpenRouter multimodal model
+    )
     YOUR_SITE_URL: Optional[str] = None
     YOUR_SITE_NAME: Optional[str] = None
 
@@ -75,7 +77,9 @@ class AppConfig(BaseSettings):
     REPLICATE_LORA_SCALE: Optional[float] = 0.75
 
     # Google AI Media Generation
-    GOOGLE_API_KEY: Optional[str] = None  # For Google AI services (separate from OpenRouter)
+    GOOGLE_API_KEY: Optional[
+        str
+    ] = None  # For Google AI services (separate from OpenRouter)
     GOOGLE_GEMINI_IMAGE_MODEL: str = "gemini-1.5-flash-latest"
     GOOGLE_VEO_VIDEO_MODEL: str = "models/veo-experimental-v1"
 
