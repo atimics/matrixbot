@@ -28,6 +28,8 @@ class SendFarcasterPostTool(ToolInterface):
         return {
             "content": "string - The text content of the cast to post",
             "channel": "string (optional) - The channel to post in (if not provided, posts to user's timeline)",
+            "image_s3_url": "string (optional) - S3 URL of an image to attach to the post",
+            "video_s3_url": "string (optional) - S3 URL of a video to attach to the post",
         }
 
     async def execute(
@@ -47,11 +49,30 @@ class SendFarcasterPostTool(ToolInterface):
         # Extract and validate parameters
         content = params.get("content")
         channel = params.get("channel")  # Optional
+        image_s3_url = params.get("image_s3_url")  # Optional
+        video_s3_url = params.get("video_s3_url")  # Optional
 
         if not content:
             error_msg = "Missing required parameter 'content' for Farcaster post"
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+        # Prepare embeds for media attachments
+        embeds = []
+        media_type = None
+        media_s3_url = None
+        
+        if image_s3_url:
+            embeds.append({"url": image_s3_url})
+            media_type = "image"
+            media_s3_url = image_s3_url
+            logger.info(f"Adding image embed to Farcaster post: {image_s3_url}")
+        
+        if video_s3_url:
+            embeds.append({"url": video_s3_url})
+            media_type = "video"
+            media_s3_url = video_s3_url
+            logger.info(f"Adding video embed to Farcaster post: {video_s3_url}")
 
         # Prevent duplicate posts with identical content
         if (
@@ -73,11 +94,12 @@ class SendFarcasterPostTool(ToolInterface):
                 if context.world_state_manager:
                     action_id = context.world_state_manager.add_action_result(
                         action_type=self.name,
-                        parameters={"content": content, "channel": channel},
+                        parameters={"content": content, "channel": channel, "embeds": embeds},
                         result="scheduled",
                     )
                 
-                context.farcaster_observer.schedule_post(content, channel, action_id)
+                # Note: The schedule_post method may need to be updated to handle embeds
+                context.farcaster_observer.schedule_post(content, channel, action_id, embeds)
                 success_msg = "Scheduled Farcaster post via scheduler"
                 logger.info(success_msg)
                 return {

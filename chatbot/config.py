@@ -66,6 +66,36 @@ class AppConfig(BaseSettings):
         True  # Include full user metadata or summarize
     )
 
+    # v0.0.3: Media Generation & Permaweb Storage Configuration
+
+    # Replicate Configuration
+    REPLICATE_API_TOKEN: Optional[str] = None
+    REPLICATE_IMAGE_MODEL: str = "stability-ai/sdxl"
+    REPLICATE_LORA_WEIGHTS_URL: Optional[str] = None
+    REPLICATE_LORA_SCALE: Optional[float] = 0.75
+
+    # Google AI Media Generation
+    GOOGLE_API_KEY: Optional[str] = None  # For Google AI services (separate from OpenRouter)
+    GOOGLE_GEMINI_IMAGE_MODEL: str = "gemini-1.5-flash-latest"
+    GOOGLE_VEO_VIDEO_MODEL: str = "models/veo-experimental-v1"
+
+    # Arweave Uploader Service
+    ARWEAVE_UPLOADER_API_ENDPOINT: Optional[str] = None
+    ARWEAVE_UPLOADER_API_KEY: Optional[str] = None
+    ARWEAVE_GATEWAY_URL: str = "https://arweave.net"
+
+    # Tool Cooldowns & Resource Limits
+    IMAGE_GENERATION_COOLDOWN_SECONDS: int = 120  # 2 minutes
+    VIDEO_GENERATION_COOLDOWN_SECONDS: int = 600  # 10 minutes
+    STORE_MEMORY_COOLDOWN_SECONDS: int = 60  # 1 minute
+    MAX_IMAGE_GENERATIONS_PER_HOUR: int = 15
+    MAX_VIDEO_GENERATIONS_PER_HOUR: int = 5
+    MAX_MEMORIES_STORED_PER_HOUR: int = 30
+
+    # Popular Media Archival
+    POPULAR_MEDIA_ARCHIVAL_THRESHOLD_LIKES: int = 5
+    POPULAR_MEDIA_ARCHIVAL_INTERVAL_MINUTES: int = 30
+
 
 # Global settings instance
 settings = AppConfig()

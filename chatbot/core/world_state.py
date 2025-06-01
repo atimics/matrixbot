@@ -101,6 +101,10 @@ class Message:
     
     # Image URLs found in the message
     image_urls: Optional[List[str]] = field(default_factory=list)
+    
+    # v0.0.3: Media attachments and archival tracking
+    s3_media_attachments: Optional[List[Dict[str, str]]] = field(default_factory=list)  # [{"type": "image", "s3_url": "..."}, ...]
+    archived_media_tx_ids: Optional[List[str]] = field(default_factory=list)  # List of Arweave TXIDs if media archived
 
     def to_ai_summary_dict(self) -> Dict[str, Any]:
         """
@@ -364,9 +368,9 @@ class WorldState:
         ] = {}  # Map root cast id to thread messages
         self.thread_roots: Dict[str, Message] = {}  # Root message for each thread
         self.seen_messages: set[str] = set()  # Deduplication of message IDs
-        self.rate_limits: Dict[str, Dict[str, Any]] = {}  # API rate limit information
-        self.pending_matrix_invites: List[Dict[str, Any]] = []  # Matrix room invites waiting for response
-        self.last_update: float = time.time()
+        
+        # v0.0.3: Bot media tracking for Farcaster engagement-based archival
+        self.bot_media_on_farcaster: Dict[str, Dict[str, Any]] = {}  # cast_hash -> media_info
 
     def add_message(self, message: Message):
         """Add a message to the world state"""
@@ -1005,3 +1009,74 @@ class WorldStateManager:
             List of invite dictionaries
         """
         return self.state.pending_matrix_invites.copy()
+
+    # v0.0.3: Bot Media Tracking Methods for Permaweb Archival
+    
+    def record_bot_media_post(self, cast_hash: str, s3_url: str, media_type: str, channel_id: str):
+        """
+        Record that the bot posted media to Farcaster for engagement tracking.
+        
+        Args:
+            cast_hash: Farcaster cast hash
+            s3_url: S3 URL of the media
+            media_type: 'image' or 'video'
+            channel_id: Farcaster channel where posted
+        """
+        self.state.bot_media_on_farcaster[cast_hash] = {
+            "s3_url": s3_url,
+            "media_type": media_type,
+            "likes": 0,
+            "arweave_tx_id": None,
+            "posted_timestamp": time.time(),
+            "channel_id": channel_id
+        }
+        logger.info(f"WorldState: Recorded bot media post {cast_hash} ({media_type})")
+    
+    def update_bot_media_likes(self, cast_hash: str, current_likes: int):
+        """
+        Update the like count for bot media on Farcaster.
+        
+        Args:
+            cast_hash: Farcaster cast hash
+            current_likes: Current number of likes
+        """
+        if cast_hash in self.state.bot_media_on_farcaster:
+            old_likes = self.state.bot_media_on_farcaster[cast_hash]["likes"]
+            self.state.bot_media_on_farcaster[cast_hash]["likes"] = current_likes
+            if current_likes > old_likes:
+                logger.debug(f"WorldState: Updated likes for {cast_hash}: {old_likes} -> {current_likes}")
+    
+    def get_top_bot_media_for_archival(self, media_type: str, like_threshold: int) -> Optional[tuple]:
+        """
+        Find the top liked bot media of a specific type that hasn't been archived yet.
+        
+        Args:
+            media_type: 'image' or 'video'
+            like_threshold: Minimum likes required for archival
+            
+        Returns:
+            Tuple of (cast_hash, media_info_dict) or None
+        """
+        candidates = []
+        for cast_hash, media_info in self.state.bot_media_on_farcaster.items():
+            if (media_info["media_type"] == media_type and 
+                media_info["likes"] >= like_threshold and 
+                media_info["arweave_tx_id"] is None):
+                candidates.append((cast_hash, media_info))
+        
+        if candidates:
+            # Return the one with the most likes
+            return max(candidates, key=lambda x: x[1]["likes"])
+        return None
+    
+    def mark_bot_media_archived(self, cast_hash: str, arweave_tx_id: str):
+        """
+        Mark bot media as archived to Arweave.
+        
+        Args:
+            cast_hash: Farcaster cast hash
+            arweave_tx_id: Arweave transaction ID
+        """
+        if cast_hash in self.state.bot_media_on_farcaster:
+            self.state.bot_media_on_farcaster[cast_hash]["arweave_tx_id"] = arweave_tx_id
+            logger.info(f"WorldState: Marked {cast_hash} as archived to Arweave: {arweave_tx_id}")
