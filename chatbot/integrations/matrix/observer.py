@@ -695,6 +695,92 @@ class MatrixObserver:
             )
             return {"success": False, "error": f"Exception: {str(e)}"}
 
+    async def send_formatted_message(self, room_id: str, plain_content: str, html_content: str) -> Dict[str, Any]:
+        """Send a formatted message with both plain text and HTML versions."""
+        try:
+            logger.info(f"MatrixObserver.send_formatted_message called: room={room_id}")
+            
+            # Create formatted message content
+            content = {
+                "msgtype": "m.text",
+                "body": plain_content,  # Fallback plain text
+                "format": "org.matrix.custom.html",
+                "formatted_body": html_content
+            }
+            
+            response = await self.client.room_send(
+                room_id=room_id,
+                message_type="m.room.message",
+                content=content
+            )
+            
+            if isinstance(response, RoomSendResponse):
+                logger.info(f"MatrixObserver: Successfully sent formatted message to {room_id}")
+                return {
+                    "success": True,
+                    "event_id": response.event_id,
+                    "room_id": room_id
+                }
+            else:
+                logger.error(f"MatrixObserver: Failed to send formatted message: {response}")
+                return {
+                    "success": False,
+                    "error": str(response)
+                }
+                
+        except Exception as e:
+            logger.error(f"MatrixObserver: Error sending formatted message: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+    async def send_formatted_reply(self, room_id: str, plain_content: str, html_content: str, reply_to_event_id: str) -> Dict[str, Any]:
+        """Send a formatted reply with both plain text and HTML versions."""
+        try:
+            logger.info(f"MatrixObserver.send_formatted_reply called: room={room_id}, reply_to={reply_to_event_id}")
+            
+            # Create formatted reply content with reply metadata
+            content = {
+                "msgtype": "m.text",
+                "body": plain_content,
+                "format": "org.matrix.custom.html", 
+                "formatted_body": html_content,
+                "m.relates_to": {
+                    "m.in_reply_to": {
+                        "event_id": reply_to_event_id
+                    }
+                }
+            }
+            
+            response = await self.client.room_send(
+                room_id=room_id,
+                message_type="m.room.message",
+                content=content
+            )
+            
+            if isinstance(response, RoomSendResponse):
+                logger.info(f"MatrixObserver: Successfully sent formatted reply to {room_id}")
+                return {
+                    "success": True,
+                    "event_id": response.event_id,
+                    "room_id": room_id,
+                    "reply_to": reply_to_event_id
+                }
+            else:
+                logger.error(f"MatrixObserver: Failed to send formatted reply: {response}")
+                return {
+                    "success": False,
+                    "error": str(response)
+                }
+                
+        except Exception as e:
+            logger.error(f"MatrixObserver: Error sending formatted reply: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
     async def join_room(self, room_identifier: str) -> Dict[str, Any]:
         """Join a Matrix room by room ID or alias"""
         logger.info(

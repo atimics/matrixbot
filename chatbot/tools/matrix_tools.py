@@ -6,6 +6,7 @@ import time
 from typing import Any, Dict
 
 from .base import ActionContext, ToolInterface
+from ..utils.markdown_utils import format_for_matrix
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +28,9 @@ class SendMatrixReplyTool(ToolInterface):
     def parameters_schema(self) -> Dict[str, Any]:
         return {
             "channel_id": "string (Matrix room ID) - The room where the reply should be sent",
-            "content": "string - The message content to send as a reply",
+            "content": "string - The message content to send as a reply (supports markdown formatting)",
             "reply_to_id": "string - The event ID of the message to reply to",
+            "format_as_markdown": "boolean (optional, default: true) - Whether to format the content as markdown",
         }
 
     async def execute(
@@ -49,6 +51,7 @@ class SendMatrixReplyTool(ToolInterface):
         room_id = params.get("channel_id")
         content = params.get("content")
         reply_to_event_id = params.get("reply_to_id")
+        format_as_markdown = params.get("format_as_markdown", True)
 
         missing_params = []
         if not room_id:
@@ -64,10 +67,16 @@ class SendMatrixReplyTool(ToolInterface):
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
         try:
-            # Use the observer's send_reply method for low-level interaction
-            result = await context.matrix_observer.send_reply(
-                room_id, content, reply_to_event_id
-            )
+            # Format content if markdown is enabled
+            if format_as_markdown:
+                formatted = format_for_matrix(content)
+                result = await context.matrix_observer.send_formatted_reply(
+                    room_id, formatted["plain"], formatted["html"], reply_to_event_id
+                )
+            else:
+                result = await context.matrix_observer.send_reply(
+                    room_id, content, reply_to_event_id
+                )
             logger.info(f"Matrix observer send_reply returned: {result}")
 
             if result.get("success"):
@@ -116,7 +125,8 @@ class SendMatrixMessageTool(ToolInterface):
     def parameters_schema(self) -> Dict[str, Any]:
         return {
             "channel_id": "string (Matrix room ID) - The room where the message should be sent",
-            "content": "string - The message content to send",
+            "content": "string - The message content to send (supports markdown formatting)",
+            "format_as_markdown": "boolean (optional, default: true) - Whether to format the content as markdown",
         }
 
     async def execute(
@@ -136,6 +146,7 @@ class SendMatrixMessageTool(ToolInterface):
         # Extract and validate parameters
         room_id = params.get("channel_id")
         content = params.get("content")
+        format_as_markdown = params.get("format_as_markdown", True)
 
         missing_params = []
         if not room_id:
@@ -149,8 +160,15 @@ class SendMatrixMessageTool(ToolInterface):
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
         try:
-            # Use the observer's send_message method for low-level interaction
-            result = await context.matrix_observer.send_message(room_id, content)
+            # Format content if markdown is enabled
+            if format_as_markdown:
+                formatted = format_for_matrix(content)
+                result = await context.matrix_observer.send_formatted_message(
+                    room_id, formatted["plain"], formatted["html"]
+                )
+            else:
+                result = await context.matrix_observer.send_message(room_id, content)
+            
             logger.info(f"Matrix observer send_message returned: {result}")
 
             if result.get("success"):
