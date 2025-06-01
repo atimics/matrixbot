@@ -43,6 +43,7 @@ class AppConfig(BaseSettings):
 
     # OpenRouter specific from original .env.example (these might be for other services or documentation)
     OPENROUTER_MODEL: str = "openai/gpt-4o-mini"  # Matches AI_MODEL typically
+    OPENROUTER_MULTIMODAL_MODEL: str = "openai/gpt-4o"  # Or your preferred OpenRouter multimodal model
     YOUR_SITE_URL: Optional[str] = None
     YOUR_SITE_NAME: Optional[str] = None
 

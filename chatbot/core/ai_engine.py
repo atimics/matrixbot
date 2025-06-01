@@ -102,6 +102,22 @@ Examples of proactive discovery:
 - Check trending content in relevant channels to stay informed
 - Resolve cast URLs mentioned in Matrix rooms to provide context
 
+IMAGE UNDERSTANDING:
+If a message in `channels` includes `image_urls` (a list of image URLs), you can understand the content of these images.
+To do this, use the `describe_image` tool for each relevant image URL.
+Provide the `image_url` from the message to the tool. You can also provide an optional `prompt_text` if you have a specific question about the image.
+The tool will return a textual description of the image. Use this description to inform your response, make observations, or decide on further actions.
+
+Example: A message has `image_urls: ["http://example.com/photo.jpg"]`.
+Potential Action:
+{
+  "action_type": "describe_image",
+  "parameters": {"image_url": "http://example.com/photo.jpg", "prompt_text": "What is happening in this picture?"},
+  "reasoning": "To understand the shared image content before replying.",
+  "priority": 7
+}
+After receiving the description, you can then formulate a relevant response or action.
+
 RATE LIMIT AWARENESS:
 Check system_status.rate_limits before taking actions that use external APIs:
 - "farcaster_api": Neynar/Farcaster API limits

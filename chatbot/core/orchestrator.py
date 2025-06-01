@@ -21,6 +21,7 @@ from ..integrations.farcaster import FarcasterObserver
 from ..integrations.matrix.observer import MatrixObserver
 from ..tools.base import ActionContext
 from ..tools.core_tools import WaitTool
+from ..tools.describe_image_tool import DescribeImageTool
 from ..tools.farcaster_tools import (
     FollowFarcasterUserTool,
     GetCastByUrlTool,
@@ -802,6 +803,7 @@ class ContextAwareOrchestrator:
         """Register all available tools in the tool registry."""
         # Register core tools
         self.tool_registry.register_tool(WaitTool())
+        self.tool_registry.register_tool(DescribeImageTool())
 
         # Register Matrix tools
         self.tool_registry.register_tool(SendMatrixReplyTool())

@@ -20,6 +20,7 @@ from nio import (
     LoginResponse,
     MatrixRoom,
     RoomMessageText,
+    RoomMessageImage,
     RoomSendError,
     RoomSendResponse,
 )
@@ -79,6 +80,7 @@ class MatrixObserver:
 
         # Set up event callbacks
         self.client.add_event_callback(self._on_message, RoomMessageText)
+        self.client.add_event_callback(self._on_message, RoomMessageImage)
         
         # Import required Matrix event types
         from nio import InviteMemberEvent, RoomMemberEvent
@@ -138,7 +140,7 @@ class MatrixObserver:
             self.world_state.update_system_status({"matrix_connected": False})
             raise
 
-    async def _on_message(self, room: MatrixRoom, event: RoomMessageText):
+    async def _on_message(self, room: MatrixRoom, event):
         """Handle incoming Matrix messages and update room details"""
         # Skip our own messages
         if event.sender == self.user_id:
@@ -159,23 +161,57 @@ class MatrixObserver:
             f"MatrixObserver: Processing message from {room.room_id} ({room.display_name})"
         )
 
+        # Detect image URLs
+        image_urls_list = []
+        content = ""
+        
+        if isinstance(event, RoomMessageImage):
+            # Handle image messages
+            mxc_uri = event.url
+            if mxc_uri and self.client:  # Ensure client is available
+                try:
+                    # Convert MXC URI to HTTP URL
+                    http_url = self.client.mxc_to_http(mxc_uri)
+                    image_urls_list.append(http_url)
+                    logger.debug(f"MatrixObserver: Detected image {http_url} in message {event.event_id}")
+                except Exception as e:
+                    logger.error(f"MatrixObserver: Failed to convert MXC URI {mxc_uri} to HTTP: {e}")
+            
+            # For image messages, use the body as content (usually contains filename or description)
+            content = getattr(event, 'body', 'Image')
+            
+        elif isinstance(event, RoomMessageText):
+            # Handle text messages
+            content = event.body
+        else:
+            # Handle other message types
+            content = getattr(event, 'body', str(event.content))
+
         # Create message object
         message = Message(
             id=event.event_id,
             channel_id=room.room_id,
             channel_type="matrix",
             sender=event.sender,
-            content=event.body,
+            content=content,
             timestamp=time.time(),
             reply_to=None,  # TODO: Extract reply information if present
+            image_urls=image_urls_list if image_urls_list else None,
+            metadata={
+                "matrix_event_type": getattr(event, 'msgtype', type(event).__name__)
+            }
         )
 
         # Add to world state
         self.world_state.add_message(room.room_id, message)
 
+        log_content = content[:100] + "..." if len(content) > 100 else content
+        if image_urls_list:
+            log_content += f" [Image: {image_urls_list[0]}]"
+            
         logger.info(
             f"MatrixObserver: New message in {room.display_name or room.room_id}: "
-            f"{event.sender}: {event.body[:100]}..."
+            f"{event.sender}: {log_content}"
         )
 
     async def _on_invite(self, room, event):

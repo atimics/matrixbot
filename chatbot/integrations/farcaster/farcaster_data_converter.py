@@ -102,6 +102,29 @@ def _create_message_from_cast_data(
         }
         if custom_metadata:
             metadata_dict.update(custom_metadata)
+            
+        # Extract image URLs from embeds and text content
+        image_urls_list = []
+        
+        # From Embeds: Iterate through embeds
+        embeds = cast_data.get("embeds", [])
+        for embed in embeds:
+            if isinstance(embed, dict) and "url" in embed:
+                embed_url = embed["url"]
+                # Basic check for common image extensions or common image hosting domains
+                if embed_url.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')) or \
+                   any(domain in embed_url.lower() for domain in ['i.imgur.com', 'pbs.twimg.com/media', 'imagedelivery.net']):  # Add more as needed
+                    image_urls_list.append(embed_url)
+                    logger.debug(f"FarcasterConverter: Detected image URL in embed: {embed_url}")
+        
+        # From Text: Use regex to find common image URLs in text content
+        url_pattern = re.compile(r'https?://\S+\.(?:png|jpe?g|gif|webp)', re.IGNORECASE)
+        found_in_text = url_pattern.findall(content)
+        for img_url in found_in_text:
+            if img_url not in image_urls_list:  # Avoid duplicates from embeds
+                image_urls_list.append(img_url)
+                logger.debug(f"FarcasterConverter: Detected image URL in text: {img_url}")
+                
         message = Message(
             id=cast_hash,
             channel_id=derived_channel_id,
@@ -117,6 +140,7 @@ def _create_message_from_cast_data(
             sender_bio=author.get("profile", {}).get("bio", {}).get("text"),
             sender_follower_count=author.get("follower_count"),
             sender_following_count=author.get("following_count"),
+            image_urls=image_urls_list if image_urls_list else None,
             metadata=metadata_dict,
         )
         if last_seen_hashes is not None:

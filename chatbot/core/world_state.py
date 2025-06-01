@@ -98,6 +98,9 @@ class Message:
     metadata: Dict[str, Any] = field(
         default_factory=dict
     )  # Additional platform-specific data
+    
+    # Image URLs found in the message
+    image_urls: Optional[List[str]] = field(default_factory=list)
 
     def to_ai_summary_dict(self) -> Dict[str, Any]:
         """
@@ -126,6 +129,7 @@ class Message:
             "reply_to": self.reply_to,
             "sender_fid": self.sender_fid,
             "sender_follower_count": self.sender_follower_count,
+            "image_urls": self.image_urls if self.image_urls else [],
             "metadata": {
                 "power_badge": self.metadata.get("power_badge", False)
                 if self.metadata
