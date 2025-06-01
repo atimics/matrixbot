@@ -41,6 +41,7 @@ from ..tools.matrix_tools import (
     JoinMatrixRoomTool,
     LeaveMatrixRoomTool,
     ReactToMatrixMessageTool,
+    SendMatrixImageTool,
     SendMatrixMessageTool,
     SendMatrixReplyTool,
 )
@@ -851,6 +852,7 @@ class ContextAwareOrchestrator:
         # Register Matrix tools
         self.tool_registry.register_tool(SendMatrixReplyTool())
         self.tool_registry.register_tool(SendMatrixMessageTool())
+        self.tool_registry.register_tool(SendMatrixImageTool())
         self.tool_registry.register_tool(JoinMatrixRoomTool())
         self.tool_registry.register_tool(LeaveMatrixRoomTool())
         self.tool_registry.register_tool(AcceptMatrixInviteTool())

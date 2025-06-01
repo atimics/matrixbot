@@ -1147,3 +1147,129 @@ class MatrixObserver:
             error_msg = f"Exception while getting world state invites: {str(e)}"
             logger.error(f"MatrixObserver: {error_msg}", exc_info=True)
             return {"success": False, "error": error_msg, "invites": [], "count": 0}
+
+    async def send_image(
+        self, room_id: str, image_url: str, filename: str = None, content: str = None
+    ) -> Dict[str, Any]:
+        """
+        Send an image to a Matrix room.
+        
+        Args:
+            room_id: The room ID to send the image to
+            image_url: The URL of the image to send (should be publicly accessible)
+            filename: Optional filename for the image (defaults to extracted from URL)
+            content: Optional text content to accompany the image
+        
+        Returns:
+            Dict with success status and optional error message
+        """
+        logger.info(f"MatrixObserver.send_image called: room={room_id}, url={image_url}")
+
+        if not self.client:
+            logger.error("Matrix client not connected")
+            return {"success": False, "error": "Matrix client not connected"}
+
+        try:
+            import httpx
+            from urllib.parse import urlparse
+            import mimetypes
+            
+            # Determine filename if not provided
+            if not filename:
+                parsed_url = urlparse(image_url)
+                filename = parsed_url.path.split('/')[-1] or "image.jpg"
+            
+            # Download the image
+            async with httpx.AsyncClient() as client:
+                try:
+                    response = await client.get(image_url)
+                    response.raise_for_status()
+                    image_data = response.content
+                except Exception as e:
+                    error_msg = f"Failed to download image from {image_url}: {e}"
+                    logger.error(error_msg)
+                    return {"success": False, "error": error_msg}
+            
+            # Determine MIME type
+            mime_type, _ = mimetypes.guess_type(filename)
+            if not mime_type or not mime_type.startswith('image/'):
+                mime_type = "image/jpeg"  # Default fallback
+            
+            # Get the file size for content-length
+            file_size = len(image_data)
+            
+            # Upload the image to Matrix media repository
+            upload_response = await self.client.upload(
+                data_provider=lambda got_429, got_timeouts: image_data,
+                content_type=mime_type,
+                filename=filename,
+                filesize=file_size
+            )
+            
+            from nio import UploadResponse, UploadError
+            
+            # Handle the upload response
+            if isinstance(upload_response, tuple):
+                # Some versions of matrix-nio return a tuple (response, error)
+                actual_response, error = upload_response
+                if error:
+                    error_msg = f"Failed to upload image to Matrix: {error}"
+                    logger.error(error_msg)
+                    return {"success": False, "error": error_msg}
+                upload_response = actual_response
+            
+            if isinstance(upload_response, UploadError):
+                error_msg = f"Failed to upload image to Matrix: {upload_response.message}"
+                logger.error(error_msg)
+                return {"success": False, "error": error_msg}
+            
+            if not isinstance(upload_response, UploadResponse):
+                error_msg = f"Unexpected upload response type: {type(upload_response)}"
+                logger.error(error_msg)
+                return {"success": False, "error": error_msg}
+            
+            # Create the image message content
+            message_content = {
+                "msgtype": "m.image",
+                "body": content or filename,
+                "url": upload_response.content_uri,
+                "info": {
+                    "mimetype": mime_type,
+                    "size": len(image_data),
+                }
+            }
+            
+            # Send the image message
+            send_response = await self.client.room_send(
+                room_id=room_id,
+                message_type="m.room.message",
+                content=message_content
+            )
+            
+            from nio import RoomSendResponse, RoomSendError
+            
+            if isinstance(send_response, RoomSendResponse):
+                logger.info(
+                    f"MatrixObserver: Successfully sent image to {room_id} (event: {send_response.event_id})"
+                )
+                return {
+                    "success": True,
+                    "event_id": send_response.event_id,
+                    "room_id": room_id,
+                    "image_url": image_url,
+                    "matrix_uri": upload_response.content_uri,
+                    "filename": filename,
+                }
+            elif isinstance(send_response, RoomSendError):
+                error_msg = f"Failed to send image message: {send_response.message}"
+                logger.error(f"MatrixObserver: {error_msg}")
+                return {"success": False, "error": error_msg}
+            else:
+                error_msg = f"Unexpected send response type: {type(send_response)}"
+                logger.error(f"MatrixObserver: {error_msg}")
+                return {"success": False, "error": error_msg}
+            
+        except Exception as e:
+            error_msg = f"Exception while sending image: {str(e)}"
+            logger.error(f"MatrixObserver: {error_msg}", exc_info=True)
+            return {"success": False, "error": error_msg}

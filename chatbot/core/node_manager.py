@@ -284,3 +284,84 @@ class NodeManager:
             "data": self.get_expansion_status_summary(),
             "timestamp": datetime.now().isoformat()
         }]
+    
+    def auto_expand_active_channels(self, channel_activity_data: Dict[str, float]) -> List[str]:
+        """
+        Auto-expand recently active channels based on activity timestamps.
+        
+        Args:
+            channel_activity_data: Dict mapping channel_id to last_activity_timestamp
+            
+        Returns:
+            List of channels that were auto-expanded
+        """
+        current_time = time.time()
+        auto_expanded = []
+        
+        # Sort channels by activity (most recent first)
+        sorted_channels = sorted(
+            channel_activity_data.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )
+        
+        for channel_id, last_activity in sorted_channels:
+            # Only consider channels active in the last 10 minutes
+            if current_time - last_activity > 600:  # 10 minutes
+                continue
+                
+            node_path = f"channels.{channel_id}"
+            metadata = self.get_node_metadata(node_path)
+            
+            # Skip if already expanded or manually pinned
+            if metadata.is_expanded:
+                continue
+            
+            # Try to auto-expand
+            success, auto_collapsed, message = self.expand_node(node_path)
+            if success:
+                auto_expanded.append(channel_id)
+                # Mark as auto-expanded (not manually pinned)
+                metadata.is_pinned = False  # Auto-expanded nodes are not pinned
+                
+                # Stop if we've expanded enough active channels
+                if len(auto_expanded) >= 3:  # Limit auto-expansion to 3 most active
+                    break
+        
+        return auto_expanded
+    
+    def manual_expand_node(self, node_path: str) -> tuple[bool, Optional[str], str]:
+        """
+        Manually expand a node, which also PINS it to prevent auto-collapse.
+        This is the main difference from regular expand_node - manual expansion = pinning.
+        
+        Returns:
+            (success, auto_collapsed_node, message)
+        """
+        success, auto_collapsed_node, message = self.expand_node(node_path)
+        
+        if success:
+            # Manual expansion automatically pins the node
+            metadata = self.get_node_metadata(node_path)
+            metadata.is_pinned = True
+            message += " [PINNED for focused attention]"
+        
+        return success, auto_collapsed_node, message
+    
+    def manual_collapse_node(self, node_path: str) -> tuple[bool, str]:
+        """
+        Manually collapse a node, which also UNPINS it.
+        This allows the node to be auto-collapsed in the future.
+        
+        Returns:
+            (success, message)
+        """
+        success, message = self.collapse_node(node_path, is_auto_collapse=False)
+        
+        if success:
+            # Manual collapse also unpins the node
+            metadata = self.get_node_metadata(node_path)
+            metadata.is_pinned = False
+            message += " [UNPINNED, can be auto-collapsed]"
+        
+        return success, message
