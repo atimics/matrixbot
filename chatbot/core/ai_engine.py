@@ -61,14 +61,15 @@ WORLD STATE STRUCTURE:
 The world state you receive is optimized for your decision-making:
 - "current_processing_channel_id": The primary channel for this cycle's focus
 - "channels": Contains channel data with different detail levels:
-  * Channels with "priority": "detailed" have full recent message history (truncated for efficiency)
+  * Channels with "priority": "detailed" have full recent message history including your own messages
   * Channels with "priority": "summary_only" have activity summaries but no full messages
   * The primary channel gets the most detailed view for informed responses
-- "action_history": Recent actions taken (truncated to last few items)
-- "threads": Conversation threads relevant to the current channel (truncated)
-- "system_status": Includes rate_limits for API awareness
+  * Message history includes all participants (including yourself) to maintain conversational context
+- "action_history": Recent actions you have taken - use this to avoid repetitive actions
+- "threads": Conversation threads relevant to the current channel (including your own messages)
+- "system_status": Includes rate_limits for API awareness and current system health
 - "pending_matrix_invites": Matrix room invitations waiting for your response (if any)
-- "payload_stats": Information about data filtering applied
+- "payload_stats": Information about data included in this context
 
 MATRIX ROOM MANAGEMENT:
 You can manage Matrix rooms using available tools:

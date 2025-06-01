@@ -530,12 +530,10 @@ class WorldState:
         detailed_count = 0
 
         for ch_id, ch_data in sorted_channels:
-            # Filter out bot's own messages
-            filtered_messages = [
-                msg
-                for msg in ch_data.recent_messages
-                if not msg.is_from_bot(bot_fid, bot_username)
-            ]
+            # Include all messages including bot's own for AI context
+            # The AI needs to see its own recent messages to maintain conversational flow
+            # and understand the current state of conversations
+            all_messages = ch_data.recent_messages
 
             # Decide if this channel gets detailed treatment
             is_primary = ch_id == primary_channel_id
@@ -547,17 +545,17 @@ class WorldState:
                 is_primary or is_key_farcaster or detailed_count < max_other_channels
             )
 
-            if include_detailed and filtered_messages:
+            if include_detailed and all_messages:
                 # Full detail for priority channels
                 messages_for_payload = [
                     msg.to_ai_summary_dict()
                     if not include_detailed_user_info
                     else asdict(msg)
-                    for msg in filtered_messages[-max_messages_per_channel:]
+                    for msg in all_messages[-max_messages_per_channel:]
                 ]
 
                 # Calculate timestamp range for the included messages
-                truncated_messages = filtered_messages[-max_messages_per_channel:]
+                truncated_messages = all_messages[-max_messages_per_channel:]
                 timestamp_range = None
                 if truncated_messages:
                     timestamp_range = {
@@ -571,7 +569,7 @@ class WorldState:
                             / 3600,
                             2,
                         ),
-                        "total_available_messages": len(filtered_messages),
+                        "total_available_messages": len(all_messages),
                         "included_messages": len(truncated_messages),
                     }
 
@@ -600,19 +598,11 @@ class WorldState:
                     "priority": "summary_only",
                 }
 
-        # Truncate action history, excluding bot's own actions
-        filtered_actions = [
-            action
-            for action in self.action_history
-            if not (
-                hasattr(action, "parameters")
-                and action.parameters.get("sender")
-                in [bot_username, settings.MATRIX_USER_ID]
-            )
-        ]
-
+        # Include all action history for AI context - the AI should see its own past actions
+        # This provides better context for decision-making and prevents repetitive actions
+        # If specific action types need filtering, it should be done more explicitly
         action_history_payload = [
-            asdict(action) for action in filtered_actions[-max_action_history:]
+            asdict(action) for action in self.action_history[-max_action_history:]
         ]
 
         # Handle threads with bot filtering - only include threads relevant to primary channel
@@ -634,18 +624,15 @@ class WorldState:
                 )
 
                 if relevant_thread:
-                    filtered_thread_msgs = [
-                        msg
-                        for msg in msgs[-max_thread_messages:]
-                        if not msg.is_from_bot(bot_fid, bot_username)
-                    ]
+                    # Include all thread messages including bot's own for conversation context
+                    all_thread_msgs = msgs[-max_thread_messages:]
 
-                    if filtered_thread_msgs:
+                    if all_thread_msgs:
                         thread_msgs_for_payload = [
                             msg.to_ai_summary_dict()
                             if not include_detailed_user_info
                             else asdict(msg)
-                            for msg in filtered_thread_msgs
+                            for msg in all_thread_msgs
                         ]
                         threads_payload[thread_id] = thread_msgs_for_payload
 
@@ -653,7 +640,7 @@ class WorldState:
             "current_processing_channel_id": primary_channel_id,
             "channels": channels_payload,
             "action_history": action_history_payload,
-            "system_status": self.system_status,
+            "system_status": {**self.system_status, "rate_limits": self.rate_limits},
             "threads": threads_payload,
             "pending_matrix_invites": self.pending_matrix_invites,
             "current_time": time.time(),
@@ -665,7 +652,7 @@ class WorldState:
                 - detailed_count
                 - (1 if primary_channel_id in channels_payload else 0),
                 "total_channels": len(sorted_channels),
-                "filtered_messages": sum(
+                "included_messages": sum(
                     len(ch.get("recent_messages", []))
                     for ch in channels_payload.values()
                     if "recent_messages" in ch

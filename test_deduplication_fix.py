@@ -8,7 +8,7 @@ if the target cast hash was in last_seen_hashes from feed monitoring.
 
 import asyncio
 import logging
-from chatbot.integrations.farcaster.observer import FarcasterObserver
+from chatbot.integrations.farcaster.farcaster_observer import FarcasterObserver
 from chatbot.core.world_state import WorldStateManager
 
 # Configure logging to see what's happening
