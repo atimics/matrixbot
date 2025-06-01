@@ -388,6 +388,9 @@ class WorldState:
             str, Dict[str, Any]
         ] = {}  # cast_hash -> media_info
 
+        # Image library: Track AI-generated media for reuse and reference
+        self.generated_media_library: List[Dict[str, Any]] = []
+
         # Initialize timestamp tracking
         self.last_update = time.time()
 
@@ -667,6 +670,7 @@ class WorldState:
             "threads": threads_payload,
             "pending_matrix_invites": self.pending_matrix_invites,
             "recent_media_actions": self.get_recent_media_actions(),
+            "generated_media_library": self.generated_media_library[-20:],  # Last 20 generated media items
             "current_time": time.time(),
             "payload_stats": {
                 "primary_channel": primary_channel_id,
@@ -1196,6 +1200,43 @@ class WorldStateManager:
             logger.info(
                 f"WorldState: Marked {cast_hash} as archived to Arweave: {arweave_tx_id}"
             )
+
+    def record_generated_media(
+        self, 
+        media_url: str, 
+        media_type: str, 
+        prompt: str,
+        service_used: str,
+        aspect_ratio: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """
+        Record AI-generated media in the image library for future reference.
+
+        Args:
+            media_url: S3 URL or other URL of the generated media
+            media_type: 'image' or 'video'
+            prompt: The text prompt used to generate the media
+            service_used: The AI service used (e.g., 'google_gemini', 'replicate')
+            aspect_ratio: Aspect ratio of the media (e.g., '1:1', '16:9')
+            metadata: Additional metadata about the generation
+        """
+        media_entry = {
+            "url": media_url,
+            "type": media_type,
+            "prompt": prompt,
+            "service_used": service_used,
+            "timestamp": time.time(),
+            "aspect_ratio": aspect_ratio,
+            "metadata": metadata or {}
+        }
+        
+        self.state.generated_media_library.append(media_entry)
+        self.state.last_update = time.time()
+        
+        logger.info(
+            f"WorldState: Added {media_type} to generated media library: {prompt[:50]}..."
+        )
 
     def get_state_metrics(self) -> Dict[str, Any]:
         """

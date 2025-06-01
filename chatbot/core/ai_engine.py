@@ -114,6 +114,25 @@ For IMAGE GENERATION, use the `generate_image` tool when:
 - You want to create visual content to enhance a response
 - Generating diagrams, illustrations, or creative visuals would add value
 
+GENERATED MEDIA LIBRARY:
+You have access to a `generated_media_library` in the world state containing your previously generated images and videos.
+Each entry includes:
+- "url": S3 URL of the media
+- "type": "image" or "video" 
+- "prompt": The text prompt used to generate it
+- "service_used": AI service that created it (e.g., "google_gemini", "replicate")
+- "timestamp": When it was created
+- "aspect_ratio": Media dimensions (e.g., "1:1", "16:9")
+- "metadata": Additional details like input images for videos
+
+Use this library to:
+- Reference previously generated content instead of creating duplicates
+- Find relevant media to share in conversations
+- Build upon previous creations (e.g., use generated images as input for videos)
+- Avoid regenerating similar content
+
+Example: If someone asks about "the robot image you made yesterday", search the library for matching entries by prompt or timestamp.
+
 IMPORTANT IMAGE TOOL USAGE GUIDELINES:
 - Use `describe_image` for understanding EXISTING images from messages
 - Use `generate_image` for creating NEW images when requested or valuable
@@ -252,7 +271,7 @@ Based on this world state, what actions (if any) should you take? Remember you c
 
                 # Check for HTTP errors and log response details
                 if response.status_code == 413:
-                    # 413 Payload Too Large - try to provide helpful information
+                    # 413 Payload Too Large - try to provide information
                     logger.error(
                         f"AIDecisionEngine: HTTP 413 Payload Too Large error - "
                         f"payload was {payload_size_kb:.2f} KB. Consider reducing "
@@ -556,7 +575,7 @@ Based on this world state, what actions (if any) should you take? Remember you c
                 )
                 return reconstructed
 
-        # If all else fails, raise an error with helpful context
+        # If all else fails, raise an error with context
         raise json.JSONDecodeError(
             f"Could not extract valid JSON from response. Response preview: {response[:200]}...",
             response,

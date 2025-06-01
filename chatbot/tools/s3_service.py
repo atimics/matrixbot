@@ -35,6 +35,71 @@ class S3Service:
 
         logger.info(f"S3Service initialized with endpoint: {self.s3_api_endpoint}")
 
+    def is_s3_url(self, url: str) -> bool:
+        """
+        Check if a URL is already an S3/CloudFront URL.
+
+        Args:
+            url: The URL to check
+
+        Returns:
+            True if the URL is already an S3/CloudFront URL
+        """
+        if not url:
+            return False
+
+        # Check for CloudFront domain
+        if self.cloudfront_domain and self.cloudfront_domain.lower() in url.lower():
+            return True
+
+        # Check for common S3 patterns
+        s3_patterns = [
+            ".amazonaws.com",
+            "cloudfront.net",
+            "s3.amazonaws.com",
+            "s3-",
+        ]
+
+        return any(pattern in url.lower() for pattern in s3_patterns)
+
+    async def ensure_s3_url(
+        self,
+        image_url: str,
+        original_filename: Optional[str] = None,
+        http_client: Optional[httpx.AsyncClient] = None,
+    ) -> str:
+        """
+        Ensure an image URL is hosted on S3. If it's already an S3 URL, return it as-is.
+        If it's an external URL, download and upload it to S3.
+
+        Args:
+            image_url: The URL to check/convert
+            original_filename: Optional original filename for the image
+            http_client: Optional httpx client with authentication
+
+        Returns:
+            S3 URL (either the original if already S3, or newly uploaded)
+        """
+        if not image_url:
+            logger.warning("ensure_s3_url called with empty image_url")
+            return image_url
+
+        # If already an S3 URL, return as-is
+        if self.is_s3_url(image_url):
+            logger.debug(f"URL is already S3: {image_url}")
+            return image_url
+
+        # Download and upload to S3
+        logger.info(f"Converting external URL to S3: {image_url}")
+        s3_url = await self.upload_image_from_url(image_url, original_filename, http_client)
+
+        if s3_url:
+            logger.info(f"Successfully converted to S3: {s3_url}")
+            return s3_url
+        else:
+            logger.warning(f"Failed to upload to S3, returning original URL: {image_url}")
+            return image_url
+
     async def upload_image_from_url(
         self,
         image_url: str,

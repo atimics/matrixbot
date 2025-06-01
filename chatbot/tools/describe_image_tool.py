@@ -1,15 +1,77 @@
 import logging
 import time
 from typing import Any, Dict, List
+from urllib.parse import urlparse
 
 import httpx
 
 from ..config import (  # To access OPENROUTER_API_KEY and OPENROUTER_MULTIMODAL_MODEL
     settings,
 )
+from ..tools.s3_service import s3_service
 from .base import ActionContext, ToolInterface
 
 logger = logging.getLogger(__name__)
+
+
+async def ensure_publicly_accessible_image_url(image_url: str, context: ActionContext) -> str:
+    """
+    Ensure the image URL is publicly accessible. If it's a Matrix URL,
+    download it and upload to S3 to make it accessible to external services.
+    
+    Args:
+        image_url: The original image URL
+        context: Action context containing Matrix client if needed
+        
+    Returns:
+        A publicly accessible image URL
+    """
+    # Check if it's a Matrix URL that needs to be made public
+    if "/_matrix/media/" in image_url or image_url.startswith("mxc://"):
+        logger.info(f"Converting Matrix URL to public S3 URL: {image_url}")
+        
+        try:
+            # Download the image from Matrix
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                # For Matrix media URLs, we may need authentication
+                headers = {}
+                if context.matrix_observer and hasattr(context.matrix_observer, 'client'):
+                    # If we have a Matrix client, we can use its download method
+                    matrix_client = context.matrix_observer.client
+                    if matrix_client and matrix_client.access_token:
+                        if image_url.startswith("mxc://"):
+                            # Convert MXC to HTTP URL first
+                            http_url = await matrix_client.mxc_to_http(image_url)
+                            if http_url:
+                                image_url = http_url
+                        
+                        # Add Matrix auth header
+                        headers["Authorization"] = f"Bearer {matrix_client.access_token}"
+                
+                response = await client.get(image_url, headers=headers)
+                response.raise_for_status()
+                
+                # Extract filename from URL or use default
+                parsed_url = urlparse(image_url)
+                filename = parsed_url.path.split('/')[-1] or "matrix_image.jpg"
+                if not filename.endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')):
+                    filename += ".jpg"
+                
+                # Upload to S3
+                s3_url = await s3_service.upload_image_data(response.content, filename)
+                if s3_url:
+                    logger.info(f"Successfully uploaded Matrix image to S3: {s3_url}")
+                    return s3_url
+                else:
+                    logger.warning(f"Failed to upload Matrix image to S3, using original URL: {image_url}")
+                    return image_url
+                    
+        except Exception as e:
+            logger.error(f"Error converting Matrix URL to S3: {e}", exc_info=True)
+            return image_url
+    
+    # For non-Matrix URLs, return as-is
+    return image_url
 
 
 class DescribeImageTool(ToolInterface):
@@ -57,6 +119,14 @@ class DescribeImageTool(ToolInterface):
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
+        # Ensure the image URL is publicly accessible (convert Matrix URLs to S3)
+        try:
+            public_image_url = await ensure_publicly_accessible_image_url(image_url, context)
+            logger.info(f"Using public image URL: {public_image_url}")
+        except Exception as e:
+            logger.error(f"Failed to ensure public image URL: {e}", exc_info=True)
+            public_image_url = image_url  # Fallback to original
+
         openrouter_model = (
             settings.OPENROUTER_MULTIMODAL_MODEL
         )  # Or settings.AI_MODEL if it's multimodal
@@ -70,7 +140,7 @@ class DescribeImageTool(ToolInterface):
                         {"type": "text", "text": prompt_text},
                         {
                             "type": "image_url",
-                            "image_url": {"url": image_url},
+                            "image_url": {"url": public_image_url},
                         },
                     ],
                 }
@@ -88,6 +158,9 @@ class DescribeImageTool(ToolInterface):
         }
 
         try:
+            # Ensure the image URL is publicly accessible
+            public_image_url = await ensure_publicly_accessible_image_url(image_url, context)
+
             async with httpx.AsyncClient(
                 timeout=90.0
             ) as client:  # Increased timeout for image processing
@@ -133,6 +206,7 @@ class DescribeImageTool(ToolInterface):
             result = {
                 "status": "success",
                 "image_url": image_url,
+                "public_image_url": public_image_url,
                 "description": description,
                 "prompt_used": prompt_text,
                 "model_used": openrouter_model,

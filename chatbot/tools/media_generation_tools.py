@@ -116,6 +116,15 @@ class GenerateImageTool(ToolInterface):
                             result=f"Generated image using {service_used}: {image_url}"
                         )
 
+                        # Record in generated media library
+                        context.world_state_manager.record_generated_media(
+                            media_url=image_url,
+                            media_type="image",
+                            prompt=prompt,
+                            service_used=service_used,
+                            aspect_ratio=aspect_ratio
+                        )
+
                         return result
                 except Exception as e:
                     logger.error(f"Replicate image generation failed: {e}")
@@ -146,6 +155,15 @@ class GenerateImageTool(ToolInterface):
                             action_type="generate_image",
                             parameters={"prompt": prompt, "aspect_ratio": aspect_ratio},
                             result=f"Generated image using {service_used}, uploaded to S3: {result['s3_image_url']}"
+                        )
+
+                        # Record in generated media library
+                        context.world_state_manager.record_generated_media(
+                            media_url=s3_url,
+                            media_type="image",
+                            prompt=prompt,
+                            service_used=service_used,
+                            aspect_ratio=aspect_ratio
                         )
 
                         return result
@@ -266,13 +284,39 @@ class GenerateVideoTool(ToolInterface):
                     )
 
                     if s3_url:
-                        return {
+                        result = {
                             "status": "success",
                             "s3_video_url": s3_url,
                             "prompt_used": prompt,
                             "input_image_used": input_s3_image_url,
                             "aspect_ratio": aspect_ratio,
                         }
+
+                        # Record this action result in world state for AI visibility
+                        context.world_state_manager.add_action_result(
+                            action_type="generate_video",
+                            parameters={
+                                "prompt": prompt, 
+                                "aspect_ratio": aspect_ratio,
+                                "input_s3_image_url": input_s3_image_url
+                            },
+                            result=f"Generated video using Google Veo, uploaded to S3: {s3_url}"
+                        )
+
+                        # Record in generated media library
+                        context.world_state_manager.record_generated_media(
+                            media_url=s3_url,
+                            media_type="video",
+                            prompt=prompt,
+                            service_used="google_veo",
+                            aspect_ratio=aspect_ratio,
+                            metadata={
+                                "input_image_url": input_s3_image_url,
+                                "timestamp": timestamp
+                            }
+                        )
+
+                        return result
 
             return {"status": "error", "message": "Failed to generate video"}
 

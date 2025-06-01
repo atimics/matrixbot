@@ -6,6 +6,7 @@ import time
 from typing import Any, Dict
 
 from .base import ActionContext, ToolInterface
+from ..utils.markdown_utils import strip_markdown
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,9 @@ class SendFarcasterPostTool(ToolInterface):
             error_msg = "Missing required parameter 'content' for Farcaster post"
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+        # Strip markdown formatting for Farcaster
+        content = strip_markdown(content)
 
         # Prepare embeds for media attachments
         embeds = []
@@ -231,6 +235,9 @@ class SendFarcasterReplyTool(ToolInterface):
             error_msg = f"Missing required parameters for Farcaster reply: {', '.join(missing_params)}"
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+        # Strip markdown formatting for Farcaster
+        content = strip_markdown(content)
 
         # Check if we've already replied to this cast
         if (
@@ -483,6 +490,9 @@ class QuoteFarcasterPostTool(ToolInterface):
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
+        # Strip markdown formatting for Farcaster
+        content = strip_markdown(content)
+
         # Check if we've already quoted this cast
         if context.world_state_manager and context.world_state_manager.has_quoted_cast(
             quoted_cast_hash
@@ -682,6 +692,9 @@ class SendFarcasterDMTool(ToolInterface):
             err = "Missing required parameters: fid and content"
             logger.error(err)
             return {"status": "failure", "error": err, "timestamp": time.time()}
+        
+        # Strip markdown formatting for Farcaster
+        content = strip_markdown(content)
         result = await context.farcaster_observer.send_dm(fid, content)
         if result.get("success"):
             return {

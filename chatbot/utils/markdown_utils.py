@@ -47,6 +47,9 @@ class MatrixMarkdownFormatter:
         text = re.sub(r"^\s*[-*+]\s+", "", text, flags=re.MULTILINE)
         text = re.sub(r"^\s*\d+\.\s+", "", text, flags=re.MULTILINE)
 
+        # Remove block quotes
+        text = re.sub(r"^\s*>\s*", "", text, flags=re.MULTILINE)
+
         # Clean up extra whitespace
         text = re.sub(r"\n\s*\n", "\n\n", text)
 
@@ -60,3 +63,8 @@ _formatter = MatrixMarkdownFormatter()
 def format_for_matrix(content: str) -> Dict[str, str]:
     """Convert markdown content for Matrix messaging."""
     return _formatter.convert(content)
+
+
+def strip_markdown(content: str) -> str:
+    """Strip markdown formatting from text for Farcaster and other plain text contexts."""
+    return _formatter._markdown_to_plain(content)
