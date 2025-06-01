@@ -64,10 +64,9 @@ class FarcasterScheduler:
 
     def schedule_post(self, content: str, channel: Optional[str] = None, action_id: Optional[str] = None) -> bool:
         logger.info(f"Attempting to schedule post: action_id={action_id}, content='{content[:50]}...', channel={channel}")
-        for queued_item in list(self.post_queue._queue): # type: ignore
-            if queued_item.get("content") == content and queued_item.get("channel") == channel :
-                logger.debug("Duplicate content for the same channel in post queue, skipping schedule.")
-                return False
+        if self._is_duplicate_in_queue(self.post_queue, {"content": content, "channel": channel}):
+            logger.debug("Duplicate content for the same channel in post queue, skipping schedule.")
+            return False
         post_data = {
             "content": content,
             "channel": channel,
