@@ -55,6 +55,32 @@ class HistoryRecorder:
 
         logger.info("HistoryRecorder: Initialized")
 
+    async def initialize(self):
+        """Initialize the database and ensure tables exist."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS state_changes (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        timestamp REAL NOT NULL,
+                        change_type TEXT NOT NULL,
+                        source TEXT NOT NULL,
+                        channel_id TEXT,
+                        observations TEXT,
+                        potential_actions TEXT,
+                        selected_actions TEXT,
+                        reasoning TEXT,
+                        raw_content TEXT NOT NULL,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+                await db.commit()
+                logger.info("HistoryRecorder: Database initialized")
+        except Exception as e:
+            logger.error(f"HistoryRecorder: Error initializing database: {e}")
+
     async def record_action(self, action_name: str, action_data: Dict[str, Any], result: Any):
         """Record a tool action execution."""
         state_change = StateChangeBlock(

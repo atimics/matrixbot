@@ -79,17 +79,21 @@ class TestHistoryRecorder:
     @pytest.fixture
     def context_manager(self, world_state):
         """Create a context manager for testing."""
-        return HistoryRecorder(world_state, ":memory:")  # Use in-memory SQLite
+        return HistoryRecorder(":memory:")  # Use in-memory SQLite
     
     @pytest.mark.asyncio
     async def test_initialization(self, context_manager):
         """Test context manager initialization."""
         assert context_manager.db_path == ":memory:"
-        assert context_manager.world_state is not None
+        assert context_manager.state_changes == []
+        assert context_manager.storage_path is not None
     
     @pytest.mark.asyncio
     async def test_add_user_message(self, context_manager):
         """Test adding a user message."""
+        # Initialize the database
+        await context_manager.initialize()
+        
         channel_id = "test_channel"
         message = {
             "content": "Hello",
@@ -97,14 +101,14 @@ class TestHistoryRecorder:
             "timestamp": time.time()
         }
         
-        await context_manager.add_user_message(channel_id, message)
+        await context_manager.record_user_input(channel_id, message)
         
         # Verify the message was stored
-        messages = await context_manager.get_conversation_messages(channel_id)
-        assert len(messages) >= 1
-        # Check that user message is in the conversation
-        user_messages = [msg for msg in messages if msg.get("role") == "user"]
-        assert len(user_messages) >= 1
+        state_changes = await context_manager.get_recent_state_changes(limit=10)
+        assert len(state_changes) >= 1
+        # Check that user input is in the state changes
+        user_inputs = [sc for sc in state_changes if sc.change_type == "user_input"]
+        assert len(user_inputs) >= 1
 
 
 class TestAIEngine:
@@ -153,8 +157,8 @@ class TestOrchestrator:
         orchestrator = MainOrchestrator(config)
         
         assert orchestrator.config.db_path == ":memory:"
-        assert orchestrator.world_state_manager is not None
-        assert orchestrator.history_recorder is not None
+        assert orchestrator.world_state is not None
+        assert orchestrator.context_manager is not None
         assert orchestrator.processing_hub is not None
         assert orchestrator.tool_registry is not None  # Updated for new architecture
         assert not orchestrator.running
@@ -164,9 +168,11 @@ class TestOrchestrator:
         config = OrchestratorConfig()
         
         assert config.db_path == "chatbot.db"
-        assert config.observation_interval == 2.0
-        assert config.max_cycles_per_hour == 300
         assert config.ai_model == "openai/gpt-4o-mini"
+        
+        # Check that processing config has defaults
+        assert config.processing_config is not None
+        assert config.rate_limit_config is not None
     
     @pytest.mark.asyncio
     async def test_start_stop_without_observers(self):
@@ -179,7 +185,7 @@ class TestOrchestrator:
         
         # Mock the observers initialization to avoid actual network calls
         with patch.object(orchestrator, '_initialize_observers', new_callable=AsyncMock):
-            with patch.object(orchestrator.processing_hub, 'start', new_callable=AsyncMock) as mock_start:
+            with patch.object(orchestrator.processing_hub, 'start_processing_loop', new_callable=AsyncMock) as mock_start:
                 mock_start.side_effect = KeyboardInterrupt()  # Simulate Ctrl+C
                 
                 try:

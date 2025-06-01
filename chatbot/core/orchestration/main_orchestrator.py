@@ -89,6 +89,7 @@ class MainOrchestrator:
         
         # System state
         self.running = False
+        self.cycle_count = 0  # Track processing cycles
         
         # Initialize tool registry and register tools
         self._register_all_tools()
@@ -286,6 +287,49 @@ class MainOrchestrator:
         """Reset to automatic processing mode selection."""
         self.processing_hub.reset_processing_mode()
 
+    # Additional API methods for test compatibility and external usage
+    async def process_payload(self, payload: Dict[str, Any], active_channels: list) -> None:
+        """Process a payload directly using the traditional processor."""
+        if hasattr(self.processing_hub, 'traditional_processor') and self.processing_hub.traditional_processor:
+            await self.processing_hub.traditional_processor.process_payload(payload, active_channels)
+        else:
+            logger.warning("No traditional processor available")
+
+    async def _execute_action(self, action) -> None:
+        """Execute a single action - wrapper for test compatibility."""
+        if hasattr(self.processing_hub, 'traditional_processor') and self.processing_hub.traditional_processor:
+            await self.processing_hub.traditional_processor._execute_actions([action])
+        else:
+            logger.warning("No traditional processor available")
+
+    async def _process_channel(self, channel_id: str) -> None:
+        """Process a specific channel - simplified implementation for tests."""
+        try:
+            # Get conversation messages
+            messages = await self.context_manager.get_conversation_messages(channel_id)
+            
+            # Build world state payload
+            payload = self.world_state.to_dict()
+            payload['messages'] = messages
+            
+            # Process using traditional processor
+            await self.process_payload(payload, [channel_id])
+            
+        except Exception as e:
+            logger.error(f"Error processing channel {channel_id}: {e}")
+
+    async def add_user_message(self, channel_id: str, message_data: Dict[str, Any]) -> None:
+        """Add a user message to the context."""
+        await self.context_manager.add_user_message(channel_id, message_data)
+
+    async def get_context_summary(self, channel_id: str) -> Optional[Dict[str, Any]]:
+        """Get context summary for a channel."""
+        return await self.context_manager.get_context_summary(channel_id)
+
+    async def clear_context(self, channel_id: str) -> None:
+        """Clear context for a channel."""
+        await self.context_manager.clear_context(channel_id)
+
 
 class TraditionalProcessor:
     """Wrapper for traditional AI processing approach."""
@@ -361,7 +405,9 @@ class TraditionalProcessor:
                     
                     # Record in context
                     if self.context_manager:
-                        self.context_manager.record_action(action_name, action, result)
+                        channel_id = action_params.get('channel_id', 'default')
+                        result_dict = result if isinstance(result, dict) else {'result': str(result)}
+                        await self.context_manager.add_tool_result(channel_id, action_name, result_dict)
                 
             except Exception as e:
                 logger.error(f"Error executing action {action_name}: {e}")

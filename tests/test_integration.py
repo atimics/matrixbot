@@ -9,6 +9,7 @@ from unittest.mock import patch, AsyncMock
 
 from chatbot.core.world_state import WorldStateManager
 from chatbot.core.history_recorder import HistoryRecorder
+from chatbot.core.context import ContextManager
 from chatbot.core.orchestration import MainOrchestrator, OrchestratorConfig, ProcessingConfig
 
 
@@ -33,10 +34,10 @@ class TestIntegration:
         
         # Test basic initialization
         assert not orchestrator.running
-        assert orchestrator.world_state_manager is not None
-        assert orchestrator.history_recorder is not None
+        assert orchestrator.world_state is not None
+        assert orchestrator.context_manager is not None
         
-        # Add a test message
+        # Add a test message via the context manager
         test_message = {
             "content": "Hello, chatbot!",
             "sender": "@user:test.com",
@@ -44,10 +45,10 @@ class TestIntegration:
             "channel_id": "test_channel"
         }
         
-        await orchestrator.add_user_message("test_channel", test_message)
+        await orchestrator.context_manager.add_user_message("test_channel", test_message)
         
         # Get context summary
-        summary = await orchestrator.get_context_summary("test_channel")
+        summary = await orchestrator.context_manager.get_context_summary("test_channel")
         assert isinstance(summary, dict)
     
     @pytest.mark.asyncio
@@ -104,7 +105,7 @@ class TestIntegration:
         
         # Mock the observers initialization and main loop
         with patch.object(orchestrator, '_initialize_observers', new_callable=AsyncMock):
-            with patch.object(orchestrator.processing_hub, 'start', new_callable=AsyncMock) as mock_loop:
+            with patch.object(orchestrator.processing_hub, 'start_processing_loop', new_callable=AsyncMock) as mock_loop:
                 # Mock the event loop to run briefly then stop
                 async def mock_event_loop():
                     await asyncio.sleep(0.01)
@@ -127,19 +128,19 @@ class TestIntegration:
         )
         orchestrator = MainOrchestrator(config)
         
-        # Get initial state hash
-        initial_state = orchestrator.world_state_manager.get_state_data()
-        # Note: hash state detection moved to ProcessingHub
+        # Get initial state
+        initial_state = orchestrator.world_state.to_dict()
+        initial_channel_count = len(initial_state.get("channels", {}))
         
         # Make a change to the world state
         orchestrator.world_state.add_channel("matrix", "new_channel", "New Channel")
         
-        # Get new state hash
+        # Get new state
         new_state = orchestrator.world_state.to_dict()
-        new_hash = orchestrator._hash_state(new_state)
+        new_channel_count = len(new_state.get("channels", {}))
         
-        # Hashes should be different
-        assert initial_hash != new_hash
+        # Channel count should have increased
+        assert new_channel_count > initial_channel_count
     
     @pytest.mark.asyncio
     async def test_training_data_export(self):
