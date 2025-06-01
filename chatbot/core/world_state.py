@@ -369,6 +369,12 @@ class WorldState:
         self.thread_roots: Dict[str, Message] = {}  # Root message for each thread
         self.seen_messages: set[str] = set()  # Deduplication of message IDs
         
+        # Rate limiting and API management
+        self.rate_limits: Dict[str, Any] = {}  # API rate limiting information
+        
+        # Matrix room management
+        self.pending_matrix_invites: List[Dict[str, Any]] = []  # Pending Matrix invitations
+        
         # v0.0.3: Bot media tracking for Farcaster engagement-based archival
         self.bot_media_on_farcaster: Dict[str, Dict[str, Any]] = {}  # cast_hash -> media_info
 
