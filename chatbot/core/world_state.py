@@ -377,6 +377,9 @@ class WorldState:
         
         # v0.0.3: Bot media tracking for Farcaster engagement-based archival
         self.bot_media_on_farcaster: Dict[str, Dict[str, Any]] = {}  # cast_hash -> media_info
+        
+        # Initialize timestamp tracking
+        self.last_update = time.time()
 
     def add_message(self, message: Message):
         """Add a message to the world state"""

@@ -22,14 +22,14 @@ class SendMatrixReplyTool(ToolInterface):
 
     @property
     def description(self) -> str:
-        return "Reply to a specific message in a Matrix channel. Use this when you want to respond directly to someone's message."
+        return "Reply to a specific message in a Matrix channel. If reply_to_id is not provided, will send as a regular message to the channel."
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
             "channel_id": "string (Matrix room ID) - The room where the reply should be sent",
             "content": "string - The message content to send as a reply (supports markdown formatting)",
-            "reply_to_id": "string - The event ID of the message to reply to",
+            "reply_to_id": "string (optional) - The event ID of the message to reply to. If not provided, sends as regular message",
             "format_as_markdown": "boolean (optional, default: true) - Whether to format the content as markdown",
         }
 
@@ -58,13 +58,54 @@ class SendMatrixReplyTool(ToolInterface):
             missing_params.append("channel_id")
         if not content:
             missing_params.append("content")
-        if not reply_to_event_id:
-            missing_params.append("reply_to_id")
 
         if missing_params:
             error_msg = f"Missing required parameters for Matrix reply: {', '.join(missing_params)}"
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+        # If reply_to_id is missing but we have channel_id and content, fall back to regular message
+        if not reply_to_event_id:
+            logger.info(f"reply_to_id missing, falling back to regular message in {room_id}")
+            try:
+                # Format content if markdown is enabled
+                if format_as_markdown:
+                    formatted = format_for_matrix(content)
+                    result = await context.matrix_observer.send_formatted_message(
+                        room_id, formatted["plain"], formatted["html"]
+                    )
+                else:
+                    result = await context.matrix_observer.send_message(room_id, content)
+                
+                logger.info(f"Matrix observer send_message returned: {result}")
+
+                if result.get("success"):
+                    event_id = result.get("event_id", "unknown")
+                    success_msg = f"Sent Matrix message (fallback from reply) to {room_id} (event: {event_id})"
+                    logger.info(success_msg)
+
+                    return {
+                        "status": "success",
+                        "message": success_msg,
+                        "event_id": event_id,
+                        "room_id": room_id,
+                        "sent_content": content,
+                        "fallback_to_message": True,  # Indicate this was a fallback
+                        "timestamp": time.time(),
+                    }
+                else:
+                    error_msg = f"Failed to send Matrix message (fallback) via observer: {result.get('error', 'unknown error')}"
+                    logger.error(error_msg)
+                    return {
+                        "status": "failure",
+                        "error": error_msg,
+                        "timestamp": time.time(),
+                    }
+
+            except Exception as e:
+                error_msg = f"Error executing fallback message for {self.name}: {str(e)}"
+                logger.exception(error_msg)
+                return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
         try:
             # Format content if markdown is enabled
