@@ -2,8 +2,8 @@
 Google AI Media Generation Client
 
 This module provides integration with Google AI services for image and video generation,
-including Gemini for image generation and Veo for video generation. Based on best practices
-from the JavaScript implementation.
+including Gemini for image generation and Veo for video generation. Enhanced with 
+JavaScript best practices including browser headers, retry logic, and robust polling.
 """
 
 import asyncio
@@ -11,9 +11,10 @@ import base64
 import io
 import logging
 import os
+import random
 import tempfile
 import time
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 import httpx
 
@@ -21,7 +22,16 @@ logger = logging.getLogger(__name__)
 
 
 class GoogleAIMediaClient:
-    """Client for Google AI media generation services with rate limiting and best practices."""
+    """
+    Enhanced Google AI Media client with JavaScript best practices.
+    
+    Features:
+    - Browser headers for downloads
+    - Exponential backoff retry logic
+    - Robust polling for long operations
+    - Enhanced error handling
+    - Rate limiting protection
+    """
     
     def __init__(
         self, 
@@ -47,6 +57,60 @@ class GoogleAIMediaClient:
         self.rate_limit_per_minute = 10  # Conservative default
         self.rate_limit_per_day = 100    # Conservative default
         
+        # Browser headers for downloads
+        self.browser_headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache',
+            'Sec-Fetch-Dest': 'image',
+            'Sec-Fetch-Mode': 'no-cors',
+            'Sec-Fetch-Site': 'cross-site'
+        }
+        
+    async def _retry_with_backoff(
+        self,
+        operation_func,
+        max_retries: int = 3,
+        initial_delay: float = 1.0,
+        backoff_factor: float = 2.0,
+        jitter: bool = True
+    ):
+        """
+        Execute operation with exponential backoff retry logic.
+        
+        Args:
+            operation_func: Async function to retry
+            max_retries: Maximum number of retry attempts
+            initial_delay: Initial delay between retries
+            backoff_factor: Exponential backoff multiplier
+            jitter: Add random jitter to delays
+            
+        Returns:
+            Result from operation_func or None if all retries failed
+        """
+        last_exception = None
+        
+        for attempt in range(max_retries):
+            try:
+                return await operation_func(attempt)
+            except Exception as e:
+                last_exception = e
+                logger.warning(f"GoogleAIMediaClient: Attempt {attempt + 1} failed: {e}")
+                
+                if attempt < max_retries - 1:
+                    delay = initial_delay * (backoff_factor ** attempt)
+                    if jitter:
+                        delay *= (0.5 + random.random() * 0.5)  # Add 0-50% jitter
+                    
+                    logger.info(f"GoogleAIMediaClient: Retrying in {delay:.2f} seconds...")
+                    await asyncio.sleep(delay)
+        
+        logger.error(f"GoogleAIMediaClient: Operation failed after {max_retries} attempts. Last error: {last_exception}")
+        return None
+    
     def _check_rate_limit(self) -> bool:
         """Check if we're within rate limits."""
         now = time.time()
@@ -78,7 +142,7 @@ class GoogleAIMediaClient:
         max_retries: int = 3
     ) -> Optional[bytes]:
         """
-        Generate an image using Gemini's image generation model.
+        Generate an image using Gemini's image generation model with enhanced retry logic.
         
         Args:
             prompt: Text description for image generation
@@ -96,59 +160,53 @@ class GoogleAIMediaClient:
         # Enhance prompt with aspect ratio
         enhanced_prompt = f"{prompt}\nDesired aspect ratio: {aspect_ratio}\nOnly respond with an image."
         
-        for attempt in range(max_retries):
-            try:
-                self._record_request()
-                
-                if attempt > 0:
-                    enhanced_prompt += f"\nDo not include any text. If you cannot generate an image, try again."
-                
-                async with httpx.AsyncClient(timeout=120.0) as client:
-                    payload = {
-                        "contents": [{
-                            "role": "user",
-                            "parts": [{"text": enhanced_prompt}]
-                        }],
-                        "generationConfig": {
-                            "temperature": temperature,
-                            "maxOutputTokens": 1000,
-                            "topP": 0.95,
-                            "topK": 40,
-                            "responseModalities": ["text", "image"]
-                        }
+        async def _generate_attempt(attempt: int) -> Optional[bytes]:
+            self._record_request()
+            
+            # Add retry-specific enhancements to prompt
+            retry_prompt = enhanced_prompt
+            if attempt > 0:
+                retry_prompt += f"\nDo not include any text. If you cannot generate an image, try again."
+            
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                payload = {
+                    "contents": [{
+                        "role": "user",
+                        "parts": [{"text": retry_prompt}]
+                    }],
+                    "generationConfig": {
+                        "temperature": temperature,
+                        "maxOutputTokens": 1000,
+                        "topP": 0.95,
+                        "topK": 40,
+                        "responseModalities": ["text", "image"]
                     }
-                    
-                    response = await client.post(
-                        f"{self.base_url}/models/{self.default_gemini_image_model}:generateContent",
-                        json=payload,
-                        headers={
-                            "Content-Type": "application/json",
-                            "Authorization": f"Bearer {self.api_key}"
-                        }
-                    )
-                    
-                    if response.status_code == 200:
-                        result = response.json()
-                        
-                        # Look for image in response
-                        for candidate in result.get("candidates", []):
-                            for part in candidate.get("content", {}).get("parts", []):
-                                if "inlineData" in part:
-                                    image_data = part["inlineData"]["data"]
-                                    return base64.b64decode(image_data)
-                        
-                        logger.warning(f"GoogleAIMediaClient: No image found in response (attempt {attempt + 1})")
-                    else:
-                        logger.warning(f"GoogleAIMediaClient: HTTP {response.status_code} (attempt {attempt + 1}): {response.text}")
-                        
-            except Exception as e:
-                logger.warning(f"GoogleAIMediaClient: Image generation attempt {attempt + 1} failed: {e}")
+                }
                 
-            if attempt < max_retries - 1:
-                await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                response = await client.post(
+                    f"{self.base_url}/models/{self.default_gemini_image_model}:generateContent",
+                    json=payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {self.api_key}"
+                    }
+                )
                 
-        logger.error(f"GoogleAIMediaClient: Image generation failed after {max_retries} attempts")
-        return None
+                if response.status_code == 200:
+                    result = response.json()
+                    
+                    # Look for image in response
+                    for candidate in result.get("candidates", []):
+                        for part in candidate.get("content", {}).get("parts", []):
+                            if "inlineData" in part:
+                                image_data = part["inlineData"]["data"]
+                                return base64.b64decode(image_data)
+                    
+                    raise Exception("No image found in response")
+                else:
+                    raise Exception(f"HTTP {response.status_code}: {response.text}")
+        
+        return await self._retry_with_backoff(_generate_attempt, max_retries)
     
     async def compose_image_with_references(
         self,
@@ -348,14 +406,7 @@ class GoogleAIMediaClient:
                                     video_url = f"{video_uri}&key={self.api_key}"
                                     
                                     # Download video with browser headers
-                                    download_headers = {
-                                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                                        'Accept': '*/*',
-                                        'Accept-Language': 'en-US,en;q=0.9',
-                                        'Connection': 'keep-alive',
-                                    }
-                                    
-                                    download_response = await client.get(video_url, headers=download_headers)
+                                    download_response = await client.get(video_url, headers=self.browser_headers)
                                     if download_response.status_code == 200:
                                         video_bytes_list.append(download_response.content)
                                         logger.info(f"GoogleAIMediaClient: Downloaded video ({len(download_response.content)} bytes)")
