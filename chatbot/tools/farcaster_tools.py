@@ -100,6 +100,23 @@ class SendFarcasterPostTool(ToolInterface):
         try:
             result = await context.farcaster_observer.post_cast(content, channel)
             logger.info(f"Farcaster observer post_cast returned: {result}")
+            
+            # Record this action in world state
+            if context.world_state_manager:
+                if result.get("success"):
+                    cast_hash = result.get("cast", {}).get("hash")
+                    context.world_state_manager.add_action_result(
+                        action_type=self.name,
+                        parameters={"content": content, "channel": channel, "cast_hash": cast_hash},
+                        result="success",
+                    )
+                else:
+                    context.world_state_manager.add_action_result(
+                        action_type=self.name,
+                        parameters={"content": content, "channel": channel},
+                        result=f"failure: {result.get('error', 'unknown')}",
+                    )
+            
             if result.get("success"):
                 return {"status": "success", **result}
             else:
@@ -111,6 +128,15 @@ class SendFarcasterPostTool(ToolInterface):
         except Exception as e:
             error_msg = f"Error executing send_farcaster_post: {e}"
             logger.exception(error_msg)
+            
+            # Record this action failure in world state
+            if context.world_state_manager:
+                context.world_state_manager.add_action_result(
+                    action_type=self.name,
+                    parameters={"content": content, "channel": channel},
+                    result=f"failure: {str(e)}",
+                )
+            
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
 
@@ -212,6 +238,23 @@ class SendFarcasterReplyTool(ToolInterface):
                 content, reply_to_hash
             )
             logger.info(f"Farcaster observer reply_to_cast returned: {result}")
+            
+            # Record this action in world state for duplicate prevention
+            if context.world_state_manager:
+                if result.get("success"):
+                    cast_hash = result.get("cast", {}).get("hash")
+                    context.world_state_manager.add_action_result(
+                        action_type=self.name,
+                        parameters={"content": content, "reply_to_hash": reply_to_hash, "cast_hash": cast_hash},
+                        result="success",
+                    )
+                else:
+                    context.world_state_manager.add_action_result(
+                        action_type=self.name,
+                        parameters={"content": content, "reply_to_hash": reply_to_hash},
+                        result=f"failure: {result.get('error', 'unknown')}",
+                    )
+            
             if result.get("success"):
                 return {"status": "success", **result}
             else:
@@ -223,6 +266,15 @@ class SendFarcasterReplyTool(ToolInterface):
         except Exception as e:
             error_msg = f"Error executing send_farcaster_reply: {e}"
             logger.exception(error_msg)
+            
+            # Record this action failure in world state
+            if context.world_state_manager:
+                context.world_state_manager.add_action_result(
+                    action_type=self.name,
+                    parameters={"content": content, "reply_to_hash": reply_to_hash},
+                    result=f"failure: {str(e)}",
+                )
+            
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
 
@@ -282,6 +334,21 @@ class LikeFarcasterPostTool(ToolInterface):
             result = await context.farcaster_observer.like_cast(cast_hash)
             logger.info(f"Farcaster observer like_cast returned: {result}")
 
+            # Record this action in world state
+            if context.world_state_manager:
+                if result.get("success"):
+                    context.world_state_manager.add_action_result(
+                        action_type=self.name,
+                        parameters={"cast_hash": cast_hash},
+                        result="success",
+                    )
+                else:
+                    context.world_state_manager.add_action_result(
+                        action_type=self.name,
+                        parameters={"cast_hash": cast_hash},
+                        result=f"failure: {result.get('error', 'unknown')}",
+                    )
+
             if result.get("success"):
                 success_msg = f"Successfully liked Farcaster cast: {cast_hash}"
                 logger.info(success_msg)
@@ -304,6 +371,15 @@ class LikeFarcasterPostTool(ToolInterface):
         except Exception as e:
             error_msg = f"Error executing {self.name}: {str(e)}"
             logger.exception(error_msg)
+            
+            # Record this action failure in world state
+            if context.world_state_manager:
+                context.world_state_manager.add_action_result(
+                    action_type=self.name,
+                    parameters={"cast_hash": cast_hash},
+                    result=f"failure: {str(e)}",
+                )
+            
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
 
@@ -373,6 +449,22 @@ class QuoteFarcasterPostTool(ToolInterface):
             )
             logger.info(f"Farcaster observer quote_cast returned: {result}")
 
+            # Record this action in world state
+            if context.world_state_manager:
+                if result.get("success"):
+                    cast_hash = result.get("cast", {}).get("hash", result.get("cast_hash", "unknown"))
+                    context.world_state_manager.add_action_result(
+                        action_type=self.name,
+                        parameters={"content": content, "quoted_cast_hash": quoted_cast_hash, "channel": channel, "cast_hash": cast_hash},
+                        result="success",
+                    )
+                else:
+                    context.world_state_manager.add_action_result(
+                        action_type=self.name,
+                        parameters={"content": content, "quoted_cast_hash": quoted_cast_hash, "channel": channel},
+                        result=f"failure: {result.get('error', 'unknown')}",
+                    )
+
             if result.get("success"):
                 cast_hash = result.get("cast_hash", "unknown")
                 quoted_cast = result.get("quoted_cast", quoted_cast_hash)
@@ -400,6 +492,15 @@ class QuoteFarcasterPostTool(ToolInterface):
         except Exception as e:
             error_msg = f"Error executing {self.name}: {str(e)}"
             logger.exception(error_msg)
+            
+            # Record this action failure in world state
+            if context.world_state_manager:
+                context.world_state_manager.add_action_result(
+                    action_type=self.name,
+                    parameters={"content": content, "quoted_cast_hash": quoted_cast_hash, "channel": channel},
+                    result=f"failure: {str(e)}",
+                )
+            
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
 
