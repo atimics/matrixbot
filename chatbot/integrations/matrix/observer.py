@@ -80,9 +80,11 @@ class MatrixObserver:
         # Set up event callbacks
         self.client.add_event_callback(self._on_message, RoomMessageText)
         
-        # Import invite event type
-        from nio import InviteMemberEvent
+        # Import required Matrix event types
+        from nio import InviteMemberEvent, RoomMemberEvent
+        
         self.client.add_event_callback(self._on_invite, InviteMemberEvent)
+        self.client.add_event_callback(self._on_membership_change, RoomMemberEvent)
 
         try:
             # Try to load saved token
@@ -211,6 +213,78 @@ class MatrixObserver:
                 
         except Exception as e:
             logger.error(f"MatrixObserver: Error processing invite: {e}", exc_info=True)
+
+    async def _on_membership_change(self, room, event):
+        """Handle Matrix room membership changes (joins, leaves, kicks, bans)"""
+        from nio import RoomMemberEvent
+        
+        if not isinstance(event, RoomMemberEvent):
+            return
+            
+        # Only track changes involving our bot user
+        if event.state_key != self.user_id:
+            return
+            
+        room_id = room.room_id
+        membership = event.membership
+        sender = event.sender
+        
+        logger.info(f"MatrixObserver: Membership change in {room_id}: {membership} by {sender}")
+        
+        try:
+            if membership == "leave":
+                # Determine if this was a self-leave, kick, or ban
+                if sender == self.user_id:
+                    # Self-initiated leave
+                    status = "left_by_bot"
+                    logger.info(f"MatrixObserver: Bot left room {room_id} voluntarily")
+                else:
+                    # Check if it was a ban by looking at the event content
+                    reason = event.content.get("reason", "")
+                    if "ban" in reason.lower() or event.content.get("membership") == "ban":
+                        status = "banned"
+                        logger.warning(f"MatrixObserver: Bot was banned from room {room_id} by {sender}. Reason: {reason}")
+                    else:
+                        status = "kicked"
+                        logger.warning(f"MatrixObserver: Bot was kicked from room {room_id} by {sender}. Reason: {reason}")
+                
+                # Update world state
+                if hasattr(self, "world_state") and self.world_state:
+                    self.world_state.update_channel_status(room_id, status)
+                
+                # Remove from monitoring if kicked/banned (but not if we left voluntarily)
+                if status in ["kicked", "banned"] and room_id in self.channels_to_monitor:
+                    self.channels_to_monitor.remove(room_id)
+                    logger.info(f"MatrixObserver: Removed {room_id} from monitoring due to {status}")
+                    
+            elif membership == "join":
+                # Bot joined a room (usually handled by join/accept methods, but this catches edge cases)
+                logger.info(f"MatrixObserver: Bot joined room {room_id}")
+                
+                # Ensure room is in monitoring if not already
+                if room_id not in self.channels_to_monitor:
+                    self.channels_to_monitor.append(room_id)
+                
+                # Remove any pending invite for this room
+                if hasattr(self, "world_state") and self.world_state:
+                    self.world_state.remove_pending_matrix_invite(room_id)
+                    self.world_state.update_channel_status(room_id, "joined")
+                    
+            elif membership == "ban":
+                # Explicit ban event
+                status = "banned"
+                reason = event.content.get("reason", "")
+                logger.warning(f"MatrixObserver: Bot was banned from room {room_id} by {sender}. Reason: {reason}")
+                
+                # Update world state and remove from monitoring
+                if hasattr(self, "world_state") and self.world_state:
+                    self.world_state.update_channel_status(room_id, status)
+                
+                if room_id in self.channels_to_monitor:
+                    self.channels_to_monitor.remove(room_id)
+                    
+        except Exception as e:
+            logger.error(f"MatrixObserver: Error processing membership change: {e}", exc_info=True)
 
     def _extract_room_details(self, room: MatrixRoom) -> Dict[str, Any]:
         """Extract comprehensive details from a Matrix room"""
@@ -634,11 +708,9 @@ class MatrixObserver:
                 # Remove from monitoring channels
                 if room_id in self.channels_to_monitor:
                     self.channels_to_monitor.remove(room_id)
-
-                # Remove from world state
-                if room_id in self.world_state.state.channels:
-                    del self.world_state.state.channels[room_id]
-                    logger.info(f"WorldState: Removed matrix channel {room_id}")
+                    
+                if hasattr(self, "world_state") and self.world_state:
+                    self.world_state.update_channel_status(room_id, "left_by_bot")
 
                 return {
                     "success": True,
@@ -651,11 +723,12 @@ class MatrixObserver:
                     f"MatrixObserver: Left room {room_id} (response: {response})"
                 )
 
-                # Remove from monitoring and world state
+                # Remove from monitoring and update status
                 if room_id in self.channels_to_monitor:
                     self.channels_to_monitor.remove(room_id)
-                if room_id in self.world_state.state.channels:
-                    del self.world_state.state.channels[room_id]
+                    
+                if hasattr(self, "world_state") and self.world_state:
+                    self.world_state.update_channel_status(room_id, "left_by_bot")
 
                 return {
                     "success": True,
@@ -838,3 +911,32 @@ class MatrixObserver:
             error_msg = f"Exception while reacting to message: {str(e)}"
             logger.error(f"MatrixObserver: {error_msg}", exc_info=True)
             return {"success": False, "error": error_msg}
+
+    async def get_pending_invites_from_world_state(self) -> Dict[str, Any]:
+        """
+        Get pending Matrix invites directly from the world state.
+        
+        Returns:
+            Dict with success status and invites list
+        """
+        logger.info("MatrixObserver.get_pending_invites_from_world_state called")
+        
+        try:
+            if hasattr(self, "world_state") and self.world_state:
+                invites = self.world_state.get_pending_matrix_invites()
+                return {
+                    "success": True,
+                    "invites": invites,
+                    "count": len(invites)
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": "World state not available",
+                    "invites": [],
+                    "count": 0
+                }
+        except Exception as e:
+            error_msg = f"Exception while getting world state invites: {str(e)}"
+            logger.error(f"MatrixObserver: {error_msg}", exc_info=True)
+            return {"success": False, "error": error_msg, "invites": [], "count": 0}
