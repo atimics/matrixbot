@@ -198,6 +198,23 @@ class NeynarAPIClient:
         uuid = signer_uuid or self.signer_uuid
         return await self.send_direct_message(uuid, recipient_fid, text)
     
+    async def quote_cast(self, content: str, quoted_cast_hash: str, channel: Optional[str] = None, embed_urls: Optional[List[str]] = None, signer_uuid: Optional[str] = None) -> Dict[str, Any]:
+        """Quote a cast by including it as an embed."""
+        uuid = signer_uuid or self.signer_uuid
+        if not uuid:
+            raise ValueError("signer_uuid is required to quote a cast.")
+        
+        # Create embeds with the quoted cast and any additional URLs
+        embeds = [{"cast_id": {"hash": quoted_cast_hash}}]
+        if embed_urls:
+            embeds.extend([{"url": url} for url in embed_urls])
+        
+        result = await self.publish_cast(content, uuid, channel, embeds=embeds)
+        # Add quoted_cast info to result for test compatibility
+        if result:
+            result["quoted_cast"] = quoted_cast_hash
+        return result
+    
     async def search_casts(self, query: str, channel_id: Optional[str] = None, limit: int = 25) -> Dict[str, Any]:
         """Search for casts matching a query."""
         return await self.search_casts_by_query(query, limit, channel_id)

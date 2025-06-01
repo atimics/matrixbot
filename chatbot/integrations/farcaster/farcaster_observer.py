@@ -223,6 +223,7 @@ class FarcasterObserver:
         content: str,
         channel: Optional[str] = None,
         embed_urls: Optional[List[str]] = None,
+        reply_to: Optional[str] = None,
         action_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Post a cast directly (not scheduled)."""
@@ -230,7 +231,7 @@ class FarcasterObserver:
             return {"success": False, "error": "API client not initialized"}
         logger.info(f"🎯 FarcasterObserver.post_cast action_id={action_id}")
         embeds = [{"url": url} for url in embed_urls] if embed_urls else None
-        return await self.api_client.publish_cast(content, self.signer_uuid, channel, embeds=embeds)
+        return await self.api_client.publish_cast(content, self.signer_uuid, channel, parent=reply_to, embeds=embeds)
 
     async def reply_to_cast(
         self,
@@ -239,10 +240,8 @@ class FarcasterObserver:
         action_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Reply to a cast directly (not scheduled)."""
-        if not self.api_client:
-            return {"success": False, "error": "API client not initialized"}
         logger.info(f"🎯 FarcasterObserver.reply_to_cast action_id={action_id}")
-        return await self.api_client.reply_to_cast(content, reply_to_hash)
+        return await self.post_cast(content=content, channel=None, reply_to=reply_to_hash)
 
     async def like_cast(self, cast_hash: str) -> Dict[str, Any]:
         """Like a cast."""
@@ -382,3 +381,94 @@ class FarcasterObserver:
         except Exception as e:
             logger.error(f"Error getting cast details for hash '{cast_hash}': {e}", exc_info=True)
             return {"success": False, "cast": None, "error": str(e)}
+
+    def _update_rate_limits(self, response) -> None:
+        """Update rate limit information from API response headers."""
+        if not self.world_state_manager:
+            return
+        
+        headers = getattr(response, 'headers', {})
+        if not headers:
+            return
+        
+        # Extract rate limit info from headers
+        rate_limit_info = {}
+        
+        if 'x-ratelimit-limit' in headers:
+            rate_limit_info['limit'] = int(headers['x-ratelimit-limit'])
+        if 'x-ratelimit-remaining' in headers:
+            rate_limit_info['remaining'] = int(headers['x-ratelimit-remaining'])
+        if 'x-ratelimit-reset' in headers:
+            rate_limit_info['reset_time'] = int(headers['x-ratelimit-reset'])
+        if 'x-ratelimit-retry-after' in headers:
+            rate_limit_info['retry_after'] = int(headers['x-ratelimit-retry-after'])
+        
+        if rate_limit_info:
+            rate_limit_info['last_updated'] = time.time()
+            self.world_state_manager.state.rate_limits['farcaster_api'] = rate_limit_info
+            logger.debug(f"Updated Farcaster API rate limits: {rate_limit_info}")
+
+    def get_rate_limit_status(self) -> Dict[str, Any]:
+        """Get current rate limit status."""
+        if not self.world_state_manager:
+            return {"available": False, "reason": "No world state manager"}
+        
+        rate_limits = self.world_state_manager.state.rate_limits.get('farcaster_api', {})
+        
+        if not rate_limits:
+            return {"available": False, "reason": "No rate limit information"}
+        
+        # Check if information is stale (older than 5 minutes)
+        last_updated = rate_limits.get('last_updated', 0)
+        if time.time() - last_updated > 300:  # 5 minutes
+            return {"available": False, "reason": "Rate limit information is stale"}
+        
+        remaining = rate_limits.get('remaining', 0)
+        limit = rate_limits.get('limit', 0)
+        retry_after = rate_limits.get('retry_after', 0)
+        
+        return {
+            "available": remaining > 0,
+            "limit": limit,
+            "remaining": remaining,
+            "retry_after": retry_after,
+            "last_updated": last_updated
+        }
+
+    def format_user_mention(self, message: Message) -> str:
+        """Format a user mention from a message."""
+        if hasattr(message, 'sender_username') and message.sender_username:
+            return f"@{message.sender_username}"
+        elif hasattr(message, 'sender') and message.sender:
+            return f"@{message.sender}"
+        else:
+            return "@unknown"
+
+    def get_user_context(self, message: Message) -> Dict[str, Any]:
+        """Get user context information from a message."""
+        context = {
+            "username": getattr(message, 'sender_username', 'unknown'),
+            "display_name": getattr(message, 'sender_display_name', 'Unknown'),
+            "fid": getattr(message, 'sender_fid', None),
+            "follower_count": getattr(message, 'sender_follower_count', 0),
+            "following_count": getattr(message, 'sender_following_count', 0),
+            "power_badge": False,
+            "verified_addresses": []
+        }
+        
+        # Extract metadata if available
+        metadata = getattr(message, 'metadata', {})
+        if isinstance(metadata, dict):
+            context["power_badge"] = metadata.get('power_badge', False)
+            context["verified_addresses"] = metadata.get('verified_addresses', {})
+        
+        # Determine engagement level based on follower count
+        follower_count = context.get('follower_count', 0)
+        if follower_count > 1000:
+            context["engagement_level"] = 'high'
+        elif follower_count > 100:
+            context["engagement_level"] = 'medium'
+        else:
+            context["engagement_level"] = 'low'
+        
+        return context
