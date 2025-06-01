@@ -17,7 +17,7 @@ from ..config import settings
 from ..core.ai_engine import AIDecisionEngine
 from ..core.context import ContextManager
 from ..core.world_state import WorldStateManager
-from ..integrations.farcaster.observer import FarcasterObserver
+from ..integrations.farcaster import FarcasterObserver
 from ..integrations.matrix.observer import MatrixObserver
 from ..tools.base import ActionContext
 from ..tools.core_tools import WaitTool
