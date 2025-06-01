@@ -44,6 +44,8 @@ from ..tools.matrix_tools import (
     SendMatrixMessageTool,
     SendMatrixReplyTool,
 )
+from ..tools.media_generation_tools import GenerateImageTool, GenerateVideoTool
+from ..tools.permaweb_tools import StorePermanentMemoryTool
 from ..tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
@@ -869,6 +871,13 @@ class ContextAwareOrchestrator:
         self.tool_registry.register_tool(SearchCastsTool())
         self.tool_registry.register_tool(GetTrendingCastsTool())
         self.tool_registry.register_tool(GetCastByUrlTool())
+
+        # Register media generation tools
+        self.tool_registry.register_tool(GenerateImageTool())
+        self.tool_registry.register_tool(GenerateVideoTool())
+        
+        # Register permaweb tools
+        self.tool_registry.register_tool(StorePermanentMemoryTool())
 
         # Update AI engine with tool descriptions
         self.ai_engine.update_system_prompt_with_tools(self.tool_registry)

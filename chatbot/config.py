@@ -100,6 +100,17 @@ class AppConfig(BaseSettings):
     POPULAR_MEDIA_ARCHIVAL_THRESHOLD_LIKES: int = 5
     POPULAR_MEDIA_ARCHIVAL_INTERVAL_MINUTES: int = 30
 
+    # JSON Observer and Interactive Executor Configuration
+    MAX_EXPANDED_NODES: int = 8  # Maximum number of simultaneously expanded nodes
+    DEFAULT_PINNED_NODES: list[str] = [
+        "channels.matrix.primary",  # Primary Matrix channel
+        "system.notifications",     # Global notifications
+        "system.rate_limits"       # Rate limit status
+    ]
+    AI_SUMMARY_MODEL: str = "openai/gpt-4o-mini"  # Model for generating node summaries
+    ENABLE_TWO_PHASE_AI_PROCESS: bool = False  # Enable separate exploration/action phases
+    MAX_EXPLORATION_ROUNDS: int = 3  # Max rounds in exploration phase if two-phase enabled
+
 
 # Global settings instance
 settings = AppConfig()

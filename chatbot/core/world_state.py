@@ -1196,3 +1196,103 @@ class WorldStateManager:
             logger.info(
                 f"WorldState: Marked {cast_hash} as archived to Arweave: {arweave_tx_id}"
             )
+
+    def get_state_metrics(self) -> Dict[str, Any]:
+        """
+        Get comprehensive metrics about the current world state.
+
+        This method provides statistics that can be used for payload size estimation,
+        monitoring, and optimization decisions.
+
+        Returns:
+            Dict containing various metrics about the world state
+        """
+        try:
+            metrics = {
+                # Channel metrics
+                "total_channels": len(self.state.channels),
+                "active_channels": len([
+                    ch for ch in self.state.channels.values() 
+                    if ch.recent_messages and time.time() - ch.last_activity < 3600
+                ]),
+                
+                # Message metrics
+                "total_messages": sum(len(ch.recent_messages) for ch in self.state.channels.values()),
+                "recent_messages": sum(
+                    len([msg for msg in ch.recent_messages if time.time() - msg.timestamp < 3600])
+                    for ch in self.state.channels.values()
+                ),
+                
+                # User metrics
+                "total_users": len(self.state.users),
+                "users_with_profiles": len([
+                    user for user in self.state.users.values() 
+                    if user.platform_data
+                ]),
+                
+                # Action metrics
+                "total_actions": len(self.state.action_history),
+                "recent_actions": len([
+                    action for action in self.state.action_history
+                    if time.time() - action.timestamp < 3600
+                ]),
+                
+                # Platform-specific metrics
+                "matrix_channels": len([
+                    ch for ch in self.state.channels.values()
+                    if ch.platform == "matrix"
+                ]),
+                "farcaster_channels": len([
+                    ch for ch in self.state.channels.values()
+                    if ch.platform == "farcaster"
+                ]),
+                
+                # Media metrics
+                "bot_media_count": len(self.state.bot_media_on_farcaster),
+                "archived_media_count": len([
+                    media for media in self.state.bot_media_on_farcaster.values()
+                    if media.get("arweave_tx_id")
+                ]),
+                
+                # System metrics
+                "rate_limit_data_size": len(self.state.rate_limits),
+                "system_status_keys": len(self.state.system_status),
+                
+                # Timing metrics
+                "last_update": time.time(),
+                "oldest_message": min(
+                    (msg.timestamp for ch in self.state.channels.values() for msg in ch.recent_messages),
+                    default=time.time()
+                ),
+                "newest_message": max(
+                    (msg.timestamp for ch in self.state.channels.values() for msg in ch.recent_messages),
+                    default=0
+                ),
+            }
+            
+            # Add estimated data sizes (rough approximations)
+            metrics["estimated_sizes"] = {
+                "channels_kb": metrics["total_channels"] * 1.5,  # ~1.5KB per channel
+                "messages_kb": metrics["total_messages"] * 0.8,  # ~0.8KB per message
+                "users_kb": metrics["total_users"] * 0.3,       # ~0.3KB per user
+                "actions_kb": metrics["total_actions"] * 0.5,   # ~0.5KB per action
+                "total_estimated_kb": (
+                    metrics["total_channels"] * 1.5 +
+                    metrics["total_messages"] * 0.8 +
+                    metrics["total_users"] * 0.3 +
+                    metrics["total_actions"] * 0.5 + 5  # 5KB base overhead
+                )
+            }
+            
+            return metrics
+            
+        except Exception as e:
+            logger.error(f"Error generating state metrics: {e}")
+            return {
+                "error": str(e),
+                "total_channels": 0,
+                "total_messages": 0,
+                "total_users": 0,
+                "total_actions": 0,
+                "estimated_sizes": {"total_estimated_kb": 0}
+            }

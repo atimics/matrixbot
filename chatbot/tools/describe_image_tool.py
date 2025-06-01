@@ -140,15 +140,12 @@ class DescribeImageTool(ToolInterface):
             }
             
             # Record this action result in world state for AI visibility
+            # Include metadata in the result string for the action history
+            result_with_metadata = f"Image description: {description} [Model: {openrouter_model}, URL: {image_url}]"
             context.world_state_manager.add_action_result(
                 action_type="describe_image",
-                parameters={"image_url": image_url, "prompt": prompt_text},
-                result=description,
-                metadata={
-                    "image_url": image_url,
-                    "model_used": openrouter_model,
-                    "description_length": len(description)
-                }
+                parameters={"image_url": image_url, "prompt": prompt_text, "model_used": openrouter_model},
+                result=result_with_metadata
             )
             
             return result
