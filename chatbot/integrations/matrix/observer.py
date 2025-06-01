@@ -172,43 +172,65 @@ class MatrixObserver:
             mxc_uri = event.url
             if mxc_uri and self.client:  # Ensure client is available
                 try:
-                    # Use nio client's built-in download method which handles authentication
-                    download_response = await self.client.download(mxc_uri)
-
-                    if hasattr(download_response, "body") and download_response.body:
-                        # Upload Matrix image data directly to S3 for public access
-                        original_filename = getattr(event, "body", "matrix_image.jpg")
-
-                        # Use the content-type from download response if available
-                        content_type = getattr(
-                            download_response, "content_type", "image/jpeg"
+                    # Check if client is authenticated
+                    if not self.client.access_token:
+                        logger.warning(
+                            f"MatrixObserver: Client not authenticated, cannot download {mxc_uri}"
                         )
+                    else:
+                        # Use nio client's built-in download method which handles authentication
+                        download_response = await self.client.download(mxc_uri)
 
-                        s3_url = await s3_service.upload_image_data(
-                            download_response.body, original_filename
-                        )
+                        if hasattr(download_response, "body") and download_response.body:
+                            # Upload Matrix image data directly to S3 for public access
+                            original_filename = getattr(event, "body", "matrix_image.jpg")
 
-                        if s3_url:
-                            image_urls_list.append(s3_url)
-                            logger.info(
-                                f"MatrixObserver: Uploaded Matrix image to S3: {s3_url}"
+                            # Use the content-type from download response if available
+                            content_type = getattr(
+                                download_response, "content_type", "image/jpeg"
                             )
-                        else:
-                            # Fallback to MXC URI if S3 upload fails (AI won't be able to access it, but it's better than nothing)
-                            http_url = await self.client.mxc_to_http(mxc_uri)
-                            if http_url:
-                                image_urls_list.append(http_url)
-                                logger.warning(
-                                    f"MatrixObserver: S3 upload failed, using Matrix URL: {http_url}"
+
+                            s3_url = await s3_service.upload_image_data(
+                                download_response.body, original_filename
+                            )
+
+                            if s3_url:
+                                image_urls_list.append(s3_url)
+                                logger.info(
+                                    f"MatrixObserver: Uploaded Matrix image to S3: {s3_url}"
                                 )
                             else:
+                                # Fallback to MXC URI if S3 upload fails (AI won't be able to access it, but it's better than nothing)
+                                http_url = await self.client.mxc_to_http(mxc_uri)
+                                if http_url:
+                                    image_urls_list.append(http_url)
+                                    logger.warning(
+                                        f"MatrixObserver: S3 upload failed, using Matrix URL: {http_url}"
+                                    )
+                                else:
+                                    logger.warning(
+                                        f"MatrixObserver: Both S3 upload and MXC conversion failed for {mxc_uri}"
+                                    )
+                        else:
+                            # Enhanced error logging
+                            error_type = type(download_response).__name__
+                            error_details = getattr(download_response, 'message', str(download_response))
+                            logger.warning(
+                                f"MatrixObserver: Failed to download Matrix image {mxc_uri}: {error_type} - {error_details}"
+                            )
+                            
+                            # Try alternative approach with HTTP conversion
+                            try:
+                                http_url = await self.client.mxc_to_http(mxc_uri)
+                                if http_url:
+                                    image_urls_list.append(http_url)
+                                    logger.info(
+                                        f"MatrixObserver: Using HTTP fallback URL: {http_url}"
+                                    )
+                            except Exception as convert_error:
                                 logger.warning(
-                                    f"MatrixObserver: Both S3 upload and MXC conversion failed for {mxc_uri}"
+                                    f"MatrixObserver: MXC to HTTP conversion also failed: {convert_error}"
                                 )
-                    else:
-                        logger.warning(
-                            f"MatrixObserver: Failed to download Matrix image {mxc_uri}: {download_response}"
-                        )
                 except Exception as e:
                     logger.error(
                         f"MatrixObserver: Failed to process Matrix image {mxc_uri}: {e}"
