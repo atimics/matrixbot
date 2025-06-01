@@ -19,10 +19,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent / ".env")
 
 from chatbot.config import settings
-from chatbot.core.enhanced_orchestrator import (
-    EnhancedContextAwareOrchestrator,
-    EnhancedOrchestratorConfig,
-)
+from chatbot.core.orchestration import MainOrchestrator, OrchestratorConfig, ProcessingConfig, RateLimitConfig
 
 
 def setup_logging() -> None:
@@ -44,27 +41,30 @@ async def main() -> None:
 
     logger.info("Starting enhanced chatbot application with JSON Observer support...")
 
-    # Load enhanced configuration
-    config = EnhancedOrchestratorConfig(
+    # Load configuration with enhanced node-based processing enabled
+    config = OrchestratorConfig(
         db_path=settings.CHATBOT_DB_PATH,
-        observation_interval=settings.OBSERVATION_INTERVAL,
-        max_cycles_per_hour=settings.MAX_CYCLES_PER_HOUR,
+        processing_config=ProcessingConfig(
+            enable_node_based_processing=True,
+            max_traditional_payload_size=80000,  # 80KB threshold
+            observation_interval=settings.OBSERVATION_INTERVAL,
+            max_cycles_per_hour=settings.MAX_CYCLES_PER_HOUR,
+            traditional_ai_model=settings.AI_MODEL,
+            node_based_ai_model=settings.AI_SUMMARY_MODEL,
+        ),
+        rate_limit_config=RateLimitConfig(),  # Use defaults
         ai_model=settings.AI_MODEL,
-        # Enhanced settings
-        enable_json_observer=True,
-        use_node_based_processing=True,
-        max_traditional_payload_size=80000,  # 80KB threshold
-        json_observer_model=settings.AI_SUMMARY_MODEL,
     )
 
-    # Create and start enhanced orchestrator
-    orchestrator = EnhancedContextAwareOrchestrator(config)
+    # Create and start orchestrator with enhanced features
+    orchestrator = MainOrchestrator(config)
 
     try:
         # Log startup configuration
-        logger.info(f"JSON Observer enabled: {config.enable_json_observer}")
-        logger.info(f"Node-based processing: {config.use_node_based_processing}")
-        logger.info(f"Payload size threshold: {config.max_traditional_payload_size} bytes")
+        logger.info(f"Node-based processing enabled: {config.processing_config.enable_node_based_processing}")
+        logger.info(f"Payload size threshold: {config.processing_config.max_traditional_payload_size} bytes")
+        logger.info(f"Traditional AI model: {config.processing_config.traditional_ai_model}")
+        logger.info(f"Node-based AI model: {config.processing_config.node_based_ai_model}")
         
         await orchestrator.start()
     except KeyboardInterrupt:

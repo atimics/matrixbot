@@ -11,7 +11,7 @@ import logging
 from pathlib import Path
 
 from chatbot.config import settings
-from chatbot.core.orchestrator import ContextAwareOrchestrator, OrchestratorConfig
+from chatbot.core.orchestration import MainOrchestrator, OrchestratorConfig, ProcessingConfig
 
 
 def setup_logging() -> None:
@@ -33,16 +33,20 @@ async def main() -> None:
 
     logger.info("Starting chatbot application...")
 
-    # Load configuration with more responsive settings
+    # Load configuration with traditional processing
     config = OrchestratorConfig(
         db_path=settings.CHATBOT_DB_PATH,
-        observation_interval=settings.OBSERVATION_INTERVAL,
-        max_cycles_per_hour=settings.MAX_CYCLES_PER_HOUR,
+        processing_config=ProcessingConfig(
+            enable_node_based_processing=False,  # Traditional mode
+            observation_interval=settings.OBSERVATION_INTERVAL,
+            max_cycles_per_hour=settings.MAX_CYCLES_PER_HOUR,
+            traditional_ai_model=settings.AI_MODEL,
+        ),
         ai_model=settings.AI_MODEL,
     )
 
     # Create and start orchestrator
-    orchestrator = ContextAwareOrchestrator(config)
+    orchestrator = MainOrchestrator(config)
 
     try:
         await orchestrator.start()

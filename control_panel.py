@@ -23,8 +23,8 @@ from pydantic import BaseModel
 import uvicorn
 
 # Import our context management components
-from chatbot.core.context import ContextManager
-from chatbot.core.orchestrator import ContextAwareOrchestrator
+from chatbot.core.history_recorder import HistoryRecorder
+from chatbot.core.orchestration import MainOrchestrator
 from chatbot.core.world_state import WorldStateManager
 
 logger = logging.getLogger(__name__)
@@ -60,7 +60,7 @@ class MessageRequest(BaseModel):
     sender: str = "@user:control-panel"
 
 # Global orchestrator instance
-orchestrator: Optional[ContextAwareOrchestrator] = None
+orchestrator: Optional[MainOrchestrator] = None
 start_time = time.time()
 
 app = FastAPI(title="Context Management Control Panel", version="1.0.0")
@@ -78,9 +78,12 @@ app.add_middleware(
 async def startup_event():
     """Initialize the orchestrator"""
     global orchestrator
-    from chatbot.core.orchestrator import OrchestratorConfig
-    config = OrchestratorConfig(db_path="control_panel.db")
-    orchestrator = ContextAwareOrchestrator(config)
+    from chatbot.core.orchestration import OrchestratorConfig, ProcessingConfig
+    config = OrchestratorConfig(
+        db_path="control_panel.db",
+        processing_config=ProcessingConfig(enable_node_based_processing=False)
+    )
+    orchestrator = MainOrchestrator(config)
     logger.info("Control panel started")
 
 @app.on_event("shutdown")

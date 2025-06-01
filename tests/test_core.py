@@ -8,8 +8,8 @@ from unittest.mock import Mock, AsyncMock, patch
 import time
 
 from chatbot.core.world_state import WorldStateManager
-from chatbot.core.context import ContextManager
-from chatbot.core.orchestrator import ContextAwareOrchestrator, OrchestratorConfig
+from chatbot.core.history_recorder import HistoryRecorder
+from chatbot.core.orchestration import MainOrchestrator, OrchestratorConfig, ProcessingConfig
 from chatbot.core.ai_engine import AIDecisionEngine
 
 
@@ -68,7 +68,7 @@ class TestWorldState:
         assert channel["recent_messages"][0]["content"] == "Hello world"
 
 
-class TestContextManager:
+class TestHistoryRecorder:
     """Test the context management functionality."""
     
     @pytest.fixture
@@ -79,7 +79,7 @@ class TestContextManager:
     @pytest.fixture
     def context_manager(self, world_state):
         """Create a context manager for testing."""
-        return ContextManager(world_state, ":memory:")  # Use in-memory SQLite
+        return HistoryRecorder(world_state, ":memory:")  # Use in-memory SQLite
     
     @pytest.mark.asyncio
     async def test_initialization(self, context_manager):
@@ -146,13 +146,16 @@ class TestOrchestrator:
     
     def test_initialization(self):
         """Test orchestrator initialization."""
-        config = OrchestratorConfig(db_path=":memory:")
-        orchestrator = ContextAwareOrchestrator(config)
+        config = OrchestratorConfig(
+            db_path=":memory:",
+            processing_config=ProcessingConfig()
+        )
+        orchestrator = MainOrchestrator(config)
         
         assert orchestrator.config.db_path == ":memory:"
-        assert orchestrator.world_state is not None
-        assert orchestrator.context_manager is not None
-        assert orchestrator.ai_engine is not None
+        assert orchestrator.world_state_manager is not None
+        assert orchestrator.history_recorder is not None
+        assert orchestrator.processing_hub is not None
         assert orchestrator.tool_registry is not None  # Updated for new architecture
         assert not orchestrator.running
     
@@ -168,13 +171,16 @@ class TestOrchestrator:
     @pytest.mark.asyncio
     async def test_start_stop_without_observers(self):
         """Test starting and stopping orchestrator without external services."""
-        config = OrchestratorConfig(db_path=":memory:")
-        orchestrator = ContextAwareOrchestrator(config)
+        config = OrchestratorConfig(
+            db_path=":memory:",
+            processing_config=ProcessingConfig()
+        )
+        orchestrator = MainOrchestrator(config)
         
         # Mock the observers initialization to avoid actual network calls
         with patch.object(orchestrator, '_initialize_observers', new_callable=AsyncMock):
-            with patch.object(orchestrator, '_main_event_loop', new_callable=AsyncMock) as mock_loop:
-                mock_loop.side_effect = KeyboardInterrupt()  # Simulate Ctrl+C
+            with patch.object(orchestrator.processing_hub, 'start', new_callable=AsyncMock) as mock_start:
+                mock_start.side_effect = KeyboardInterrupt()  # Simulate Ctrl+C
                 
                 try:
                     await orchestrator.start()

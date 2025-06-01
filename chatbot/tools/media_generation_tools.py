@@ -108,6 +108,7 @@ class GenerateImageTool(ToolInterface):
                             if s3_url:
                                 result = {
                                     "status": "success",
+                                    "message": f"Generated image using {service_used} for prompt: {prompt[:50]}...",
                                     "s3_image_url": s3_url,  # Always S3/CloudFront URL
                                     "prompt_used": prompt,
                                     "service_used": service_used,
@@ -133,10 +134,29 @@ class GenerateImageTool(ToolInterface):
                                 return result
                             else:
                                 logger.error("Failed to ensure image is on S3")
+                                return {
+                                    "status": "error",
+                                    "message": "Image generated but failed to upload to S3"
+                                }
                         except Exception as s3_error:
                             logger.error(f"Failed to upload Replicate image to S3: {s3_error}")
+                            return {
+                                "status": "error", 
+                                "message": f"Image generated but S3 upload failed: {str(s3_error)}"
+                            }
+                    elif image_url:
+                        # No S3 service available, return direct URL
+                        return {
+                            "status": "success",
+                            "message": f"Generated image using {service_used} for prompt: {prompt[:50]}...",
+                            "image_url": image_url,
+                            "prompt_used": prompt,
+                            "service_used": service_used,
+                            "aspect_ratio": aspect_ratio,
+                        }
                 except Exception as e:
                     logger.error(f"Replicate image generation failed: {e}")
+                    # Continue to try other services or return error
 
             # If we have image data from Gemini, upload to S3
             if image_data and hasattr(context, "s3_service"):
@@ -153,6 +173,7 @@ class GenerateImageTool(ToolInterface):
                     if s3_url:
                         result = {
                             "status": "success",
+                            "message": f"Generated image using {service_used} for prompt: {prompt[:50]}...",
                             "s3_image_url": s3_url,
                             "prompt_used": prompt,
                             "service_used": service_used,
@@ -178,6 +199,16 @@ class GenerateImageTool(ToolInterface):
                         return result
                 except Exception as e:
                     logger.error(f"Failed to upload image to S3: {e}")
+                    return {
+                        "status": "error",
+                        "message": f"Image generated but S3 upload failed: {str(e)}"
+                    }
+            elif image_data:
+                # No S3 service available, but we have image data
+                return {
+                    "status": "error",
+                    "message": "Image generated but no S3 service available for storage"
+                }
 
             return {
                 "status": "error",

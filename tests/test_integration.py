@@ -8,8 +8,8 @@ import time
 from unittest.mock import patch, AsyncMock
 
 from chatbot.core.world_state import WorldStateManager
-from chatbot.core.context import ContextManager
-from chatbot.core.orchestrator import ContextAwareOrchestrator, OrchestratorConfig
+from chatbot.core.history_recorder import HistoryRecorder
+from chatbot.core.orchestration import MainOrchestrator, OrchestratorConfig, ProcessingConfig
 
 
 class TestIntegration:
@@ -21,17 +21,20 @@ class TestIntegration:
         # Create orchestrator with in-memory database
         config = OrchestratorConfig(
             db_path=":memory:",
-            observation_interval=0.1,
-            max_cycles_per_hour=3600,
+            processing_config=ProcessingConfig(
+                observation_interval=0.1,
+                max_cycles_per_hour=3600,
+                traditional_ai_model="test_model"
+            ),
             ai_model="test_model"
         )
         
-        orchestrator = ContextAwareOrchestrator(config)
+        orchestrator = MainOrchestrator(config)
         
         # Test basic initialization
         assert not orchestrator.running
-        assert orchestrator.world_state is not None
-        assert orchestrator.context_manager is not None
+        assert orchestrator.world_state_manager is not None
+        assert orchestrator.history_recorder is not None
         
         # Add a test message
         test_message = {
@@ -93,12 +96,15 @@ class TestIntegration:
     @pytest.mark.asyncio 
     async def test_orchestrator_without_observers(self):
         """Test orchestrator functionality without external observers."""
-        config = OrchestratorConfig(db_path=":memory:")
-        orchestrator = ContextAwareOrchestrator(config)
+        config = OrchestratorConfig(
+            db_path=":memory:",
+            processing_config=ProcessingConfig()
+        )
+        orchestrator = MainOrchestrator(config)
         
         # Mock the observers initialization and main loop
         with patch.object(orchestrator, '_initialize_observers', new_callable=AsyncMock):
-            with patch.object(orchestrator, '_main_event_loop', new_callable=AsyncMock) as mock_loop:
+            with patch.object(orchestrator.processing_hub, 'start', new_callable=AsyncMock) as mock_loop:
                 # Mock the event loop to run briefly then stop
                 async def mock_event_loop():
                     await asyncio.sleep(0.01)
@@ -115,11 +121,15 @@ class TestIntegration:
     @pytest.mark.asyncio
     async def test_state_change_detection(self):
         """Test state change detection."""
-        orchestrator = ContextAwareOrchestrator(OrchestratorConfig(db_path=":memory:"))
+        config = OrchestratorConfig(
+            db_path=":memory:",
+            processing_config=ProcessingConfig()
+        )
+        orchestrator = MainOrchestrator(config)
         
         # Get initial state hash
-        initial_state = orchestrator.world_state.to_dict()
-        initial_hash = orchestrator._hash_state(initial_state)
+        initial_state = orchestrator.world_state_manager.get_state_data()
+        # Note: hash state detection moved to ProcessingHub
         
         # Make a change to the world state
         orchestrator.world_state.add_channel("matrix", "new_channel", "New Channel")
