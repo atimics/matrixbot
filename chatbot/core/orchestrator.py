@@ -149,6 +149,7 @@ class ContextAwareOrchestrator:
                     settings.NEYNAR_API_KEY,
                     settings.FARCASTER_BOT_SIGNER_UUID,
                     settings.FARCASTER_BOT_FID,
+                    world_state_manager=self.world_state,
                 )
                 await self.farcaster_observer.start()
                 self.world_state.update_system_status({"farcaster_connected": True})

@@ -34,10 +34,12 @@ class FarcasterObserver:
         api_key: Optional[str] = None,
         signer_uuid: Optional[str] = None,
         bot_fid: Optional[str] = None,
+        world_state_manager=None,
     ):
         self.api_key = api_key
         self.signer_uuid = signer_uuid
         self.bot_fid = bot_fid
+        self.world_state_manager = world_state_manager
         self.base_url = "https://api.neynar.com/v2"  # Neynar API for Farcaster
         self.last_check_time = time.time()
         self.observed_channels = set()  # Track which channels we're monitoring
@@ -67,10 +69,27 @@ class FarcasterObserver:
         """Stop the Farcaster observer"""
         logger.info("Stopping Farcaster observer and cancelling scheduler tasks...")
         # TODO: Cleanup connections
-        if self._post_task:
+        
+        # Cancel tasks and wait for them to finish
+        if self._post_task and not self._post_task.done():
             self._post_task.cancel()
-        if self._reply_task:
+            try:
+                await self._post_task
+            except asyncio.CancelledError:
+                logger.info("Post scheduler task cancelled successfully")
+            except Exception as e:
+                logger.error(f"Error during post task cancellation: {e}")
+                
+        if self._reply_task and not self._reply_task.done():
             self._reply_task.cancel()
+            try:
+                await self._reply_task
+            except asyncio.CancelledError:
+                logger.info("Reply scheduler task cancelled successfully")
+            except Exception as e:
+                logger.error(f"Error during reply task cancellation: {e}")
+                
+        logger.info("Farcaster observer stopped")
 
     def schedule_post(self, content: str, channel: Optional[str] = None) -> None:
         """Schedule a new Farcaster post for sending."""
@@ -98,83 +117,119 @@ class FarcasterObserver:
 
     async def _send_posts_loop(self) -> None:
         """Background loop to send scheduled posts at controlled intervals."""
+        logger.info("Starting Farcaster posts scheduler loop")
         while True:
-            content, channel = await self.post_queue.get()
             try:
-                result = await self.post_cast(content, channel)
-                # Update world state manager with actual result after sending
-                if hasattr(self, "world_state_manager") and self.world_state_manager:
-                    if result.get("success"):
+                content, channel = await self.post_queue.get()
+                logger.info(f"Dequeued scheduled post for channel {channel or 'default'}: {content[:100]}...")
+                
+                try:
+                    result = await self.post_cast(content, channel)
+                    logger.info(f"Post cast result: {result}")
+                    
+                    # Update world state manager with actual result after sending
+                    if hasattr(self, "world_state_manager") and self.world_state_manager:
+                        if result.get("success"):
+                            self.world_state_manager.add_action_result(
+                                action_type="send_farcaster_post",
+                                parameters={"content": content, "channel": channel},
+                                result="success",
+                            )
+                            logger.info(
+                                f"Successfully sent scheduled post to channel {channel or 'default'}"
+                            )
+                        else:
+                            self.world_state_manager.add_action_result(
+                                action_type="send_farcaster_post",
+                                parameters={"content": content, "channel": channel},
+                                result=f"failure: {result.get('error', 'unknown error')}",
+                            )
+                            logger.error(
+                                f"Failed to send scheduled post: {result.get('error', 'unknown error')}"
+                            )
+                except Exception as e:
+                    logger.error(f"Error sending scheduled post: {e}", exc_info=True)
+                    # Update world state manager with exception result
+                    if hasattr(self, "world_state_manager") and self.world_state_manager:
                         self.world_state_manager.add_action_result(
                             action_type="send_farcaster_post",
                             parameters={"content": content, "channel": channel},
-                            result="success",
+                            result=f"failure: {str(e)}",
                         )
-                        logger.info(
-                            f"Successfully sent scheduled post to channel {channel or 'default'}"
-                        )
-                    else:
-                        self.world_state_manager.add_action_result(
-                            action_type="send_farcaster_post",
-                            parameters={"content": content, "channel": channel},
-                            result=f"failure: {result.get('error', 'unknown error')}",
-                        )
-                        logger.error(
-                            f"Failed to send scheduled post: {result.get('error', 'unknown error')}"
-                        )
+                finally:
+                    # Critical: Mark the task as done to prevent queue backup
+                    self.post_queue.task_done()
+                
+                # Wait before processing next item
+                await asyncio.sleep(self.scheduler_interval)
+                
+            except asyncio.CancelledError:
+                logger.info("Post scheduler loop cancelled")
+                break
             except Exception as e:
-                logger.error(f"Error sending scheduled post: {e}")
-                # Update world state manager with exception result
-                if hasattr(self, "world_state_manager") and self.world_state_manager:
-                    self.world_state_manager.add_action_result(
-                        action_type="send_farcaster_post",
-                        parameters={"content": content, "channel": channel},
-                        result=f"failure: {str(e)}",
-                    )
-            await asyncio.sleep(self.scheduler_interval)
+                logger.error(f"Unexpected error in post scheduler loop: {e}", exc_info=True)
+                await asyncio.sleep(5)  # Brief pause before retrying
 
     async def _send_replies_loop(self) -> None:
         """Background loop to send scheduled replies at controlled intervals."""
+        logger.info("Starting Farcaster replies scheduler loop")
         while True:
-            content, reply_to_hash = await self.reply_queue.get()
             try:
-                result = await self.reply_to_cast(content, reply_to_hash)
-                # Update world state manager with actual result after sending
-                if hasattr(self, "world_state_manager") and self.world_state_manager:
-                    if result.get("success"):
+                content, reply_to_hash = await self.reply_queue.get()
+                logger.info(f"Dequeued scheduled reply to {reply_to_hash}: {content[:100]}...")
+                
+                try:
+                    result = await self.reply_to_cast(content, reply_to_hash)
+                    logger.info(f"Reply cast result: {result}")
+                    
+                    # Update world state manager with actual result after sending
+                    if hasattr(self, "world_state_manager") and self.world_state_manager:
+                        if result.get("success"):
+                            self.world_state_manager.add_action_result(
+                                action_type="send_farcaster_reply",
+                                parameters={
+                                    "content": content,
+                                    "reply_to_hash": reply_to_hash,
+                                },
+                                result="success",
+                            )
+                            logger.info(
+                                f"Successfully sent scheduled reply to cast {reply_to_hash}"
+                            )
+                        else:
+                            self.world_state_manager.add_action_result(
+                                action_type="send_farcaster_reply",
+                                parameters={
+                                    "content": content,
+                                    "reply_to_hash": reply_to_hash,
+                                },
+                                result=f"failure: {result.get('error', 'unknown error')}",
+                            )
+                            logger.error(
+                                f"Failed to send scheduled reply to cast {reply_to_hash}: {result.get('error', 'unknown error')}"
+                            )
+                except Exception as e:
+                    logger.error(f"Error sending scheduled reply: {e}", exc_info=True)
+                    # Update world state manager with exception result
+                    if hasattr(self, "world_state_manager") and self.world_state_manager:
                         self.world_state_manager.add_action_result(
                             action_type="send_farcaster_reply",
-                            parameters={
-                                "content": content,
-                                "reply_to_hash": reply_to_hash,
-                            },
-                            result="success",
+                            parameters={"content": content, "reply_to_hash": reply_to_hash},
+                            result=f"failure: {str(e)}",
                         )
-                        logger.info(
-                            f"Successfully sent scheduled reply to cast {reply_to_hash}"
-                        )
-                    else:
-                        self.world_state_manager.add_action_result(
-                            action_type="send_farcaster_reply",
-                            parameters={
-                                "content": content,
-                                "reply_to_hash": reply_to_hash,
-                            },
-                            result=f"failure: {result.get('error', 'unknown error')}",
-                        )
-                        logger.error(
-                            f"Failed to send scheduled reply to cast {reply_to_hash}: {result.get('error', 'unknown error')}"
-                        )
+                finally:
+                    # Critical: Mark the task as done to prevent queue backup
+                    self.reply_queue.task_done()
+                
+                # Wait before processing next item
+                await asyncio.sleep(self.scheduler_interval)
+                
+            except asyncio.CancelledError:
+                logger.info("Reply scheduler loop cancelled")
+                break
             except Exception as e:
-                logger.error(f"Error sending scheduled reply: {e}")
-                # Update world state manager with exception result
-                if hasattr(self, "world_state_manager") and self.world_state_manager:
-                    self.world_state_manager.add_action_result(
-                        action_type="send_farcaster_reply",
-                        parameters={"content": content, "reply_to_hash": reply_to_hash},
-                        result=f"failure: {str(e)}",
-                    )
-            await asyncio.sleep(self.scheduler_interval)
+                logger.error(f"Unexpected error in reply scheduler loop: {e}", exc_info=True)
+                await asyncio.sleep(5)  # Brief pause before retrying
 
     async def observe_feeds(
         self,
@@ -778,7 +833,11 @@ class FarcasterObserver:
                     self.last_seen_hashes.add(cast_hash)
                     return {"success": True, "cast_hash": cast_hash}
                 else:
-                    error_msg = f"API error: {response.status_code}"
+                    try:
+                        error_data = response.json()
+                        error_msg = f"API error {response.status_code}: {error_data.get('message', 'Unknown error')}"
+                    except:
+                        error_msg = f"API error {response.status_code}: {response.text[:200]}"
                     logger.error(f"Failed to post cast: {error_msg}")
                     return {"success": False, "error": error_msg}
 
