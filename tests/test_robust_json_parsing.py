@@ -153,12 +153,40 @@ That's my recommendation.'''
             self.engine._extract_json_from_response(invalid_response)
 
     def test_malformed_json_in_text(self):
-        """Test that malformed JSON in text is handled gracefully."""
-        malformed = '''Here's some text with malformed JSON:
+        """Test that completely broken JSON in text is handled gracefully."""
+        # Use JSON that's so broken even our enhanced parser can't fix it
+        # Remove any recognizable key patterns so last-resort reconstruction fails
+        completely_broken = '''Here's some text with completely broken JSON:
         
-        {"selected_actions": [{"action_type": "test", "parameters": {, "reasoning": "broken"}], "observations": "test"}
+        {broken: unterminated, invalid: syntax everywhere, no_quotes_no_braces
         
         More text.'''
         
-        with pytest.raises(Exception):  # Should raise an error for malformed JSON
-            self.engine._extract_json_from_response(malformed)
+        with pytest.raises(Exception):  # Should raise an error for completely broken JSON
+            self.engine._extract_json_from_response(completely_broken)
+
+    def test_missing_opening_brace_fix(self):
+        """Test that JSON missing opening brace can be fixed by enhanced parser."""
+        # This is the actual problematic response from the logs
+        missing_opening_brace = '''observations": "The primary channel contains advice on Farcaster engagement.",
+  "selected_actions": [
+    {
+      "action_type": "send_matrix_message",
+      "parameters": {
+        "channel_id": "!test:example.com",
+        "content": "Understood!"
+      },
+      "reasoning": "Acknowledge the advice",
+      "priority": 9
+    }
+  ],
+  "reasoning": "Applying the guidance received."
+}'''
+        
+        result = self.engine._extract_json_from_response(missing_opening_brace)
+        
+        # Should successfully parse and reconstruct
+        assert isinstance(result, dict)
+        assert "selected_actions" in result
+        assert len(result["selected_actions"]) == 1
+        assert result["selected_actions"][0]["action_type"] == "send_matrix_message"
