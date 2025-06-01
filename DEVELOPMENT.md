@@ -12,6 +12,7 @@ This guide provides comprehensive information for developers working on the chat
 - [Debugging & Troubleshooting](#-debugging--troubleshooting)
 - [Contributing Guidelines](#-contributing-guidelines)
 - [Release Process](#-release-process)
+- [Development Roadmap & Status](#-development-roadmap--status)
 
 ## 🛠️ Development Environment Setup
 
@@ -608,7 +609,6 @@ def setup_development_logging():
 #### Component-Specific Logging
 ```python
 # Get component-specific loggers
-orchestrator_logger = logging.getLogger('chatbot.core.orchestrator')
 world_state_logger = logging.getLogger('chatbot.core.world_state')
 matrix_logger = logging.getLogger('chatbot.integrations.matrix')
 
