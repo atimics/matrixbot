@@ -151,6 +151,7 @@ class ActionHistory:
     parameters: Dict[str, Any]
     result: str
     timestamp: float
+    action_id: Optional[str] = None  # Unique ID for tracking/updating scheduled actions
 
 
 class WorldState:
@@ -543,14 +544,19 @@ class WorldStateManager:
         )
 
     def add_action_result(
-        self, action_type: str, parameters: Dict[str, Any], result: str
-    ):
-        """Record the result of an executed action"""
+        self, action_type: str, parameters: Dict[str, Any], result: str, action_id: Optional[str] = None
+    ) -> str:
+        """Record the result of an executed action. Returns the action_id for tracking."""
+        if not action_id:
+            # Generate a unique ID for new actions
+            action_id = f"{action_type}_{int(time.time() * 1000)}_{id(parameters)}"
+        
         action = ActionHistory(
             action_type=action_type,
             parameters=parameters,
             result=result,
             timestamp=time.time(),
+            action_id=action_id,
         )
 
         self.state.action_history.append(action)
@@ -561,7 +567,27 @@ class WorldStateManager:
 
         self.state.last_update = time.time()
 
-        logger.info(f"WorldState: Action completed - {action_type}: {result}")
+        logger.info(f"WorldState: Action completed - {action_type}: {result} (ID: {action_id})")
+        return action_id
+
+    def update_action_result(self, action_id: str, new_result: str, cast_hash: Optional[str] = None) -> bool:
+        """Update the result of an existing action by ID. Returns True if found and updated."""
+        for action in self.state.action_history:
+            if action.action_id == action_id:
+                old_result = action.result
+                action.result = new_result
+                action.timestamp = time.time()  # Update timestamp to reflect completion time
+                
+                # If this is a Farcaster action and we have a cast hash, add it to parameters
+                if cast_hash and action.action_type.startswith("send_farcaster"):
+                    action.parameters["cast_hash"] = cast_hash
+                
+                self.state.last_update = time.time()
+                logger.info(f"WorldState: Action {action_id} updated - {action.action_type}: {old_result} -> {new_result}")
+                return True
+        
+        logger.warning(f"WorldState: Could not find action with ID {action_id} to update")
+        return False
 
     def update_system_status(self, updates: Dict[str, Any]):
         """Update system status information"""

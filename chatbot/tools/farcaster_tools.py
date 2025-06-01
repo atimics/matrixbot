@@ -68,7 +68,16 @@ class SendFarcasterPostTool(ToolInterface):
         post_q = getattr(context.farcaster_observer, "post_queue", None)
         if isinstance(post_q, asyncio.Queue):
             try:
-                context.farcaster_observer.schedule_post(content, channel)
+                # Record scheduling and get action_id for tracking
+                action_id = None
+                if context.world_state_manager:
+                    action_id = context.world_state_manager.add_action_result(
+                        action_type=self.name,
+                        parameters={"content": content, "channel": channel},
+                        result="scheduled",
+                    )
+                
+                context.farcaster_observer.schedule_post(content, channel, action_id)
                 success_msg = "Scheduled Farcaster post via scheduler"
                 logger.info(success_msg)
                 return {
@@ -76,6 +85,7 @@ class SendFarcasterPostTool(ToolInterface):
                     "message": success_msg,
                     "content": content,
                     "channel": channel,
+                    "action_id": action_id,  # Return action_id for tracking
                     "timestamp": time.time(),
                 }
             except Exception as e:
@@ -168,21 +178,24 @@ class SendFarcasterReplyTool(ToolInterface):
         # If scheduling supported, enqueue
         if isinstance(reply_q, asyncio.Queue):
             try:
-                context.farcaster_observer.schedule_reply(content, reply_to_hash)
-                success_msg = f"Scheduled Farcaster reply to cast {reply_to_hash}"
-                logger.info(success_msg)
-                # Record scheduling
+                # Record scheduling and get action_id for tracking
+                action_id = None
                 if context.world_state_manager:
-                    context.world_state_manager.add_action_result(
+                    action_id = context.world_state_manager.add_action_result(
                         action_type=self.name,
                         parameters={"content": content, "reply_to_hash": reply_to_hash},
                         result="scheduled",
                     )
+                
+                context.farcaster_observer.schedule_reply(content, reply_to_hash, action_id)
+                success_msg = f"Scheduled Farcaster reply to cast {reply_to_hash}"
+                logger.info(success_msg)
                 return {
                     "status": "scheduled",
                     "message": success_msg,
                     "reply_to_hash": reply_to_hash,
                     "content": content,
+                    "action_id": action_id,  # Return action_id for tracking
                     "timestamp": time.time(),
                 }
             except Exception as e:

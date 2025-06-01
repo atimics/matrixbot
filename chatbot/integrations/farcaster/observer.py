@@ -45,8 +45,8 @@ class FarcasterObserver:
         self.observed_channels = set()  # Track which channels we're monitoring
         self.last_seen_hashes = set()  # Track seen post hashes to avoid duplicates
         # Scheduling system to avoid rapid duplicate posts/replies
-        self.post_queue: asyncio.Queue[tuple[str, Optional[str]]] = asyncio.Queue()
-        self.reply_queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue()
+        self.post_queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue()  # Store action metadata
+        self.reply_queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue()  # Store action metadata
         self.scheduler_interval: float = 60.0  # seconds between scheduled sends
         self._post_task: Optional[asyncio.Task] = None
         self._reply_task: Optional[asyncio.Task] = None
@@ -91,17 +91,24 @@ class FarcasterObserver:
                 
         logger.info("Farcaster observer stopped")
 
-    def schedule_post(self, content: str, channel: Optional[str] = None) -> None:
+    def schedule_post(self, content: str, channel: Optional[str] = None, action_id: Optional[str] = None) -> None:
         """Schedule a new Farcaster post for sending."""
         # Prevent duplicate content in queue
         for queued in list(self.post_queue._queue):  # type: ignore
-            if queued[0] == content:
+            if queued.get("content") == content:
                 logger.debug("Duplicate content in post queue, skipping schedule")
                 return
-        self.post_queue.put_nowait((content, channel))
+        
+        post_data = {
+            "content": content,
+            "channel": channel,
+            "action_id": action_id,
+            "scheduled_at": time.time()
+        }
+        self.post_queue.put_nowait(post_data)
         logger.info("Scheduled Farcaster post")
 
-    def schedule_reply(self, content: str, reply_to_hash: str) -> None:
+    def schedule_reply(self, content: str, reply_to_hash: str, action_id: Optional[str] = None) -> None:
         """Schedule a Farcaster reply for sending."""
         # Prevent replying twice to the same cast
         if reply_to_hash in self.last_seen_hashes:
@@ -109,10 +116,17 @@ class FarcasterObserver:
             return
         # Prevent duplicate replies in queue
         for queued in list(self.reply_queue._queue):  # type: ignore
-            if queued[1] == reply_to_hash:
+            if queued.get("reply_to_hash") == reply_to_hash:
                 logger.debug("Duplicate reply in queue, skipping schedule")
                 return
-        self.reply_queue.put_nowait((content, reply_to_hash))
+        
+        reply_data = {
+            "content": content,
+            "reply_to_hash": reply_to_hash,
+            "action_id": action_id,
+            "scheduled_at": time.time()
+        }
+        self.reply_queue.put_nowait(reply_data)
         logger.info("Scheduled Farcaster reply")
 
     async def _send_posts_loop(self) -> None:
@@ -120,7 +134,11 @@ class FarcasterObserver:
         logger.info("Starting Farcaster posts scheduler loop")
         while True:
             try:
-                content, channel = await self.post_queue.get()
+                post_data = await self.post_queue.get()
+                content = post_data["content"]
+                channel = post_data["channel"] 
+                action_id = post_data.get("action_id")
+                
                 logger.info(f"Dequeued scheduled post for channel {channel or 'default'}: {content[:100]}...")
                 
                 try:
@@ -130,32 +148,55 @@ class FarcasterObserver:
                     # Update world state manager with actual result after sending
                     if hasattr(self, "world_state_manager") and self.world_state_manager:
                         if result.get("success"):
-                            self.world_state_manager.add_action_result(
-                                action_type="send_farcaster_post",
-                                parameters={"content": content, "channel": channel},
-                                result="success",
-                            )
+                            cast_hash = result.get("cast", {}).get("hash")
+                            if action_id:
+                                # Update existing scheduled action
+                                self.world_state_manager.update_action_result(
+                                    action_id, "success", cast_hash
+                                )
+                            else:
+                                # Fallback: create new action record
+                                self.world_state_manager.add_action_result(
+                                    action_type="send_farcaster_post",
+                                    parameters={"content": content, "channel": channel, "cast_hash": cast_hash},
+                                    result="success",
+                                )
                             logger.info(
                                 f"Successfully sent scheduled post to channel {channel or 'default'}"
                             )
                         else:
-                            self.world_state_manager.add_action_result(
-                                action_type="send_farcaster_post",
-                                parameters={"content": content, "channel": channel},
-                                result=f"failure: {result.get('error', 'unknown error')}",
-                            )
+                            error_msg = result.get('error', 'unknown error')
+                            if action_id:
+                                # Update existing scheduled action
+                                self.world_state_manager.update_action_result(
+                                    action_id, f"failure: {error_msg}"
+                                )
+                            else:
+                                # Fallback: create new action record
+                                self.world_state_manager.add_action_result(
+                                    action_type="send_farcaster_post",
+                                    parameters={"content": content, "channel": channel},
+                                    result=f"failure: {error_msg}",
+                                )
                             logger.error(
-                                f"Failed to send scheduled post: {result.get('error', 'unknown error')}"
+                                f"Failed to send scheduled post: {error_msg}"
                             )
                 except Exception as e:
                     logger.error(f"Error sending scheduled post: {e}", exc_info=True)
                     # Update world state manager with exception result
                     if hasattr(self, "world_state_manager") and self.world_state_manager:
-                        self.world_state_manager.add_action_result(
-                            action_type="send_farcaster_post",
-                            parameters={"content": content, "channel": channel},
-                            result=f"failure: {str(e)}",
-                        )
+                        if action_id:
+                            # Update existing scheduled action
+                            self.world_state_manager.update_action_result(
+                                action_id, f"failure: {str(e)}"
+                            )
+                        else:
+                            # Fallback: create new action record
+                            self.world_state_manager.add_action_result(
+                                action_type="send_farcaster_post",
+                                parameters={"content": content, "channel": channel},
+                                result=f"failure: {str(e)}",
+                            )
                 finally:
                     # Critical: Mark the task as done to prevent queue backup
                     self.post_queue.task_done()
@@ -175,7 +216,11 @@ class FarcasterObserver:
         logger.info("Starting Farcaster replies scheduler loop")
         while True:
             try:
-                content, reply_to_hash = await self.reply_queue.get()
+                reply_data = await self.reply_queue.get()
+                content = reply_data["content"]
+                reply_to_hash = reply_data["reply_to_hash"]
+                action_id = reply_data.get("action_id")
+                
                 logger.info(f"Dequeued scheduled reply to {reply_to_hash}: {content[:100]}...")
                 
                 try:
@@ -185,38 +230,62 @@ class FarcasterObserver:
                     # Update world state manager with actual result after sending
                     if hasattr(self, "world_state_manager") and self.world_state_manager:
                         if result.get("success"):
-                            self.world_state_manager.add_action_result(
-                                action_type="send_farcaster_reply",
-                                parameters={
-                                    "content": content,
-                                    "reply_to_hash": reply_to_hash,
-                                },
-                                result="success",
-                            )
+                            cast_hash = result.get("cast", {}).get("hash")
+                            if action_id:
+                                # Update existing scheduled action
+                                self.world_state_manager.update_action_result(
+                                    action_id, "success", cast_hash
+                                )
+                            else:
+                                # Fallback: create new action record
+                                self.world_state_manager.add_action_result(
+                                    action_type="send_farcaster_reply",
+                                    parameters={
+                                        "content": content,
+                                        "reply_to_hash": reply_to_hash,
+                                        "cast_hash": cast_hash,
+                                    },
+                                    result="success",
+                                )
                             logger.info(
                                 f"Successfully sent scheduled reply to cast {reply_to_hash}"
                             )
                         else:
-                            self.world_state_manager.add_action_result(
-                                action_type="send_farcaster_reply",
-                                parameters={
-                                    "content": content,
-                                    "reply_to_hash": reply_to_hash,
-                                },
-                                result=f"failure: {result.get('error', 'unknown error')}",
-                            )
+                            error_msg = result.get('error', 'unknown error')
+                            if action_id:
+                                # Update existing scheduled action
+                                self.world_state_manager.update_action_result(
+                                    action_id, f"failure: {error_msg}"
+                                )
+                            else:
+                                # Fallback: create new action record
+                                self.world_state_manager.add_action_result(
+                                    action_type="send_farcaster_reply",
+                                    parameters={
+                                        "content": content,
+                                        "reply_to_hash": reply_to_hash,
+                                    },
+                                    result=f"failure: {error_msg}",
+                                )
                             logger.error(
-                                f"Failed to send scheduled reply to cast {reply_to_hash}: {result.get('error', 'unknown error')}"
+                                f"Failed to send scheduled reply to cast {reply_to_hash}: {error_msg}"
                             )
                 except Exception as e:
                     logger.error(f"Error sending scheduled reply: {e}", exc_info=True)
                     # Update world state manager with exception result
                     if hasattr(self, "world_state_manager") and self.world_state_manager:
-                        self.world_state_manager.add_action_result(
-                            action_type="send_farcaster_reply",
-                            parameters={"content": content, "reply_to_hash": reply_to_hash},
-                            result=f"failure: {str(e)}",
-                        )
+                        if action_id:
+                            # Update existing scheduled action
+                            self.world_state_manager.update_action_result(
+                                action_id, f"failure: {str(e)}"
+                            )
+                        else:
+                            # Fallback: create new action record
+                            self.world_state_manager.add_action_result(
+                                action_type="send_farcaster_reply",
+                                parameters={"content": content, "reply_to_hash": reply_to_hash},
+                                result=f"failure: {str(e)}",
+                            )
                 finally:
                     # Critical: Mark the task as done to prevent queue backup
                     self.reply_queue.task_done()

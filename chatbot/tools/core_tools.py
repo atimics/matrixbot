@@ -36,7 +36,7 @@ class WaitTool(ToolInterface):
         """
         Execute the wait action.
         """
-        duration = params.get("duration", 1.0) * 10
+        duration = params.get("duration", 1.0)
 
         # Validate and sanitize duration
         try:
