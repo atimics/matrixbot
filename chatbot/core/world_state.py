@@ -666,6 +666,7 @@ class WorldState:
             "system_status": {**self.system_status, "rate_limits": self.rate_limits},
             "threads": threads_payload,
             "pending_matrix_invites": self.pending_matrix_invites,
+            "recent_media_actions": self.get_recent_media_actions(),
             "current_time": time.time(),
             "payload_stats": {
                 "primary_channel": primary_channel_id,
@@ -682,6 +683,61 @@ class WorldState:
                 ),
                 "bot_identity": {"fid": bot_fid, "username": bot_username},
                 "pending_invites_count": len(self.pending_matrix_invites),
+            },
+        }
+
+    def get_recent_media_actions(self, lookback_seconds: int = 300) -> Dict[str, Any]:
+        """Get recent media-related actions to help avoid repetitive operations."""
+        cutoff_time = time.time() - lookback_seconds
+
+        recent_media_actions = []
+        image_urls_recently_described = set()
+        recent_generations = []
+
+        for action in reversed(self.action_history):
+            if action.timestamp < cutoff_time:
+                break
+
+            if action.action_type == "describe_image":
+                if hasattr(action, "metadata") and action.metadata:
+                    image_url = action.metadata.get("image_url")
+                    if image_url:
+                        image_urls_recently_described.add(image_url)
+                elif hasattr(action, "parameters") and action.parameters:
+                    image_url = action.parameters.get("image_url")
+                    if image_url:
+                        image_urls_recently_described.add(image_url)
+                recent_media_actions.append(
+                    {
+                        "action": "describe_image",
+                        "timestamp": action.timestamp,
+                        "image_url": action.parameters.get("image_url")
+                        if hasattr(action, "parameters")
+                        else None,
+                    }
+                )
+
+            elif action.action_type == "generate_image":
+                recent_generations.append(
+                    {
+                        "action": "generate_image",
+                        "timestamp": action.timestamp,
+                        "prompt": action.parameters.get("prompt")
+                        if hasattr(action, "parameters")
+                        else None,
+                        "result_url": action.result if hasattr(action, "result") else None,
+                    }
+                )
+                recent_media_actions.append(recent_generations[-1])
+
+        return {
+            "recent_media_actions": recent_media_actions[-10:],  # Last 10 media actions
+            "images_recently_described": list(image_urls_recently_described),
+            "recent_generations": recent_generations[-5:],  # Last 5 generations
+            "summary": {
+                "total_recent_media_actions": len(recent_media_actions),
+                "unique_images_described": len(image_urls_recently_described),
+                "recent_generation_count": len(recent_generations),
             },
         }
 

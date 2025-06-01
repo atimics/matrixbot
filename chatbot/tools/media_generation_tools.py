@@ -101,13 +101,27 @@ class GenerateImageTool(ToolInterface):
                     logger.info(f"Generated image using Replicate: {prompt[:50]}...")
 
                     if image_url:
-                        return {
+                        result = {
                             "status": "success",
                             "s3_image_url": image_url,  # Replicate returns direct URL
                             "prompt_used": prompt,
                             "service_used": service_used,
                             "aspect_ratio": aspect_ratio,
                         }
+
+                        # Record this action result in world state for AI visibility
+                        context.world_state_manager.add_action_result(
+                            action_type="generate_image",
+                            parameters={"prompt": prompt, "aspect_ratio": aspect_ratio},
+                            result=image_url,
+                            metadata={
+                                "service_used": service_used,
+                                "image_url": image_url,
+                                "prompt": prompt,
+                            },
+                        )
+
+                        return result
                 except Exception as e:
                     logger.error(f"Replicate image generation failed: {e}")
 
@@ -124,13 +138,27 @@ class GenerateImageTool(ToolInterface):
                     )
 
                     if s3_url:
-                        return {
+                        result = {
                             "status": "success",
                             "s3_image_url": s3_url,
                             "prompt_used": prompt,
                             "service_used": service_used,
                             "aspect_ratio": aspect_ratio,
                         }
+
+                        # Record this action result in world state for AI visibility
+                        context.world_state_manager.add_action_result(
+                            action_type="generate_image",
+                            parameters={"prompt": prompt, "aspect_ratio": aspect_ratio},
+                            result=result["s3_image_url"],
+                            metadata={
+                                "service_used": service_used,
+                                "image_url": s3_url,
+                                "prompt": prompt,
+                            },
+                        )
+
+                        return result
                 except Exception as e:
                     logger.error(f"Failed to upload image to S3: {e}")
 

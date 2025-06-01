@@ -129,7 +129,8 @@ class DescribeImageTool(ToolInterface):
                 }
 
             logger.info(f"DescribeImageTool: Successfully described image {image_url}")
-            return {
+            
+            result = {
                 "status": "success",
                 "image_url": image_url,
                 "description": description,
@@ -137,6 +138,20 @@ class DescribeImageTool(ToolInterface):
                 "model_used": openrouter_model,
                 "timestamp": time.time(),
             }
+            
+            # Record this action result in world state for AI visibility
+            context.world_state_manager.add_action_result(
+                action_type="describe_image",
+                parameters={"image_url": image_url, "prompt": prompt_text},
+                result=description,
+                metadata={
+                    "image_url": image_url,
+                    "model_used": openrouter_model,
+                    "description_length": len(description)
+                }
+            )
+            
+            return result
 
         except httpx.HTTPStatusError as e:
             logger.error(

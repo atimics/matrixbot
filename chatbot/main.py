@@ -1,5 +1,9 @@
 """
 Main entry point for the chatbot application.
+
+Copyright (c) 2025 Ratimics
+Licensed under Creative Commons Attribution-NonCommercial 4.0 International License.
+For commercial use, contact the copyright holder for permission.
 """
 
 import asyncio

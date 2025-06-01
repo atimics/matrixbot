@@ -572,3 +572,25 @@ python control_panel.py
 ```
 
 Visit http://localhost:5000 to access the control panel.
+
+## 📄 License
+
+Copyright (c) 2025 Ratimics
+
+This project is licensed under the Creative Commons Attribution-NonCommercial 4.0 International License. This means:
+
+- ✅ **You CAN**: Use, modify, and share this software for personal, educational, or research purposes
+- ❌ **You CANNOT**: Use this software for commercial purposes without explicit permission
+- 📝 **You MUST**: Provide attribution when using or sharing this software
+
+### Commercial Use
+
+For commercial licensing, partnerships, or any revenue-generating use of this software, please contact us for permission. We're open to discussing commercial licensing terms for qualified use cases.
+
+**Contact**: [Insert contact information here]
+
+See the [LICENSE](LICENSE) file for full terms and conditions.
+
+---
+
+*This software is provided "as is" without warranty of any kind. Use at your own risk.*

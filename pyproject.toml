@@ -6,7 +6,8 @@ build-backend = "poetry.core.masonry.api"
 name = "chatbot"
 version = "0.1.0"
 description = "A context-aware AI chatbot with Matrix and Farcaster integration"
-authors = ["Chatbot Team <team@example.com>"]
+authors = ["Ratimics <contact@ratimics.com>"]
+license = "CC-BY-NC-4.0"
 readme = "README.md"
 packages = [{include = "chatbot"}]
 

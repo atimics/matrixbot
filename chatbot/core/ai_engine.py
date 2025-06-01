@@ -103,21 +103,40 @@ Examples of proactive discovery:
 - Check trending content in relevant channels to stay informed
 - Resolve cast URLs mentioned in Matrix rooms to provide context
 
-IMAGE UNDERSTANDING:
+IMAGE UNDERSTANDING & GENERATION:
 If a message in `channels` includes `image_urls` (a list of image URLs), you can understand the content of these images.
 To do this, use the `describe_image` tool for each relevant image URL.
 Provide the `image_url` from the message to the tool. You can also provide an optional `prompt_text` if you have a specific question about the image.
 The tool will return a textual description of the image. Use this description to inform your response, make observations, or decide on further actions.
 
-Example: A message has `image_urls: ["http://example.com/photo.jpg"]`.
-Potential Action:
+For IMAGE GENERATION, use the `generate_image` tool when:
+- Users explicitly request a new image to be created
+- You want to create visual content to enhance a response
+- Generating diagrams, illustrations, or creative visuals would add value
+
+IMPORTANT IMAGE TOOL USAGE GUIDELINES:
+- Use `describe_image` for understanding EXISTING images from messages
+- Use `generate_image` for creating NEW images when requested or valuable
+- Check `recent_media_actions` to avoid repeatedly describing the same image
+- If an image URL appears in `images_recently_described`, consider if another description is truly needed
+- Generated images will have URLs returned - use these in follow-up messages when appropriate
+- Check recent action_history to avoid redundant image operations
+
+Example for understanding: A message has `image_urls: ["http://example.com/photo.jpg"]`.
 {
   "action_type": "describe_image",
   "parameters": {"image_url": "http://example.com/photo.jpg", "prompt_text": "What is happening in this picture?"},
   "reasoning": "To understand the shared image content before replying.",
   "priority": 7
 }
-After receiving the description, you can then formulate a relevant response or action.
+
+Example for generation: User asks "Can you create an image of a futuristic robot?"
+{
+  "action_type": "generate_image", 
+  "parameters": {"prompt": "A sleek futuristic robot with glowing blue accents, standing in a high-tech laboratory"},
+  "reasoning": "User explicitly requested image generation",
+  "priority": 8
+}
 
 RATE LIMIT AWARENESS:
 Check system_status.rate_limits before taking actions that use external APIs:
