@@ -212,6 +212,10 @@ class Channel:
     public: bool = True  # Is room publicly joinable
     power_levels: Dict[str, int] = field(default_factory=dict)  # User power levels
     creation_time: Optional[float] = None  # When room was created
+    
+    # Channel status tracking
+    status: str = "active"  # Status: 'active', 'left_by_bot', 'kicked', 'banned', 'invited'
+    last_status_update: float = 0.0  # When status was last updated
 
     def __post_init__(self):
         """
@@ -220,7 +224,9 @@ class Channel:
         This method can be extended to add validation logic, default value
         assignment, or other initialization tasks that require the full object state.
         """
-        pass
+        # Initialize status timestamp if not set
+        if self.last_status_update == 0.0:
+            self.last_status_update = time.time()
 
     def get_activity_summary(self) -> Dict[str, Any]:
         """
@@ -686,7 +692,7 @@ class WorldStateManager:
         }
         logger.info("WorldStateManager: Initialized empty world state")
 
-    def add_channel(self, channel_id: str, channel_type: str, name: str):
+    def add_channel(self, channel_id: str, channel_type: str, name: str, status: str = "active"):
         """Add a new channel to monitor"""
         self.state.channels[channel_id] = Channel(
             id=channel_id,
@@ -694,8 +700,10 @@ class WorldStateManager:
             name=name,
             recent_messages=[],
             last_checked=time.time(),
+            status=status,
+            last_status_update=time.time(),
         )
-        logger.info(f"WorldState: Added {channel_type} channel '{name}' ({channel_id})")
+        logger.info(f"WorldState: Added {channel_type} channel '{name}' ({channel_id}) with status '{status}'")
 
     def add_message(self, channel_id: str, message: Message):
         """Add a new message to a channel"""
@@ -929,21 +937,29 @@ class WorldStateManager:
         Add a pending Matrix room invite to the world state.
         
         Args:
-            invite_info: Dictionary with 'room_id', 'inviter', and optionally 'room_name'
+            invite_info: Dictionary with 'room_id', 'inviter', and optionally 'room_name', 'timestamp'
         """
         room_id = invite_info.get("room_id")
         if not room_id:
             logger.warning("Cannot add Matrix invite without room_id")
             return
             
-        # Check for duplicates
+        # Check for duplicates and update if existing
         for existing_invite in self.state.pending_matrix_invites:
             if existing_invite.get("room_id") == room_id:
-                logger.debug(f"Matrix invite for room {room_id} already exists")
+                # Update existing invite with new information
+                existing_invite.update(invite_info)
+                logger.info(f"WorldState: Updated existing pending invite for room {room_id} from {invite_info.get('inviter')}")
+                self.state.last_update = time.time()
                 return
                 
+        # Add timestamp if not provided
+        if "timestamp" not in invite_info:
+            invite_info["timestamp"] = time.time()
+            
         self.state.pending_matrix_invites.append(invite_info)
-        logger.info(f"WorldState: Added pending Matrix invite for room {room_id} from {invite_info.get('inviter')}")
+        self.state.last_update = time.time()
+        logger.info(f"WorldState: Added new pending Matrix invite for room {room_id} from {invite_info.get('inviter')}")
 
     def remove_pending_matrix_invite(self, room_id: str) -> bool:
         """
@@ -963,27 +979,32 @@ class WorldStateManager:
         
         removed = len(self.state.pending_matrix_invites) < original_count
         if removed:
+            self.state.last_update = time.time()
             logger.info(f"WorldState: Removed pending Matrix invite for room {room_id}")
         else:
             logger.debug(f"No pending Matrix invite found for room {room_id}")
         return removed
 
-    def update_channel_status(self, channel_id: str, status: str) -> None:
+    def update_channel_status(self, channel_id: str, new_status: str, room_name: Optional[str] = None):
         """
-        Update the status of a channel (e.g., 'left', 'joined', 'banned').
+        Update the status of a channel (e.g., 'left_by_bot', 'kicked', 'banned', 'active').
         
         Args:
             channel_id: The channel ID to update
-            status: New status for the channel
+            new_status: New status for the channel
+            room_name: Optional room name for creating unknown channels
         """
         if channel_id in self.state.channels:
-            # Add status to channel metadata
-            if not hasattr(self.state.channels[channel_id], 'metadata'):
-                self.state.channels[channel_id].metadata = {}
-            self.state.channels[channel_id].metadata['status'] = status
-            logger.info(f"WorldState: Updated channel {channel_id} status to '{status}'")
+            old_status = self.state.channels[channel_id].status
+            self.state.channels[channel_id].status = new_status
+            self.state.channels[channel_id].last_status_update = time.time()
+            self.state.last_update = time.time()
+            logger.info(f"WorldState: Updated channel {channel_id} ({self.state.channels[channel_id].name}) status from '{old_status}' to '{new_status}'")
+        elif room_name:
+            # If channel not known, add it with the new status (e.g. for kicks from unknown rooms)
+            self.add_channel(channel_id, "matrix", room_name, status=new_status)
         else:
-            logger.warning(f"Cannot update status for unknown channel {channel_id}")
+            logger.warning(f"Cannot update status for unknown channel {channel_id} without providing a room name.")
 
     def get_pending_matrix_invites(self) -> List[Dict[str, Any]]:
         """
