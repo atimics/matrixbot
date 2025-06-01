@@ -44,6 +44,7 @@ class FarcasterObserver:
         self.last_check_time = time.time()
         self.observed_channels = set()  # Track which channels we're monitoring
         self.last_seen_hashes = set()  # Track seen post hashes to avoid duplicates
+        self.replied_to_hashes = set()  # Track casts we've already replied to
         # Scheduling system to avoid rapid duplicate posts/replies
         self.post_queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue()  # Store action metadata
         self.reply_queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue()  # Store action metadata
@@ -93,6 +94,8 @@ class FarcasterObserver:
 
     def schedule_post(self, content: str, channel: Optional[str] = None, action_id: Optional[str] = None) -> None:
         """Schedule a new Farcaster post for sending."""
+        logger.info(f"🎯 SCHEDULE_POST called with action_id={action_id}, content='{content[:50]}...', channel={channel}")
+        
         # Prevent duplicate content in queue
         for queued in list(self.post_queue._queue):  # type: ignore
             if queued.get("content") == content:
@@ -105,19 +108,24 @@ class FarcasterObserver:
             "action_id": action_id,
             "scheduled_at": time.time()
         }
+        
+        logger.info(f"📝 Adding post to queue: {post_data}")
         self.post_queue.put_nowait(post_data)
+        logger.info(f"✅ Successfully added post to queue. New queue size: {self.post_queue.qsize()}")
         logger.info("Scheduled Farcaster post")
 
     def schedule_reply(self, content: str, reply_to_hash: str, action_id: Optional[str] = None) -> None:
         """Schedule a Farcaster reply for sending."""
+        logger.info(f"🎯 SCHEDULE_REPLY called with action_id={action_id}, reply_to_hash={reply_to_hash}, content='{content[:50]}...'")
+        
         # Prevent replying twice to the same cast
-        if reply_to_hash in self.last_seen_hashes:
-            logger.debug(f"Already replied to cast {reply_to_hash}, skipping schedule")
+        if reply_to_hash in self.replied_to_hashes:
+            logger.warning(f"Already replied to cast {reply_to_hash}, skipping schedule")
             return
         # Prevent duplicate replies in queue
         for queued in list(self.reply_queue._queue):  # type: ignore
             if queued.get("reply_to_hash") == reply_to_hash:
-                logger.debug("Duplicate reply in queue, skipping schedule")
+                logger.warning("Duplicate reply in queue, skipping schedule")
                 return
         
         reply_data = {
@@ -126,15 +134,25 @@ class FarcasterObserver:
             "action_id": action_id,
             "scheduled_at": time.time()
         }
+        
+        logger.info(f"📝 Adding reply to queue: {reply_data}")
         self.reply_queue.put_nowait(reply_data)
+        logger.info(f"✅ Successfully added reply to queue. New queue size: {self.reply_queue.qsize()}")
         logger.info("Scheduled Farcaster reply")
 
     async def _send_posts_loop(self) -> None:
         """Background loop to send scheduled posts at controlled intervals."""
         logger.info("Starting Farcaster posts scheduler loop")
+        iteration_count = 0
         while True:
             try:
+                iteration_count += 1
+                logger.info(f"🔄 Post scheduler loop iteration {iteration_count} - waiting for queue item...")
+                logger.info(f"📊 Current post queue size: {self.post_queue.qsize()}")
+                
                 post_data = await self.post_queue.get()
+                logger.info(f"✅ Successfully dequeued post data: {post_data}")
+                
                 content = post_data["content"]
                 channel = post_data["channel"] 
                 action_id = post_data.get("action_id")
@@ -214,9 +232,16 @@ class FarcasterObserver:
     async def _send_replies_loop(self) -> None:
         """Background loop to send scheduled replies at controlled intervals."""
         logger.info("Starting Farcaster replies scheduler loop")
+        iteration_count = 0
         while True:
             try:
+                iteration_count += 1
+                logger.info(f"🔄 Reply scheduler loop iteration {iteration_count} - waiting for queue item...")
+                logger.info(f"📊 Current reply queue size: {self.reply_queue.qsize()}")
+                
                 reply_data = await self.reply_queue.get()
+                logger.info(f"✅ Successfully dequeued reply data: {reply_data}")
+                
                 content = reply_data["content"]
                 reply_to_hash = reply_data["reply_to_hash"]
                 action_id = reply_data.get("action_id")
@@ -231,6 +256,10 @@ class FarcasterObserver:
                     if hasattr(self, "world_state_manager") and self.world_state_manager:
                         if result.get("success"):
                             cast_hash = result.get("cast", {}).get("hash")
+                            # Track that we've replied to this cast to prevent duplicate replies
+                            self.replied_to_hashes.add(reply_to_hash)
+                            logger.info(f"✅ Added {reply_to_hash} to replied_to_hashes set")
+                            
                             if action_id:
                                 # Update existing scheduled action
                                 self.world_state_manager.update_action_result(

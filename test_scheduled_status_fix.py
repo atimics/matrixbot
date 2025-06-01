@@ -47,8 +47,13 @@ async def test_scheduled_status_handling():
     assert result["status"] == "scheduled", f"Expected 'scheduled' status, got {result['status']}"
     assert "Scheduled Farcaster reply" in result["message"]
     
-    # Verify that schedule_reply was called
-    farcaster_observer.schedule_reply.assert_called_once_with("Test reply", "0x123abc")
+    # Verify that schedule_reply was called (with any action_id)
+    assert farcaster_observer.schedule_reply.call_count == 1
+    call_args = farcaster_observer.schedule_reply.call_args
+    # Check that the first two args are correct (third is action_id which can be any value)
+    assert len(call_args.args) == 3
+    assert call_args.args[0] == "Test reply"
+    assert call_args.args[1] == "0x123abc"
     
     print("✅ Test passed: Farcaster reply tool correctly returns 'scheduled' status")
     print(f"✅ Result: {result}")
