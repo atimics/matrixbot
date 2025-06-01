@@ -529,3 +529,283 @@ class SendFarcasterDMTool(ToolInterface):
             "error": result.get("error"),
             "timestamp": time.time(),
         }
+
+
+class GetUserTimelineTool(ToolInterface):
+    """
+    Tool for fetching a user's timeline (recent casts) from Farcaster.
+    """
+
+    @property
+    def name(self) -> str:
+        return "get_user_timeline"
+
+    @property
+    def description(self) -> str:
+        return "Fetch recent casts from a specific user's timeline on Farcaster. Use this to see what someone has been posting recently."
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "user_identifier": "string - Username (without @) or FID of the user whose timeline to fetch",
+            "limit": "integer (optional) - Number of casts to retrieve (default: 10, max: 50)",
+        }
+
+    async def execute(
+        self, params: Dict[str, Any], context: ActionContext
+    ) -> Dict[str, Any]:
+        """
+        Execute the get user timeline action.
+        """
+        logger.info(f"Executing tool '{self.name}' with params: {params}")
+
+        # Check if Farcaster integration is available
+        if not context.farcaster_observer:
+            error_msg = "Farcaster integration (observer) not configured."
+            logger.error(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+        # Extract and validate parameters
+        user_identifier = params.get("user_identifier")
+        limit = params.get("limit", 10)
+
+        if not user_identifier:
+            error_msg = "Missing required parameter 'user_identifier'"
+            logger.error(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+        try:
+            limit = int(limit)
+            if limit < 1 or limit > 50:
+                limit = min(max(limit, 1), 50)  # Clamp to valid range
+        except (ValueError, TypeError):
+            limit = 10
+
+        try:
+            result = await context.farcaster_observer.get_user_casts(
+                user_identifier=user_identifier, limit=limit
+            )
+            logger.info(f"Retrieved {len(result.get('casts', []))} casts for user {user_identifier}")
+            return {
+                "status": "success",
+                "user_identifier": user_identifier,
+                "casts": result.get("casts", []),
+                "user_info": result.get("user_info"),
+                "count": len(result.get("casts", [])),
+                "timestamp": time.time(),
+            }
+        except Exception as e:
+            error_msg = f"Error fetching user timeline: {e}"
+            logger.exception(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+
+class SearchCastsTool(ToolInterface):
+    """
+    Tool for searching Farcaster casts based on keywords.
+    """
+
+    @property
+    def name(self) -> str:
+        return "search_casts"
+
+    @property
+    def description(self) -> str:
+        return "Search for casts on Farcaster using keywords. Optionally filter by channel. Use this to find relevant content or discussions."
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "query": "string - Search keywords or phrases to look for in casts",
+            "channel_id": "string (optional) - Channel ID to search within (e.g., 'dev', 'warpcast', 'base')",
+            "limit": "integer (optional) - Number of results to return (default: 10, max: 50)",
+        }
+
+    async def execute(
+        self, params: Dict[str, Any], context: ActionContext
+    ) -> Dict[str, Any]:
+        """
+        Execute the search casts action.
+        """
+        logger.info(f"Executing tool '{self.name}' with params: {params}")
+
+        # Check if Farcaster integration is available
+        if not context.farcaster_observer:
+            error_msg = "Farcaster integration (observer) not configured."
+            logger.error(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+        # Extract and validate parameters
+        query = params.get("query")
+        channel_id = params.get("channel_id")
+        limit = params.get("limit", 10)
+
+        if not query:
+            error_msg = "Missing required parameter 'query'"
+            logger.error(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+        try:
+            limit = int(limit)
+            if limit < 1 or limit > 50:
+                limit = min(max(limit, 1), 50)  # Clamp to valid range
+        except (ValueError, TypeError):
+            limit = 10
+
+        try:
+            result = await context.farcaster_observer.search_casts(
+                query=query, channel_id=channel_id, limit=limit
+            )
+            logger.info(f"Found {len(result.get('casts', []))} casts for query '{query}'")
+            return {
+                "status": "success",
+                "query": query,
+                "channel_id": channel_id,
+                "casts": result.get("casts", []),
+                "count": len(result.get("casts", [])),
+                "timestamp": time.time(),
+            }
+        except Exception as e:
+            error_msg = f"Error searching casts: {e}"
+            logger.exception(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+
+class GetTrendingCastsTool(ToolInterface):
+    """
+    Tool for fetching trending/popular casts from Farcaster.
+    """
+
+    @property
+    def name(self) -> str:
+        return "get_trending_casts"
+
+    @property
+    def description(self) -> str:
+        return "Get trending or popular casts from Farcaster based on engagement metrics. Optionally filter by channel and timeframe."
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "channel_id": "string (optional) - Channel ID to get trending casts from (e.g., 'dev', 'warpcast', 'base')",
+            "timeframe_hours": "integer (optional) - Timeframe in hours to consider for trending (default: 24, max: 168)",
+            "limit": "integer (optional) - Number of trending casts to return (default: 10, max: 50)",
+        }
+
+    async def execute(
+        self, params: Dict[str, Any], context: ActionContext
+    ) -> Dict[str, Any]:
+        """
+        Execute the get trending casts action.
+        """
+        logger.info(f"Executing tool '{self.name}' with params: {params}")
+
+        # Check if Farcaster integration is available
+        if not context.farcaster_observer:
+            error_msg = "Farcaster integration (observer) not configured."
+            logger.error(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+        # Extract and validate parameters
+        channel_id = params.get("channel_id")
+        timeframe_hours = params.get("timeframe_hours", 24)
+        limit = params.get("limit", 10)
+
+        try:
+            timeframe_hours = int(timeframe_hours)
+            if timeframe_hours < 1 or timeframe_hours > 168:  # Max 1 week
+                timeframe_hours = min(max(timeframe_hours, 1), 168)
+        except (ValueError, TypeError):
+            timeframe_hours = 24
+
+        try:
+            limit = int(limit)
+            if limit < 1 or limit > 50:
+                limit = min(max(limit, 1), 50)  # Clamp to valid range
+        except (ValueError, TypeError):
+            limit = 10
+
+        try:
+            result = await context.farcaster_observer.get_trending_casts(
+                channel_id=channel_id, timeframe_hours=timeframe_hours, limit=limit
+            )
+            logger.info(f"Retrieved {len(result.get('casts', []))} trending casts")
+            return {
+                "status": "success",
+                "channel_id": channel_id,
+                "timeframe_hours": timeframe_hours,
+                "casts": result.get("casts", []),
+                "count": len(result.get("casts", [])),
+                "timestamp": time.time(),
+            }
+        except Exception as e:
+            error_msg = f"Error fetching trending casts: {e}"
+            logger.exception(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+
+class GetCastByUrlTool(ToolInterface):
+    """
+    Tool for fetching cast details from a Farcaster/Warpcast URL.
+    """
+
+    @property
+    def name(self) -> str:
+        return "get_cast_by_url"
+
+    @property
+    def description(self) -> str:
+        return "Fetch details of a specific cast using its Farcaster/Warpcast URL. Use this to get information about a cast when you have the URL."
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "farcaster_url": "string - Full Farcaster/Warpcast URL of the cast (e.g., 'https://warpcast.com/username/0x123abc')",
+        }
+
+    async def execute(
+        self, params: Dict[str, Any], context: ActionContext
+    ) -> Dict[str, Any]:
+        """
+        Execute the get cast by URL action.
+        """
+        logger.info(f"Executing tool '{self.name}' with params: {params}")
+
+        # Check if Farcaster integration is available
+        if not context.farcaster_observer:
+            error_msg = "Farcaster integration (observer) not configured."
+            logger.error(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+        # Extract and validate parameters
+        farcaster_url = params.get("farcaster_url")
+
+        if not farcaster_url:
+            error_msg = "Missing required parameter 'farcaster_url'"
+            logger.error(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+        # Basic URL validation
+        if not any(domain in farcaster_url.lower() for domain in ["warpcast.com", "farcaster.xyz"]):
+            error_msg = "Invalid Farcaster URL. Must be a warpcast.com or farcaster.xyz URL."
+            logger.error(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+        try:
+            result = await context.farcaster_observer.get_cast_by_url(farcaster_url)
+            if result.get("cast"):
+                logger.info(f"Successfully retrieved cast from URL: {farcaster_url}")
+                return {
+                    "status": "success",
+                    "url": farcaster_url,
+                    "cast": result.get("cast"),
+                    "timestamp": time.time(),
+                }
+            else:
+                error_msg = result.get("error", "Cast not found or URL invalid")
+                logger.warning(f"Failed to retrieve cast from URL {farcaster_url}: {error_msg}")
+                return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+        except Exception as e:
+            error_msg = f"Error fetching cast by URL: {e}"
+            logger.exception(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}

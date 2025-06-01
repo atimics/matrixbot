@@ -1172,376 +1172,632 @@ class FarcasterObserver:
             logger.error(f"Error sending DM: {e}")
             return {"success": False, "error": str(e)}
 
-    async def follow_user(self, fid: int) -> Dict[str, Any]:
+    # =========================================================================
+    # PHASE 1.2: Enhanced Content Discovery Methods
+    # =========================================================================
+
+    async def get_user_casts(self, user_identifier: str, limit: int = 10) -> Dict[str, Any]:
         """
-        Follow a Farcaster user by FID
-
+        Fetch recent casts from a specific Farcaster user.
+        
         Args:
-            fid: Farcaster user ID to follow
-
+            user_identifier: Either FID (integer as string) or username (e.g., "dwr.eth")
+            limit: Number of casts to fetch (default: 10, max: 25)
+            
         Returns:
-            Result dict with success status
+            Dict with success status, casts list, and any error messages
         """
+        logger.info(f"FarcasterObserver.get_user_casts: user={user_identifier}, limit={limit}")
+        
         if not self.api_key:
-            return {"success": False, "error": "No API key configured"}
+            error_msg = "Farcaster API key not configured"
+            logger.error(error_msg)
+            return {"success": False, "error": error_msg, "casts": []}
+        
         try:
+            # Determine if user_identifier is FID or username
+            if user_identifier.isdigit():
+                # It's a FID
+                fid = int(user_identifier)
+                params = {"fid": fid, "limit": min(limit, 25), "include_replies": False}
+            else:
+                # It's a username - we need to use the by-username endpoint
+                params = {"username": user_identifier, "limit": min(limit, 25), "include_replies": False}
+            
             async with httpx.AsyncClient() as client:
-                headers = {
-                    "accept": "application/json",
-                    "api_key": self.api_key,
-                    "content-type": "application/json",
-                }
-                payload = {"signer_uuid": self.signer_uuid, "fid": fid}
-                response = await client.post(
-                    f"{self.base_url}/farcaster/follow", headers=headers, json=payload
-                )
-                self._update_rate_limits(response)
-                if response.status_code == 200:
-                    logger.info(f"Successfully followed user: {fid}")
-                    return {"success": True, "fid": fid}
+                headers = {"accept": "application/json", "api_key": self.api_key}
+                
+                if user_identifier.isdigit():
+                    # Use FID-based endpoint
+                    response = await client.get(
+                        f"{self.base_url}/farcaster/casts",
+                        headers=headers,
+                        params=params,
+                    )
                 else:
-                    error = f"API error: {response.status_code}"
-                    logger.error(f"Failed to follow user: {error}")
-                    return {"success": False, "error": error}
-        except Exception as e:
-            logger.error(f"Error following user: {e}")
-            return {"success": False, "error": str(e)}
-
-    async def unfollow_user(self, fid: int) -> Dict[str, Any]:
-        """
-        Unfollow a Farcaster user by FID
-
-        Args:
-            fid: Farcaster user ID to unfollow
-
-        Returns:
-            Result dict with success status
-        """
-        if not self.api_key:
-            return {"success": False, "error": "No API key configured"}
-        try:
-            async with httpx.AsyncClient() as client:
-                headers = {
-                    "accept": "application/json",
-                    "api_key": self.api_key,
-                    "content-type": "application/json",
-                }
-                payload = {"signer_uuid": self.signer_uuid, "fid": fid}
-                response = await client.post(
-                    f"{self.base_url}/farcaster/unfollow", headers=headers, json=payload
-                )
+                    # First get user info by username to get FID
+                    user_response = await client.get(
+                        f"{self.base_url}/farcaster/user/by-username",
+                        headers=headers,
+                        params={"username": user_identifier}
+                    )
+                    
+                    if user_response.status_code != 200:
+                        error_msg = f"User not found: {user_identifier}"
+                        logger.error(error_msg)
+                        return {"success": False, "error": error_msg, "casts": []}
+                    
+                    user_data = user_response.json()
+                    fid = user_data.get("result", {}).get("user", {}).get("fid")
+                    
+                    if not fid:
+                        error_msg = f"Could not get FID for user: {user_identifier}"
+                        logger.error(error_msg)
+                        return {"success": False, "error": error_msg, "casts": []}
+                    
+                    # Now get casts using FID
+                    response = await client.get(
+                        f"{self.base_url}/farcaster/casts",
+                        headers=headers,
+                        params={"fid": fid, "limit": min(limit, 25), "include_replies": False},
+                    )
+                
+                # Update rate limit tracking
                 self._update_rate_limits(response)
-                if response.status_code == 200:
-                    logger.info(f"Successfully unfollowed user: {fid}")
-                    return {"success": True, "fid": fid}
-                else:
-                    error = f"API error: {response.status_code}"
-                    logger.error(f"Failed to unfollow user: {error}")
-                    return {"success": False, "error": error}
-        except Exception as e:
-            logger.error(f"Error unfollowing user: {e}")
-            return {"success": False, "error": str(e)}
-
-    async def send_dm(self, fid: int, content: str) -> Dict[str, Any]:
-        """
-        Send a direct message to a Farcaster user
-
-        Args:
-            fid: Recipient Farcaster user ID
-            content: Text content of the DM
-
-        Returns:
-            Result dict with success status and message id
-        """
-        if not self.api_key:
-            return {"success": False, "error": "No API key configured"}
-        try:
-            async with httpx.AsyncClient() as client:
-                headers = {
-                    "accept": "application/json",
-                    "api_key": self.api_key,
-                    "content-type": "application/json",
-                }
-                payload = {
-                    "signer_uuid": self.signer_uuid,
-                    "recipient_fid": fid,
-                    "text": content,
-                }
-                response = await client.post(
-                    f"{self.base_url}/farcaster/dm", headers=headers, json=payload
-                )
-                self._update_rate_limits(response)
-                if response.status_code == 200:
-                    data = response.json()
-                    msg_id = data.get("message", {}).get("id", "")
-                    logger.info(f"Successfully sent DM to {fid}: {msg_id}")
-                    return {"success": True, "message_id": msg_id}
-                else:
-                    error = f"API error: {response.status_code}"
-                    logger.error(f"Failed to send DM: {error}")
-                    return {"success": False, "error": error}
-        except Exception as e:
-            logger.error(f"Error sending DM: {e}")
-            return {"success": False, "error": str(e)}
-
-    def _update_rate_limits(self, response: httpx.Response) -> None:
-        """
-        Update rate limit tracking from API response headers
-
-        Args:
-            response: HTTP response object containing rate limit headers
-        """
-        try:
-            # Common rate limit headers from Farcaster/Neynar API
-            rate_limit_headers = {
-                "x-ratelimit-limit": "limit",
-                "x-ratelimit-remaining": "remaining",
-                "x-ratelimit-reset": "reset_time",
-                "x-ratelimit-retry-after": "retry_after",
-                "ratelimit-limit": "limit",
-                "ratelimit-remaining": "remaining",
-                "ratelimit-reset": "reset_time",
-            }
-
-            rate_limit_info = {}
-            for header_name, info_key in rate_limit_headers.items():
-                header_value = response.headers.get(header_name)
-                if header_value:
-                    if info_key in ["limit", "remaining"]:
-                        rate_limit_info[info_key] = int(header_value)
-                    elif info_key == "reset_time":
-                        # Could be Unix timestamp or seconds until reset
-                        rate_limit_info[info_key] = int(header_value)
-                    elif info_key == "retry_after":
-                        rate_limit_info[info_key] = int(header_value)
-
-            if rate_limit_info:
-                # Store in world state for AI system awareness
-                if hasattr(self, "world_state_manager") and self.world_state_manager:
-                    current_time = time.time()
-                    rate_limit_info["last_updated"] = current_time
-
-                    # Update world state with rate limit info
-                    world_state = self.world_state_manager.state
-                    world_state.rate_limits = getattr(world_state, "rate_limits", {})
-                    world_state.rate_limits["farcaster_api"] = rate_limit_info
-
-                    # Propagate to system_status for AI visibility
+                
+                if response.status_code != 200:
+                    error_msg = f"Farcaster API error: {response.status_code} - {response.text}"
+                    logger.error(error_msg)
+                    return {"success": False, "error": error_msg, "casts": []}
+                
+                data = response.json()
+                casts_data = data.get("casts", [])
+                
+                # Convert to Message objects
+                messages = []
+                for cast in casts_data:
                     try:
-                        self.world_state_manager.update_system_status(
-                            {"rate_limits": world_state.rate_limits}
+                        cast_hash = cast.get("hash", "")
+                        author = cast.get("author", {})
+                        content = cast.get("text", "")
+                        
+                        if not content:
+                            continue
+                        
+                        username = author.get("username", "unknown")
+                        display_name = author.get("display_name", username)
+                        fid = author.get("fid")
+                        cast_timestamp = self._parse_timestamp(cast.get("timestamp", ""))
+                        
+                        # Check for replies
+                        reply_to = None
+                        if cast.get("parent_hash"):
+                            reply_to = cast.get("parent_hash")
+                        
+                        message = Message(
+                            id=cast_hash,
+                            channel_id=f"user_{user_identifier}",
+                            channel_type="farcaster",
+                            sender=username,
+                            content=content,
+                            timestamp=cast_timestamp,
+                            reply_to=reply_to,
+                            sender_username=username,
+                            sender_display_name=display_name,
+                            sender_fid=fid,
+                            sender_pfp_url=author.get("pfp_url"),
+                            sender_bio=author.get("profile", {}).get("bio", {}).get("text"),
+                            sender_follower_count=author.get("follower_count"),
+                            sender_following_count=author.get("following_count"),
+                            metadata={
+                                "cast_type": "user_timeline",
+                                "verified_addresses": author.get("verified_addresses", {}),
+                                "power_badge": author.get("power_badge", False),
+                                "channel": f"user_{user_identifier}",
+                            },
                         )
+                        
+                        messages.append(message)
+                        
                     except Exception as e:
-                        logger.debug(
-                            f"Error updating system_status with rate limits: {e}"
-                        )
-
-                    # Log if we're approaching limits
-                    remaining = rate_limit_info.get("remaining", float("inf"))
-                    limit = rate_limit_info.get("limit", 0)
-
-                    if limit > 0:
-                        usage_percent = ((limit - remaining) / limit) * 100
-                        if usage_percent > 80:
-                            logger.warning(
-                                f"Farcaster API rate limit usage high: {usage_percent:.1f}% ({remaining}/{limit} remaining)"
-                            )
-                        elif usage_percent > 50:
-                            logger.info(
-                                f"Farcaster API rate limit usage: {usage_percent:.1f}% ({remaining}/{limit} remaining)"
-                            )
-
-        except Exception as e:
-            logger.debug(f"Error parsing rate limit headers: {e}")
-
-    def get_rate_limit_status(self) -> Dict[str, Any]:
-        """
-        Get current rate limit status
-
-        Returns:
-            Dictionary with rate limit information
-        """
-        if not hasattr(self, "world_state_manager") or not self.world_state_manager:
-            return {"available": False, "reason": "No world state manager"}
-
-        world_state = self.world_state_manager.state
-        if (
-            not hasattr(world_state, "rate_limits")
-            or "farcaster_api" not in world_state.rate_limits
-        ):
-            return {"available": False, "reason": "No rate limit data"}
-
-        rate_limit_info = world_state.rate_limits["farcaster_api"]
-        current_time = time.time()
-
-        # Check if data is stale (older than 5 minutes)
-        last_updated = rate_limit_info.get("last_updated", 0)
-        if current_time - last_updated > 300:
-            return {"available": False, "reason": "Rate limit data is stale"}
-
-        return {
-            "available": True,
-            "limit": rate_limit_info.get("limit"),
-            "remaining": rate_limit_info.get("remaining"),
-            "reset_time": rate_limit_info.get("reset_time"),
-            "retry_after": rate_limit_info.get("retry_after"),
-            "last_updated": last_updated,
-            "age_seconds": current_time - last_updated,
-        }
-
-    def is_connected(self) -> bool:
-        """Check if the Farcaster observer is connected and ready"""
-        return self.api_key is not None and self.signer_uuid is not None
-
-    def can_observe_notifications(self) -> bool:
-        """Check if the observer can fetch notifications (requires bot FID)"""
-        return self.api_key is not None and self.bot_fid is not None
-
-    def get_status(self) -> Dict[str, Any]:
-        """Get current observer status"""
-        status = {
-            "connected": self.is_connected(),
-            "can_observe_notifications": self.can_observe_notifications(),
-            "last_check_time": self.last_check_time,
-            "observed_channels": list(self.observed_channels),
-            "seen_hashes_count": len(self.last_seen_hashes),
-            "bot_fid": self.bot_fid,
-        }
-
-        # Add rate limit status
-        rate_limit_status = self.get_rate_limit_status()
-        status["rate_limits"] = rate_limit_status
-
-        return status
-
-    def format_user_mention(self, message: Message) -> str:
-        """
-        Format a user mention for Farcaster replies
-
-        Args:
-            message: Message object containing user information
-
-        Returns:
-            Properly formatted mention string (e.g., "@username")
-        """
-        if message.channel_type != "farcaster":
-            return message.sender
-
-        username = message.sender_username or message.sender
-        if username and not username.startswith("@"):
-            return f"@{username}"
-        return username or message.sender
-
-    def get_user_context(self, message: Message) -> Dict[str, Any]:
-        """
-        Get comprehensive user context for AI decision making
-
-        Args:
-            message: Message object containing user information
-
-        Returns:
-            Dictionary with user context including engagement levels, verification status, etc.
-        """
-        if message.channel_type != "farcaster":
-            return {"platform": "matrix", "username": message.sender}
-
-        context = {
-            "platform": "farcaster",
-            "username": message.sender_username or message.sender,
-            "display_name": message.sender_display_name,
-            "fid": message.sender_fid,
-            "follower_count": message.sender_follower_count or 0,
-            "following_count": message.sender_following_count or 0,
-            "verified": bool(message.metadata.get("verified_addresses", {})),
-            "power_badge": message.metadata.get("power_badge", False),
-            "engagement_level": self._calculate_engagement_level(message),
-            "taggable_mention": self.format_user_mention(message),
-        }
-
-        return context
-
-    def _calculate_engagement_level(self, message: Message) -> str:
-        """
-        Calculate user engagement level based on follower count and other metrics
-
-        Args:
-            message: Message object with user information
-
-        Returns:
-            Engagement level: "low", "medium", "high", "influencer"
-        """
-        follower_count = message.sender_follower_count or 0
-        power_badge = message.metadata.get("power_badge", False)
-
-        if power_badge or follower_count > 10000:
-            return "influencer"
-        elif follower_count > 1000:
-            return "high"
-        elif follower_count > 100:
-            return "medium"
-        else:
-            return "low"
-
-    def get_thread_context(self, message: Message) -> Dict[str, Any]:
-        """
-        Get thread context for a message to understand conversation flow
-
-        Args:
-            message: Message object
-
-        Returns:
-            Dictionary with thread context information
-        """
-        if not self.world_state_manager:
-            return {"thread_available": False}
-
-        world_state = self.world_state_manager.state
-
-        # For replies, get the thread context
-        if message.reply_to:
-            thread_messages = world_state.threads.get(message.reply_to, [])
-            thread_root = world_state.thread_roots.get(message.reply_to)
-
-            return {
-                "thread_available": True,
-                "is_reply": True,
-                "thread_length": len(thread_messages),
-                "thread_root": {
-                    "sender": thread_root.sender_username if thread_root else None,
-                    "content_preview": thread_root.content[:100] + "..."
-                    if thread_root and len(thread_root.content) > 100
-                    else thread_root.content
-                    if thread_root
-                    else None,
+                        logger.error(f"Error processing cast in user timeline: {e}")
+                        continue
+                
+                logger.info(f"FarcasterObserver: Retrieved {len(messages)} casts for user {user_identifier}")
+                return {
+                    "success": True, 
+                    "casts": messages,
+                    "user_identifier": user_identifier,
+                    "count": len(messages)
                 }
-                if thread_root
-                else None,
-                "recent_participants": list(
-                    set(
-                        [
-                            msg.sender_username
-                            for msg in thread_messages[-5:]
-                            if msg.sender_username
-                        ]
+                
+        except Exception as e:
+            error_msg = f"Exception while fetching user casts: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {"success": False, "error": error_msg, "casts": []}
+
+    async def search_casts(self, query: str, channel_id: Optional[str] = None, limit: int = 10) -> Dict[str, Any]:
+        """
+        Search for Farcaster casts matching a query, optionally within a specific channel.
+        
+        Args:
+            query: The search term(s)
+            channel_id: Optional Farcaster channel ID (e.g., "/channel/dev")
+            limit: Number of casts to return (default: 10, max: 25)
+            
+        Returns:
+            Dict with success status, casts list, and any error messages
+        """
+        logger.info(f"FarcasterObserver.search_casts: query='{query}', channel={channel_id}, limit={limit}")
+        
+        if not self.api_key:
+            error_msg = "Farcaster API key not configured"
+            logger.error(error_msg)
+            return {"success": False, "error": error_msg, "casts": []}
+        
+        if not query.strip():
+            error_msg = "Search query cannot be empty"
+            logger.error(error_msg)
+            return {"success": False, "error": error_msg, "casts": []}
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                headers = {"accept": "application/json", "api_key": self.api_key}
+                
+                # Build search parameters
+                params = {
+                    "q": query.strip(),
+                    "limit": min(limit, 25)
+                }
+                
+                # Add channel filter if specified
+                if channel_id:
+                    # Remove leading slash if present to normalize channel ID
+                    normalized_channel = channel_id.lstrip("/")
+                    if normalized_channel.startswith("channel/"):
+                        params["channel_id"] = normalized_channel
+                    else:
+                        params["channel_id"] = f"channel/{normalized_channel}"
+                
+                response = await client.get(
+                    f"{self.base_url}/farcaster/casts/search",
+                    headers=headers,
+                    params=params,
+                )
+                
+                # Update rate limit tracking
+                self._update_rate_limits(response)
+                
+                if response.status_code != 200:
+                    error_msg = f"Farcaster search API error: {response.status_code} - {response.text}"
+                    logger.error(error_msg)
+                    return {"success": False, "error": error_msg, "casts": []}
+                
+                data = response.json()
+                casts_data = data.get("casts", [])
+                
+                # Convert to Message objects
+                messages = []
+                for cast in casts_data:
+                    try:
+                        cast_hash = cast.get("hash", "")
+                        author = cast.get("author", {})
+                        content = cast.get("text", "")
+                        
+                        if not content:
+                            continue
+                        
+                        username = author.get("username", "unknown")
+                        display_name = author.get("display_name", username)
+                        fid = author.get("fid")
+                        cast_timestamp = self._parse_timestamp(cast.get("timestamp", ""))
+                        
+                        # Check for replies
+                        reply_to = None
+                        if cast.get("parent_hash"):
+                            reply_to = cast.get("parent_hash")
+                        
+                        # Determine channel from cast data
+                        cast_channel = "search_results"
+                        if cast.get("parent_url"):
+                            cast_channel = cast.get("parent_url", "search_results")
+                        
+                        message = Message(
+                            id=cast_hash,
+                            channel_id=cast_channel,
+                            channel_type="farcaster",
+                            sender=username,
+                            content=content,
+                            timestamp=cast_timestamp,
+                            reply_to=reply_to,
+                            sender_username=username,
+                            sender_display_name=display_name,
+                            sender_fid=fid,
+                            sender_pfp_url=author.get("pfp_url"),
+                            sender_bio=author.get("profile", {}).get("bio", {}).get("text"),
+                            sender_follower_count=author.get("follower_count"),
+                            sender_following_count=author.get("following_count"),
+                            metadata={
+                                "cast_type": "search_result",
+                                "verified_addresses": author.get("verified_addresses", {}),
+                                "power_badge": author.get("power_badge", False),
+                                "search_query": query,
+                                "channel": cast_channel,
+                            },
+                        )
+                        
+                        messages.append(message)
+                        
+                    except Exception as e:
+                        logger.error(f"Error processing search result cast: {e}")
+                        continue
+                
+                logger.info(f"FarcasterObserver: Found {len(messages)} casts for query '{query}'")
+                return {
+                    "success": True, 
+                    "casts": messages,
+                    "query": query,
+                    "channel_id": channel_id,
+                    "count": len(messages)
+                }
+                
+        except Exception as e:
+            error_msg = f"Exception while searching casts: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {"success": False, "error": error_msg, "casts": []}
+
+    async def get_trending_casts(self, channel_id: Optional[str] = None, timeframe_hours: int = 24, limit: int = 10) -> Dict[str, Any]:
+        """
+        Fetch trending Farcaster casts, optionally within a specific channel and timeframe.
+        
+        Args:
+            channel_id: Optional Farcaster channel ID (e.g., "/channel/dev")
+            timeframe_hours: Lookback period in hours (default: 24)
+            limit: Number of casts to return (default: 10, max: 25)
+            
+        Returns:
+            Dict with success status, casts list, and any error messages
+        """
+        logger.info(f"FarcasterObserver.get_trending_casts: channel={channel_id}, timeframe={timeframe_hours}h, limit={limit}")
+        
+        if not self.api_key:
+            error_msg = "Farcaster API key not configured"
+            logger.error(error_msg)
+            return {"success": False, "error": error_msg, "casts": []}
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                headers = {"accept": "application/json", "api_key": self.api_key}
+                
+                # Calculate timeframe cutoff
+                cutoff_time = time.time() - (timeframe_hours * 3600)
+                cutoff_iso = time.strftime('%Y-%m-%dT%H:%M:%S.000Z', time.gmtime(cutoff_time))
+                
+                # Build parameters for trending feed
+                params = {
+                    "limit": min(limit, 25),
+                    "with_likes": True,
+                    "with_recasts": True,
+                }
+                
+                # If channel specified, get channel-specific trending
+                if channel_id:
+                    # Normalize channel ID
+                    normalized_channel = channel_id.lstrip("/")
+                    if not normalized_channel.startswith("channel/"):
+                        normalized_channel = f"channel/{normalized_channel}"
+                    
+                    # Use channel feed endpoint with sorting
+                    response = await client.get(
+                        f"{self.base_url}/farcaster/feed/channels",
+                        headers=headers,
+                        params={
+                            "channel_ids": normalized_channel,
+                            "limit": min(limit * 2, 50),  # Get more to filter by timeframe
+                            "with_likes": True,
+                            "with_recasts": True,
+                        },
                     )
-                ),
-            }
-        else:
-            # This is a root message, check if it has replies
-            thread_messages = world_state.threads.get(message.id, [])
-            return {
-                "thread_available": True,
-                "is_reply": False,
-                "has_replies": len(thread_messages)
-                > 1,  # > 1 because root message is included
-                "reply_count": max(0, len(thread_messages) - 1),
-                "participants": list(
-                    set(
-                        [
-                            msg.sender_username
-                            for msg in thread_messages
-                            if msg.sender_username
-                        ]
+                else:
+                    # Use global trending feed - this may require using the general feed with sorting
+                    response = await client.get(
+                        f"{self.base_url}/farcaster/feed",
+                        headers=headers,
+                        params={
+                            "feed_type": "filter",
+                            "filter_type": "global_trending",
+                            "limit": min(limit * 2, 50),  # Get more to filter by timeframe
+                            "with_likes": True,
+                            "with_recasts": True,
+                        },
                     )
-                ),
-            }
+                
+                # Update rate limit tracking
+                self._update_rate_limits(response)
+                
+                if response.status_code != 200:
+                    error_msg = f"Farcaster trending API error: {response.status_code} - {response.text}"
+                    logger.error(error_msg)
+                    return {"success": False, "error": error_msg, "casts": []}
+                
+                data = response.json()
+                casts_data = data.get("casts", [])
+                
+                # Filter by timeframe and sort by engagement
+                filtered_casts = []
+                for cast in casts_data:
+                    cast_timestamp = self._parse_timestamp(cast.get("timestamp", ""))
+                    if cast_timestamp >= cutoff_time:
+                        # Add engagement score for sorting
+                        reactions = cast.get("reactions", {})
+                        likes_count = reactions.get("likes_count", 0)
+                        recasts_count = reactions.get("recasts_count", 0)
+                        replies_count = cast.get("replies", {}).get("count", 0)
+                        
+                        # Simple engagement score: likes + 2*recasts + replies
+                        engagement_score = likes_count + (2 * recasts_count) + replies_count
+                        cast["_engagement_score"] = engagement_score
+                        filtered_casts.append(cast)
+                
+                # Sort by engagement score (descending) and take the limit
+                filtered_casts.sort(key=lambda x: x.get("_engagement_score", 0), reverse=True)
+                trending_casts = filtered_casts[:limit]
+                
+                # Convert to Message objects
+                messages = []
+                for cast in trending_casts:
+                    try:
+                        cast_hash = cast.get("hash", "")
+                        author = cast.get("author", {})
+                        content = cast.get("text", "")
+                        
+                        if not content:
+                            continue
+                        
+                        username = author.get("username", "unknown")
+                        display_name = author.get("display_name", username)
+                        fid = author.get("fid")
+                        cast_timestamp = self._parse_timestamp(cast.get("timestamp", ""))
+                        
+                        # Check for replies
+                        reply_to = None
+                        if cast.get("parent_hash"):
+                            reply_to = cast.get("parent_hash")
+                        
+                        # Determine channel from cast data
+                        cast_channel = "trending"
+                        if cast.get("parent_url"):
+                            cast_channel = cast.get("parent_url", "trending")
+                        elif channel_id:
+                            cast_channel = channel_id
+                        
+                        message = Message(
+                            id=cast_hash,
+                            channel_id=cast_channel,
+                            channel_type="farcaster",
+                            sender=username,
+                            content=content,
+                            timestamp=cast_timestamp,
+                            reply_to=reply_to,
+                            sender_username=username,
+                            sender_display_name=display_name,
+                            sender_fid=fid,
+                            sender_pfp_url=author.get("pfp_url"),
+                            sender_bio=author.get("profile", {}).get("bio", {}).get("text"),
+                            sender_follower_count=author.get("follower_count"),
+                            sender_following_count=author.get("following_count"),
+                            metadata={
+                                "cast_type": "trending",
+                                "verified_addresses": author.get("verified_addresses", {}),
+                                "power_badge": author.get("power_badge", False),
+                                "engagement_score": cast.get("_engagement_score", 0),
+                                "channel": cast_channel,
+                            },
+                        )
+                        
+                        messages.append(message)
+                        
+                    except Exception as e:
+                        logger.error(f"Error processing trending cast: {e}")
+                        continue
+                
+                logger.info(f"FarcasterObserver: Found {len(messages)} trending casts")
+                return {
+                    "success": True, 
+                    "casts": messages,
+                    "channel_id": channel_id,
+                    "timeframe_hours": timeframe_hours,
+                    "count": len(messages)
+                }
+                
+        except Exception as e:
+            error_msg = f"Exception while fetching trending casts: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {"success": False, "error": error_msg, "casts": []}
+
+    async def get_cast_by_url(self, farcaster_url: str) -> Dict[str, Any]:
+        """
+        Fetch the details of a specific Farcaster cast given its URL.
+        
+        Args:
+            farcaster_url: The full URL of the Farcaster cast (e.g., Warpcast URL)
+            
+        Returns:
+            Dict with success status, cast details, and any error messages
+        """
+        logger.info(f"FarcasterObserver.get_cast_by_url: url={farcaster_url}")
+        
+        if not self.api_key:
+            error_msg = "Farcaster API key not configured"
+            logger.error(error_msg)
+            return {"success": False, "error": error_msg, "cast": None}
+        
+        if not farcaster_url.strip():
+            error_msg = "URL cannot be empty"
+            logger.error(error_msg)
+            return {"success": False, "error": error_msg, "cast": None}
+        
+        try:
+            # Extract cast hash from URL
+            cast_hash = self._extract_cast_hash_from_url(farcaster_url)
+            if not cast_hash:
+                error_msg = f"Could not extract cast hash from URL: {farcaster_url}"
+                logger.error(error_msg)
+                return {"success": False, "error": error_msg, "cast": None}
+            
+            # Get cast details using the hash
+            return await self.get_cast_details(cast_hash)
+            
+        except Exception as e:
+            error_msg = f"Exception while fetching cast by URL: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {"success": False, "error": error_msg, "cast": None}
+
+    async def get_cast_details(self, cast_hash: str) -> Dict[str, Any]:
+        """
+        Fetch detailed information about a specific cast by its hash.
+        
+        Args:
+            cast_hash: The hash identifier of the cast
+            
+        Returns:
+            Dict with success status, cast details, and any error messages
+        """
+        logger.info(f"FarcasterObserver.get_cast_details: hash={cast_hash}")
+        
+        if not self.api_key:
+            error_msg = "Farcaster API key not configured"
+            logger.error(error_msg)
+            return {"success": False, "error": error_msg, "cast": None}
+        
+        if not cast_hash.strip():
+            error_msg = "Cast hash cannot be empty"
+            logger.error(error_msg)
+            return {"success": False, "error": error_msg, "cast": None}
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                headers = {"accept": "application/json", "api_key": self.api_key}
+                
+                response = await client.get(
+                    f"{self.base_url}/farcaster/cast",
+                    headers=headers,
+                    params={
+                        "type": "hash",
+                        "identifier": cast_hash.strip()
+                    },
+                )
+                
+                # Update rate limit tracking
+                self._update_rate_limits(response)
+                
+                if response.status_code != 200:
+                    error_msg = f"Farcaster cast API error: {response.status_code} - {response.text}"
+                    logger.error(error_msg)
+                    return {"success": False, "error": error_msg, "cast": None}
+                
+                data = response.json()
+                cast_data = data.get("cast", {})
+                
+                if not cast_data:
+                    error_msg = f"Cast not found: {cast_hash}"
+                    logger.error(error_msg)
+                    return {"success": False, "error": error_msg, "cast": None}
+                
+                # Convert to Message object
+                try:
+                    author = cast_data.get("author", {})
+                    content = cast_data.get("text", "")
+                    
+                    username = author.get("username", "unknown")
+                    display_name = author.get("display_name", username)
+                    fid = author.get("fid")
+                    cast_timestamp = self._parse_timestamp(cast_data.get("timestamp", ""))
+                    
+                    # Check for replies
+                    reply_to = None
+                    if cast_data.get("parent_hash"):
+                        reply_to = cast_data.get("parent_hash")
+                    
+                    # Determine channel from cast data
+                    cast_channel = "direct_access"
+                    if cast_data.get("parent_url"):
+                        cast_channel = cast_data.get("parent_url", "direct_access")
+                    
+                    message = Message(
+                        id=cast_hash,
+                        channel_id=cast_channel,
+                        channel_type="farcaster",
+                        sender=username,
+                        content=content,
+                        timestamp=cast_timestamp,
+                        reply_to=reply_to,
+                        sender_username=username,
+                        sender_display_name=display_name,
+                        sender_fid=fid,
+                        sender_pfp_url=author.get("pfp_url"),
+                        sender_bio=author.get("profile", {}).get("bio", {}).get("text"),
+                        sender_follower_count=author.get("follower_count"),
+                        sender_following_count=author.get("following_count"),
+                        metadata={
+                            "cast_type": "direct_access",
+                            "verified_addresses": author.get("verified_addresses", {}),
+                            "power_badge": author.get("power_badge", False),
+                            "cast_hash": cast_hash,
+                            "channel": cast_channel,
+                            "reactions": cast_data.get("reactions", {}),
+                            "replies_count": cast_data.get("replies", {}).get("count", 0),
+                        },
+                    )
+                    
+                    logger.info(f"FarcasterObserver: Successfully retrieved cast {cast_hash}")
+                    return {
+                        "success": True, 
+                        "cast": message,
+                        "cast_hash": cast_hash
+                    }
+                    
+                except Exception as e:
+                    error_msg = f"Error processing cast details: {e}"
+                    logger.error(error_msg)
+                    return {"success": False, "error": error_msg, "cast": None}
+                
+        except Exception as e:
+            error_msg = f"Exception while fetching cast details: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {"success": False, "error": error_msg, "cast": None}
+
+    def _extract_cast_hash_from_url(self, url: str) -> Optional[str]:
+        """
+        Extract cast hash from various Farcaster URL formats.
+        
+        Supports URLs from:
+        - Warpcast: https://warpcast.com/username/0xHASH...
+        - Direct hash URLs: https://warpcast.com/~/conversations/0xHASH...
+        - Other Farcaster clients with similar patterns
+        
+        Args:
+            url: The Farcaster cast URL
+            
+        Returns:
+            The extracted cast hash, or None if not found
+        """
+        import re
+        
+        # Common patterns for Farcaster cast URLs
+        patterns = [
+            r'/0x([a-fA-F0-9]+)',  # Standard hex hash pattern
+            r'/conversations/0x([a-fA-F0-9]+)',  # Conversation URL pattern
+            r'cast/0x([a-fA-F0-9]+)',  # Cast-specific pattern
+            r'hash=0x([a-fA-F0-9]+)',  # Query parameter pattern
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, url)
+            if match:
+                cast_hash = "0x" + match.group(1)
+                logger.debug(f"Extracted cast hash {cast_hash} from URL {url}")
+                return cast_hash
+        
+        logger.warning(f"Could not extract cast hash from URL: {url}")
+        return None

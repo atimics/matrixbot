@@ -23,8 +23,12 @@ from ..tools.base import ActionContext
 from ..tools.core_tools import WaitTool
 from ..tools.farcaster_tools import (
     FollowFarcasterUserTool,
+    GetCastByUrlTool,
+    GetTrendingCastsTool,
+    GetUserTimelineTool,
     LikeFarcasterPostTool,
     QuoteFarcasterPostTool,
+    SearchCastsTool,
     SendFarcasterDMTool,
     SendFarcasterPostTool,
     SendFarcasterReplyTool,
@@ -70,6 +74,11 @@ class RateLimitConfig:
         'UnfollowFarcasterUserTool': 20,
         'QuoteFarcasterPostTool': 30,
         'ReactToMatrixMessageTool': 100,
+        # Discovery tools - higher limits as they're read-only
+        'GetUserTimelineTool': 150,
+        'SearchCastsTool': 100,
+        'GetTrendingCastsTool': 80,
+        'GetCastByUrlTool': 200,
     })
     
     # Channel-specific limits (messages per hour)
@@ -812,6 +821,11 @@ class ContextAwareOrchestrator:
         self.tool_registry.register_tool(FollowFarcasterUserTool())
         self.tool_registry.register_tool(UnfollowFarcasterUserTool())
         self.tool_registry.register_tool(SendFarcasterDMTool())
+        # Content discovery tools
+        self.tool_registry.register_tool(GetUserTimelineTool())
+        self.tool_registry.register_tool(SearchCastsTool())
+        self.tool_registry.register_tool(GetTrendingCastsTool())
+        self.tool_registry.register_tool(GetCastByUrlTool())
 
         # Update AI engine with tool descriptions
         self.ai_engine.update_system_prompt_with_tools(self.tool_registry)
