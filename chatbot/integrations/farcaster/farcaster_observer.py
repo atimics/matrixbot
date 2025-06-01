@@ -229,7 +229,8 @@ class FarcasterObserver:
         if not self.api_client:
             return {"success": False, "error": "API client not initialized"}
         logger.info(f"🎯 FarcasterObserver.post_cast action_id={action_id}")
-        return await self.api_client.publish_cast(content, channel, embed_urls)
+        embeds = [{"url": url} for url in embed_urls] if embed_urls else None
+        return await self.api_client.publish_cast(content, self.signer_uuid, channel, embeds=embeds)
 
     async def reply_to_cast(
         self,
@@ -247,7 +248,7 @@ class FarcasterObserver:
         """Like a cast."""
         if not self.api_client:
             return {"success": False, "error": "API client not initialized"}
-        return await self.api_client.react_to_cast(cast_hash, "like")
+        return await self.api_client.react_to_cast(self.signer_uuid, "like", cast_hash)
 
     async def quote_cast(
         self,
@@ -265,94 +266,119 @@ class FarcasterObserver:
         """Follow a user."""
         if not self.api_client:
             return {"success": False, "error": "API client not initialized"}
-        return await self.api_client.follow_user(fid)
+        return await self.api_client.follow_user(fid, self.signer_uuid)
 
     async def unfollow_user(self, fid: int) -> Dict[str, Any]:
         """Unfollow a user."""
         if not self.api_client:
             return {"success": False, "error": "API client not initialized"}
-        return await self.api_client.unfollow_user(fid)
+        return await self.api_client.unfollow_user(fid, self.signer_uuid)
 
     async def send_dm(self, fid: int, content: str) -> Dict[str, Any]:
         """Send a direct message."""
         if not self.api_client:
             return {"success": False, "error": "API client not initialized"}
-        return await self.api_client.send_dm(fid, content)
+        return await self.api_client.send_dm(fid, content, self.signer_uuid)
 
     async def get_user_casts(self, user_identifier: str, limit: int = 10) -> Dict[str, Any]:
         """Get casts by a user."""
         if not self.api_client:
-            return {"casts": [], "error": "API client not initialized"}
+            return {"success": False, "casts": [], "error": "API client not initialized"}
         try:
-            fid = int(user_identifier)
-        except ValueError:
-            # Try to resolve username to FID
-            user_data = await self.api_client.get_user_by_username(user_identifier)
-            if not user_data.get("users"):
-                return {"casts": [], "error": f"User '{user_identifier}' not found"}
-            fid = user_data["users"][0]["fid"]
-        
-        data = await self.api_client.get_casts_by_fid(fid, limit=limit)
-        messages = convert_api_casts_to_messages(
-            data.get("casts", []),
-            channel_id_prefix=f"farcaster:user_{fid}",
-            cast_type_metadata="user_feed",
-            bot_fid=self.bot_fid
-        )
-        return {"casts": [msg.model_dump() for msg in messages]}
+            try:
+                fid = int(user_identifier)
+            except ValueError:
+                # Try to resolve username to FID
+                user_data = await self.api_client.get_user_by_username(user_identifier)
+                if not user_data.get("users"):
+                    return {"success": False, "casts": [], "error": f"User '{user_identifier}' not found"}
+                fid = user_data["users"][0]["fid"]
+            
+            data = await self.api_client.get_casts_by_fid(fid, limit=limit)
+            messages = convert_api_casts_to_messages(
+                data.get("casts", []),
+                channel_id_prefix=f"farcaster:user_{fid}",
+                cast_type_metadata="user_feed",
+                bot_fid=self.bot_fid
+            )
+            return {"success": True, "casts": [msg.model_dump() for msg in messages], "error": None}
+        except Exception as e:
+            logger.error(f"Error getting user casts for {user_identifier}: {e}", exc_info=True)
+            return {"success": False, "casts": [], "error": str(e)}
 
     async def search_casts(self, query: str, channel_id: Optional[str] = None, limit: int = 10) -> Dict[str, Any]:
         """Search for casts."""
         if not self.api_client:
-            return {"casts": [], "error": "API client not initialized"}
+            return {"success": False, "casts": [], "error": "API client not initialized"}
         
-        data = await self.api_client.search_casts(query, channel_id, limit)
-        messages = convert_api_casts_to_messages(
-            data.get("casts", []),
-            channel_id_prefix=f"farcaster:search_{query}",
-            cast_type_metadata="search_result",
-            bot_fid=self.bot_fid
-        )
-        return {"casts": [msg.model_dump() for msg in messages]}
+        try:
+            data = await self.api_client.search_casts(query, channel_id, limit)
+            messages = convert_api_casts_to_messages(
+                data.get("casts", []),
+                channel_id_prefix=f"farcaster:search_{query}",
+                cast_type_metadata="search_result",
+                bot_fid=self.bot_fid
+            )
+            return {"success": True, "casts": [msg.model_dump() for msg in messages], "error": None}
+        except Exception as e:
+            logger.error(f"Error searching casts for query '{query}': {e}", exc_info=True)
+            return {"success": False, "casts": [], "error": str(e)}
 
     async def get_trending_casts(self, channel_id: Optional[str] = None, timeframe_hours: int = 24, limit: int = 10) -> Dict[str, Any]:
         """Get trending casts."""
         if not self.api_client:
-            return {"casts": [], "error": "API client not initialized"}
+            return {"success": False, "casts": [], "error": "API client not initialized"}
         
-        data = await self.api_client.get_trending_casts(channel_id, timeframe_hours, limit)
-        messages = convert_api_casts_to_messages(
-            data.get("casts", []),
-            channel_id_prefix=f"farcaster:trending_{channel_id or 'all'}",
-            cast_type_metadata="trending",
-            bot_fid=self.bot_fid
-        )
-        return {"casts": [msg.model_dump() for msg in messages]}
+        try:
+            data = await self.api_client.get_trending_casts(channel_id, timeframe_hours, limit)
+            messages = convert_api_casts_to_messages(
+                data.get("casts", []),
+                channel_id_prefix=f"farcaster:trending_{channel_id or 'all'}",
+                cast_type_metadata="trending",
+                bot_fid=self.bot_fid
+            )
+            return {"success": True, "casts": [msg.model_dump() for msg in messages], "error": None}
+        except Exception as e:
+            logger.error(f"Error getting trending casts: {e}", exc_info=True)
+            return {"success": False, "casts": [], "error": str(e)}
 
     async def get_cast_by_url(self, farcaster_url: str) -> Dict[str, Any]:
         """Get cast details by Farcaster URL."""
         if not self.api_client:
-            return {"cast": None, "error": "API client not initialized"}
+            return {"success": False, "cast": None, "error": "API client not initialized"}
         
-        cast_hash = extract_cast_hash_from_url(farcaster_url)
-        if not cast_hash:
-            return {"cast": None, "error": "Invalid Farcaster URL"}
-        
-        return await self.get_cast_details(cast_hash)
+        try:
+            cast_hash = extract_cast_hash_from_url(farcaster_url)
+            if not cast_hash:
+                return {"success": False, "cast": None, "error": "Invalid Farcaster URL - could not extract cast hash"}
+            
+            result = await self.get_cast_details(cast_hash)
+            return {
+                "success": result.get("cast") is not None,
+                "cast": result.get("cast"),
+                "error": result.get("error")
+            }
+        except Exception as e:
+            logger.error(f"Error getting cast by URL '{farcaster_url}': {e}", exc_info=True)
+            return {"success": False, "cast": None, "error": str(e)}
 
     async def get_cast_details(self, cast_hash: str) -> Dict[str, Any]:
         """Get cast details by hash."""
         if not self.api_client:
-            return {"cast": None, "error": "API client not initialized"}
+            return {"success": False, "cast": None, "error": "API client not initialized"}
         
-        data = await self.api_client.get_cast_by_hash(cast_hash)
-        if not data.get("cast"):
-            return {"cast": None, "error": "Cast not found"}
-        
-        message = convert_single_api_cast_to_message(
-            data["cast"],
-            channel_id_prefix="farcaster:cast_details",
-            cast_type_metadata="cast_detail",
-            bot_fid=self.bot_fid
-        )
-        return {"cast": message.model_dump() if message else None}
+        try:
+            data = await self.api_client.get_cast_by_hash(cast_hash)
+            if not data.get("cast"):
+                return {"success": False, "cast": None, "error": "Cast not found"}
+            
+            message = convert_single_api_cast_to_message(
+                data["cast"],
+                channel_id_prefix="farcaster:cast_details",
+                cast_type_metadata="cast_detail",
+                bot_fid=self.bot_fid
+            )
+            return {"success": True, "cast": message.model_dump() if message else None, "error": None}
+        except Exception as e:
+            logger.error(f"Error getting cast details for hash '{cast_hash}': {e}", exc_info=True)
+            return {"success": False, "cast": None, "error": str(e)}

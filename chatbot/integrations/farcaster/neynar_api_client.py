@@ -176,6 +176,36 @@ class NeynarAPIClient:
         response = await self._make_request("GET", "/farcaster/cast", params=params)
         return response.json()
     
+    async def reply_to_cast(self, text: str, parent_hash: str, signer_uuid: Optional[str] = None) -> Dict[str, Any]:
+        """Reply to a cast by setting it as parent."""
+        uuid = signer_uuid or self.signer_uuid
+        if not uuid:
+            raise ValueError("signer_uuid is required to reply to a cast.")
+        return await self.publish_cast(text, uuid, parent=parent_hash)
+    
+    async def follow_user(self, target_fid: int, signer_uuid: Optional[str] = None) -> Dict[str, Any]:
+        """Follow a user."""
+        uuid = signer_uuid or self.signer_uuid
+        return await self.manage_follow(uuid, target_fid, unfollow=False)
+    
+    async def unfollow_user(self, target_fid: int, signer_uuid: Optional[str] = None) -> Dict[str, Any]:
+        """Unfollow a user."""
+        uuid = signer_uuid or self.signer_uuid
+        return await self.manage_follow(uuid, target_fid, unfollow=True)
+    
+    async def send_dm(self, recipient_fid: int, text: str, signer_uuid: Optional[str] = None) -> Dict[str, Any]:
+        """Send a direct message."""
+        uuid = signer_uuid or self.signer_uuid
+        return await self.send_direct_message(uuid, recipient_fid, text)
+    
+    async def search_casts(self, query: str, channel_id: Optional[str] = None, limit: int = 25) -> Dict[str, Any]:
+        """Search for casts matching a query."""
+        return await self.search_casts_by_query(query, limit, channel_id)
+    
+    async def get_trending_casts(self, channel_id: Optional[str] = None, timeframe_hours: int = 24, limit: int = 25) -> Dict[str, Any]:
+        """Get trending casts, optionally within a specific channel and timeframe."""
+        return await self.get_trending_casts_feed(limit, channel_id)
+    
     async def close(self):
         await self._client.aclose()
 

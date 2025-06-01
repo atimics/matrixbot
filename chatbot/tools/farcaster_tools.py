@@ -585,15 +585,22 @@ class GetUserTimelineTool(ToolInterface):
             result = await context.farcaster_observer.get_user_casts(
                 user_identifier=user_identifier, limit=limit
             )
-            logger.info(f"Retrieved {len(result.get('casts', []))} casts for user {user_identifier}")
-            return {
-                "status": "success",
-                "user_identifier": user_identifier,
-                "casts": result.get("casts", []),
-                "user_info": result.get("user_info"),
-                "count": len(result.get("casts", [])),
-                "timestamp": time.time(),
-            }
+            
+            # Check if the observer operation was successful
+            if result.get("success", True):  # Default to True for backward compatibility
+                logger.info(f"Retrieved {len(result.get('casts', []))} casts for user {user_identifier}")
+                return {
+                    "status": "success",
+                    "user_identifier": user_identifier,
+                    "casts": result.get("casts", []),
+                    "user_info": result.get("user_info"),
+                    "count": len(result.get("casts", [])),
+                    "timestamp": time.time(),
+                }
+            else:
+                error_msg = result.get("error", "Unknown error from observer")
+                logger.warning(f"Observer returned error for user {user_identifier}: {error_msg}")
+                return {"status": "failure", "error": error_msg, "timestamp": time.time()}
         except Exception as e:
             error_msg = f"Error fetching user timeline: {e}"
             logger.exception(error_msg)
@@ -792,7 +799,7 @@ class GetCastByUrlTool(ToolInterface):
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
         try:
-            result = await context.farcaster_observer.get_cast_by_url(farcaster_url)
+            result = await context.farcaster_observer.get_cast_by_url(farcaster_url=farcaster_url)
             if result.get("cast"):
                 logger.info(f"Successfully retrieved cast from URL: {farcaster_url}")
                 return {

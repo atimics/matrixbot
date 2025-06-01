@@ -170,10 +170,13 @@ class MatrixObserver:
             mxc_uri = event.url
             if mxc_uri and self.client:  # Ensure client is available
                 try:
-                    # Convert MXC URI to HTTP URL
-                    http_url = self.client.mxc_to_http(mxc_uri)
-                    image_urls_list.append(http_url)
-                    logger.debug(f"MatrixObserver: Detected image {http_url} in message {event.event_id}")
+                    # Convert MXC URI to HTTP URL (await the coroutine)
+                    http_url = await self.client.mxc_to_http(mxc_uri)
+                    if http_url:  # Only add if conversion was successful
+                        image_urls_list.append(http_url)
+                        logger.debug(f"MatrixObserver: Detected image {http_url} in message {event.event_id}")
+                    else:
+                        logger.warning(f"MatrixObserver: Could not convert MXC URI {mxc_uri} to HTTP URL")
                 except Exception as e:
                     logger.error(f"MatrixObserver: Failed to convert MXC URI {mxc_uri} to HTTP: {e}")
             
@@ -237,7 +240,8 @@ class MatrixObserver:
                            or getattr(room, "canonical_alias", None)
                            or "Unknown Room",
                 "timestamp": time.time(),
-                "event_id": event.event_id,
+                # InviteMemberEvent doesn't have event_id, use a combination of room_id and timestamp
+                "event_id": f"invite_{room.room_id}_{int(time.time() * 1000)}",
             }
             
             # Add to world state manager
