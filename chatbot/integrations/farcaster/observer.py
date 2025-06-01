@@ -256,9 +256,6 @@ class FarcasterObserver:
                     if hasattr(self, "world_state_manager") and self.world_state_manager:
                         if result.get("success"):
                             cast_hash = result.get("cast", {}).get("hash")
-                            # Track that we've replied to this cast to prevent duplicate replies
-                            self.replied_to_hashes.add(reply_to_hash)
-                            logger.info(f"✅ Added {reply_to_hash} to replied_to_hashes set")
                             
                             if action_id:
                                 # Update existing scheduled action
@@ -958,7 +955,7 @@ class FarcasterObserver:
             Result dictionary with success status and reply cast hash
         """
         # Prevent duplicate replies at observer level
-        if reply_to_hash in self.last_seen_hashes:
+        if reply_to_hash in self.replied_to_hashes:
             logger.warning(f"Skipping duplicate reply to cast {reply_to_hash}")
             return {"success": False, "error": "duplicate reply", "cast_hash": None}
         # Use post_cast with parent reply_to parameter
@@ -967,7 +964,8 @@ class FarcasterObserver:
         )
         # Record that we've replied to this cast to prevent future duplicates
         if result.get("success"):
-            self.last_seen_hashes.add(reply_to_hash)
+            self.replied_to_hashes.add(reply_to_hash)
+            logger.info(f"✅ Added {reply_to_hash} to replied_to_hashes set after successful API call")
         return result
 
     async def like_cast(self, cast_hash: str) -> Dict[str, Any]:
