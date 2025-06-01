@@ -59,9 +59,6 @@ class AppConfig(BaseSettings):
     AI_OTHER_CHANNELS_MESSAGE_SNIPPET_LENGTH: int = 75  # Length of snippet for other channels
     AI_INCLUDE_DETAILED_USER_INFO: bool = True  # Include full user metadata or summarize
 
-    # Rate limiting and cycle control
-    MAX_CYCLES_PER_HOUR: int = 120  # 30 second minimum interval between cycles
-
 
 # Global settings instance
 settings = AppConfig()

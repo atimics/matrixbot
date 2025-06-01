@@ -142,7 +142,7 @@ class TestOrchestratorExtended:
         }
         
         # Execute action
-        await self.orchestrator._execute_action("test_room", mock_action)
+        await self.orchestrator._execute_action(mock_action)
         
         # Verify the matrix observer's send_reply method was called
         mock_matrix.send_reply.assert_called_once_with("test_room", "AI generated response", "original_event")
@@ -203,7 +203,7 @@ class TestOrchestratorExtended:
         }
         
         # Execute action 
-        await self.orchestrator._execute_action("test_room", mock_action)
+        await self.orchestrator._execute_action(mock_action)
         
         # Check that world state exists and is functional
         state_dict = self.orchestrator.world_state.to_dict()

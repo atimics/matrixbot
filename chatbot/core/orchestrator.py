@@ -48,7 +48,7 @@ class OrchestratorConfig:
 
     db_path: str = "chatbot.db"
     observation_interval: float = 2.0  # More responsive default
-    max_cycles_per_hour: int = settings.MAX_CYCLES_PER_HOUR  # Use config setting
+    max_cycles_per_hour: int = 300  # Default value, can be overridden by settings
     ai_model: str = "openai/gpt-4o-mini"  # More reliable default model
 
 

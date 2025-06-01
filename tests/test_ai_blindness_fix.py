@@ -80,7 +80,7 @@ class TestAIBlindnessFix:
         )
         
         # Execute action
-        await orchestrator._execute_action(channel_id, action)
+        await orchestrator._execute_action(action)
         
         # Verify the message was added to world state
         world_state_data = orchestrator.world_state.to_dict()
@@ -122,7 +122,7 @@ class TestAIBlindnessFix:
         )
         
         # Execute action
-        await orchestrator._execute_action(channel_id, action)
+        await orchestrator._execute_action(action)
         
         # Get context and verify the assistant message was added
         context = await orchestrator.context_manager.get_context(channel_id)
@@ -160,7 +160,7 @@ class TestAIBlindnessFix:
         )
         
         # Execute action
-        await orchestrator._execute_action(channel_id, action)
+        await orchestrator._execute_action(action)
         
         # Verify WorldState
         world_state_data = orchestrator.world_state.to_dict()
@@ -206,7 +206,7 @@ class TestAIBlindnessFix:
         )
         
         # Execute action
-        await orchestrator._execute_action(channel_id, action)
+        await orchestrator._execute_action(action)
         
         # Verify no bot message was created in WorldState
         world_state_data = orchestrator.world_state.to_dict()

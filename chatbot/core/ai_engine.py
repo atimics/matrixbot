@@ -11,6 +11,7 @@ This module handles the AI decision-making process:
 import asyncio
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
@@ -186,29 +187,32 @@ Based on this world state, what actions (if any) should you take? Remember you c
 
                 # Parse the JSON response
                 try:
-                    # Clean up the response (remove markdown formatting if present)
-                    import re
-
-                    # Use regex to strip markdown code block markers
-                    cleaned_response = re.sub(
-                        r"^\s*```json\s*|\s*```\s*$",
-                        "",
-                        ai_response.strip(),
-                        flags=re.DOTALL,
-                    )
-
-                    decision_data = json.loads(cleaned_response)
+                    decision_data = self._extract_json_from_response(ai_response)
+                    logger.debug(f"AIDecisionEngine: Parsed decision data keys: {list(decision_data.keys())}")
+                    
+                    # Validate basic structure
+                    if not isinstance(decision_data, dict):
+                        raise ValueError(f"Expected dict, got {type(decision_data)}")
+                    
+                    if "selected_actions" not in decision_data:
+                        logger.warning("AIDecisionEngine: No 'selected_actions' field in response, using empty list")
+                        decision_data["selected_actions"] = []
 
                     # Convert to ActionPlan objects
                     selected_actions = []
                     for action_data in decision_data.get("selected_actions", []):
-                        action_plan = ActionPlan(
-                            action_type=action_data["action_type"],
-                            parameters=action_data["parameters"],
-                            reasoning=action_data["reasoning"],
-                            priority=action_data.get("priority", 5),
-                        )
-                        selected_actions.append(action_plan)
+                        try:
+                            action_plan = ActionPlan(
+                                action_type=action_data.get("action_type", "unknown"),
+                                parameters=action_data.get("parameters", {}),
+                                reasoning=action_data.get("reasoning", "No reasoning provided"),
+                                priority=action_data.get("priority", 5),
+                            )
+                            selected_actions.append(action_plan)
+                        except Exception as e:
+                            logger.warning(f"AIDecisionEngine: Skipping malformed action: {e}")
+                            logger.debug(f"AIDecisionEngine: Malformed action data: {action_data}")
+                            continue
 
                     # Limit to max actions
                     if len(selected_actions) > self.max_actions_per_cycle:
@@ -255,6 +259,20 @@ Based on this world state, what actions (if any) should you take? Remember you c
                         observations="Error in AI response parsing",
                         cycle_id=cycle_id,
                     )
+                    
+                except Exception as e:
+                    logger.error(
+                        f"AIDecisionEngine: Error processing AI response: {e}"
+                    )
+                    logger.error(f"AIDecisionEngine: Raw response was: {ai_response}")
+
+                    # Return empty decision
+                    return DecisionResult(
+                        selected_actions=[],
+                        reasoning=f"Error processing response: {str(e)}",
+                        observations="Error in AI response processing",
+                        cycle_id=cycle_id,
+                    )
 
         except Exception as e:
             logger.error(f"AIDecisionEngine: Error in decision cycle {cycle_id}: {e}")
@@ -264,3 +282,92 @@ Based on this world state, what actions (if any) should you take? Remember you c
                 observations="Error during decision making",
                 cycle_id=cycle_id,
             )
+
+    def _extract_json_from_response(self, response: str) -> Dict[str, Any]:
+        """
+        Robust JSON extraction that handles various response formats:
+        - Pure JSON
+        - JSON wrapped in markdown code blocks
+        - JSON embedded in explanatory text
+        - Multiple JSON blocks (takes the largest/most complete one)
+        """
+        
+        # Strategy 1: Try to parse as pure JSON first
+        response_stripped = response.strip()
+        if response_stripped.startswith("{") and response_stripped.endswith("}"):
+            try:
+                return json.loads(response_stripped)
+            except json.JSONDecodeError:
+                pass
+
+        # Strategy 2: Look for JSON code blocks
+        json_blocks = re.findall(
+            r"```(?:json)?\s*(\{.*?\})\s*```", response, re.DOTALL
+        )
+        for block in json_blocks:
+            try:
+                return json.loads(block.strip())
+            except json.JSONDecodeError:
+                continue
+
+        # Strategy 3: Look for any JSON-like structure (most permissive)
+        # Find all potential JSON objects in the text by looking for balanced braces
+        def find_json_objects(text):
+            """Find JSON objects with proper brace balancing."""
+            potential_jsons = []
+            i = 0
+            while i < len(text):
+                if text[i] == '{':
+                    # Found start of potential JSON, now find the matching closing brace
+                    brace_count = 1
+                    start = i
+                    i += 1
+                    while i < len(text) and brace_count > 0:
+                        if text[i] == '{':
+                            brace_count += 1
+                        elif text[i] == '}':
+                            brace_count -= 1
+                        i += 1
+                    
+                    if brace_count == 0:  # Found complete JSON object
+                        candidate = text[start:i]
+                        try:
+                            parsed = json.loads(candidate)
+                            if isinstance(parsed, dict) and any(key in parsed for key in ['selected_actions', 'observations', 'potential_actions']):
+                                potential_jsons.append((len(candidate), parsed))
+                        except json.JSONDecodeError:
+                            pass
+                else:
+                    i += 1
+            return potential_jsons
+        
+        potential_jsons = find_json_objects(response)
+
+        # Return the largest/most complete JSON found
+        if potential_jsons:
+            potential_jsons.sort(key=lambda x: x[0], reverse=True)  # Sort by size
+            return potential_jsons[0][1]
+
+        # Strategy 4: Try to extract JSON from between common markers
+        markers = [
+            (r'```json\s*(.*?)\s*```', re.DOTALL),
+            (r'```\s*(.*?)\s*```', re.DOTALL),
+            (r'(\{.*?\})', re.DOTALL),
+        ]
+
+        for pattern, flags in markers:
+            matches = re.findall(pattern, response, flags)
+            for match in matches:
+                cleaned = match.strip()
+                if cleaned.startswith("{") and cleaned.endswith("}"):
+                    try:
+                        return json.loads(cleaned)
+                    except json.JSONDecodeError:
+                        continue
+
+        # If all else fails, raise an error with helpful context
+        raise json.JSONDecodeError(
+            f"Could not extract valid JSON from response. Response preview: {response[:200]}...",
+            response,
+            0,
+        )
