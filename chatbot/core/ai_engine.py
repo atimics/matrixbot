@@ -8,13 +8,11 @@ This module handles the AI decision-making process:
 3. Selects specific actions to execute (max 3 per cycle)
 """
 
-import asyncio
 import json
 import logging
 import re
-import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import httpx
 
@@ -188,14 +186,18 @@ Based on this world state, what actions (if any) should you take? Remember you c
                 # Parse the JSON response
                 try:
                     decision_data = self._extract_json_from_response(ai_response)
-                    logger.debug(f"AIDecisionEngine: Parsed decision data keys: {list(decision_data.keys())}")
-                    
+                    logger.debug(
+                        f"AIDecisionEngine: Parsed decision data keys: {list(decision_data.keys())}"
+                    )
+
                     # Validate basic structure
                     if not isinstance(decision_data, dict):
                         raise ValueError(f"Expected dict, got {type(decision_data)}")
-                    
+
                     if "selected_actions" not in decision_data:
-                        logger.warning("AIDecisionEngine: No 'selected_actions' field in response, using empty list")
+                        logger.warning(
+                            "AIDecisionEngine: No 'selected_actions' field in response, using empty list"
+                        )
                         decision_data["selected_actions"] = []
 
                     # Convert to ActionPlan objects
@@ -205,13 +207,19 @@ Based on this world state, what actions (if any) should you take? Remember you c
                             action_plan = ActionPlan(
                                 action_type=action_data.get("action_type", "unknown"),
                                 parameters=action_data.get("parameters", {}),
-                                reasoning=action_data.get("reasoning", "No reasoning provided"),
+                                reasoning=action_data.get(
+                                    "reasoning", "No reasoning provided"
+                                ),
                                 priority=action_data.get("priority", 5),
                             )
                             selected_actions.append(action_plan)
                         except Exception as e:
-                            logger.warning(f"AIDecisionEngine: Skipping malformed action: {e}")
-                            logger.debug(f"AIDecisionEngine: Malformed action data: {action_data}")
+                            logger.warning(
+                                f"AIDecisionEngine: Skipping malformed action: {e}"
+                            )
+                            logger.debug(
+                                f"AIDecisionEngine: Malformed action data: {action_data}"
+                            )
                             continue
 
                     # Limit to max actions
@@ -259,11 +267,9 @@ Based on this world state, what actions (if any) should you take? Remember you c
                         observations="Error in AI response parsing",
                         cycle_id=cycle_id,
                     )
-                    
+
                 except Exception as e:
-                    logger.error(
-                        f"AIDecisionEngine: Error processing AI response: {e}"
-                    )
+                    logger.error(f"AIDecisionEngine: Error processing AI response: {e}")
                     logger.error(f"AIDecisionEngine: Raw response was: {ai_response}")
 
                     # Return empty decision
@@ -291,7 +297,7 @@ Based on this world state, what actions (if any) should you take? Remember you c
         - JSON embedded in explanatory text
         - Multiple JSON blocks (takes the largest/most complete one)
         """
-        
+
         # Strategy 1: Try to parse as pure JSON first
         response_stripped = response.strip()
         if response_stripped.startswith("{") and response_stripped.endswith("}"):
@@ -301,9 +307,7 @@ Based on this world state, what actions (if any) should you take? Remember you c
                 pass
 
         # Strategy 2: Look for JSON code blocks
-        json_blocks = re.findall(
-            r"```(?:json)?\s*(\{.*?\})\s*```", response, re.DOTALL
-        )
+        json_blocks = re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", response, re.DOTALL)
         for block in json_blocks:
             try:
                 return json.loads(block.strip())
@@ -317,30 +321,37 @@ Based on this world state, what actions (if any) should you take? Remember you c
             potential_jsons = []
             i = 0
             while i < len(text):
-                if text[i] == '{':
+                if text[i] == "{":
                     # Found start of potential JSON, now find the matching closing brace
                     brace_count = 1
                     start = i
                     i += 1
                     while i < len(text) and brace_count > 0:
-                        if text[i] == '{':
+                        if text[i] == "{":
                             brace_count += 1
-                        elif text[i] == '}':
+                        elif text[i] == "}":
                             brace_count -= 1
                         i += 1
-                    
+
                     if brace_count == 0:  # Found complete JSON object
                         candidate = text[start:i]
                         try:
                             parsed = json.loads(candidate)
-                            if isinstance(parsed, dict) and any(key in parsed for key in ['selected_actions', 'observations', 'potential_actions']):
+                            if isinstance(parsed, dict) and any(
+                                key in parsed
+                                for key in [
+                                    "selected_actions",
+                                    "observations",
+                                    "potential_actions",
+                                ]
+                            ):
                                 potential_jsons.append((len(candidate), parsed))
                         except json.JSONDecodeError:
                             pass
                 else:
                     i += 1
             return potential_jsons
-        
+
         potential_jsons = find_json_objects(response)
 
         # Return the largest/most complete JSON found
@@ -350,9 +361,9 @@ Based on this world state, what actions (if any) should you take? Remember you c
 
         # Strategy 4: Try to extract JSON from between common markers
         markers = [
-            (r'```json\s*(.*?)\s*```', re.DOTALL),
-            (r'```\s*(.*?)\s*```', re.DOTALL),
-            (r'(\{.*?\})', re.DOTALL),
+            (r"```json\s*(.*?)\s*```", re.DOTALL),
+            (r"```\s*(.*?)\s*```", re.DOTALL),
+            (r"(\{.*?\})", re.DOTALL),
         ]
 
         for pattern, flags in markers:

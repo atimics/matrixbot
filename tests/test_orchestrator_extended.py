@@ -154,11 +154,21 @@ class TestOrchestratorExtended:
         with patch.object(self.orchestrator.context_manager, 'get_conversation_messages') as mock_get_messages:
             mock_get_messages.side_effect = Exception("Context service unavailable")
             
-            # Channel processing should handle the error gracefully
-            await self.orchestrator._process_channel("test_channel")
-            
-            # Orchestrator should still be in a valid state
-            assert self.orchestrator.world_state is not None
+            # Mock AI engine to prevent HTTP requests and return empty decision
+            with patch.object(self.orchestrator.ai_engine, 'make_decision') as mock_ai_decision:
+                from chatbot.core.ai_engine import DecisionResult
+                mock_ai_decision.return_value = DecisionResult(
+                    selected_actions=[],
+                    reasoning="Test decision during error handling",
+                    observations="Error in context service",
+                    cycle_id="test_cycle"
+                )
+                
+                # Channel processing should handle the error gracefully
+                await self.orchestrator._process_channel("test_channel")
+                
+                # Orchestrator should still be in a valid state
+                assert self.orchestrator.world_state is not None
     
     @pytest.mark.asyncio
     async def test_context_integration(self):

@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 class FarcasterObserver:
     """
     Observes Farcaster feeds and converts posts to messages.
-    
+
     This observer can monitor:
     - User feeds (specific FIDs)
     - Channel feeds (e.g., dev, warpcast, base)
@@ -30,7 +30,10 @@ class FarcasterObserver:
     """
 
     def __init__(
-        self, api_key: Optional[str] = None, signer_uuid: Optional[str] = None, bot_fid: Optional[str] = None
+        self,
+        api_key: Optional[str] = None,
+        signer_uuid: Optional[str] = None,
+        bot_fid: Optional[str] = None,
     ):
         self.api_key = api_key
         self.signer_uuid = signer_uuid
@@ -100,25 +103,29 @@ class FarcasterObserver:
             try:
                 result = await self.post_cast(content, channel)
                 # Update world state manager with actual result after sending
-                if hasattr(self, 'world_state_manager') and self.world_state_manager:
+                if hasattr(self, "world_state_manager") and self.world_state_manager:
                     if result.get("success"):
                         self.world_state_manager.add_action_result(
                             action_type="send_farcaster_post",
                             parameters={"content": content, "channel": channel},
                             result="success",
                         )
-                        logger.info(f"Successfully sent scheduled post to channel {channel or 'default'}")
+                        logger.info(
+                            f"Successfully sent scheduled post to channel {channel or 'default'}"
+                        )
                     else:
                         self.world_state_manager.add_action_result(
                             action_type="send_farcaster_post",
                             parameters={"content": content, "channel": channel},
                             result=f"failure: {result.get('error', 'unknown error')}",
                         )
-                        logger.error(f"Failed to send scheduled post: {result.get('error', 'unknown error')}")
+                        logger.error(
+                            f"Failed to send scheduled post: {result.get('error', 'unknown error')}"
+                        )
             except Exception as e:
                 logger.error(f"Error sending scheduled post: {e}")
                 # Update world state manager with exception result
-                if hasattr(self, 'world_state_manager') and self.world_state_manager:
+                if hasattr(self, "world_state_manager") and self.world_state_manager:
                     self.world_state_manager.add_action_result(
                         action_type="send_farcaster_post",
                         parameters={"content": content, "channel": channel},
@@ -133,25 +140,35 @@ class FarcasterObserver:
             try:
                 result = await self.reply_to_cast(content, reply_to_hash)
                 # Update world state manager with actual result after sending
-                if hasattr(self, 'world_state_manager') and self.world_state_manager:
+                if hasattr(self, "world_state_manager") and self.world_state_manager:
                     if result.get("success"):
                         self.world_state_manager.add_action_result(
                             action_type="send_farcaster_reply",
-                            parameters={"content": content, "reply_to_hash": reply_to_hash},
+                            parameters={
+                                "content": content,
+                                "reply_to_hash": reply_to_hash,
+                            },
                             result="success",
                         )
-                        logger.info(f"Successfully sent scheduled reply to cast {reply_to_hash}")
+                        logger.info(
+                            f"Successfully sent scheduled reply to cast {reply_to_hash}"
+                        )
                     else:
                         self.world_state_manager.add_action_result(
                             action_type="send_farcaster_reply",
-                            parameters={"content": content, "reply_to_hash": reply_to_hash},
+                            parameters={
+                                "content": content,
+                                "reply_to_hash": reply_to_hash,
+                            },
                             result=f"failure: {result.get('error', 'unknown error')}",
                         )
-                        logger.error(f"Failed to send scheduled reply to cast {reply_to_hash}: {result.get('error', 'unknown error')}")
+                        logger.error(
+                            f"Failed to send scheduled reply to cast {reply_to_hash}: {result.get('error', 'unknown error')}"
+                        )
             except Exception as e:
                 logger.error(f"Error sending scheduled reply: {e}")
                 # Update world state manager with exception result
-                if hasattr(self, 'world_state_manager') and self.world_state_manager:
+                if hasattr(self, "world_state_manager") and self.world_state_manager:
                     self.world_state_manager.add_action_result(
                         action_type="send_farcaster_reply",
                         parameters={"content": content, "reply_to_hash": reply_to_hash},
@@ -199,12 +216,12 @@ class FarcasterObserver:
             if include_home_feed:
                 home_messages = await self._observe_home_feed()
                 new_messages.extend(home_messages)
-                    
+
             # Observe notifications if requested and we have bot FID
             if include_notifications and self.bot_fid:
                 notification_messages = await self._observe_notifications()
                 new_messages.extend(notification_messages)
-                
+
                 # Also observe mentions
                 mention_messages = await self._observe_mentions()
                 new_messages.extend(mention_messages)
@@ -254,7 +271,9 @@ class FarcasterObserver:
         """Observe the global Farcaster home feed"""
         # Home feed requires bot FID and feed_type
         if not self.bot_fid:
-            logger.warning("FarcasterObserver: bot_fid not configured - skipping home feed")
+            logger.warning(
+                "FarcasterObserver: bot_fid not configured - skipping home feed"
+            )
             return []
         try:
             async with httpx.AsyncClient() as client:
@@ -280,14 +299,16 @@ class FarcasterObserver:
 
                 if response.status_code != 200:
                     # Log full error for debugging
-                    err_text = response.text if hasattr(response, 'text') else ''
+                    err_text = response.text if hasattr(response, "text") else ""
                     logger.error(
                         f"Farcaster API error for home feed (following): {response.status_code} - {err_text}"
                     )
                     return []
 
                 data = response.json()
-                return self._convert_casts_to_messages(data.get("casts", []), "farcaster:home")
+                return self._convert_casts_to_messages(
+                    data.get("casts", []), "farcaster:home"
+                )
 
         except Exception as e:
             logger.error(f"Error observing home feed: {e}")
@@ -355,7 +376,7 @@ class FarcasterObserver:
 
                 data = response.json()
                 notifications = data.get("notifications", [])
-                
+
                 messages = []
                 for notification in notifications:
                     try:
@@ -363,14 +384,16 @@ class FarcasterObserver:
                         cast_data = notification.get("cast")
                         if not cast_data:
                             continue
-                            
+
                         # Skip if we've already seen this notification
                         notif_hash = cast_data.get("hash", "")
                         if notif_hash in self.last_seen_hashes:
                             continue
 
                         # Only process notifications newer than our last check
-                        cast_timestamp = self._parse_timestamp(cast_data.get("timestamp", ""))
+                        cast_timestamp = self._parse_timestamp(
+                            cast_data.get("timestamp", "")
+                        )
                         if cast_timestamp <= self.last_check_time:
                             continue
 
@@ -387,14 +410,14 @@ class FarcasterObserver:
                         # Skip notifications from the bot itself
                         if self.bot_fid and str(fid) == str(self.bot_fid):
                             continue
-                        
+
                         # For Farcaster, prefer username for sender (for tagging)
                         sender = username
 
                         # Determine notification type and channel ID
                         notif_type = notification.get("type", "unknown")
                         channel_id = f"farcaster:notifications:{notif_type}"
-                        
+
                         # Check for replies
                         reply_to = None
                         if cast_data.get("parent_hash"):
@@ -413,14 +436,18 @@ class FarcasterObserver:
                             sender_display_name=display_name,
                             sender_fid=fid,
                             sender_pfp_url=author.get("pfp_url"),
-                            sender_bio=author.get("profile", {}).get("bio", {}).get("text"),
+                            sender_bio=author.get("profile", {})
+                            .get("bio", {})
+                            .get("text"),
                             sender_follower_count=author.get("follower_count"),
                             sender_following_count=author.get("following_count"),
                             metadata={
                                 "notification_type": notif_type,
-                                "verified_addresses": author.get("verified_addresses", {}),
+                                "verified_addresses": author.get(
+                                    "verified_addresses", {}
+                                ),
                                 "power_badge": author.get("power_badge", False),
-                            }
+                            },
                         )
 
                         messages.append(message)
@@ -466,7 +493,7 @@ class FarcasterObserver:
 
                 data = response.json()
                 casts = data.get("casts", [])
-                
+
                 messages = []
                 for cast in casts:
                     try:
@@ -476,7 +503,9 @@ class FarcasterObserver:
                             continue
 
                         # Only process casts newer than our last check
-                        cast_timestamp = self._parse_timestamp(cast.get("timestamp", ""))
+                        cast_timestamp = self._parse_timestamp(
+                            cast.get("timestamp", "")
+                        )
                         if cast_timestamp <= self.last_check_time:
                             continue
 
@@ -493,7 +522,7 @@ class FarcasterObserver:
                         # Skip mentions from the bot itself
                         if self.bot_fid and str(fid) == str(self.bot_fid):
                             continue
-                        
+
                         # For Farcaster, prefer username for sender (for tagging)
                         sender = username
 
@@ -515,14 +544,18 @@ class FarcasterObserver:
                             sender_display_name=display_name,
                             sender_fid=fid,
                             sender_pfp_url=author.get("pfp_url"),
-                            sender_bio=author.get("profile", {}).get("bio", {}).get("text"),
+                            sender_bio=author.get("profile", {})
+                            .get("bio", {})
+                            .get("text"),
                             sender_follower_count=author.get("follower_count"),
                             sender_following_count=author.get("following_count"),
                             metadata={
                                 "cast_type": "mention",
-                                "verified_addresses": author.get("verified_addresses", {}),
+                                "verified_addresses": author.get(
+                                    "verified_addresses", {}
+                                ),
                                 "power_badge": author.get("power_badge", False),
-                            }
+                            },
                         )
 
                         messages.append(message)
@@ -570,7 +603,7 @@ class FarcasterObserver:
                 # Get sender info
                 username = author.get("username", "unknown")
                 display_name = author.get("display_name", username)
-                
+
                 # For Farcaster, prefer username for sender (for tagging)
                 sender = username
 
@@ -600,7 +633,7 @@ class FarcasterObserver:
                         "verified_addresses": author.get("verified_addresses", {}),
                         "power_badge": author.get("power_badge", False),
                         "channel": channel_id,
-                    }
+                    },
                 )
 
                 messages.append(message)
@@ -643,7 +676,7 @@ class FarcasterObserver:
                 username = actor.get("username", "unknown")
                 display_name = actor.get("display_name", username)
                 fid = actor.get("fid")
-                
+
                 # For Farcaster, prefer username for sender (for tagging)
                 sender = username
 
@@ -672,7 +705,7 @@ class FarcasterObserver:
                         "notification_type": notification_type,
                         "verified_addresses": actor.get("verified_addresses", {}),
                         "power_badge": actor.get("power_badge", False),
-                    }
+                    },
                 )
 
                 messages.append(message)
@@ -753,7 +786,9 @@ class FarcasterObserver:
             logger.error(f"Error posting cast: {e}")
             return {"success": False, "error": str(e)}
 
-    async def reply_to_cast(self, content: str, reply_to_hash: str, channel: str = None) -> Dict[str, Any]:
+    async def reply_to_cast(
+        self, content: str, reply_to_hash: str, channel: str = None
+    ) -> Dict[str, Any]:
         """
         Reply to a specific Farcaster cast (threading a reply), with duplicate detection.
 
@@ -770,7 +805,9 @@ class FarcasterObserver:
             logger.warning(f"Skipping duplicate reply to cast {reply_to_hash}")
             return {"success": False, "error": "duplicate reply", "cast_hash": None}
         # Use post_cast with parent reply_to parameter
-        result = await self.post_cast(content=content, channel=channel, reply_to=reply_to_hash)
+        result = await self.post_cast(
+            content=content, channel=channel, reply_to=reply_to_hash
+        )
         # Record that we've replied to this cast to prevent future duplicates
         if result.get("success"):
             self.last_seen_hashes.add(reply_to_hash)
@@ -825,7 +862,9 @@ class FarcasterObserver:
             logger.error(f"Error liking cast: {e}")
             return {"success": False, "error": str(e)}
 
-    async def quote_cast(self, content: str, quoted_cast_hash: str, channel: str = None) -> Dict[str, Any]:
+    async def quote_cast(
+        self, content: str, quoted_cast_hash: str, channel: str = None
+    ) -> Dict[str, Any]:
         """
         Quote cast (recast with comment) on Farcaster
 
@@ -871,7 +910,11 @@ class FarcasterObserver:
                     data = response.json()
                     cast_hash = data.get("cast", {}).get("hash", "")
                     logger.info(f"Successfully posted quote cast: {cast_hash}")
-                    return {"success": True, "cast_hash": cast_hash, "quoted_cast": quoted_cast_hash}
+                    return {
+                        "success": True,
+                        "cast_hash": cast_hash,
+                        "quoted_cast": quoted_cast_hash,
+                    }
                 else:
                     error_msg = f"API error: {response.status_code}"
                     logger.error(f"Failed to post quote cast: {error_msg}")
@@ -889,9 +932,15 @@ class FarcasterObserver:
             return {"success": False, "error": "No API key configured"}
         try:
             async with httpx.AsyncClient() as client:
-                headers = {"accept": "application/json", "api_key": self.api_key, "content-type": "application/json"}
+                headers = {
+                    "accept": "application/json",
+                    "api_key": self.api_key,
+                    "content-type": "application/json",
+                }
                 payload = {"signer_uuid": self.signer_uuid, "fid": fid}
-                response = await client.post(f"{self.base_url}/farcaster/follow", headers=headers, json=payload)
+                response = await client.post(
+                    f"{self.base_url}/farcaster/follow", headers=headers, json=payload
+                )
                 self._update_rate_limits(response)
                 if response.status_code == 200:
                     logger.info(f"Successfully followed user: {fid}")
@@ -912,9 +961,15 @@ class FarcasterObserver:
             return {"success": False, "error": "No API key configured"}
         try:
             async with httpx.AsyncClient() as client:
-                headers = {"accept": "application/json", "api_key": self.api_key, "content-type": "application/json"}
+                headers = {
+                    "accept": "application/json",
+                    "api_key": self.api_key,
+                    "content-type": "application/json",
+                }
                 payload = {"signer_uuid": self.signer_uuid, "fid": fid}
-                response = await client.post(f"{self.base_url}/farcaster/unfollow", headers=headers, json=payload)
+                response = await client.post(
+                    f"{self.base_url}/farcaster/unfollow", headers=headers, json=payload
+                )
                 self._update_rate_limits(response)
                 if response.status_code == 200:
                     logger.info(f"Successfully unfollowed user: {fid}")
@@ -935,9 +990,19 @@ class FarcasterObserver:
             return {"success": False, "error": "No API key configured"}
         try:
             async with httpx.AsyncClient() as client:
-                headers = {"accept": "application/json", "api_key": self.api_key, "content-type": "application/json"}
-                payload = {"signer_uuid": self.signer_uuid, "recipient_fid": fid, "text": content}
-                response = await client.post(f"{self.base_url}/farcaster/dm", headers=headers, json=payload)
+                headers = {
+                    "accept": "application/json",
+                    "api_key": self.api_key,
+                    "content-type": "application/json",
+                }
+                payload = {
+                    "signer_uuid": self.signer_uuid,
+                    "recipient_fid": fid,
+                    "text": content,
+                }
+                response = await client.post(
+                    f"{self.base_url}/farcaster/dm", headers=headers, json=payload
+                )
                 self._update_rate_limits(response)
                 if response.status_code == 200:
                     data = response.json()
@@ -966,9 +1031,15 @@ class FarcasterObserver:
             return {"success": False, "error": "No API key configured"}
         try:
             async with httpx.AsyncClient() as client:
-                headers = {"accept": "application/json", "api_key": self.api_key, "content-type": "application/json"}
+                headers = {
+                    "accept": "application/json",
+                    "api_key": self.api_key,
+                    "content-type": "application/json",
+                }
                 payload = {"signer_uuid": self.signer_uuid, "fid": fid}
-                response = await client.post(f"{self.base_url}/farcaster/follow", headers=headers, json=payload)
+                response = await client.post(
+                    f"{self.base_url}/farcaster/follow", headers=headers, json=payload
+                )
                 self._update_rate_limits(response)
                 if response.status_code == 200:
                     logger.info(f"Successfully followed user: {fid}")
@@ -995,9 +1066,15 @@ class FarcasterObserver:
             return {"success": False, "error": "No API key configured"}
         try:
             async with httpx.AsyncClient() as client:
-                headers = {"accept": "application/json", "api_key": self.api_key, "content-type": "application/json"}
+                headers = {
+                    "accept": "application/json",
+                    "api_key": self.api_key,
+                    "content-type": "application/json",
+                }
                 payload = {"signer_uuid": self.signer_uuid, "fid": fid}
-                response = await client.post(f"{self.base_url}/farcaster/unfollow", headers=headers, json=payload)
+                response = await client.post(
+                    f"{self.base_url}/farcaster/unfollow", headers=headers, json=payload
+                )
                 self._update_rate_limits(response)
                 if response.status_code == 200:
                     logger.info(f"Successfully unfollowed user: {fid}")
@@ -1025,9 +1102,19 @@ class FarcasterObserver:
             return {"success": False, "error": "No API key configured"}
         try:
             async with httpx.AsyncClient() as client:
-                headers = {"accept": "application/json", "api_key": self.api_key, "content-type": "application/json"}
-                payload = {"signer_uuid": self.signer_uuid, "recipient_fid": fid, "text": content}
-                response = await client.post(f"{self.base_url}/farcaster/dm", headers=headers, json=payload)
+                headers = {
+                    "accept": "application/json",
+                    "api_key": self.api_key,
+                    "content-type": "application/json",
+                }
+                payload = {
+                    "signer_uuid": self.signer_uuid,
+                    "recipient_fid": fid,
+                    "text": content,
+                }
+                response = await client.post(
+                    f"{self.base_url}/farcaster/dm", headers=headers, json=payload
+                )
                 self._update_rate_limits(response)
                 if response.status_code == 200:
                     data = response.json()
@@ -1045,97 +1132,106 @@ class FarcasterObserver:
     def _update_rate_limits(self, response: httpx.Response) -> None:
         """
         Update rate limit tracking from API response headers
-        
+
         Args:
             response: HTTP response object containing rate limit headers
         """
         try:
             # Common rate limit headers from Farcaster/Neynar API
             rate_limit_headers = {
-                'x-ratelimit-limit': 'limit',
-                'x-ratelimit-remaining': 'remaining', 
-                'x-ratelimit-reset': 'reset_time',
-                'x-ratelimit-retry-after': 'retry_after',
-                'ratelimit-limit': 'limit',
-                'ratelimit-remaining': 'remaining',
-                'ratelimit-reset': 'reset_time'
+                "x-ratelimit-limit": "limit",
+                "x-ratelimit-remaining": "remaining",
+                "x-ratelimit-reset": "reset_time",
+                "x-ratelimit-retry-after": "retry_after",
+                "ratelimit-limit": "limit",
+                "ratelimit-remaining": "remaining",
+                "ratelimit-reset": "reset_time",
             }
-            
+
             rate_limit_info = {}
             for header_name, info_key in rate_limit_headers.items():
                 header_value = response.headers.get(header_name)
                 if header_value:
-                    if info_key in ['limit', 'remaining']:
+                    if info_key in ["limit", "remaining"]:
                         rate_limit_info[info_key] = int(header_value)
-                    elif info_key == 'reset_time':
+                    elif info_key == "reset_time":
                         # Could be Unix timestamp or seconds until reset
                         rate_limit_info[info_key] = int(header_value)
-                    elif info_key == 'retry_after':
+                    elif info_key == "retry_after":
                         rate_limit_info[info_key] = int(header_value)
-            
+
             if rate_limit_info:
                 # Store in world state for AI system awareness
-                if hasattr(self, 'world_state_manager') and self.world_state_manager:
+                if hasattr(self, "world_state_manager") and self.world_state_manager:
                     current_time = time.time()
-                    rate_limit_info['last_updated'] = current_time
-                    
+                    rate_limit_info["last_updated"] = current_time
+
                     # Update world state with rate limit info
                     world_state = self.world_state_manager.state
-                    world_state.rate_limits = getattr(world_state, 'rate_limits', {})
-                    world_state.rate_limits['farcaster_api'] = rate_limit_info
-                    
+                    world_state.rate_limits = getattr(world_state, "rate_limits", {})
+                    world_state.rate_limits["farcaster_api"] = rate_limit_info
+
                     # Propagate to system_status for AI visibility
                     try:
-                        self.world_state_manager.update_system_status({
-                            'rate_limits': world_state.rate_limits
-                        })
+                        self.world_state_manager.update_system_status(
+                            {"rate_limits": world_state.rate_limits}
+                        )
                     except Exception as e:
-                        logger.debug(f"Error updating system_status with rate limits: {e}")
-                    
+                        logger.debug(
+                            f"Error updating system_status with rate limits: {e}"
+                        )
+
                     # Log if we're approaching limits
-                    remaining = rate_limit_info.get('remaining', float('inf'))
-                    limit = rate_limit_info.get('limit', 0)
-                    
+                    remaining = rate_limit_info.get("remaining", float("inf"))
+                    limit = rate_limit_info.get("limit", 0)
+
                     if limit > 0:
                         usage_percent = ((limit - remaining) / limit) * 100
                         if usage_percent > 80:
-                            logger.warning(f"Farcaster API rate limit usage high: {usage_percent:.1f}% ({remaining}/{limit} remaining)")
+                            logger.warning(
+                                f"Farcaster API rate limit usage high: {usage_percent:.1f}% ({remaining}/{limit} remaining)"
+                            )
                         elif usage_percent > 50:
-                            logger.info(f"Farcaster API rate limit usage: {usage_percent:.1f}% ({remaining}/{limit} remaining)")
-                            
+                            logger.info(
+                                f"Farcaster API rate limit usage: {usage_percent:.1f}% ({remaining}/{limit} remaining)"
+                            )
+
         except Exception as e:
             logger.debug(f"Error parsing rate limit headers: {e}")
 
     def get_rate_limit_status(self) -> Dict[str, Any]:
         """
         Get current rate limit status
-        
+
         Returns:
             Dictionary with rate limit information
         """
-        if not hasattr(self, 'world_state_manager') or not self.world_state_manager:
+        if not hasattr(self, "world_state_manager") or not self.world_state_manager:
             return {"available": False, "reason": "No world state manager"}
-            
+
         world_state = self.world_state_manager.state
-        if not hasattr(world_state, 'rate_limits') or 'farcaster_api' not in world_state.rate_limits:
+        if (
+            not hasattr(world_state, "rate_limits")
+            or "farcaster_api" not in world_state.rate_limits
+        ):
             return {"available": False, "reason": "No rate limit data"}
-            
-        rate_limit_info = world_state.rate_limits['farcaster_api']
+
+        rate_limit_info = world_state.rate_limits["farcaster_api"]
         current_time = time.time()
-        
+
         # Check if data is stale (older than 5 minutes)
-        last_updated = rate_limit_info.get('last_updated', 0)
+        last_updated = rate_limit_info.get("last_updated", 0)
         if current_time - last_updated > 300:
             return {"available": False, "reason": "Rate limit data is stale"}
-            
+
         return {
             "available": True,
-            "limit": rate_limit_info.get('limit'),
-            "remaining": rate_limit_info.get('remaining'),
-            "reset_time": rate_limit_info.get('reset_time'),
-            "retry_after": rate_limit_info.get('retry_after'),
+            "limit": rate_limit_info.get("limit"),
+            "remaining": rate_limit_info.get("remaining"),
+            "reset_time": rate_limit_info.get("reset_time"),
+            "retry_after": rate_limit_info.get("retry_after"),
             "last_updated": last_updated,
-            "age_seconds": current_time - last_updated
+            "age_seconds": current_time - last_updated,
         }
 
     def is_connected(self) -> bool:
@@ -1156,26 +1252,26 @@ class FarcasterObserver:
             "seen_hashes_count": len(self.last_seen_hashes),
             "bot_fid": self.bot_fid,
         }
-        
+
         # Add rate limit status
         rate_limit_status = self.get_rate_limit_status()
         status["rate_limits"] = rate_limit_status
-        
+
         return status
 
     def format_user_mention(self, message: Message) -> str:
         """
         Format a user mention for Farcaster replies
-        
+
         Args:
             message: Message object containing user information
-            
+
         Returns:
             Properly formatted mention string (e.g., "@username")
         """
         if message.channel_type != "farcaster":
             return message.sender
-            
+
         username = message.sender_username or message.sender
         if username and not username.startswith("@"):
             return f"@{username}"
@@ -1184,16 +1280,16 @@ class FarcasterObserver:
     def get_user_context(self, message: Message) -> Dict[str, Any]:
         """
         Get comprehensive user context for AI decision making
-        
+
         Args:
             message: Message object containing user information
-            
+
         Returns:
             Dictionary with user context including engagement levels, verification status, etc.
         """
         if message.channel_type != "farcaster":
             return {"platform": "matrix", "username": message.sender}
-            
+
         context = {
             "platform": "farcaster",
             "username": message.sender_username or message.sender,
@@ -1206,22 +1302,22 @@ class FarcasterObserver:
             "engagement_level": self._calculate_engagement_level(message),
             "taggable_mention": self.format_user_mention(message),
         }
-        
+
         return context
 
     def _calculate_engagement_level(self, message: Message) -> str:
         """
         Calculate user engagement level based on follower count and other metrics
-        
+
         Args:
             message: Message object with user information
-            
+
         Returns:
             Engagement level: "low", "medium", "high", "influencer"
         """
         follower_count = message.sender_follower_count or 0
         power_badge = message.metadata.get("power_badge", False)
-        
+
         if power_badge or follower_count > 10000:
             return "influencer"
         elif follower_count > 1000:
@@ -1234,32 +1330,46 @@ class FarcasterObserver:
     def get_thread_context(self, message: Message) -> Dict[str, Any]:
         """
         Get thread context for a message to understand conversation flow
-        
+
         Args:
             message: Message object
-            
+
         Returns:
             Dictionary with thread context information
         """
         if not self.world_state_manager:
             return {"thread_available": False}
-            
+
         world_state = self.world_state_manager.state
-        
+
         # For replies, get the thread context
         if message.reply_to:
             thread_messages = world_state.threads.get(message.reply_to, [])
             thread_root = world_state.thread_roots.get(message.reply_to)
-            
+
             return {
                 "thread_available": True,
                 "is_reply": True,
                 "thread_length": len(thread_messages),
                 "thread_root": {
                     "sender": thread_root.sender_username if thread_root else None,
-                    "content_preview": thread_root.content[:100] + "..." if thread_root and len(thread_root.content) > 100 else thread_root.content if thread_root else None,
-                } if thread_root else None,
-                "recent_participants": list(set([msg.sender_username for msg in thread_messages[-5:] if msg.sender_username]))
+                    "content_preview": thread_root.content[:100] + "..."
+                    if thread_root and len(thread_root.content) > 100
+                    else thread_root.content
+                    if thread_root
+                    else None,
+                }
+                if thread_root
+                else None,
+                "recent_participants": list(
+                    set(
+                        [
+                            msg.sender_username
+                            for msg in thread_messages[-5:]
+                            if msg.sender_username
+                        ]
+                    )
+                ),
             }
         else:
             # This is a root message, check if it has replies
@@ -1267,7 +1377,16 @@ class FarcasterObserver:
             return {
                 "thread_available": True,
                 "is_reply": False,
-                "has_replies": len(thread_messages) > 1,  # > 1 because root message is included
+                "has_replies": len(thread_messages)
+                > 1,  # > 1 because root message is included
                 "reply_count": max(0, len(thread_messages) - 1),
-                "participants": list(set([msg.sender_username for msg in thread_messages if msg.sender_username]))
+                "participants": list(
+                    set(
+                        [
+                            msg.sender_username
+                            for msg in thread_messages
+                            if msg.sender_username
+                        ]
+                    )
+                ),
             }

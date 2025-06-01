@@ -53,11 +53,17 @@ class AppConfig(BaseSettings):
     OLLAMA_DEFAULT_SUMMARY_MODEL: Optional[str] = "llama3"
     # AI payload truncation settings
     AI_CONVERSATION_HISTORY_LENGTH: int = 10  # Max messages per channel for AI payload
-    AI_ACTION_HISTORY_LENGTH: int = 5       # Max actions in history for AI payload
-    AI_THREAD_HISTORY_LENGTH: int = 5       # Max thread messages for AI payload
-    AI_OTHER_CHANNELS_SUMMARY_COUNT: int = 3  # How many other active channels to summarize
-    AI_OTHER_CHANNELS_MESSAGE_SNIPPET_LENGTH: int = 75  # Length of snippet for other channels
-    AI_INCLUDE_DETAILED_USER_INFO: bool = True  # Include full user metadata or summarize
+    AI_ACTION_HISTORY_LENGTH: int = 5  # Max actions in history for AI payload
+    AI_THREAD_HISTORY_LENGTH: int = 5  # Max thread messages for AI payload
+    AI_OTHER_CHANNELS_SUMMARY_COUNT: int = (
+        3  # How many other active channels to summarize
+    )
+    AI_OTHER_CHANNELS_MESSAGE_SNIPPET_LENGTH: int = (
+        75  # Length of snippet for other channels
+    )
+    AI_INCLUDE_DETAILED_USER_INFO: bool = (
+        True  # Include full user metadata or summarize
+    )
 
 
 # Global settings instance

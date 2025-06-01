@@ -375,7 +375,9 @@ class AcceptMatrixInviteTool(ToolInterface):
             logger.info(f"Matrix observer accept_invite returned: {result}")
 
             if result.get("success"):
-                success_msg = f"Successfully accepted Matrix room invitation for {room_id}"
+                success_msg = (
+                    f"Successfully accepted Matrix room invitation for {room_id}"
+                )
                 logger.info(success_msg)
 
                 return {
@@ -437,7 +439,9 @@ class GetMatrixInvitesTool(ToolInterface):
 
             if result.get("success"):
                 invites = result.get("invites", [])
-                success_msg = f"Retrieved {len(invites)} pending Matrix room invitations"
+                success_msg = (
+                    f"Retrieved {len(invites)} pending Matrix room invitations"
+                )
                 logger.info(success_msg)
 
                 return {

@@ -5,8 +5,8 @@ The main orchestrator that coordinates all chatbot components with context manag
 """
 
 import asyncio
-import logging
 import json
+import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,21 +21,21 @@ from ..integrations.matrix.observer import MatrixObserver
 from ..tools.base import ActionContext
 from ..tools.core_tools import WaitTool
 from ..tools.farcaster_tools import (
-    SendFarcasterPostTool,
-    SendFarcasterReplyTool,
+    FollowFarcasterUserTool,
     LikeFarcasterPostTool,
     QuoteFarcasterPostTool,
-    FollowFarcasterUserTool,
-    UnfollowFarcasterUserTool,
     SendFarcasterDMTool,
+    SendFarcasterPostTool,
+    SendFarcasterReplyTool,
+    UnfollowFarcasterUserTool,
 )
 from ..tools.matrix_tools import (
-    SendMatrixMessageTool,
-    SendMatrixReplyTool,
-    JoinMatrixRoomTool,
-    LeaveMatrixRoomTool,
     AcceptMatrixInviteTool,
     GetMatrixInvitesTool,
+    JoinMatrixRoomTool,
+    LeaveMatrixRoomTool,
+    SendMatrixMessageTool,
+    SendMatrixReplyTool,
 )
 from ..tools.registry import ToolRegistry
 
@@ -146,9 +146,9 @@ class ContextAwareOrchestrator:
         if settings.NEYNAR_API_KEY:
             try:
                 self.farcaster_observer = FarcasterObserver(
-                    settings.NEYNAR_API_KEY, 
+                    settings.NEYNAR_API_KEY,
                     settings.FARCASTER_BOT_SIGNER_UUID,
-                    settings.FARCASTER_BOT_FID
+                    settings.FARCASTER_BOT_FID,
                 )
                 await self.farcaster_observer.start()
                 self.world_state.update_system_status({"farcaster_connected": True})
@@ -249,19 +249,23 @@ class ContextAwareOrchestrator:
                     if channel_data and channel_data.recent_messages:
                         last_msg_time = channel_data.recent_messages[-1].timestamp
                         channel_activity.append((channel_id, last_msg_time))
-                
+
                 if channel_activity:
                     # Primary channel is the one with most recent activity
                     channel_activity.sort(key=lambda x: x[1], reverse=True)
                     primary_channel_id = channel_activity[0][0]
 
             # Get optimized world state for AI decision making
-            world_state_for_ai = self.world_state.get_ai_optimized_payload(primary_channel_id=primary_channel_id)
-            
+            world_state_for_ai = self.world_state.get_ai_optimized_payload(
+                primary_channel_id=primary_channel_id
+            )
+
             # Log payload size for monitoring
             payload_stats = world_state_for_ai.get("payload_stats", {})
-            logger.info(f"AI payload stats for cycle {self.cycle_count}: {payload_stats}")
-            
+            logger.info(
+                f"AI payload stats for cycle {self.cycle_count}: {payload_stats}"
+            )
+
             cycle_id = f"cycle_{self.cycle_count}_unified"
 
             # Make comprehensive AI decision for entire world state
@@ -271,7 +275,7 @@ class ContextAwareOrchestrator:
                 logger.info(
                     f"AI Decision for cycle {self.cycle_count}: {len(decision.selected_actions)} actions selected"
                 )
-                
+
                 # Execute all selected actions
                 for action in decision.selected_actions:
                     try:
@@ -280,20 +284,26 @@ class ContextAwareOrchestrator:
                         logger.error(f"Error executing action {action.tool_name}: {e}")
                         # Continue with other actions
             else:
-                logger.debug(f"AI Decision for cycle {self.cycle_count}: No actions selected")
+                logger.debug(
+                    f"AI Decision for cycle {self.cycle_count}: No actions selected"
+                )
 
         except Exception as e:
-            logger.error(f"Error in unified world state processing for cycle {self.cycle_count}: {e}")
+            logger.error(
+                f"Error in unified world state processing for cycle {self.cycle_count}: {e}"
+            )
 
     async def _process_channel(self, channel_id: str) -> None:
         """
         DEPRECATED: Process a single channel for AI decision making.
-        
+
         This method is now deprecated in favor of _process_world_state which
         handles all channels in a single comprehensive AI decision cycle.
         Keeping for backward compatibility if needed.
         """
-        logger.warning(f"_process_channel called for {channel_id} - this method is deprecated, use _process_world_state instead")
+        logger.warning(
+            f"_process_channel called for {channel_id} - this method is deprecated, use _process_world_state instead"
+        )
         # For backward compatibility, delegate to unified processing
         await self._process_world_state([channel_id])
 
@@ -408,7 +418,9 @@ class ContextAwareOrchestrator:
                     else None
                 )
             elif action_type in ["send_farcaster_post", "send_farcaster_reply"]:
-                room_id_for_msg = result.get("channel") or channel_id or "farcaster:home"
+                room_id_for_msg = (
+                    result.get("channel") or channel_id or "farcaster:home"
+                )
                 channel_type = "farcaster"
                 reply_to_id = (
                     result.get("reply_to")
@@ -424,7 +436,9 @@ class ContextAwareOrchestrator:
             # Ensure we always have a valid room_id_for_msg
             if not room_id_for_msg:
                 room_id_for_msg = f"{channel_type}:unknown"
-                logger.warning(f"No channel ID found for {action_type}, using fallback: {room_id_for_msg}")
+                logger.warning(
+                    f"No channel ID found for {action_type}, using fallback: {room_id_for_msg}"
+                )
 
             # 1. Add to WorldStateManager
             from chatbot.core.world_state import Message as WorldStateMessage
@@ -465,7 +479,7 @@ class ContextAwareOrchestrator:
     async def _observe_external_feeds(self) -> None:
         """
         Observe external feeds (Farcaster) for new content.
-        
+
         This includes:
         - Popular channel feeds (dev, warpcast, base)
         - Notifications (replies to AI's casts, reactions, etc.)
@@ -477,18 +491,20 @@ class ContextAwareOrchestrator:
                 new_messages = await self.farcaster_observer.observe_feeds(
                     channels=["dev", "warpcast", "base"],  # Popular channels
                     include_notifications=True,  # Include replies and mentions to AI
-                    include_home_feed=True  # Also include the global (home) feed
+                    include_home_feed=True,  # Also include the global (home) feed
                 )
-                
+
                 # Add new messages to world state
                 for message in new_messages:
                     self.world_state.add_message(message.channel_id, message)
-                    
+
                 # Trigger state change if we got new messages
                 if new_messages:
                     self.trigger_state_change()
-                    logger.info(f"Observed {len(new_messages)} new Farcaster messages (including notifications)")
-                    
+                    logger.info(
+                        f"Observed {len(new_messages)} new Farcaster messages (including notifications)"
+                    )
+
             except Exception as e:
                 logger.error(f"Error observing Farcaster feeds: {e}")
 

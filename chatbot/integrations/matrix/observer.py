@@ -520,7 +520,9 @@ class MatrixObserver:
 
     async def join_room(self, room_identifier: str) -> Dict[str, Any]:
         """Join a Matrix room by room ID or alias"""
-        logger.info(f"MatrixObserver.join_room called: room_identifier={room_identifier}")
+        logger.info(
+            f"MatrixObserver.join_room called: room_identifier={room_identifier}"
+        )
 
         if not self.client:
             logger.error("Matrix client not connected")
@@ -533,7 +535,9 @@ class MatrixObserver:
             if hasattr(response, "room_id"):
                 # Successful join
                 room_id = response.room_id
-                logger.info(f"MatrixObserver: Successfully joined room {room_id} (identifier: {room_identifier})")
+                logger.info(
+                    f"MatrixObserver: Successfully joined room {room_id} (identifier: {room_identifier})"
+                )
 
                 # Add to monitoring channels if it's not already there
                 if room_id not in self.channels_to_monitor:
@@ -548,7 +552,9 @@ class MatrixObserver:
                         self._register_room(room_id, room_details)
                     else:
                         # Fallback registration
-                        self.world_state.add_channel(room_id, "matrix", f"Room {room_id}")
+                        self.world_state.add_channel(
+                            room_id, "matrix", f"Room {room_id}"
+                        )
 
                 return {
                     "success": True,
@@ -565,9 +571,13 @@ class MatrixObserver:
             logger.error(f"MatrixObserver: {error_msg}", exc_info=True)
             return {"success": False, "error": error_msg}
 
-    async def leave_room(self, room_id: str, reason: str = "Leaving room") -> Dict[str, Any]:
+    async def leave_room(
+        self, room_id: str, reason: str = "Leaving room"
+    ) -> Dict[str, Any]:
         """Leave a Matrix room"""
-        logger.info(f"MatrixObserver.leave_room called: room_id={room_id}, reason={reason}")
+        logger.info(
+            f"MatrixObserver.leave_room called: room_id={room_id}, reason={reason}"
+        )
 
         if not self.client:
             logger.error("Matrix client not connected")
@@ -597,7 +607,9 @@ class MatrixObserver:
                 }
             else:
                 # Assume success if no error was raised
-                logger.info(f"MatrixObserver: Left room {room_id} (response: {response})")
+                logger.info(
+                    f"MatrixObserver: Left room {room_id} (response: {response})"
+                )
 
                 # Remove from monitoring and world state
                 if room_id in self.channels_to_monitor:
@@ -627,7 +639,10 @@ class MatrixObserver:
         try:
             # Check if we have an invite for this room
             if room_id not in self.client.invited_rooms:
-                return {"success": False, "error": f"No pending invitation for room {room_id}"}
+                return {
+                    "success": False,
+                    "error": f"No pending invitation for room {room_id}",
+                }
 
             # Accept the invitation by joining the room
             response = await self.client.join(room_id)
@@ -635,7 +650,9 @@ class MatrixObserver:
             if hasattr(response, "room_id"):
                 # Successful acceptance
                 actual_room_id = response.room_id
-                logger.info(f"MatrixObserver: Successfully accepted invitation and joined room {actual_room_id}")
+                logger.info(
+                    f"MatrixObserver: Successfully accepted invitation and joined room {actual_room_id}"
+                )
 
                 # Add to monitoring channels
                 if actual_room_id not in self.channels_to_monitor:
@@ -648,7 +665,9 @@ class MatrixObserver:
                         room_details = self._extract_room_details(room)
                         self._register_room(actual_room_id, room_details)
                     else:
-                        self.world_state.add_channel(actual_room_id, "matrix", f"Room {actual_room_id}")
+                        self.world_state.add_channel(
+                            actual_room_id, "matrix", f"Room {actual_room_id}"
+                        )
 
                 return {
                     "success": True,
@@ -678,7 +697,9 @@ class MatrixObserver:
             for room_id, invite_room in self.client.invited_rooms.items():
                 invite_info = {
                     "room_id": room_id,
-                    "name": getattr(invite_room, "display_name", None) or getattr(invite_room, "name", None) or "Unknown Room",
+                    "name": getattr(invite_room, "display_name", None)
+                    or getattr(invite_room, "name", None)
+                    or "Unknown Room",
                     "inviter": getattr(invite_room, "inviter", "Unknown"),
                     "canonical_alias": getattr(invite_room, "canonical_alias", None),
                     "topic": getattr(invite_room, "topic", None),

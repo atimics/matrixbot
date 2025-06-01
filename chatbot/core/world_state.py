@@ -31,7 +31,7 @@ class Message:
     content: str
     timestamp: float
     reply_to: Optional[str] = None
-    
+
     # Enhanced user information for social platforms like Farcaster
     sender_username: Optional[str] = None  # @username for tagging (Farcaster)
     sender_display_name: Optional[str] = None  # Human-readable display name
@@ -40,9 +40,11 @@ class Message:
     sender_bio: Optional[str] = None  # User bio/description
     sender_follower_count: Optional[int] = None  # Number of followers
     sender_following_count: Optional[int] = None  # Number of following
-    
+
     # Platform-specific metadata
-    metadata: Dict[str, Any] = field(default_factory=dict)  # Additional platform-specific data
+    metadata: Dict[str, Any] = field(
+        default_factory=dict
+    )  # Additional platform-specific data
 
     def to_ai_summary_dict(self) -> Dict[str, Any]:
         """Return a summarized version for AI payload to reduce token usage."""
@@ -51,22 +53,32 @@ class Message:
             "channel_id": self.channel_id,
             "channel_type": self.channel_type,
             "sender_username": self.sender_username or self.sender,
-            "content": self.content[:250] + "..." if len(self.content) > 250 else self.content,
+            "content": self.content[:250] + "..."
+            if len(self.content) > 250
+            else self.content,
             "timestamp": self.timestamp,
             "reply_to": self.reply_to,
             "sender_fid": self.sender_fid,
             "sender_follower_count": self.sender_follower_count,
             "metadata": {
-                "power_badge": self.metadata.get("power_badge", False) if self.metadata else False,
-                "is_bot": self.metadata.get("is_bot", False) if self.metadata else False
-            }
+                "power_badge": self.metadata.get("power_badge", False)
+                if self.metadata
+                else False,
+                "is_bot": self.metadata.get("is_bot", False)
+                if self.metadata
+                else False,
+            },
         }
-    
-    def is_from_bot(self, bot_fid: Optional[str] = None, bot_username: Optional[str] = None) -> bool:
+
+    def is_from_bot(
+        self, bot_fid: Optional[str] = None, bot_username: Optional[str] = None
+    ) -> bool:
         """Check if this message is from the bot itself."""
         if bot_fid and str(self.sender_fid) == str(bot_fid):
             return True
-        if bot_username and (self.sender_username == bot_username or self.sender == bot_username):
+        if bot_username and (
+            self.sender_username == bot_username or self.sender == bot_username
+        ):
             return True
         return False
 
@@ -103,25 +115,31 @@ class Channel:
                 "last_activity": None,
                 "active_users": [],
                 "summary": "No recent activity",
-                "timestamp_range": None
+                "timestamp_range": None,
             }
-        
-        active_users = list(set(msg.sender_username or msg.sender for msg in self.recent_messages[-5:]))
+
+        active_users = list(
+            set(msg.sender_username or msg.sender for msg in self.recent_messages[-5:])
+        )
         last_msg = self.recent_messages[-1]
         first_msg = self.recent_messages[0]
-        
+
         return {
             "message_count": len(self.recent_messages),
             "last_activity": last_msg.timestamp,
-            "last_message": last_msg.content[:100] + "..." if len(last_msg.content) > 100 else last_msg.content,
+            "last_message": last_msg.content[:100] + "..."
+            if len(last_msg.content) > 100
+            else last_msg.content,
             "last_sender": last_msg.sender_username or last_msg.sender,
             "active_users": active_users[:5],  # Top 5 active users
             "summary": f"Last: {last_msg.sender_username or last_msg.sender}: {last_msg.content[:50]}...",
             "timestamp_range": {
                 "start": first_msg.timestamp,
                 "end": last_msg.timestamp,
-                "span_hours": round((last_msg.timestamp - first_msg.timestamp) / 3600, 2)
-            }
+                "span_hours": round(
+                    (last_msg.timestamp - first_msg.timestamp) / 3600, 2
+                ),
+            },
         }
 
 
@@ -143,10 +161,12 @@ class WorldState:
         self.channels: Dict[str, Channel] = {}
         self.action_history: List[ActionHistory] = []
         self.system_status: Dict[str, Any] = {}
-        self.threads: Dict[str, List[Message]] = {}       # Map root cast id to thread messages
-        self.thread_roots: Dict[str, Message] = {}       # Root message for each thread
-        self.seen_messages: set[str] = set()             # Deduplication of message IDs
-        self.rate_limits: Dict[str, Dict[str, Any]] = {} # API rate limit information
+        self.threads: Dict[
+            str, List[Message]
+        ] = {}  # Map root cast id to thread messages
+        self.thread_roots: Dict[str, Message] = {}  # Root message for each thread
+        self.seen_messages: set[str] = set()  # Deduplication of message IDs
+        self.rate_limits: Dict[str, Dict[str, Any]] = {}  # API rate limit information
         self.last_update: float = time.time()
 
     def add_message(self, message: Message):
@@ -277,60 +297,66 @@ class WorldState:
             "lookback_seconds": lookback_seconds,
         }
 
-    def to_dict_for_ai(self, 
-                       primary_channel_id: Optional[str] = None,
-                       max_messages_per_channel: int = 10,
-                       max_action_history: int = 5,
-                       max_thread_messages: int = 5,
-                       max_other_channels: int = 3,
-                       message_snippet_length: int = 75,
-                       include_detailed_user_info: bool = True,
-                       bot_fid: Optional[str] = None,
-                       bot_username: Optional[str] = None
-                      ) -> Dict[str, Any]:
+    def to_dict_for_ai(
+        self,
+        primary_channel_id: Optional[str] = None,
+        max_messages_per_channel: int = 10,
+        max_action_history: int = 5,
+        max_thread_messages: int = 5,
+        max_other_channels: int = 3,
+        message_snippet_length: int = 75,
+        include_detailed_user_info: bool = True,
+        bot_fid: Optional[str] = None,
+        bot_username: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         Convert world state to optimized dictionary for AI consumption.
         Focuses on primary_channel_id with detailed info, summarizes others.
         """
         from ..config import settings
-        
+
         # Sort channels by activity (most recent message first)
         # Give special priority to Farcaster channels to ensure minimum visibility
         sorted_channels = sorted(
             self.channels.items(),
             key=lambda x: (
                 # Primary sort: Farcaster channels get priority boost
-                0 if x[1].type == 'farcaster' else 1,
+                0 if x[1].type == "farcaster" else 1,
                 # Secondary sort: Most recent activity first
-                -(x[1].recent_messages[-1].timestamp if x[1].recent_messages else 0)
-            )
+                -(x[1].recent_messages[-1].timestamp if x[1].recent_messages else 0),
+            ),
         )
-        
+
         channels_payload = {}
         detailed_count = 0
-        
+
         for ch_id, ch_data in sorted_channels:
             # Filter out bot's own messages
             filtered_messages = [
-                msg for msg in ch_data.recent_messages 
+                msg
+                for msg in ch_data.recent_messages
                 if not msg.is_from_bot(bot_fid, bot_username)
             ]
-            
+
             # Decide if this channel gets detailed treatment
-            is_primary = (ch_id == primary_channel_id)
+            is_primary = ch_id == primary_channel_id
             # Always include key Farcaster channels for minimum visibility
-            is_key_farcaster = ch_data.type == 'farcaster' and (
-                'home' in ch_id or 'notification' in ch_id or 'reply' in ch_id
+            is_key_farcaster = ch_data.type == "farcaster" and (
+                "home" in ch_id or "notification" in ch_id or "reply" in ch_id
             )
-            include_detailed = is_primary or is_key_farcaster or detailed_count < max_other_channels
-            
+            include_detailed = (
+                is_primary or is_key_farcaster or detailed_count < max_other_channels
+            )
+
             if include_detailed and filtered_messages:
                 # Full detail for priority channels
                 messages_for_payload = [
-                    msg.to_ai_summary_dict() if not include_detailed_user_info else asdict(msg)
+                    msg.to_ai_summary_dict()
+                    if not include_detailed_user_info
+                    else asdict(msg)
                     for msg in filtered_messages[-max_messages_per_channel:]
                 ]
-                
+
                 # Calculate timestamp range for the included messages
                 truncated_messages = filtered_messages[-max_messages_per_channel:]
                 timestamp_range = None
@@ -338,11 +364,18 @@ class WorldState:
                     timestamp_range = {
                         "start": truncated_messages[0].timestamp,
                         "end": truncated_messages[-1].timestamp,
-                        "span_hours": round((truncated_messages[-1].timestamp - truncated_messages[0].timestamp) / 3600, 2),
+                        "span_hours": round(
+                            (
+                                truncated_messages[-1].timestamp
+                                - truncated_messages[0].timestamp
+                            )
+                            / 3600,
+                            2,
+                        ),
                         "total_available_messages": len(filtered_messages),
-                        "included_messages": len(truncated_messages)
+                        "included_messages": len(truncated_messages),
                     }
-                
+
                 channels_payload[ch_id] = {
                     "id": ch_data.id,
                     "type": ch_data.type,
@@ -353,7 +386,7 @@ class WorldState:
                     "member_count": ch_data.member_count,
                     "activity_summary": ch_data.get_activity_summary(),
                     "priority": "detailed" if is_primary else "secondary",
-                    "message_timestamp_range": timestamp_range
+                    "message_timestamp_range": timestamp_range,
                 }
                 # Only count towards detailed limit if it's not primary or key Farcaster
                 if not is_primary and not is_key_farcaster:
@@ -365,17 +398,23 @@ class WorldState:
                     "type": ch_data.type,
                     "name": ch_data.name,
                     "activity_summary": ch_data.get_activity_summary(),
-                    "priority": "summary_only"
+                    "priority": "summary_only",
                 }
 
         # Truncate action history, excluding bot's own actions
         filtered_actions = [
-            action for action in self.action_history
-            if not (hasattr(action, 'parameters') and 
-                   action.parameters.get('sender') in [bot_username, settings.MATRIX_USER_ID])
+            action
+            for action in self.action_history
+            if not (
+                hasattr(action, "parameters")
+                and action.parameters.get("sender")
+                in [bot_username, settings.MATRIX_USER_ID]
+            )
         ]
-        
-        action_history_payload = [asdict(action) for action in filtered_actions[-max_action_history:]]
+
+        action_history_payload = [
+            asdict(action) for action in filtered_actions[-max_action_history:]
+        ]
 
         # Handle threads with bot filtering - only include threads relevant to primary channel
         threads_payload = {}
@@ -384,24 +423,33 @@ class WorldState:
             for thread_id, msgs in self.threads.items():
                 # Include thread if any message belongs to primary channel or references it
                 relevant_thread = any(
-                    msg.channel_id == primary_channel_id or 
-                    msg.reply_to in [m.id for m in self.channels.get(primary_channel_id, Channel("", "", "", [], 0)).recent_messages]
+                    msg.channel_id == primary_channel_id
+                    or msg.reply_to
+                    in [
+                        m.id
+                        for m in self.channels.get(
+                            primary_channel_id, Channel("", "", "", [], 0)
+                        ).recent_messages
+                    ]
                     for msg in msgs
                 )
-                
+
                 if relevant_thread:
                     filtered_thread_msgs = [
-                        msg for msg in msgs[-max_thread_messages:]
+                        msg
+                        for msg in msgs[-max_thread_messages:]
                         if not msg.is_from_bot(bot_fid, bot_username)
                     ]
-                    
+
                     if filtered_thread_msgs:
                         thread_msgs_for_payload = [
-                            msg.to_ai_summary_dict() if not include_detailed_user_info else asdict(msg)
+                            msg.to_ai_summary_dict()
+                            if not include_detailed_user_info
+                            else asdict(msg)
                             for msg in filtered_thread_msgs
                         ]
                         threads_payload[thread_id] = thread_msgs_for_payload
-        
+
         return {
             "current_processing_channel_id": primary_channel_id,
             "channels": channels_payload,
@@ -411,12 +459,19 @@ class WorldState:
             "current_time": time.time(),
             "payload_stats": {
                 "primary_channel": primary_channel_id,
-                "detailed_channels": detailed_count + (1 if primary_channel_id in channels_payload else 0),
-                "summary_channels": len(sorted_channels) - detailed_count - (1 if primary_channel_id in channels_payload else 0),
+                "detailed_channels": detailed_count
+                + (1 if primary_channel_id in channels_payload else 0),
+                "summary_channels": len(sorted_channels)
+                - detailed_count
+                - (1 if primary_channel_id in channels_payload else 0),
                 "total_channels": len(sorted_channels),
-                "filtered_messages": sum(len(ch.get("recent_messages", [])) for ch in channels_payload.values() if "recent_messages" in ch),
-                "bot_identity": {"fid": bot_fid, "username": bot_username}
-            }
+                "filtered_messages": sum(
+                    len(ch.get("recent_messages", []))
+                    for ch in channels_payload.values()
+                    if "recent_messages" in ch
+                ),
+                "bot_identity": {"fid": bot_fid, "username": bot_username},
+            },
         }
 
 
@@ -462,7 +517,7 @@ class WorldStateManager:
         if not channel_id:
             channel_id = f"{message.channel_type}:unknown"
             logger.warning(f"None channel_id provided, using fallback: {channel_id}")
-        
+
         if channel_id not in self.state.channels:
             # Auto-create channel if it doesn't exist
             logger.info(f"WorldState: Auto-creating unknown channel {channel_id}")
@@ -478,7 +533,7 @@ class WorldStateManager:
         channel.last_checked = time.time()
         self.state.last_update = time.time()
         # Thread management: group Farcaster messages by root cast
-        if message.channel_type == 'farcaster':
+        if message.channel_type == "farcaster":
             thread_id = message.reply_to or message.id
             self.state.threads.setdefault(thread_id, []).append(message)
             logger.info(f"WorldStateManager: Added message to thread '{thread_id}'")
@@ -567,10 +622,10 @@ class WorldStateManager:
     def has_replied_to_cast(self, cast_hash: str) -> bool:
         """
         Check if the AI has already replied to a specific cast.
-        
+
         Args:
             cast_hash: The hash of the cast to check
-            
+
         Returns:
             True if the AI has successfully replied to this cast (not just scheduled)
         """
@@ -586,10 +641,10 @@ class WorldStateManager:
     def has_quoted_cast(self, cast_hash: str) -> bool:
         """
         Check if the AI has already quoted a specific cast.
-        
+
         Args:
             cast_hash: The hash of the cast to check
-            
+
         Returns:
             True if the AI has already quoted this cast
         """
@@ -603,10 +658,10 @@ class WorldStateManager:
     def has_liked_cast(self, cast_hash: str) -> bool:
         """
         Check if the AI has already liked a specific cast.
-        
+
         Args:
             cast_hash: The hash of the cast to check
-            
+
         Returns:
             True if the AI has already liked this cast
         """
@@ -616,6 +671,7 @@ class WorldStateManager:
                 if liked_cast_hash == cast_hash:
                     return True
         return False
+
     def has_sent_farcaster_post(self, content: str) -> bool:
         """
         Check if the AI has already sent a Farcaster post with identical content.
@@ -627,13 +683,15 @@ class WorldStateManager:
                     return True
         return False
 
-    def get_ai_optimized_payload(self, primary_channel_id: Optional[str] = None) -> Dict[str, Any]:
+    def get_ai_optimized_payload(
+        self, primary_channel_id: Optional[str] = None
+    ) -> Dict[str, Any]:
         """
         Get an optimized world state payload for AI decision making.
         Uses configuration from settings for all truncation parameters.
         """
         from ..config import settings
-        
+
         return self.state.to_dict_for_ai(
             primary_channel_id=primary_channel_id,
             max_messages_per_channel=settings.AI_CONVERSATION_HISTORY_LENGTH,
@@ -643,7 +701,7 @@ class WorldStateManager:
             message_snippet_length=settings.AI_OTHER_CHANNELS_MESSAGE_SNIPPET_LENGTH,
             include_detailed_user_info=settings.AI_INCLUDE_DETAILED_USER_INFO,
             bot_fid=settings.FARCASTER_BOT_FID,
-            bot_username=settings.FARCASTER_BOT_USERNAME
+            bot_username=settings.FARCASTER_BOT_USERNAME,
         )
 
     def get_channel(self, channel_id: str) -> Optional[Channel]:

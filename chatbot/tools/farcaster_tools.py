@@ -54,14 +54,18 @@ class SendFarcasterPostTool(ToolInterface):
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
         # Prevent duplicate posts with identical content
-        if context.world_state_manager and context.world_state_manager.has_sent_farcaster_post(content):
+        if (
+            context.world_state_manager
+            and context.world_state_manager.has_sent_farcaster_post(content)
+        ):
             error_msg = "Already sent Farcaster post with identical content. Skipping duplicate."
             logger.warning(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
         # If observer supports scheduling (has a real asyncio.Queue), enqueue; otherwise, execute immediately
         import asyncio
-        post_q = getattr(context.farcaster_observer, 'post_queue', None)
+
+        post_q = getattr(context.farcaster_observer, "post_queue", None)
         if isinstance(post_q, asyncio.Queue):
             try:
                 context.farcaster_observer.schedule_post(content, channel)
@@ -77,7 +81,11 @@ class SendFarcasterPostTool(ToolInterface):
             except Exception as e:
                 error_msg = f"Error scheduling Farcaster post: {e}"
                 logger.exception(error_msg)
-                return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+                return {
+                    "status": "failure",
+                    "error": error_msg,
+                    "timestamp": time.time(),
+                }
         # Immediate execution fallback
         try:
             result = await context.farcaster_observer.post_cast(content, channel)
@@ -85,7 +93,11 @@ class SendFarcasterPostTool(ToolInterface):
             if result.get("success"):
                 return {"status": "success", **result}
             else:
-                return {"status": "failure", "error": result.get("error", "unknown"), "timestamp": time.time()}
+                return {
+                    "status": "failure",
+                    "error": result.get("error", "unknown"),
+                    "timestamp": time.time(),
+                }
         except Exception as e:
             error_msg = f"Error executing send_farcaster_post: {e}"
             logger.exception(error_msg)
@@ -142,13 +154,17 @@ class SendFarcasterReplyTool(ToolInterface):
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
         # Check if we've already replied to this cast
-        if context.world_state_manager and context.world_state_manager.has_replied_to_cast(reply_to_hash):
+        if (
+            context.world_state_manager
+            and context.world_state_manager.has_replied_to_cast(reply_to_hash)
+        ):
             error_msg = f"Already replied to cast {reply_to_hash}. Cannot reply to the same cast twice."
             logger.warning(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
         import asyncio
-        reply_q = getattr(context.farcaster_observer, 'reply_queue', None)
+
+        reply_q = getattr(context.farcaster_observer, "reply_queue", None)
         # If scheduling supported, enqueue
         if isinstance(reply_q, asyncio.Queue):
             try:
@@ -172,15 +188,25 @@ class SendFarcasterReplyTool(ToolInterface):
             except Exception as e:
                 error_msg = f"Error scheduling Farcaster reply: {e}"
                 logger.exception(error_msg)
-                return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+                return {
+                    "status": "failure",
+                    "error": error_msg,
+                    "timestamp": time.time(),
+                }
         # Fallback immediate execution
         try:
-            result = await context.farcaster_observer.reply_to_cast(content, reply_to_hash)
+            result = await context.farcaster_observer.reply_to_cast(
+                content, reply_to_hash
+            )
             logger.info(f"Farcaster observer reply_to_cast returned: {result}")
             if result.get("success"):
                 return {"status": "success", **result}
             else:
-                return {"status": "failure", "error": result.get("error", "unknown"), "timestamp": time.time()}
+                return {
+                    "status": "failure",
+                    "error": result.get("error", "unknown"),
+                    "timestamp": time.time(),
+                }
         except Exception as e:
             error_msg = f"Error executing send_farcaster_reply: {e}"
             logger.exception(error_msg)
@@ -229,8 +255,12 @@ class LikeFarcasterPostTool(ToolInterface):
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
         # Check if we've already liked this cast
-        if context.world_state_manager and context.world_state_manager.has_liked_cast(cast_hash):
-            error_msg = f"Already liked cast {cast_hash}. Cannot like the same cast twice."
+        if context.world_state_manager and context.world_state_manager.has_liked_cast(
+            cast_hash
+        ):
+            error_msg = (
+                f"Already liked cast {cast_hash}. Cannot like the same cast twice."
+            )
             logger.warning(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
@@ -316,7 +346,9 @@ class QuoteFarcasterPostTool(ToolInterface):
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
         # Check if we've already quoted this cast
-        if context.world_state_manager and context.world_state_manager.has_quoted_cast(quoted_cast_hash):
+        if context.world_state_manager and context.world_state_manager.has_quoted_cast(
+            quoted_cast_hash
+        ):
             error_msg = f"Already quoted cast {quoted_cast_hash}. Cannot quote the same cast twice."
             logger.warning(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
@@ -357,10 +389,12 @@ class QuoteFarcasterPostTool(ToolInterface):
             logger.exception(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
+
 class FollowFarcasterUserTool(ToolInterface):
     """
     Tool for following a Farcaster user.
     """
+
     @property
     def name(self) -> str:
         return "follow_farcaster_user"
@@ -373,7 +407,9 @@ class FollowFarcasterUserTool(ToolInterface):
     def parameters_schema(self) -> Dict[str, Any]:
         return {"fid": "integer - The Farcaster ID of the user to follow"}
 
-    async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
+    async def execute(
+        self, params: Dict[str, Any], context: ActionContext
+    ) -> Dict[str, Any]:
         logger.info(f"Executing tool '{self.name}' with params: {params}")
         if not context.farcaster_observer:
             err = "Farcaster integration not configured."
@@ -387,12 +423,18 @@ class FollowFarcasterUserTool(ToolInterface):
         result = await context.farcaster_observer.follow_user(fid)
         if result.get("success"):
             return {"status": "success", "fid": fid, "timestamp": time.time()}
-        return {"status": "failure", "error": result.get("error"), "timestamp": time.time()}
+        return {
+            "status": "failure",
+            "error": result.get("error"),
+            "timestamp": time.time(),
+        }
+
 
 class UnfollowFarcasterUserTool(ToolInterface):
     """
     Tool for unfollowing a Farcaster user.
     """
+
     @property
     def name(self) -> str:
         return "unfollow_farcaster_user"
@@ -405,7 +447,9 @@ class UnfollowFarcasterUserTool(ToolInterface):
     def parameters_schema(self) -> Dict[str, Any]:
         return {"fid": "integer - The Farcaster ID of the user to unfollow"}
 
-    async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
+    async def execute(
+        self, params: Dict[str, Any], context: ActionContext
+    ) -> Dict[str, Any]:
         logger.info(f"Executing tool '{self.name}' with params: {params}")
         if not context.farcaster_observer:
             err = "Farcaster integration not configured."
@@ -419,12 +463,18 @@ class UnfollowFarcasterUserTool(ToolInterface):
         result = await context.farcaster_observer.unfollow_user(fid)
         if result.get("success"):
             return {"status": "success", "fid": fid, "timestamp": time.time()}
-        return {"status": "failure", "error": result.get("error"), "timestamp": time.time()}
+        return {
+            "status": "failure",
+            "error": result.get("error"),
+            "timestamp": time.time(),
+        }
+
 
 class SendFarcasterDMTool(ToolInterface):
     """
     Tool for sending a direct message (DM) to a Farcaster user.
     """
+
     @property
     def name(self) -> str:
         return "send_farcaster_dm"
@@ -435,9 +485,14 @@ class SendFarcasterDMTool(ToolInterface):
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
-        return {"fid": "integer - The Farcaster ID of the recipient", "content": "string - The DM content"}
+        return {
+            "fid": "integer - The Farcaster ID of the recipient",
+            "content": "string - The DM content",
+        }
 
-    async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
+    async def execute(
+        self, params: Dict[str, Any], context: ActionContext
+    ) -> Dict[str, Any]:
         logger.info(f"Executing tool '{self.name}' with params: {params}")
         if not context.farcaster_observer:
             err = "Farcaster integration not configured."
@@ -451,5 +506,13 @@ class SendFarcasterDMTool(ToolInterface):
             return {"status": "failure", "error": err, "timestamp": time.time()}
         result = await context.farcaster_observer.send_dm(fid, content)
         if result.get("success"):
-            return {"status": "success", "message_id": result.get("message_id"), "timestamp": time.time()}
-        return {"status": "failure", "error": result.get("error"), "timestamp": time.time()}
+            return {
+                "status": "success",
+                "message_id": result.get("message_id"),
+                "timestamp": time.time(),
+            }
+        return {
+            "status": "failure",
+            "error": result.get("error"),
+            "timestamp": time.time(),
+        }
