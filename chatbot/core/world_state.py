@@ -168,6 +168,7 @@ class WorldState:
         self.thread_roots: Dict[str, Message] = {}  # Root message for each thread
         self.seen_messages: set[str] = set()  # Deduplication of message IDs
         self.rate_limits: Dict[str, Dict[str, Any]] = {}  # API rate limit information
+        self.pending_matrix_invites: List[Dict[str, Any]] = []  # Matrix room invites waiting for response
         self.last_update: float = time.time()
 
     def add_message(self, message: Message):
@@ -457,6 +458,7 @@ class WorldState:
             "action_history": action_history_payload,
             "system_status": self.system_status,
             "threads": threads_payload,
+            "pending_matrix_invites": self.pending_matrix_invites,
             "current_time": time.time(),
             "payload_stats": {
                 "primary_channel": primary_channel_id,
@@ -472,6 +474,7 @@ class WorldState:
                     if "recent_messages" in ch
                 ),
                 "bot_identity": {"fid": bot_fid, "username": bot_username},
+                "pending_invites_count": len(self.pending_matrix_invites),
             },
         }
 
@@ -733,3 +736,73 @@ class WorldStateManager:
     def get_channel(self, channel_id: str) -> Optional[Channel]:
         """Get a channel by ID"""
         return self.state.channels.get(channel_id)
+
+    def add_pending_matrix_invite(self, invite_info: Dict[str, Any]) -> None:
+        """
+        Add a pending Matrix room invite to the world state.
+        
+        Args:
+            invite_info: Dictionary with 'room_id', 'inviter', and optionally 'room_name'
+        """
+        room_id = invite_info.get("room_id")
+        if not room_id:
+            logger.warning("Cannot add Matrix invite without room_id")
+            return
+            
+        # Check for duplicates
+        for existing_invite in self.state.pending_matrix_invites:
+            if existing_invite.get("room_id") == room_id:
+                logger.debug(f"Matrix invite for room {room_id} already exists")
+                return
+                
+        self.state.pending_matrix_invites.append(invite_info)
+        logger.info(f"WorldState: Added pending Matrix invite for room {room_id} from {invite_info.get('inviter')}")
+
+    def remove_pending_matrix_invite(self, room_id: str) -> bool:
+        """
+        Remove a pending Matrix invite from the world state.
+        
+        Args:
+            room_id: The room ID to remove from pending invites
+            
+        Returns:
+            True if invite was found and removed, False otherwise
+        """
+        original_count = len(self.state.pending_matrix_invites)
+        self.state.pending_matrix_invites = [
+            invite for invite in self.state.pending_matrix_invites 
+            if invite.get("room_id") != room_id
+        ]
+        
+        removed = len(self.state.pending_matrix_invites) < original_count
+        if removed:
+            logger.info(f"WorldState: Removed pending Matrix invite for room {room_id}")
+        else:
+            logger.debug(f"No pending Matrix invite found for room {room_id}")
+        return removed
+
+    def update_channel_status(self, channel_id: str, status: str) -> None:
+        """
+        Update the status of a channel (e.g., 'left', 'joined', 'banned').
+        
+        Args:
+            channel_id: The channel ID to update
+            status: New status for the channel
+        """
+        if channel_id in self.state.channels:
+            # Add status to channel metadata
+            if not hasattr(self.state.channels[channel_id], 'metadata'):
+                self.state.channels[channel_id].metadata = {}
+            self.state.channels[channel_id].metadata['status'] = status
+            logger.info(f"WorldState: Updated channel {channel_id} status to '{status}'")
+        else:
+            logger.warning(f"Cannot update status for unknown channel {channel_id}")
+
+    def get_pending_matrix_invites(self) -> List[Dict[str, Any]]:
+        """
+        Get all pending Matrix invites.
+        
+        Returns:
+            List of invite dictionaries
+        """
+        return self.state.pending_matrix_invites.copy()

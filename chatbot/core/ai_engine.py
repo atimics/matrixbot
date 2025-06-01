@@ -67,7 +67,21 @@ The world state you receive is optimized for your decision-making:
 - "action_history": Recent actions taken (truncated to last few items)
 - "threads": Conversation threads relevant to the current channel (truncated)
 - "system_status": Includes rate_limits for API awareness
+- "pending_matrix_invites": Matrix room invitations waiting for your response (if any)
 - "payload_stats": Information about data filtering applied
+
+MATRIX ROOM MANAGEMENT:
+You can manage Matrix rooms using available tools:
+- Join rooms by ID or alias using join_matrix_room
+- Leave rooms you no longer want to participate in using leave_matrix_room
+- Accept pending invitations from pending_matrix_invites using accept_matrix_invite
+- Get current invitations using get_matrix_invites
+- React to messages with emoji using react_to_matrix_message (use this for quick acknowledgments)
+
+If you see pending_matrix_invites in the world state, you should consider whether to accept them based on:
+- The inviter's identity and trustworthiness
+- The room name/topic (if available)
+- Your current participation in similar rooms
 
 RATE LIMIT AWARENESS:
 Check system_status.rate_limits before taking actions that use external APIs:

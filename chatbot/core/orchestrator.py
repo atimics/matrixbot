@@ -34,6 +34,7 @@ from ..tools.matrix_tools import (
     GetMatrixInvitesTool,
     JoinMatrixRoomTool,
     LeaveMatrixRoomTool,
+    ReactToMatrixMessageTool,
     SendMatrixMessageTool,
     SendMatrixReplyTool,
 )
@@ -547,6 +548,7 @@ class ContextAwareOrchestrator:
         self.tool_registry.register_tool(LeaveMatrixRoomTool())
         self.tool_registry.register_tool(AcceptMatrixInviteTool())
         self.tool_registry.register_tool(GetMatrixInvitesTool())
+        self.tool_registry.register_tool(ReactToMatrixMessageTool())
 
         # Register Farcaster tools
         self.tool_registry.register_tool(SendFarcasterPostTool())
