@@ -87,12 +87,13 @@ class FarcasterObserver:
         content: str,
         channel: Optional[str] = None,
         action_id: Optional[str] = None,
+        embeds: Optional[list] = None,
     ) -> None:
         if not self.scheduler:
             logger.error("Cannot schedule post: Scheduler not initialized.")
             return
         logger.info(f"🎯 FarcasterObserver.schedule_post action_id={action_id}")
-        if self.scheduler.schedule_post(content, channel, action_id):
+        if self.scheduler.schedule_post(content, channel, action_id, embeds):
             logger.info("Farcaster post scheduled successfully via observer.")
         else:
             logger.warning(

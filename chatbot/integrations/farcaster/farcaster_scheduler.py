@@ -71,9 +71,10 @@ class FarcasterScheduler:
         content: str,
         channel: Optional[str] = None,
         action_id: Optional[str] = None,
+        embeds: Optional[list] = None,
     ) -> bool:
         logger.info(
-            f"Attempting to schedule post: action_id={action_id}, content='{content[:50]}...', channel={channel}"
+            f"Attempting to schedule post: action_id={action_id}, content='{content[:50]}...', channel={channel}, embeds={len(embeds) if embeds else 0}"
         )
         if self._is_duplicate_in_queue(
             self.post_queue, {"content": content, "channel": channel}
@@ -86,6 +87,7 @@ class FarcasterScheduler:
             "content": content,
             "channel": channel,
             "action_id": action_id,
+            "embeds": embeds,
             "scheduled_at": time.time(),
         }
         self.post_queue.put_nowait(post_data)
@@ -135,8 +137,9 @@ class FarcasterScheduler:
                 content = post_data["content"]
                 channel_id = post_data["channel"]
                 action_id = post_data.get("action_id")
+                embeds = post_data.get("embeds")
                 logger.info(
-                    f"Dequeued scheduled post for channel {channel_id or 'default'}: {content[:70]}..."
+                    f"Dequeued scheduled post for channel {channel_id or 'default'}: {content[:70]}... (embeds: {len(embeds) if embeds else 0})"
                 )
                 cast_result_data: Optional[Dict[str, Any]] = None
                 error_message: Optional[str] = None
@@ -149,6 +152,7 @@ class FarcasterScheduler:
                         text=content,
                         signer_uuid=self.api_client.signer_uuid,
                         channel_id=channel_id,
+                        embeds=embeds,
                     )
                     if "cast" in api_response and "hash" in api_response["cast"]:
                         cast_result_data = api_response["cast"]

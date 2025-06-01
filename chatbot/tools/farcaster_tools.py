@@ -102,7 +102,7 @@ class SendFarcasterPostTool(ToolInterface):
                         result="scheduled",
                     )
 
-                # Note: The schedule_post method may need to be updated to handle embeds
+                # Note: The schedule_post method now handles embeds properly
                 context.farcaster_observer.schedule_post(
                     content, channel, action_id, embeds
                 )
@@ -126,7 +126,18 @@ class SendFarcasterPostTool(ToolInterface):
                 }
         # Immediate execution fallback
         try:
-            result = await context.farcaster_observer.post_cast(content, channel)
+            # Prepare embed URLs for the observer
+            embed_urls = []
+            if image_s3_url:
+                embed_urls.append(image_s3_url)
+            if video_s3_url:
+                embed_urls.append(video_s3_url)
+                
+            result = await context.farcaster_observer.post_cast(
+                content=content, 
+                channel=channel, 
+                embed_urls=embed_urls if embed_urls else None
+            )
             logger.info(f"Farcaster observer post_cast returned: {result}")
 
             # Record this action in world state
