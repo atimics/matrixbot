@@ -222,16 +222,26 @@ Based on this world state, what actions (if any) should you take? Remember you c
         ]
 
         try:
+            # Log payload size to monitor API limits
+            payload = {
+                "model": self.model,
+                "messages": messages,
+                "temperature": 0.7,
+                "max_tokens": 3500,
+            }
+            payload_size_bytes = len(json.dumps(payload).encode('utf-8'))
+            payload_size_kb = payload_size_bytes / 1024
+            logger.info(f"AIDecisionEngine: Sending payload of size ~{payload_size_kb:.2f} KB ({payload_size_bytes:,} bytes)")
+            
+            # Warn if payload is getting large (approaching typical 1MB limits)
+            if payload_size_kb > 512:  # 512 KB warning threshold
+                logger.warning(f"AIDecisionEngine: Large payload detected ({payload_size_kb:.2f} KB) - consider reducing AI_CONVERSATION_HISTORY_LENGTH or AI_INCLUDE_DETAILED_USER_INFO")
+
             # Make API request with proper OpenRouter headers
             async with httpx.AsyncClient(timeout=60.0) as client:
                 response = await client.post(
                     self.base_url,
-                    json={
-                        "model": self.model,
-                        "messages": messages,
-                        "temperature": 0.7,
-                        "max_tokens": 3500,
-                    },
+                    json=payload,
                     headers={
                         "Authorization": f"Bearer {self.api_key}",
                         "Content-Type": "application/json",
@@ -241,7 +251,21 @@ Based on this world state, what actions (if any) should you take? Remember you c
                 )
 
                 # Check for HTTP errors and log response details
-                if response.status_code != 200:
+                if response.status_code == 413:
+                    # 413 Payload Too Large - try to provide helpful information
+                    logger.error(
+                        f"AIDecisionEngine: HTTP 413 Payload Too Large error - "
+                        f"payload was {payload_size_kb:.2f} KB. Consider reducing "
+                        f"AI_CONVERSATION_HISTORY_LENGTH, AI_ACTION_HISTORY_LENGTH, "
+                        f"or setting AI_INCLUDE_DETAILED_USER_INFO=False"
+                    )
+                    return DecisionResult(
+                        selected_actions=[],
+                        reasoning=f"Payload too large ({payload_size_kb:.2f} KB) - reduce configuration settings",
+                        observations=f"HTTP 413 Error: Request payload exceeded server limits",
+                        cycle_id=cycle_id,
+                    )
+                elif response.status_code != 200:
                     error_details = response.text
                     logger.error(
                         f"AIDecisionEngine: HTTP {response.status_code} error: {error_details}"

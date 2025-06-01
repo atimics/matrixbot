@@ -54,18 +54,18 @@ class AppConfig(BaseSettings):
     OLLAMA_API_URL: Optional[str] = "http://localhost:11434"
     OLLAMA_DEFAULT_CHAT_MODEL: Optional[str] = "llama3"
     OLLAMA_DEFAULT_SUMMARY_MODEL: Optional[str] = "llama3"
-    # AI payload truncation settings
-    AI_CONVERSATION_HISTORY_LENGTH: int = 10  # Max messages per channel for AI payload
-    AI_ACTION_HISTORY_LENGTH: int = 5  # Max actions in history for AI payload
-    AI_THREAD_HISTORY_LENGTH: int = 5  # Max thread messages for AI payload
+    # AI payload truncation settings - optimized to prevent 413 Payload Too Large errors
+    AI_CONVERSATION_HISTORY_LENGTH: int = 7  # Max messages per channel for AI payload (reduced from 10)
+    AI_ACTION_HISTORY_LENGTH: int = 3  # Max actions in history for AI payload (reduced from 5)
+    AI_THREAD_HISTORY_LENGTH: int = 3  # Max thread messages for AI payload (reduced from 5)
     AI_OTHER_CHANNELS_SUMMARY_COUNT: int = (
-        3  # How many other active channels to summarize
+        2  # How many other active channels to summarize (reduced from 3)
     )
     AI_OTHER_CHANNELS_MESSAGE_SNIPPET_LENGTH: int = (
         75  # Length of snippet for other channels
     )
     AI_INCLUDE_DETAILED_USER_INFO: bool = (
-        True  # Include full user metadata or summarize
+        False  # Include full user metadata or summarize - False reduces payload size significantly
     )
 
     # v0.0.3: Media Generation & Permaweb Storage Configuration
