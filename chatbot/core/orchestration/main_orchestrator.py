@@ -18,6 +18,7 @@ from ...core.context import ContextManager
 from ...integrations.farcaster import FarcasterObserver
 from ...integrations.matrix.observer import MatrixObserver
 from ...tools.registry import ToolRegistry
+from ...tools.s3_service import s3_service
 from ..world_state.manager import WorldStateManager
 from ..world_state.payload_builder import PayloadBuilder
 from .processing_hub import ProcessingHub, ProcessingConfig
@@ -80,7 +81,8 @@ class MainOrchestrator:
         from ...tools.base import ActionContext
         self.action_context = ActionContext(
             world_state_manager=self.world_state,
-            context_manager=self.context_manager
+            context_manager=self.context_manager,
+            s3_service=s3_service
         )
         
         # External observers
@@ -362,10 +364,13 @@ class TraditionalProcessor:
             raise
 
     async def _execute_actions(self, actions: list) -> None:
-        """Execute a list of actions with rate limiting."""
+        """Execute a list of actions with rate limiting and coordination."""
         current_time = time.time()
         
-        for action in actions:
+        # Check for image generation + posting coordination opportunities
+        coordinated_actions = await self._coordinate_image_actions(actions)
+        
+        for action in coordinated_actions:
             try:
                 # Handle both ActionPlan objects and dict formats
                 if hasattr(action, 'action_type'):
@@ -412,3 +417,226 @@ class TraditionalProcessor:
             except Exception as e:
                 logger.error(f"Error executing action {action_name}: {e}")
                 continue
+
+    async def _coordinate_image_actions(self, actions: list) -> list:
+        """
+        Coordinate image generation with posting actions to enable auto-embedding.
+        
+        If both image generation and posting actions are present in the same batch,
+        execute image generation first and automatically include the image URL in posts.
+        """
+        # Extract action names and find coordination opportunities
+        action_names = []
+        action_map = {}
+        
+        for i, action in enumerate(actions):
+            if hasattr(action, 'action_type'):
+                action_name = action.action_type
+            else:
+                action_name = action.get("tool") or action.get("action_type")
+            
+            if action_name:
+                action_names.append(action_name)
+                action_map[action_name] = i
+        
+        # Check for image generation + Farcaster posting coordination
+        if "generate_image" in action_names and "send_farcaster_post" in action_names:
+            logger.info("Detected image generation + Farcaster post coordination opportunity")
+            return await self._coordinate_image_with_farcaster(actions, action_map)
+        
+        # Check for image generation + Matrix posting coordination
+        if "generate_image" in action_names and "send_matrix_message" in action_names:
+            logger.info("Detected image generation + Matrix message coordination opportunity")
+            return await self._coordinate_image_with_matrix(actions, action_map)
+        
+        # No coordination needed, return actions as-is
+        return actions
+
+    async def _coordinate_image_with_farcaster(self, actions: list, action_map: dict) -> list:
+        """Coordinate image generation with Farcaster posting."""
+        current_time = time.time()
+        coordinated_actions = []
+        generated_image_url = None
+        
+        # First, execute image generation
+        image_action_idx = action_map["generate_image"]
+        image_action = actions[image_action_idx]
+        
+        try:
+            # Get action parameters
+            if hasattr(image_action, 'action_type'):
+                action_params = image_action.parameters
+            else:
+                action_params = image_action.get("parameters", {})
+            
+            # Check rate limits for image generation
+            can_execute, reason = self.rate_limiter.can_execute_action("generate_image", current_time)
+            
+            if can_execute:
+                # Execute image generation
+                tool = self.tool_registry.get_tool("generate_image")
+                if tool:
+                    self.rate_limiter.record_action("generate_image", current_time)
+                    
+                    if self.action_context:
+                        result = await tool.execute(action_params, self.action_context)
+                    else:
+                        result = await tool.execute(action_params)
+                    
+                    logger.info(f"Executed coordinated image generation: {result}")
+                    
+                    # Extract image URL from result
+                    if isinstance(result, dict) and result.get("success") and result.get("image_url"):
+                        generated_image_url = result["image_url"]
+                        logger.info(f"Generated image URL for coordination: {generated_image_url}")
+                    
+                    # Record in context
+                    if self.context_manager:
+                        channel_id = action_params.get('channel_id', 'default')
+                        result_dict = result if isinstance(result, dict) else {'result': str(result)}
+                        await self.context_manager.add_tool_result(channel_id, "generate_image", result_dict)
+            else:
+                logger.warning(f"Cannot execute image generation for coordination: {reason}")
+        
+        except Exception as e:
+            logger.error(f"Error in coordinated image generation: {e}")
+        
+        # Now process other actions, modifying Farcaster post if we have an image URL
+        for i, action in enumerate(actions):
+            if i == image_action_idx:
+                # Skip the image action since we already executed it
+                continue
+            
+            # Check if this is the Farcaster post action
+            if hasattr(action, 'action_type'):
+                action_name = action.action_type
+                action_params = action.parameters.copy()  # Make a copy to avoid modifying original
+            else:
+                action_name = action.get("tool") or action.get("action_type")
+                action_params = action.get("parameters", {}).copy()
+            
+            if action_name == "send_farcaster_post" and generated_image_url:
+                # Add the generated image URL to the Farcaster post
+                action_params["image_s3_url"] = generated_image_url
+                logger.info(f"Enhanced Farcaster post with generated image: {generated_image_url}")
+                
+                # Create modified action
+                if hasattr(action, 'action_type'):
+                    # Create new ActionPlan with modified parameters
+                    from ..ai_engine import ActionPlan
+                    modified_action = ActionPlan(
+                        action_type=action.action_type,
+                        parameters=action_params,
+                        reasoning=action.reasoning,
+                        priority=action.priority
+                    )
+                else:
+                    # Create modified dict
+                    modified_action = action.copy()
+                    modified_action["parameters"] = action_params
+                
+                coordinated_actions.append(modified_action)
+            else:
+                # Add action as-is
+                coordinated_actions.append(action)
+        
+        return coordinated_actions
+
+    async def _coordinate_image_with_matrix(self, actions: list, action_map: dict) -> list:
+        """
+        Coordinate image generation with Matrix messaging.
+        
+        If both are present, execute image generation first and suggest using
+        send_matrix_image instead of send_matrix_message for better embedding.
+        """
+        current_time = time.time()
+        coordinated_actions = []
+        generated_image_url = None
+        
+        # First, execute image generation
+        image_action_idx = action_map["generate_image"]
+        image_action = actions[image_action_idx]
+        
+        try:
+            # Get action parameters
+            if hasattr(image_action, 'action_type'):
+                action_params = image_action.parameters
+            else:
+                action_params = image_action.get("parameters", {})
+            
+            # Check rate limits for image generation
+            can_execute, reason = self.rate_limiter.can_execute_action("generate_image", current_time)
+            
+            if can_execute:
+                # Execute image generation
+                tool = self.tool_registry.get_tool("generate_image")
+                if tool:
+                    self.rate_limiter.record_action("generate_image", current_time)
+                    
+                    if self.action_context:
+                        result = await tool.execute(action_params, self.action_context)
+                    else:
+                        result = await tool.execute(action_params)
+                    
+                    logger.info(f"Executed coordinated image generation: {result}")
+                    
+                    # Extract image URL from result
+                    if isinstance(result, dict) and result.get("success") and result.get("image_url"):
+                        generated_image_url = result["image_url"]
+                        logger.info(f"Generated image URL for Matrix coordination: {generated_image_url}")
+                    
+                    # Record in context
+                    if self.context_manager:
+                        channel_id = action_params.get('channel_id', 'default')
+                        result_dict = result if isinstance(result, dict) else {'result': str(result)}
+                        await self.context_manager.add_tool_result(channel_id, "generate_image", result_dict)
+            else:
+                logger.warning(f"Cannot execute image generation for coordination: {reason}")
+        
+        except Exception as e:
+            logger.error(f"Error in coordinated image generation: {e}")
+        
+        # Process other actions, potentially converting Matrix message to Matrix image
+        for i, action in enumerate(actions):
+            if i == image_action_idx:
+                # Skip the image action since we already executed it
+                continue
+            
+            # Check if this is the Matrix message action and we have an image
+            if hasattr(action, 'action_type'):
+                action_name = action.action_type
+                action_params = action.parameters.copy()
+            else:
+                action_name = action.get("tool") or action.get("action_type")
+                action_params = action.get("parameters", {}).copy()
+            
+            if action_name == "send_matrix_message" and generated_image_url:
+                # Convert to send_matrix_image action for better embedding
+                action_params["image_url"] = generated_image_url
+                # Keep the original message as caption/description
+                if "message" in action_params:
+                    action_params["caption"] = action_params.pop("message")
+                
+                logger.info(f"Converting Matrix message to Matrix image with URL: {generated_image_url}")
+                
+                # Create modified action
+                if hasattr(action, 'action_type'):
+                    from ..ai_engine import ActionPlan
+                    modified_action = ActionPlan(
+                        action_type="send_matrix_image",
+                        parameters=action_params,
+                        reasoning=f"Converted to image post with generated image: {action.reasoning}",
+                        priority=action.priority
+                    )
+                else:
+                    modified_action = action.copy()
+                    modified_action["tool"] = "send_matrix_image"
+                    modified_action["action_type"] = "send_matrix_image"
+                    modified_action["parameters"] = action_params
+                
+                coordinated_actions.append(modified_action)
+            else:
+                # Add action as-is
+                coordinated_actions.append(action)
+        
+        return coordinated_actions

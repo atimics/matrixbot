@@ -114,6 +114,34 @@ For IMAGE GENERATION, use the `generate_image` tool when:
 - You want to create visual content to enhance a response
 - Generating diagrams, illustrations, or creative visuals would add value
 
+AUTOMATIC IMAGE EMBEDDING:
+When you select BOTH image generation AND posting actions in the same cycle, they will be automatically coordinated:
+- `generate_image` + `send_farcaster_post`: The generated image will be automatically embedded in the Farcaster post
+- `generate_image` + `send_matrix_message`: The Matrix message will be converted to use `send_matrix_image` for better embedding
+
+This means you can confidently select both actions together when you want to:
+1. Generate an image based on conversation context
+2. Share that generated image immediately in a post
+
+Example coordinated actions:
+```json
+"selected_actions": [
+  {
+    "action_type": "generate_image",
+    "parameters": {"prompt": "A beautiful sunset over mountains"},
+    "reasoning": "Creating visual content for the conversation",
+    "priority": 8
+  },
+  {
+    "action_type": "send_farcaster_post", 
+    "parameters": {"text": "Check out this beautiful sunset!", "channel_id": "nature"},
+    "reasoning": "Sharing the generated image in a relevant channel",
+    "priority": 7
+  }
+]
+```
+The system will automatically include the image_s3_url in the Farcaster post without you needing to specify it.
+
 GENERATED MEDIA LIBRARY:
 You have access to a `generated_media_library` in the world state containing your previously generated images and videos.
 Each entry includes:

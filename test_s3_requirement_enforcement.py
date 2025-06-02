@@ -18,9 +18,9 @@ async def test_generate_image_requires_s3_service():
     # Create context without S3 service
     context = MagicMock()
     context.world_state_manager = MagicMock()
-    # No s3_service attribute
+    # No s3_service attribute - should fail the hasattr check
     
-    # Mock Google Gemini to succeed
+    # Mock Google Gemini to succeed (this should trigger the S3 check)
     with patch('chatbot.tools.media_generation_tools.settings') as mock_settings:
         mock_settings.GOOGLE_API_KEY = "test_key"
         mock_settings.REPLICATE_API_TOKEN = None  # Force Google path
@@ -37,7 +37,7 @@ async def test_generate_image_requires_s3_service():
             
             print(f"Result without S3 service: {result}")
             
-            # Should fail because S3 service is required
+            # Should fail because S3 service is required for image data upload
             assert result["status"] == "error"
             assert "S3 storage" in result["message"]
             assert "not available" in result["message"]

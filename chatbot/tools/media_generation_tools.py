@@ -29,8 +29,9 @@ class GenerateImageTool(ToolInterface):
     @property
     def description(self) -> str:
         return (
-            "Generates an image from a text prompt. Specify aspect ratio if needed. "
-            "The result is an S3 URL of the image, which can then be used in posts or stored as a memory."
+            "Generates an image from a text prompt. Returns an S3 URL of the generated image. "
+            "After generating an image, use 'send_matrix_image' to share it in Matrix channels "
+            "or 'send_farcaster_post' with image_s3_url parameter to share it on Farcaster with proper image embedding."
         )
 
     @property
@@ -122,6 +123,7 @@ class GenerateImageTool(ToolInterface):
                                     "prompt_used": prompt,
                                     "service_used": service_used,
                                     "aspect_ratio": aspect_ratio,
+                                    "next_actions_suggestion": f"Use 'send_matrix_image' or 'send_farcaster_post' with image_s3_url parameter to share this image: {s3_url}"
                                 }
 
                                 # Record this action result in world state for AI visibility
@@ -192,6 +194,7 @@ class GenerateImageTool(ToolInterface):
                             "prompt_used": prompt,
                             "service_used": service_used,
                             "aspect_ratio": aspect_ratio,
+                            "next_actions_suggestion": f"Use 'send_matrix_image' or 'send_farcaster_post' with image_s3_url parameter to share this image: {s3_url}"
                         }
 
                         # Record this action result in world state for AI visibility
