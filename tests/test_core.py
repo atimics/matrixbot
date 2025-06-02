@@ -128,7 +128,6 @@ class TestHistoryRecorder:
                 assert count[0] >= 1, f"Expected at least 1 user_input record, found {count[0]}"
         except Exception as e:
             # If direct database check fails, at least verify in-memory storage
-            print(f"Database check failed: {e}")
             assert len(context_manager.state_changes) >= 1
 
 
