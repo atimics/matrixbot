@@ -165,11 +165,18 @@ class HistoryRecorder:
         """Permanently store a state change block."""
         self.state_changes.append(state_change)
 
-        # Store in database
-        await self._persist_state_change(state_change)
+        # Store in database first
+        try:
+            await self._persist_state_change(state_change)
+            logger.debug(f"HistoryRecorder: Successfully persisted state change to database")
+        except Exception as e:
+            logger.error(f"HistoryRecorder: Failed to persist state change to database: {e}")
 
-        # Store as JSON file for training/analysis
-        await self._store_state_change_file(state_change)
+        # Store as JSON file for training/analysis (best effort)
+        try:
+            await self._store_state_change_file(state_change)
+        except Exception as e:
+            logger.warning(f"HistoryRecorder: Failed to store state change file: {e}")
 
         # Maintain memory limit
         if len(self.state_changes) > 10000:
@@ -178,8 +185,8 @@ class HistoryRecorder:
     async def _persist_state_change(self, state_change: StateChangeBlock):
         """Store state change in database."""
         try:
-            # Ensure state_changes table exists
             async with aiosqlite.connect(self.db_path) as db:
+                # Ensure state_changes table exists
                 await db.execute(
                     """
                     CREATE TABLE IF NOT EXISTS state_changes (
@@ -197,6 +204,8 @@ class HistoryRecorder:
                     )
                     """
                 )
+                await db.commit()
+                logger.debug(f"HistoryRecorder: Table ensured for database: {self.db_path}")
 
                 # Store the state change
                 await db.execute(
@@ -220,9 +229,11 @@ class HistoryRecorder:
                     ),
                 )
                 await db.commit()
+                logger.debug(f"HistoryRecorder: Successfully inserted state change into database")
 
         except Exception as e:
             logger.error(f"HistoryRecorder: Error persisting state change: {e}")
+            raise  # Re-raise to let caller handle
 
     async def _store_state_change_file(self, state_change: StateChangeBlock):
         """Store state change as JSON file for analysis."""
@@ -251,6 +262,25 @@ class HistoryRecorder:
         """Retrieve recent state changes from database."""
         try:
             async with aiosqlite.connect(self.db_path) as db:
+                # Ensure table exists before querying
+                await db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS state_changes (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        timestamp REAL NOT NULL,
+                        change_type TEXT NOT NULL,
+                        source TEXT NOT NULL,
+                        channel_id TEXT,
+                        observations TEXT,
+                        potential_actions TEXT,
+                        selected_actions TEXT,
+                        reasoning TEXT,
+                        raw_content TEXT NOT NULL,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+                
                 query = """
                     SELECT timestamp, change_type, source, channel_id,
                            observations, potential_actions, selected_actions,

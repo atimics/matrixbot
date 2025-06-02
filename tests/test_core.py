@@ -103,12 +103,21 @@ class TestHistoryRecorder:
         
         await context_manager.record_user_input(channel_id, message)
         
+        # Give a small delay to ensure async operations complete
+        await asyncio.sleep(0.1)
+        
         # Verify the message was stored
         state_changes = await context_manager.get_recent_state_changes(limit=10)
         assert len(state_changes) >= 1
         # Check that user input is in the state changes
         user_inputs = [sc for sc in state_changes if sc.change_type == "user_input"]
         assert len(user_inputs) >= 1
+        
+        # Verify the content
+        user_input = user_inputs[0]
+        assert user_input.channel_id == channel_id
+        assert user_input.source == "user"
+        assert user_input.raw_content["content"] == "Hello"
 
 
 class TestAIEngine:
