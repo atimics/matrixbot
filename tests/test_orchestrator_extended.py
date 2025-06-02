@@ -50,31 +50,28 @@ class TestOrchestratorExtended:
     @pytest.mark.asyncio
     async def test_start_stop_without_observers(self):
         """Test starting and stopping orchestrator without observers."""
-        # Mock _main_event_loop to avoid infinite loop in tests
-        with patch.object(self.orchestrator, '_main_event_loop') as mock_loop:
-            # Make the event loop return immediately
-            loop = asyncio.get_event_loop()
-            future = loop.create_future()
-            future.set_result(None)
-            mock_loop.return_value = future
-            
-            # Mock _initialize_observers to avoid actual observer initialization
-            with patch.object(self.orchestrator, '_initialize_observers') as mock_init:
-                init_future = loop.create_future()
-                init_future.set_result(None)
-                mock_init.return_value = init_future
-                
-                # Create a task that we can control
-                async def controlled_start():
-                    self.orchestrator.running = True
-                    return None
-                
-                with patch.object(self.orchestrator, 'start', new=controlled_start):
-                    await self.orchestrator.start()
-                    assert self.orchestrator.running is True
+        # Mock the processing hub to avoid actual processing
+        with patch.object(self.orchestrator.processing_hub, 'start_processing_loop') as mock_start:
+            with patch.object(self.orchestrator.processing_hub, 'stop_processing_loop') as mock_stop:
+                # Mock _initialize_observers to avoid actual observer initialization
+                with patch.object(self.orchestrator, '_initialize_observers') as mock_init:
+                    loop = asyncio.get_event_loop()
+                    init_future = loop.create_future()
+                    init_future.set_result(None)
+                    mock_init.return_value = init_future
                     
-                await self.orchestrator.stop()
-                assert self.orchestrator.running is False
+                    # Mock the processing loop to return immediately
+                    start_future = loop.create_future()
+                    start_future.set_result(None)
+                    mock_start.return_value = start_future
+                    
+                    # Test start
+                    await self.orchestrator.start()
+                    assert self.orchestrator.running is False  # Will be set to False in finally block
+                    
+                    # Verify methods were called
+                    mock_init.assert_called_once()
+                    mock_start.assert_called_once()
     
     @pytest.mark.asyncio
     async def test_message_processing(self):
@@ -103,7 +100,8 @@ class TestOrchestratorExtended:
             mock_result = DecisionResult(
                 selected_actions=[],
                 observations="No action needed",
-                reasoning="Test reasoning"
+                reasoning="Test reasoning",
+                cycle_id="test_cycle_123"
             )
             mock_decision.return_value = mock_result
             
@@ -140,6 +138,11 @@ class TestOrchestratorExtended:
         
         # Set observers directly (new architecture)
         self.orchestrator.matrix_observer = mock_matrix
+        # Also set it in the action context for tools to access
+        self.orchestrator.action_context.matrix_observer = mock_matrix
+        
+        # Set up the processing hub with a traditional processor
+        self.orchestrator._setup_processing_components()
         
         # Create a mock action object with action_type and parameters
         mock_action = MagicMock()
