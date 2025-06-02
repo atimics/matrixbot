@@ -8,9 +8,29 @@ in the WorldState with LRU auto-collapse functionality and pinning support.
 import hashlib
 import json
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set
 from datetime import datetime
+
+
+@dataclass
+class SystemEvent:
+    """Represents a system event in node management."""
+    timestamp: float
+    event_type: str
+    message: str
+    affected_nodes: List[str] = field(default_factory=list)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "timestamp": self.timestamp,
+            "event_type": self.event_type,
+            "message": self.message,
+            "affected_nodes": self.affected_nodes,
+            "time_str": datetime.fromtimestamp(self.timestamp).strftime("%H:%M:%S")
+        }
 
 
 @dataclass
@@ -41,12 +61,28 @@ class NodeManager:
         self.max_expanded_nodes = max_expanded_nodes
         self.default_pinned_nodes = default_pinned_nodes or []
         self.node_metadata: Dict[str, NodeMetadata] = {}
+        self.system_events: deque = deque(maxlen=20)  # Keep last 20 events
         self._initialize_default_pins()
+    
+    def _log_system_event(self, event_type: str, message: str, affected_nodes: Optional[List[str]] = None):
+        """Log a system event for later reporting to the AI."""
+        event = SystemEvent(
+            timestamp=time.time(),
+            event_type=event_type,
+            message=message,
+            affected_nodes=affected_nodes or []
+        )
+        self.system_events.append(event)
     
     def _initialize_default_pins(self):
         """Initialize default pinned nodes."""
         for node_path in self.default_pinned_nodes:
             self.get_node_metadata(node_path).is_pinned = True
+            self._log_system_event(
+                "auto_pin",
+                f"Node '{node_path}' auto-pinned as critical integration point.",
+                [node_path]
+            )
     
     def get_node_metadata(self, node_path: str) -> NodeMetadata:
         """Get or create node metadata for the given path."""
@@ -169,6 +205,13 @@ class NodeManager:
         if auto_collapsed_node:
             message += f", auto-collapsed {auto_collapsed_node} (LRU unpinned)"
         
+        # Log system event
+        self._log_system_event(
+            "node_expanded",
+            message,
+            [node_path] + ([auto_collapsed_node] if auto_collapsed_node else [])
+        )
+        
         return True, auto_collapsed_node, message
     
     def collapse_node(self, node_path: str, is_auto_collapse: bool = False) -> tuple[bool, str]:
@@ -187,6 +230,14 @@ class NodeManager:
         # Don't update expanded timestamp on collapse
         
         collapse_type = "auto-collapsed" if is_auto_collapse else "collapsed"
+        
+        # Log system event
+        self._log_system_event(
+            "node_collapsed",
+            f"Node {node_path} was {collapse_type}",
+            [node_path]
+        )
+        
         return True, f"Successfully {collapse_type} {node_path}"
     
     def pin_node(self, node_path: str) -> tuple[bool, str]:
@@ -202,6 +253,14 @@ class NodeManager:
             return False, f"Node {node_path} was already pinned"
         
         metadata.is_pinned = True
+        
+        # Log system event
+        self._log_system_event(
+            "node_pinned",
+            f"Node {node_path} was pinned",
+            [node_path]
+        )
+        
         return True, f"Successfully pinned {node_path}"
     
     def unpin_node(self, node_path: str) -> tuple[bool, str]:
@@ -217,6 +276,14 @@ class NodeManager:
             return False, f"Node {node_path} was already unpinned"
         
         metadata.is_pinned = False
+        
+        # Log system event
+        self._log_system_event(
+            "node_unpinned",
+            f"Node {node_path} was unpinned",
+            [node_path]
+        )
+        
         return True, f"Successfully unpinned {node_path}"
     
     def get_nodes_needing_summary(self, all_node_paths: List[str]) -> List[str]:
@@ -273,17 +340,12 @@ class NodeManager:
     
     def get_system_events(self) -> List[Dict[str, Any]]:
         """
-        Get recent system events for AI context.
-        This would be called after processing AI actions to report what happened.
+        Get recent system events for AI context and clear the event queue.
+        This provides the AI with information about automatic node management actions.
         """
-        # This is a placeholder - in a full implementation, you'd track
-        # events like auto-collapses, failed expansions, etc.
-        # For now, just return current status
-        return [{
-            "event": "expansion_status",
-            "data": self.get_expansion_status_summary(),
-            "timestamp": datetime.now().isoformat()
-        }]
+        events = [event.to_dict() for event in self.system_events]
+        self.system_events.clear()  # Clear after reporting
+        return events
     
     def auto_expand_active_channels(self, channel_activity_data: Dict[str, float]) -> List[str]:
         """

@@ -262,6 +262,39 @@ class MainOrchestrator:
         # Update action context with initialized observers
         self.action_context.matrix_observer = self.matrix_observer
         self.action_context.farcaster_observer = self.farcaster_observer
+        
+        # Configure critical node pinning based on active integrations
+        self._configure_critical_node_pinning()
+
+    def _configure_critical_node_pinning(self):
+        """Configure critical node paths for pinning based on active integrations."""
+        critical_pins = []
+        
+        # Add Matrix room if available
+        if self.matrix_observer and settings.MATRIX_ROOM_ID:
+            critical_pins.append(f"channels.matrix.{settings.MATRIX_ROOM_ID}")
+            logger.info(f"Added Matrix room to critical pins: channels.matrix.{settings.MATRIX_ROOM_ID}")
+        
+        # Add Farcaster feeds if available
+        if self.farcaster_observer:
+            critical_pins.extend([
+                "farcaster.feeds.home",
+                "farcaster.feeds.notifications"
+            ])
+            logger.info("Added Farcaster feeds to critical pins: home, notifications")
+        
+        # Update PayloadBuilder's NodeManager with critical pins if it exists
+        if hasattr(self.payload_builder, 'node_manager') and self.payload_builder.node_manager:
+            for pin_path in critical_pins:
+                self.payload_builder.node_manager.get_node_metadata(pin_path).is_pinned = True
+                self.payload_builder.node_manager._log_system_event(
+                    "integration_pin",
+                    f"Node '{pin_path}' pinned as critical integration point.",
+                    [pin_path]
+                )
+            logger.info(f"Configured {len(critical_pins)} critical node pins in PayloadBuilder")
+        else:
+            logger.warning("PayloadBuilder NodeManager not available for critical pinning")
 
     def trigger_state_change(self):
         """Trigger immediate processing when world state changes."""

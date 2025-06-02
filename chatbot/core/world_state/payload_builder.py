@@ -79,20 +79,38 @@ class PayloadBuilder:
         bot_fid = config.get("bot_fid")
         bot_username = config.get("bot_username")
 
-        # Sort channels by activity (most recent message first)
-        # Give special priority to Farcaster channels to ensure minimum visibility
-        sorted_channels = sorted(
-            world_state_data.channels.items(),
-            key=lambda x: (
-                # Primary sort: Farcaster channels get priority boost
-                0 if x[1].type == "farcaster" else 1,
-                # Secondary sort: Most recent activity first
-                -(x[1].recent_messages[-1].timestamp if x[1].recent_messages else 0),
-            ),
-        )
+        # Sort channels with improved cross-platform balance
+        # First, identify active integrations (platforms with recent activity)
+        active_integrations = set()
+        current_time = time.time()
+        recent_threshold = current_time - (30 * 60)  # 30 minutes
+        
+        for ch_id, ch_data in world_state_data.channels.items():
+            if ch_data.recent_messages and ch_data.recent_messages[-1].timestamp > recent_threshold:
+                active_integrations.add(ch_data.type)
+        
+        # Sort channels with dynamic prioritization
+        def sort_key(channel_item):
+            ch_id, ch_data = channel_item
+            last_activity = ch_data.recent_messages[-1].timestamp if ch_data.recent_messages else 0
+            
+            # Primary channel always gets top priority
+            if ch_id == primary_channel_id:
+                return (0, -last_activity)
+            
+            # Key Farcaster feeds get high priority
+            if ch_data.type == "farcaster" and ("home" in ch_id or "notification" in ch_id):
+                return (1, -last_activity)
+            
+            # For other channels, slightly boost less represented platforms
+            platform_boost = 2 if ch_data.type == "farcaster" else 3
+            return (platform_boost, -last_activity)
+        
+        sorted_channels = sorted(world_state_data.channels.items(), key=sort_key)
 
         channels_payload = {}
         detailed_count = 0
+        platforms_with_detailed = set()
 
         for ch_id, ch_data in sorted_channels:
             # Include all messages including bot's own for AI context
@@ -106,11 +124,23 @@ class PayloadBuilder:
             is_key_farcaster = ch_data.type == "farcaster" and (
                 "home" in ch_id or "notification" in ch_id or "reply" in ch_id
             )
+            
+            # Enhanced logic: ensure at least one detailed channel per active platform
+            platform_needs_representation = (
+                ch_data.type in active_integrations and 
+                ch_data.type not in platforms_with_detailed and
+                detailed_count < max_other_channels
+            )
+            
             include_detailed = (
-                is_primary or is_key_farcaster or detailed_count < max_other_channels
+                is_primary or 
+                is_key_farcaster or 
+                platform_needs_representation or
+                detailed_count < max_other_channels
             )
 
             if include_detailed and all_messages:
+                platforms_with_detailed.add(ch_data.type)
                 # Full detail for priority channels
                 messages_for_payload = [
                     msg.to_ai_summary_dict()
@@ -378,6 +408,15 @@ class PayloadBuilder:
         for channel_id, channel in world_state_data.channels.items():
             paths.append(f"channels.{channel.type}.{channel_id}")
         
+        # Farcaster feed nodes (always available if Farcaster is active)
+        has_farcaster = any(ch.type == "farcaster" for ch in world_state_data.channels.values())
+        if has_farcaster:
+            paths.extend([
+                "farcaster.feeds.home",
+                "farcaster.feeds.notifications",
+                "farcaster.feeds.trending"
+            ])
+        
         # User nodes (from recent activity) 
         user_fids = set()
         user_usernames = set()
@@ -458,12 +497,17 @@ class PayloadBuilder:
                 for channel in world_state_data.channels.values():
                     for msg in channel.recent_messages[-5:]:  # Recent messages
                         if user_type == "farcaster" and str(msg.sender_fid) == user_id:
+                            # Compact user info for node data
+                            bio = msg.sender_bio
+                            if bio and len(bio) > 75:
+                                bio = bio[:75] + "..."
+                            
                             user_info.update({
                                 "username": msg.sender_username,
                                 "display_name": msg.sender_display_name,
                                 "fid": msg.sender_fid,
                                 "follower_count": msg.sender_follower_count,
-                                "bio": msg.sender_bio
+                                "bio_snippet": bio if bio else None
                             })
                             break
                         elif user_type == "matrix" and msg.sender_username == user_id:
@@ -474,6 +518,48 @@ class PayloadBuilder:
                             break
                 
                 return user_info
+            
+            elif path_parts[0] == "farcaster" and len(path_parts) >= 3:
+                # Handle farcaster.feeds.* nodes
+                if path_parts[1] == "feeds":
+                    feed_type = path_parts[2]
+                    
+                    if feed_type == "home":
+                        # Aggregate recent activity from all Farcaster channels
+                        home_messages = []
+                        for channel in world_state_data.channels.values():
+                            if channel.type == "farcaster" and "home" in channel.id:
+                                home_messages.extend(channel.recent_messages[-5:])
+                        
+                        # Sort by timestamp and take most recent
+                        home_messages.sort(key=lambda x: x.timestamp, reverse=True)
+                        return {
+                            "feed_type": "home",
+                            "recent_activity": [msg.to_ai_summary_dict() for msg in home_messages[:10]],
+                            "activity_summary": f"{len(home_messages)} recent home feed messages"
+                        }
+                    
+                    elif feed_type == "notifications":
+                        # Find notification/mention related messages
+                        notification_messages = []
+                        for channel in world_state_data.channels.values():
+                            if channel.type == "farcaster" and ("notification" in channel.id or "mention" in channel.id):
+                                notification_messages.extend(channel.recent_messages[-5:])
+                        
+                        notification_messages.sort(key=lambda x: x.timestamp, reverse=True)
+                        return {
+                            "feed_type": "notifications",
+                            "recent_mentions": [msg.to_ai_summary_dict() for msg in notification_messages[:10]],
+                            "notification_summary": f"{len(notification_messages)} recent notifications/mentions"
+                        }
+                    
+                    elif feed_type == "trending":
+                        # Placeholder for trending feed data
+                        return {
+                            "feed_type": "trending",
+                            "status": "Available for expansion via get_trending_casts tool",
+                            "note": "Use get_trending_casts to fetch current trending content"
+                        }
             
             elif path_parts[0] == "threads" and len(path_parts) >= 3:
                 thread_type, thread_id = path_parts[1], path_parts[2]

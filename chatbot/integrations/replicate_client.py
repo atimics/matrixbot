@@ -66,7 +66,7 @@ class ReplicateClient:
         lora_scale: Optional[float] = None,
         num_outputs: int = 1,
         go_fast: bool = True,
-        output_format: str = "webp",
+        output_format: str = "png",
     ) -> Optional[str]:
         """
         Generate an image using Replicate API with JavaScript best practices.

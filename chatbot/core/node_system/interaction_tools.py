@@ -8,7 +8,7 @@ in the WorldState with automatic LRU management and payload size control.
 from typing import Any, Dict
 
 from chatbot.config import settings
-from chatbot.core.node_manager import NodeManager
+from .node_manager import NodeManager
 
 
 class NodeInteractionTools:

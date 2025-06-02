@@ -9,20 +9,10 @@ This package handles all node-based processing functionality:
 
 from .node_manager import NodeManager
 from .summary_service import NodeSummaryService
-from .interaction_tools import (
-    ExpandNodeTool,
-    CollapseNodeTool,
-    PinNodeTool,
-    UnpinNodeTool,
-    GetNodeSummaryTool
-)
+from .interaction_tools import NodeInteractionTools
 
 __all__ = [
     "NodeManager",
-    "NodeSummaryService", 
-    "ExpandNodeTool",
-    "CollapseNodeTool",
-    "PinNodeTool",
-    "UnpinNodeTool",
-    "GetNodeSummaryTool"
+    "NodeSummaryService",
+    "NodeInteractionTools"
 ]
