@@ -211,7 +211,7 @@ class NeynarAPIClient:
                 params["channel_id"] = f"channel/{normalized_channel}"
 
         response = await self._make_request(
-            "GET", "/farcaster/casts/search", params=params
+            "GET", "/farcaster/cast/search", params=params
         )
         return response.json()
 
