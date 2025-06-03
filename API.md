@@ -797,7 +797,85 @@ For operations that may take time:
 }
 ```
 
-## 🔄 Versioning
+## � Enhanced Features
+
+### Rate Limiting Infrastructure
+
+The system includes comprehensive rate limiting with automatic monitoring:
+
+**Farcaster API Rate Limiting:**
+- Automatic parsing of rate limit headers (`x-ratelimit-limit`, `x-ratelimit-remaining`, `x-ratelimit-reset`)
+- Warning logs when approaching limits (< 10 requests remaining)
+- Rate limit status tracking in world state for AI awareness
+- Graceful degradation when limits are exceeded
+
+**Implementation:**
+```python
+# Rate limits are automatically tracked and available in world state
+{
+    "system_status": {
+        "rate_limits": {
+            "farcaster_api": {
+                "remaining": 245,
+                "limit": 300,
+                "reset_time": 1672531200,
+                "last_update": 1672527600
+            }
+        }
+    }
+}
+```
+
+### S3 Service Enhancements
+
+**Embeddable URL Generation:**
+- Automatic generation of embeddable URLs with Open Graph metadata
+- Proper URL encoding for titles and descriptions
+- Social media optimized previews for Farcaster sharing
+
+**Usage:**
+```python
+from chatbot.tools.s3_service import S3Service
+
+s3_service = S3Service()
+embeddable_url = s3_service.generate_embeddable_url(
+    s3_url="https://s3.amazonaws.com/bucket/image.jpg",
+    title="AI Generated Image",
+    description="A beautiful sunset over mountains"
+)
+```
+
+**Features:**
+- Automatic URL encoding for special characters
+- Proper Open Graph meta tag generation
+- Enhanced social media preview support
+- Seamless integration with Farcaster posting
+
+### Tool Parameter Schema Standardization
+
+All tools now use standardized JSON Schema format for better validation and AI integration:
+
+**Standard Format:**
+```json
+{
+    "type": "object",
+    "properties": {
+        "parameter_name": {
+            "type": "string|integer|array|object",
+            "description": "Clear parameter description"
+        }
+    },
+    "required": ["required_param1", "required_param2"]
+}
+```
+
+**Benefits:**
+- Improved parameter validation
+- Better AI tool understanding
+- Consistent documentation
+- Enhanced error messages
+
+## �🔄 Versioning
 
 The API follows semantic versioning:
 
