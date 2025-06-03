@@ -168,6 +168,7 @@ class Channel:
     Attributes:
         id: Unique channel identifier (room ID for Matrix, channel ID for Farcaster)
         type: Platform type ('matrix' or 'farcaster')
+        channel_type: Alias for type (backward compatibility)
         name: Human-readable channel name or title
         recent_messages: List of recent Message objects with automatic size management
         last_checked: Unix timestamp of last observation cycle
@@ -185,14 +186,16 @@ class Channel:
 
     Methods:
         get_activity_summary(): Provides comprehensive activity analysis
+        update_last_checked(): Updates the last_checked timestamp
         __post_init__(): Performs post-initialization validation and setup
     """
 
     id: str  # Room ID for Matrix, channel ID for Farcaster
-    type: str  # 'matrix' or 'farcaster'
     name: str  # Display name
-    recent_messages: List[Message]
-    last_checked: float
+    type: Optional[str] = None  # 'matrix' or 'farcaster'
+    channel_type: Optional[str] = None  # Alias for type (backward compatibility)
+    recent_messages: List[Message] = field(default_factory=list)
+    last_checked: Optional[float] = None
 
     # Matrix-specific details
     canonical_alias: Optional[str] = None  # #room:server.com
@@ -206,18 +209,32 @@ class Channel:
     creation_time: Optional[float] = None  # When room was created
 
     # Channel status tracking
-    status: str = (
-        "active"  # Status: 'active', 'left_by_bot', 'kicked', 'banned', 'invited'
-    )
+    status: str = "active"  # Status: 'active', 'left_by_bot', 'kicked', 'banned', 'invited'
     last_status_update: float = 0.0  # When status was last updated
 
     def __post_init__(self):
         """
         Perform post-initialization validation and setup.
 
-        This method can be extended to add validation logic, default value
-        assignment, or other initialization tasks that require the full object state.
+        This method handles backward compatibility and ensures consistency between
+        type and channel_type attributes.
         """
+        # Handle backward compatibility between type and channel_type
+        if self.channel_type and not self.type:
+            self.type = self.channel_type
+        elif self.type and not self.channel_type:
+            self.channel_type = self.type
+        elif self.type and self.channel_type and self.type != self.channel_type:
+            # If both are set but different, prefer type and update channel_type
+            self.channel_type = self.type
+            
+        # Set default last_status_update if not provided
+        if self.last_status_update == 0.0:
+            self.last_status_update = time.time()
+    
+    def update_last_checked(self, timestamp: Optional[float] = None):
+        """Update the last_checked timestamp"""
+        self.last_checked = timestamp if timestamp is not None else time.time()
         # Initialize status timestamp if not set
         if self.last_status_update == 0.0:
             self.last_status_update = time.time()

@@ -47,21 +47,41 @@ class WorldStateManager:
         logger.info("WorldStateManager: Initialized empty world state")
 
     def add_channel(
-        self, channel_id: str, channel_type: str, name: str, status: str = "active"
+        self, channel_or_id, channel_type: str = None, name: str = None, status: str = "active"
     ):
-        """Add a new channel to monitor"""
-        self.state.channels[channel_id] = Channel(
-            id=channel_id,
-            type=channel_type,
-            name=name,
-            recent_messages=[],
-            last_checked=time.time(),
-            status=status,
-            last_status_update=time.time(),
-        )
-        logger.info(
-            f"WorldState: Added {channel_type} channel '{name}' ({channel_id}) with status '{status}'"
-        )
+        """Add a new channel to monitor
+        
+        Args:
+            channel_or_id: Either a Channel object or a channel_id string
+            channel_type: Channel type (required if channel_or_id is string)
+            name: Channel name (required if channel_or_id is string)
+            status: Channel status (default: "active")
+        """
+        if isinstance(channel_or_id, Channel):
+            # Adding a Channel object directly
+            channel = channel_or_id
+            self.state.channels[channel.id] = channel
+            logger.info(
+                f"WorldState: Added {channel.type} channel '{channel.name}' ({channel.id}) with status '{channel.status}'"
+            )
+        else:
+            # Adding by parameters
+            channel_id = channel_or_id
+            if channel_type is None or name is None:
+                raise ValueError("channel_type and name are required when adding by parameters")
+            
+            self.state.channels[channel_id] = Channel(
+                id=channel_id,
+                type=channel_type,
+                name=name,
+                status=status,
+                last_status_update=time.time(),
+            )
+            # Set last_checked after creation
+            self.state.channels[channel_id].update_last_checked()
+            logger.info(
+                f"WorldState: Added {channel_type} channel '{name}' ({channel_id}) with status '{status}'"
+            )
 
     def add_message(self, channel_id: str, message: Message):
         """Add a new message to a channel"""
