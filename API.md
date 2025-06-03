@@ -186,19 +186,42 @@ Join Matrix rooms and accept invitations.
 
 #### SendFarcasterPostTool
 
-Create new Farcaster posts.
+Create new Farcaster posts with automatic image embedding and social media optimization.
 
 ```python
 {
     "name": "send_farcaster_post",
     "description": "Send a new post to Farcaster",
     "parameters_schema": {
-        "content": "string - post content (max 320 characters)",
-        "embeds": "array (optional) - URLs to embed",
-        "channel": "string (optional) - channel to post in"
+        "type": "object",
+        "properties": {
+            "content": {
+                "type": "string",
+                "description": "The text content of the cast to post"
+            },
+            "channel": {
+                "type": "string", 
+                "description": "The channel to post in (if not provided, posts to user's timeline)"
+            },
+            "image_s3_url": {
+                "type": "string",
+                "description": "S3 URL of an image to attach to the post"
+            },
+            "video_s3_url": {
+                "type": "string", 
+                "description": "S3 URL of a video to attach to the post"
+            }
+        },
+        "required": ["content"]
     }
 }
 ```
+
+**Enhanced Features:**
+- Automatic generation of embeddable URLs with Open Graph metadata for images
+- Social media optimized previews with descriptive titles
+- Proper URL encoding for special characters
+- Rich media display in Farcaster clients
 
 #### SendFarcasterReplyTool
 
@@ -209,8 +232,18 @@ Reply to Farcaster casts.
     "name": "send_farcaster_reply",
     "description": "Reply to a Farcaster cast",
     "parameters_schema": {
-        "content": "string - reply content",
-        "reply_to_hash": "string - hash of cast to reply to"
+        "type": "object",
+        "properties": {
+            "content": {
+                "type": "string",
+                "description": "The text content of the reply"
+            },
+            "reply_to_hash": {
+                "type": "string",
+                "description": "The hash of the cast to reply to"
+            }
+        },
+        "required": ["content", "reply_to_hash"]
     }
 }
 ```
@@ -224,7 +257,14 @@ Like Farcaster casts.
     "name": "like_farcaster_post",
     "description": "Like a Farcaster cast",
     "parameters_schema": {
-        "cast_hash": "string - hash of cast to like"
+        "type": "object",
+        "properties": {
+            "cast_hash": {
+                "type": "string",
+                "description": "The hash of the cast to like"
+            }
+        },
+        "required": ["cast_hash"]
     }
 }
 ```
@@ -238,8 +278,22 @@ Quote Farcaster casts with additional commentary.
     "name": "quote_farcaster_post",
     "description": "Quote a Farcaster cast with commentary",
     "parameters_schema": {
-        "content": "string - your commentary on the quoted cast",
-        "quoted_cast_hash": "string - hash of cast to quote"
+        "type": "object",
+        "properties": {
+            "content": {
+                "type": "string",
+                "description": "Your commentary/thoughts to add to the quoted cast"
+            },
+            "quoted_cast_hash": {
+                "type": "string",
+                "description": "The hash of the cast to quote"
+            },
+            "channel": {
+                "type": "string",
+                "description": "The channel to post in (if not provided, posts to user's timeline)"
+            }
+        },
+        "required": ["content", "quoted_cast_hash"]
     }
 }
 ```
@@ -258,20 +312,27 @@ Follow Farcaster users.
 }
 ```
 
-#### SendFarcasterDirectMessageTool
+#### SendFarcasterDirectMessageTool ⚠️ DEPRECATED
 
-Send direct messages on Farcaster.
+**IMPORTANT: This tool is deprecated and non-functional.** Direct message functionality is not supported by the Farcaster API.
 
 ```python
 {
     "name": "send_farcaster_direct_message",
-    "description": "Send a direct message to a Farcaster user",
+    "description": "DEPRECATED: Send a direct message to a Farcaster user (NOT SUPPORTED)",
     "parameters_schema": {
         "recipient_fid": "number - Farcaster ID of recipient",
         "content": "string - message content"
-    }
+    },
+    "status": "deprecated",
+    "note": "Always returns failure - DM functionality not available via Farcaster API"
 }
 ```
+
+**Alternative Approaches:**
+- Use public replies for communication
+- Suggest moving conversations to Matrix for private messaging
+- Focus on public engagement tools (posts, replies, likes, follows)
 
 ## 🌍 World State API
 

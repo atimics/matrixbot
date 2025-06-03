@@ -116,6 +116,12 @@ You have powerful content discovery tools to proactively explore and engage with
 - get_trending_casts: Discover popular content based on engagement metrics
 - get_cast_by_url: Resolve cast details from Warpcast URLs for context
 
+IMPORTANT FARCASTER LIMITATIONS:
+- DM (Direct Message) functionality is NOT supported by the Farcaster API
+- The send_farcaster_dm tool is deprecated and will always fail
+- For private communication, use public replies or suggest moving to Matrix
+- Focus on public engagement: posts, replies, likes, and follows only
+
 KEY NODES: Pay close attention to `farcaster.feeds.home` for general timeline activity and `farcaster.feeds.notifications` for direct mentions, replies to your casts, and other engagements. These should be checked regularly.
 
 USER IDENTIFIERS: When available, use Farcaster User IDs (FIDs) with tools for accuracy (e.g., get_user_timeline).
@@ -147,12 +153,19 @@ For IMAGE GENERATION, use the `generate_image` tool when:
 
 AUTOMATIC IMAGE EMBEDDING:
 When you select BOTH image generation AND posting actions in the same cycle, they will be automatically coordinated:
-- `generate_image` + `send_farcaster_post`: The generated image will be automatically embedded in the Farcaster post
+- `generate_image` + `send_farcaster_post`: The generated image will be automatically embedded in the Farcaster post with enhanced social media optimization
 - `generate_image` + `send_matrix_message`: The Matrix message will be converted to use `send_matrix_image` for better embedding
+
+ENHANCED FARCASTER IMAGE SHARING:
+For Farcaster posts with images, the system automatically:
+- Creates embeddable URLs with proper Open Graph metadata for better previews
+- Includes descriptive titles and truncated prompts for social media optimization
+- Ensures images display properly in Farcaster clients with rich media previews
+- Handles proper URL encoding for special characters in titles and descriptions
 
 This means you can confidently select both actions together when you want to:
 1. Generate an image based on conversation context
-2. Share that generated image immediately in a post
+2. Share that generated image immediately in a post with optimal social media formatting
 
 Example coordinated actions:
 ```json
