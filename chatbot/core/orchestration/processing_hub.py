@@ -244,10 +244,23 @@ class ProcessingHub:
             # Determine primary channel
             primary_channel_id = self._get_primary_channel(active_channels)
             
-            # Build full payload
+            # Build full payload with optimized configuration for smaller size
+            config = {
+                "optimize_for_size": True,
+                "include_detailed_user_info": False,
+                "max_messages_per_channel": 8,
+                "max_action_history": 4,
+                "max_thread_messages": 4,
+                "max_other_channels": 2,
+                "message_snippet_length": 60,
+                "bot_fid": getattr(self.world_state, 'get_config_value', lambda x: None)("bot_fid"),
+                "bot_username": getattr(self.world_state, 'get_config_value', lambda x: None)("bot_username")
+            }
+            
             payload = self.payload_builder.build_full_payload(
                 world_state_data=self.world_state.get_state_data(),
-                primary_channel_id=primary_channel_id
+                primary_channel_id=primary_channel_id,
+                config=config
             )
             
             # Process with traditional approach

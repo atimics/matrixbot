@@ -363,9 +363,11 @@ Based on this world state, what actions (if any) should you take? Remember you c
             payload_size_kb = payload_size_bytes / 1024
             logger.info(f"AIDecisionEngine: Sending payload of size ~{payload_size_kb:.2f} KB ({payload_size_bytes:,} bytes)")
             
-            # Warn if payload is getting large (approaching typical 1MB limits)
-            if payload_size_kb > 512:  # 512 KB warning threshold
-                logger.warning(f"AIDecisionEngine: Large payload detected ({payload_size_kb:.2f} KB) - consider reducing AI_CONVERSATION_HISTORY_LENGTH or AI_INCLUDE_DETAILED_USER_INFO")
+            # Warn if payload is getting large (with new optimized thresholds)
+            if payload_size_kb > 256:  # Reduced from 512 KB due to optimizations
+                logger.warning(f"AIDecisionEngine: Large payload detected ({payload_size_kb:.2f} KB) - payload optimization is enabled but still large")
+            elif payload_size_kb > 100:  # Info threshold for monitoring
+                logger.info(f"AIDecisionEngine: Moderate payload size ({payload_size_kb:.2f} KB) - within acceptable range after optimization")
 
             # Make API request with proper OpenRouter headers
             async with httpx.AsyncClient(timeout=60.0) as client:
@@ -385,9 +387,8 @@ Based on this world state, what actions (if any) should you take? Remember you c
                     # 413 Payload Too Large - try to provide information
                     logger.error(
                         f"AIDecisionEngine: HTTP 413 Payload Too Large error - "
-                        f"payload was {payload_size_kb:.2f} KB. Consider reducing "
-                        f"AI_CONVERSATION_HISTORY_LENGTH, AI_ACTION_HISTORY_LENGTH, "
-                        f"or setting AI_INCLUDE_DETAILED_USER_INFO=False"
+                        f"payload was {payload_size_kb:.2f} KB. Payload optimization is enabled "
+                        f"but payload is still too large. Check for excessive world state data."
                     )
                     return DecisionResult(
                         selected_actions=[],

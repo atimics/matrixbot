@@ -45,7 +45,7 @@ class PayloadBuilder:
         config: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        Build a traditional full payload from world state data.
+        Build a traditional full payload from world state data with size optimizations.
         
         This is the original approach that includes complete world state information
         with intelligent filtering and prioritization based on channel activity.
@@ -66,18 +66,20 @@ class PayloadBuilder:
         Returns:
             Dictionary optimized for AI consumption
         """
-        # Set default config values
+        # Set default config values with optimization focus
         if config is None:
             config = {}
         
-        max_messages_per_channel = config.get("max_messages_per_channel", 10)
-        max_action_history = config.get("max_action_history", 5)
-        max_thread_messages = config.get("max_thread_messages", 5)
-        max_other_channels = config.get("max_other_channels", 3)
-        message_snippet_length = config.get("message_snippet_length", 75)
-        include_detailed_user_info = config.get("include_detailed_user_info", True)
+        # Reduced default limits for payload optimization
+        max_messages_per_channel = config.get("max_messages_per_channel", 8)  # Reduced from 10
+        max_action_history = config.get("max_action_history", 4)  # Reduced from 5
+        max_thread_messages = config.get("max_thread_messages", 4)  # Reduced from 5
+        max_other_channels = config.get("max_other_channels", 2)  # Reduced from 3
+        message_snippet_length = config.get("message_snippet_length", 60)  # Reduced from 75
+        include_detailed_user_info = config.get("include_detailed_user_info", False)  # Changed default to False
         bot_fid = config.get("bot_fid")
         bot_username = config.get("bot_username")
+        optimize_for_size = config.get("optimize_for_size", True)  # New optimization flag
 
         # Sort channels with improved cross-platform balance
         # First, identify active integrations (platforms with recent activity)
@@ -141,122 +143,206 @@ class PayloadBuilder:
 
             if include_detailed and all_messages:
                 platforms_with_detailed.add(ch_data.type)
-                # Full detail for priority channels
-                messages_for_payload = [
-                    msg.to_ai_summary_dict()
-                    if not include_detailed_user_info
-                    else asdict(msg)
-                    for msg in all_messages[-max_messages_per_channel:]
-                ]
-
-                # Calculate timestamp range for the included messages
+                # Optimized message processing with conditional detail levels
                 truncated_messages = all_messages[-max_messages_per_channel:]
-                timestamp_range = None
-                if truncated_messages:
-                    timestamp_range = {
-                        "start": truncated_messages[0].timestamp,
-                        "end": truncated_messages[-1].timestamp,
-                        "span_hours": round(
-                            (
-                                truncated_messages[-1].timestamp
-                                - truncated_messages[0].timestamp
-                            )
-                            / 3600,
-                            2,
-                        ),
-                        "total_available_messages": len(all_messages),
-                        "included_messages": len(truncated_messages),
-                    }
+                
+                if optimize_for_size:
+                    # Compact format for size optimization
+                    messages_for_payload = [
+                        {
+                            "id": msg.id,
+                            "sender": msg.sender_username or msg.sender,
+                            "content": msg.content[:message_snippet_length] + "..." 
+                                     if len(msg.content) > message_snippet_length else msg.content,
+                            "timestamp": msg.timestamp,
+                            "fid": msg.sender_fid,
+                            "reply_to": msg.reply_to,
+                            "has_images": bool(msg.image_urls),
+                            "power_badge": msg.metadata.get("power_badge", False) if msg.metadata else False
+                        }
+                        for msg in truncated_messages
+                    ]
+                else:
+                    # Full detail when size optimization is disabled
+                    messages_for_payload = [
+                        msg.to_ai_summary_dict()
+                        if not include_detailed_user_info
+                        else asdict(msg)
+                        for msg in truncated_messages
+                    ]
 
-                channels_payload[ch_id] = {
-                    "id": ch_data.id,
-                    "type": ch_data.type,
-                    "name": ch_data.name,
-                    "recent_messages": messages_for_payload,
-                    "last_checked": ch_data.last_checked,
-                    "topic": ch_data.topic[:100] if ch_data.topic else None,
-                    "member_count": ch_data.member_count,
-                    "activity_summary": ch_data.get_activity_summary(),
-                    "priority": "detailed" if is_primary else "secondary",
-                    "message_timestamp_range": timestamp_range,
-                }
+                # Optimized timestamp range calculation
+                timestamp_range = {
+                    "start": truncated_messages[0].timestamp,
+                    "end": truncated_messages[-1].timestamp,
+                    "span_hours": round(
+                        (truncated_messages[-1].timestamp - truncated_messages[0].timestamp) / 3600, 1
+                    ),
+                    "message_count": len(truncated_messages)
+                } if truncated_messages else None
+
+                if optimize_for_size:
+                    # Compact channel payload
+                    channels_payload[ch_id] = {
+                        "id": ch_data.id,
+                        "type": ch_data.type,
+                        "name": ch_data.name[:30] + "..." if len(ch_data.name) > 30 else ch_data.name,
+                        "recent_messages": messages_for_payload,
+                        "last_activity": timestamp_range["end"] if timestamp_range else ch_data.last_checked,
+                        "msg_count": len(messages_for_payload),
+                        "priority": "detailed" if is_primary else "secondary"
+                    }
+                else:
+                    # Full channel payload
+                    channels_payload[ch_id] = {
+                        "id": ch_data.id,
+                        "type": ch_data.type,
+                        "name": ch_data.name,
+                        "recent_messages": messages_for_payload,
+                        "last_checked": ch_data.last_checked,
+                        "topic": ch_data.topic[:100] if ch_data.topic else None,
+                        "member_count": ch_data.member_count,
+                        "activity_summary": ch_data.get_activity_summary(),
+                        "priority": "detailed" if is_primary else "secondary",
+                        "message_timestamp_range": timestamp_range,
+                    }
                 # Only count towards detailed limit if it's not primary or key Farcaster
                 if not is_primary and not is_key_farcaster:
                     detailed_count += 1
             else:
-                # Summary only for less active channels
-                channels_payload[ch_id] = {
-                    "id": ch_data.id,
-                    "type": ch_data.type,
-                    "name": ch_data.name,
-                    "activity_summary": ch_data.get_activity_summary(),
-                    "priority": "summary_only",
+                # Optimized summary for less active channels
+                activity = ch_data.get_activity_summary()
+                if optimize_for_size:
+                    channels_payload[ch_id] = {
+                        "id": ch_data.id,
+                        "type": ch_data.type,
+                        "name": ch_data.name[:20] + "..." if len(ch_data.name) > 20 else ch_data.name,
+                        "last_activity": activity.get("last_activity", 0),
+                        "msg_count": activity.get("message_count", 0),
+                        "priority": "summary"
+                    }
+                else:
+                    channels_payload[ch_id] = {
+                        "id": ch_data.id,
+                        "type": ch_data.type,
+                        "name": ch_data.name,
+                        "activity_summary": activity,
+                        "priority": "summary_only",
+                    }
+
+        # Optimized action history with conditional detail
+        if optimize_for_size:
+            action_history_payload = [
+                {
+                    "type": action.action_type,
+                    "result": action.result,
+                    "timestamp": action.timestamp,
+                    "params": str(action.parameters)[:50] + "..." 
+                           if len(str(action.parameters)) > 50 else action.parameters
                 }
+                for action in world_state_data.action_history[-max_action_history:]
+            ]
+        else:
+            action_history_payload = [
+                asdict(action) for action in world_state_data.action_history[-max_action_history:]
+            ]
 
-        # Include all action history for AI context - the AI should see its own past actions
-        # This provides better context for decision-making and prevents repetitive actions
-        action_history_payload = [
-            asdict(action) for action in world_state_data.action_history[-max_action_history:]
-        ]
-
-        # Handle threads with bot filtering - only include threads relevant to primary channel
+        # Optimized threads processing - only include if relevant and not empty
         threads_payload = {}
-        if primary_channel_id:
-            # Look for threads that might be related to the primary channel
-            for thread_id, msgs in world_state_data.threads.items():
-                # Include thread if any message belongs to primary channel or references it
+        if primary_channel_id and not optimize_for_size:
+            # Only include threads when size optimization is disabled
+            for thread_id, msgs in list(world_state_data.threads.items())[:3]:  # Limit to 3 threads max
+                # Include thread if any message belongs to primary channel
                 relevant_thread = any(
-                    msg.channel_id == primary_channel_id
-                    or msg.reply_to
-                    in [
-                        m.id
-                        for m in world_state_data.channels.get(
-                            primary_channel_id, Channel("", "", "", [], 0)
-                        ).recent_messages
-                    ]
-                    for msg in msgs
+                    msg.channel_id == primary_channel_id for msg in msgs
                 )
 
-                if relevant_thread:
-                    # Include all thread messages including bot's own for conversation context
+                if relevant_thread and msgs:
+                    # Compact thread messages
                     all_thread_msgs = msgs[-max_thread_messages:]
-
-                    if all_thread_msgs:
+                    if optimize_for_size:
+                        thread_msgs_for_payload = [
+                            {
+                                "id": msg.id,
+                                "sender": msg.sender_username or msg.sender,
+                                "content": msg.content[:message_snippet_length] + "..." 
+                                         if len(msg.content) > message_snippet_length else msg.content,
+                                "timestamp": msg.timestamp
+                            }
+                            for msg in all_thread_msgs
+                        ]
+                    else:
                         thread_msgs_for_payload = [
                             msg.to_ai_summary_dict()
                             if not include_detailed_user_info
                             else asdict(msg)
                             for msg in all_thread_msgs
                         ]
-                        threads_payload[thread_id] = thread_msgs_for_payload
+                    threads_payload[thread_id] = thread_msgs_for_payload
 
-        return {
-            "current_processing_channel_id": primary_channel_id,
-            "channels": channels_payload,
-            "action_history": action_history_payload,
-            "system_status": {**world_state_data.system_status, "rate_limits": world_state_data.rate_limits},
-            "threads": threads_payload,
-            "pending_matrix_invites": world_state_data.pending_matrix_invites,
-            "recent_media_actions": world_state_data.get_recent_media_actions(),
-            "generated_media_library": world_state_data.generated_media_library[-20:],  # Last 20 generated media items
-            "current_time": time.time(),
-            "payload_stats": {
-                "primary_channel": primary_channel_id,
-                "detailed_channels": detailed_count
-                + (1 if primary_channel_id in channels_payload else 0),
-                "summary_channels": len(sorted_channels)
-                - detailed_count
-                - (1 if primary_channel_id in channels_payload else 0),
-                "total_channels": len(sorted_channels),
-                "included_messages": sum(
-                    len(ch.get("recent_messages", []))
-                    for ch in channels_payload.values()
-                    if "recent_messages" in ch
-                ),
-                "bot_identity": {"fid": bot_fid, "username": bot_username},
-                "pending_invites_count": len(world_state_data.pending_matrix_invites),
-            },
-        }
+        # Build optimized final payload based on configuration
+        if optimize_for_size:
+            # Compact payload structure with essential information only
+            payload = {
+                "current_channel": primary_channel_id,
+                "channels": channels_payload,
+                "actions": action_history_payload,
+                "system": {
+                    "timestamp": time.time(),
+                    "rate_limits": world_state_data.rate_limits or {}
+                },
+                "stats": {
+                    "channels": len(channels_payload),
+                    "messages": sum(
+                        len(ch.get("recent_messages", []))
+                        for ch in channels_payload.values()
+                        if "recent_messages" in ch
+                    ),
+                    "bot_fid": bot_fid
+                }
+            }
+            
+            # Only include threads and other data if they're not empty
+            if threads_payload:
+                payload["threads"] = threads_payload
+            if world_state_data.pending_matrix_invites:
+                payload["pending_invites"] = len(world_state_data.pending_matrix_invites)
+            
+            # Minimal recent media info
+            recent_media = world_state_data.get_recent_media_actions()
+            if recent_media.get("recent_media_actions"):
+                payload["recent_media_count"] = len(recent_media["recent_media_actions"])
+        else:
+            # Full payload structure
+            payload = {
+                "current_processing_channel_id": primary_channel_id,
+                "channels": channels_payload,
+                "action_history": action_history_payload,
+                "system_status": {**world_state_data.system_status, "rate_limits": world_state_data.rate_limits},
+                "threads": threads_payload,
+                "pending_matrix_invites": world_state_data.pending_matrix_invites,
+                "recent_media_actions": world_state_data.get_recent_media_actions(),
+                "generated_media_library": world_state_data.generated_media_library[-10:],  # Reduced from 20
+                "current_time": time.time(),
+                "payload_stats": {
+                    "primary_channel": primary_channel_id,
+                    "detailed_channels": detailed_count
+                    + (1 if primary_channel_id in channels_payload else 0),
+                    "summary_channels": len(sorted_channels)
+                    - detailed_count
+                    - (1 if primary_channel_id in channels_payload else 0),
+                    "total_channels": len(sorted_channels),
+                    "included_messages": sum(
+                        len(ch.get("recent_messages", []))
+                        for ch in channels_payload.values()
+                        if "recent_messages" in ch
+                    ),
+                    "bot_identity": {"fid": bot_fid, "username": bot_username},
+                    "pending_invites_count": len(world_state_data.pending_matrix_invites),
+                },
+            }
+        
+        return payload
 
     def build_node_based_payload(
         self,
@@ -462,38 +548,70 @@ class PayloadBuilder:
                 if user.memory_entries:
                     paths.append(f"{base_path}.memories")
         
-        # Tool cache nodes
-        if world_state_data.tool_cache:
+        # Optimized tool cache nodes - only include if substantial data exists
+        if world_state_data.tool_cache and len(world_state_data.tool_cache) > 1:
             paths.append("tools.cache")
-            # Add specific tool result nodes
+            # Only add specific tool nodes for frequently used tools
+            tool_counts = {}
             for cache_key in world_state_data.tool_cache.keys():
                 tool_name = cache_key.split(":")[0] if ":" in cache_key else cache_key
-                paths.append(f"tools.cache.{tool_name}")
+                tool_counts[tool_name] = tool_counts.get(tool_name, 0) + 1
+            
+            # Only include tools with multiple cached results
+            for tool_name, count in tool_counts.items():
+                if count > 1:  # Only include if multiple cached results
+                    paths.append(f"tools.cache.{tool_name}")
         
-        # Search cache nodes
-        if world_state_data.search_cache:
+        # Optimized search cache nodes - limit to recent searches
+        if world_state_data.search_cache and len(world_state_data.search_cache) > 0:
             paths.append("farcaster.search_cache")
-            for query_hash in world_state_data.search_cache.keys():
+            # Only include recent search hashes (limit to 3 most recent)
+            recent_searches = sorted(
+                world_state_data.search_cache.items(),
+                key=lambda x: x[1].get("timestamp", 0),
+                reverse=True
+            )[:3]
+            for query_hash, _ in recent_searches:
                 paths.append(f"farcaster.search_cache.{query_hash}")
         
-        # Memory bank nodes (organized by platform)
+        # Optimized memory bank nodes - only include platforms with significant memories
         if world_state_data.user_memory_bank:
-            paths.append("memory_bank")
-            for user_platform_id in world_state_data.user_memory_bank.keys():
+            platform_memory_counts = {}
+            for user_platform_id, memories in world_state_data.user_memory_bank.items():
                 platform = user_platform_id.split(":")[0] if ":" in user_platform_id else "unknown"
-                paths.append(f"memory_bank.{platform}")
+                platform_memory_counts[platform] = platform_memory_counts.get(platform, 0) + len(memories)
+            
+            # Only include memory bank if there are substantial memories
+            if sum(platform_memory_counts.values()) > 5:
+                paths.append("memory_bank")
+                for platform, count in platform_memory_counts.items():
+                    if count > 2:  # Only include platforms with multiple memories
+                        paths.append(f"memory_bank.{platform}")
         
-        # Thread nodes
-        for thread_id in world_state_data.threads:
-            paths.append(f"threads.farcaster.{thread_id}")
+        # Optimized thread nodes - limit to active threads only
+        if world_state_data.threads:
+            active_threads = []
+            current_time = time.time()
+            for thread_id, msgs in world_state_data.threads.items():
+                if msgs and msgs[-1].timestamp > (current_time - 7200):  # Active in last 2 hours
+                    active_threads.append(thread_id)
+            
+            # Only include recent active threads (limit to 3)
+            for thread_id in active_threads[:3]:
+                paths.append(f"threads.farcaster.{thread_id}")
         
-        # System nodes
+        # Essential system nodes only
         paths.extend([
-            "system.notifications",
             "system.rate_limits", 
-            "system.status",
-            "system.action_history"
+            "system.status"
         ])
+        
+        # Only include notifications if there are pending invites
+        if world_state_data.pending_matrix_invites:
+            paths.append("system.notifications")
+        
+        # Only include action history node for node system
+        paths.append("system.action_history")
         
         return paths
 
@@ -520,21 +638,21 @@ class PayloadBuilder:
                 if channel and channel.type == channel_type:
                     return {
                         "id": channel.id,
-                        "name": channel.name,
+                        "name": channel.name[:30] + "..." if len(channel.name) > 30 else channel.name,
                         "type": channel.type,
                         "status": channel.status,
                         "recent_messages": [
                             {
                                 "id": msg.id,
-                                "content": msg.content,
-                                "sender": msg.sender,
-                                "sender_username": msg.sender_username,
+                                "content": msg.content[:100] + "..." if len(msg.content) > 100 else msg.content,
+                                "sender": msg.sender_username or msg.sender,
                                 "timestamp": msg.timestamp,
-                                "image_urls": getattr(msg, 'image_urls', [])
+                                "has_images": bool(getattr(msg, 'image_urls', []))
                             }
-                            for msg in channel.recent_messages[-10:]  # Recent messages
+                            for msg in channel.recent_messages[-5:]  # Reduced from 10 to 5
                         ],
-                        "last_checked": channel.last_checked
+                        "msg_count": len(channel.recent_messages),
+                        "last_activity": channel.recent_messages[-1].timestamp if channel.recent_messages else channel.last_checked
                     }
             
             elif path_parts[0] == "users" and len(path_parts) >= 3:
@@ -554,27 +672,35 @@ class PayloadBuilder:
                             elif sub_node == "memories" and farcaster_user.memory_entries:
                                 return [asdict(memory) for memory in farcaster_user.memory_entries[-5:]]
                         
-                        # Return main user info
-                        user_data = asdict(farcaster_user)
+                        # Return compact user data
+                        user_data = {
+                            "fid": farcaster_user.fid,
+                            "username": farcaster_user.username,
+                            "display_name": farcaster_user.display_name,
+                            "follower_count": farcaster_user.follower_count,
+                            "power_badge": farcaster_user.power_badge
+                        }
                         # Truncate bio for display
-                        if user_data.get("bio") and len(user_data["bio"]) > 75:
-                            user_data["bio"] = user_data["bio"][:75] + "..."
+                        if farcaster_user.bio and len(farcaster_user.bio) > 50:
+                            user_data["bio"] = farcaster_user.bio[:50] + "..."
+                        elif farcaster_user.bio:
+                            user_data["bio"] = farcaster_user.bio
                         return user_data
                     else:
-                        # Fallback to extracting from messages
+                        # Fallback - compact extraction from messages
                         user_info = {"type": user_type, "id": user_id}
                         for channel in world_state_data.channels.values():
-                            for msg in channel.recent_messages[-5:]:
+                            for msg in channel.recent_messages[-3:]:  # Reduced from 5 to 3
                                 if str(msg.sender_fid) == user_id:
                                     bio = msg.sender_bio
-                                    if bio and len(bio) > 75:
-                                        bio = bio[:75] + "..."
+                                    if bio and len(bio) > 50:
+                                        bio = bio[:50] + "..."
                                     user_info.update({
                                         "username": msg.sender_username,
                                         "display_name": msg.sender_display_name,
                                         "fid": msg.sender_fid,
                                         "follower_count": msg.sender_follower_count,
-                                        "bio_snippet": bio if bio else None
+                                        "bio": bio if bio else None
                                     })
                                     break
                         return user_info
@@ -588,15 +714,19 @@ class PayloadBuilder:
                             if sub_node == "sentiment" and matrix_user.sentiment:
                                 return asdict(matrix_user.sentiment)
                             elif sub_node == "memories" and matrix_user.memory_entries:
-                                return [asdict(memory) for memory in matrix_user.memory_entries[-5:]]
+                                return [asdict(memory) for memory in matrix_user.memory_entries[-3:]]  # Reduced from 5 to 3
                         
-                        # Return main user info
-                        return asdict(matrix_user)
+                        # Return compact user info
+                        return {
+                            "user_id": matrix_user.user_id,
+                            "display_name": matrix_user.display_name,
+                            "avatar_url": matrix_user.avatar_url
+                        }
                     else:
-                        # Fallback to extracting from messages
+                        # Fallback - compact extraction from messages
                         user_info = {"type": user_type, "id": user_id}
                         for channel in world_state_data.channels.values():
-                            for msg in channel.recent_messages[-5:]:
+                            for msg in channel.recent_messages[-3:]:  # Reduced from 5 to 3
                                 if msg.sender_username == user_id:
                                     user_info.update({
                                         "username": msg.sender_username,
@@ -608,37 +738,42 @@ class PayloadBuilder:
             elif path_parts[0] == "tools" and len(path_parts) >= 2:
                 if path_parts[1] == "cache":
                     if len(path_parts) == 2:
-                        # Return overview of cached tools
+                        # Return compact overview of cached tools
                         tool_summary = {}
-                        for cache_key, cache_data in world_state_data.tool_cache.items():
+                        for cache_key, cache_data in list(world_state_data.tool_cache.items())[:10]:  # Limit to 10 entries
                             tool_name = cache_key.split(":")[0] if ":" in cache_key else cache_key
                             if tool_name not in tool_summary:
                                 tool_summary[tool_name] = {
                                     "count": 0,
-                                    "most_recent": 0,
-                                    "examples": []
+                                    "most_recent": 0
                                 }
                             tool_summary[tool_name]["count"] += 1
                             tool_summary[tool_name]["most_recent"] = max(
                                 tool_summary[tool_name]["most_recent"],
                                 cache_data.get("timestamp", 0)
                             )
-                            if len(tool_summary[tool_name]["examples"]) < 3:
-                                tool_summary[tool_name]["examples"].append(cache_key)
                         return {
                             "cached_tools": tool_summary,
-                            "total_cache_entries": len(world_state_data.tool_cache)
+                            "total_entries": len(world_state_data.tool_cache)
                         }
                     elif len(path_parts) == 3:
-                        # Return cached results for specific tool
+                        # Return compact cached results for specific tool
                         tool_name = path_parts[2]
                         tool_results = {}
+                        count = 0
                         for cache_key, cache_data in world_state_data.tool_cache.items():
-                            if cache_key.startswith(f"{tool_name}:"):
-                                tool_results[cache_key] = cache_data
+                            if cache_key.startswith(f"{tool_name}:") and count < 3:  # Limit to 3 results
+                                # Return only essential cache data
+                                tool_results[cache_key] = {
+                                    "timestamp": cache_data.get("timestamp"),
+                                    "result_type": cache_data.get("result_type"),
+                                    "size": len(str(cache_data)) if cache_data else 0
+                                }
+                                count += 1
                         return {
                             "tool_name": tool_name,
-                            "cached_results": tool_results
+                            "cached_results": tool_results,
+                            "total_cached": count
                         }
             
             elif path_parts[0] == "memory_bank":
