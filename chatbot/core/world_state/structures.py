@@ -368,6 +368,9 @@ class WorldStateData:
         self.bot_media_on_farcaster: Dict[
             str, Dict[str, Any]
         ] = {}  # cast_hash -> media_info
+        # Aliases
+        self.pending_invites = self.pending_matrix_invites
+        # action_history already exists
         # Pending invites alias
         # pending_matrix_invites: List[Dict] already defined
 

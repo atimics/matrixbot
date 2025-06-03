@@ -130,7 +130,7 @@ class GenerateImageTool(ToolInterface):
                                 context.world_state_manager.add_action_result(
                                     action_type="generate_image",
                                     parameters={"prompt": prompt, "aspect_ratio": aspect_ratio},
-                                    result=f"Generated image using {service_used}, uploaded to S3: {s3_url}"
+                                    result=s3_url
                                 )
 
                                 # Record in generated media library
@@ -201,7 +201,7 @@ class GenerateImageTool(ToolInterface):
                         context.world_state_manager.add_action_result(
                             action_type="generate_image",
                             parameters={"prompt": prompt, "aspect_ratio": aspect_ratio},
-                            result=f"Generated image using {service_used}, uploaded to S3: {result['s3_image_url']}"
+                            result=s3_url
                         )
 
                         # Record in generated media library

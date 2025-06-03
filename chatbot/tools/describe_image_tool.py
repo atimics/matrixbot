@@ -8,7 +8,6 @@ import httpx
 from ..config import (  # To access OPENROUTER_API_KEY and OPENROUTER_MULTIMODAL_MODEL
     settings,
 )
-from ..tools.s3_service import s3_service
 from .base import ActionContext, ToolInterface
 
 logger = logging.getLogger(__name__)
@@ -16,102 +15,58 @@ logger = logging.getLogger(__name__)
 
 async def ensure_publicly_accessible_image_url(image_url: str, context: ActionContext) -> str:
     """
-    Ensure the image URL is publicly accessible. If it's a Matrix URL,
-    download it and upload to S3 to make it accessible to external services.
-    
-    Args:
-        image_url: The original image URL
-        context: Action context containing Matrix client if needed
-        
-    Returns:
-        A publicly accessible image URL
+    Ensure the image URL is publicly accessible.
+    For Matrix URLs, download via nio client and upload to S3.
     """
-    # Check if it's a Matrix URL that needs to be made public
-    if "/_matrix/media/" in image_url or image_url.startswith("mxc://"):
-        logger.info(f"Converting Matrix URL to public S3 URL: {image_url}")
-        
-        try:
-            # First, try using the Matrix client's nio download method if available
-            if context.matrix_observer and hasattr(context.matrix_observer, 'client'):
-                matrix_client = context.matrix_observer.client
-                if matrix_client:
-                    try:
-                        # For MXC URIs, use them directly with nio client
-                        if image_url.startswith("mxc://"):
-                            download_response = await matrix_client.download(image_url)
-                        else:
-                            # Extract MXC URI from HTTP URL if possible
-                            # Example: https://chat.ratimics.com/_matrix/media/r0/download/chat.ratimics.com/CouMhkYwsXDOMYWPjqOSzRgk
-                            # becomes: mxc://chat.ratimics.com/CouMhkYwsXDOMYWPjqOSzRgk
-                            parts = image_url.split("/")
-                            if len(parts) >= 2:
-                                server_name = parts[-2]
-                                media_id = parts[-1]
-                                mxc_uri = f"mxc://{server_name}/{media_id}"
-                                download_response = await matrix_client.download(mxc_uri)
-                            else:
-                                raise Exception("Cannot extract MXC URI from HTTP URL")
-                        
-                        if hasattr(download_response, "body") and download_response.body:
-                            # Upload to S3
-                            filename = "matrix_image.jpg"
-                            if hasattr(download_response, "content_type"):
-                                if "png" in download_response.content_type.lower():
-                                    filename = "matrix_image.png"
-                                elif "gif" in download_response.content_type.lower():
-                                    filename = "matrix_image.gif"
-                                elif "webp" in download_response.content_type.lower():
-                                    filename = "matrix_image.webp"
-                            
-                            s3_url = await s3_service.upload_image_data(download_response.body, filename)
-                            if s3_url:
-                                logger.info(f"Successfully uploaded Matrix image to S3 via nio client: {s3_url}")
-                                return s3_url
-                        else:
-                            logger.warning(f"Matrix nio client download failed for {image_url}")
-                    except Exception as nio_error:
-                        logger.warning(f"Matrix nio client download failed: {nio_error}")
-                        # Fall through to HTTP method
-            
-            # Fallback: try HTTP download with authentication
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                headers = {}
-                if context.matrix_observer and hasattr(context.matrix_observer, 'client'):
-                    matrix_client = context.matrix_observer.client
-                    if matrix_client and matrix_client.access_token:
-                        if image_url.startswith("mxc://"):
-                            # Convert MXC to HTTP URL first
-                            http_url = await matrix_client.mxc_to_http(image_url)
-                            if http_url:
-                                image_url = http_url
-                        
-                        # Add Matrix auth header
-                        headers["Authorization"] = f"Bearer {matrix_client.access_token}"
-                
-                response = await client.get(image_url, headers=headers)
-                response.raise_for_status()
-                
-                # Extract filename from URL or use default
-                parsed_url = urlparse(image_url)
-                filename = parsed_url.path.split('/')[-1] or "matrix_image.jpg"
-                if not filename.endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')):
-                    filename += ".jpg"
-                
-                # Upload to S3
-                s3_url = await s3_service.upload_image_data(response.content, filename)
-                if s3_url:
-                    logger.info(f"Successfully uploaded Matrix image to S3 via HTTP: {s3_url}")
-                    return s3_url
-                else:
-                    logger.warning(f"Failed to upload Matrix image to S3, cannot process image")
-                    raise Exception("Image not accessible - Matrix URL returned 404 and S3 upload failed")
-                    
-        except Exception as e:
-            logger.error(f"Error converting Matrix URL to S3: {e}")
-            # Instead of returning the inaccessible URL, raise an exception
-            raise Exception(f"Cannot access Matrix image: {e}")
+    if not image_url.startswith("https://chat.ratimics.com/_matrix/media/"):
+        return image_url
     
-    # For non-Matrix URLs, return as-is
+    try:
+        # Extract server and media_id from Matrix URL
+        # https://chat.ratimics.com/_matrix/media/r0/download/chat.ratimics.com/fZEbZIjeCUtTYtFGJqnaxlru
+        parts = image_url.split('/')
+        if len(parts) >= 2:
+            server = parts[-2]  # chat.ratimics.com
+            media_id = parts[-1]  # fZEbZIjeCUtTYtFGJqnaxlru
+            mxc_uri = f"mxc://{server}/{media_id}"
+            
+            logger.info(f"Converting Matrix URL to MXC: {mxc_uri}")
+            
+            # Use Matrix client to download the media
+            if hasattr(context, 'matrix_observer') and context.matrix_observer:
+                try:
+                    # Check if client is authenticated
+                    if not context.matrix_observer.client.access_token:
+                        logger.warning(f"Matrix client not authenticated, cannot download {mxc_uri}")
+                        raise Exception("Matrix client not authenticated")
+                    
+                    # Use nio client's built-in download method with MXC URI
+                    download_response = await context.matrix_observer.client.download(mxc_uri)
+                    
+                    if download_response and hasattr(download_response, 'body'):
+                        # Upload to S3
+                        if hasattr(context, 's3_service') and context.s3_service:
+                            s3_url = await context.s3_service.upload_image_data(
+                                download_response.body,
+                                f"matrix_media_{media_id}.jpg"
+                            )
+                            logger.info(f"Successfully uploaded Matrix media to S3: {s3_url}")
+                            return s3_url
+                        else:
+                            logger.warning("No S3 service available")
+                    else:
+                        logger.error(f"Failed to download Matrix media: {mxc_uri}")
+                        
+                except Exception as e:
+                    logger.error(f"Error downloading Matrix media via nio client: {e}")
+            else:
+                logger.warning("No Matrix observer available for media download")
+                
+    except Exception as e:
+        logger.error(f"Error processing Matrix URL {image_url}: {e}")
+    
+    # If all else fails, return original URL
+    logger.warning(f"Could not convert Matrix URL to S3, returning original: {image_url}")
     return image_url
 
 
@@ -253,12 +208,11 @@ class DescribeImageTool(ToolInterface):
             }
             
             # Record this action result in world state for AI visibility
-            # Include metadata in the result string for the action history
-            result_with_metadata = f"Image description: {description} [Model: {openrouter_model}, URL: {image_url}]"
+            # Store the plain description as the result for action history
             context.world_state_manager.add_action_result(
                 action_type="describe_image",
-                parameters={"image_url": image_url, "prompt": prompt_text, "model_used": openrouter_model},
-                result=result_with_metadata
+                parameters={"image_url": image_url, "prompt": prompt_text},
+                result=description
             )
             
             return result
