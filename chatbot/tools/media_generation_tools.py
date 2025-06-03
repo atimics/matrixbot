@@ -53,7 +53,7 @@ class GenerateImageTool(ToolInterface):
         }
 
     async def execute(self, params: Dict[str, Any], context) -> Dict[str, Any]:
-        """Execute the image generation tool."""
+        """Execute the image generation tool and always post to Farcaster."""
         prompt = params.get("prompt", "")
         aspect_ratio = params.get("aspect_ratio", "1:1")
 
@@ -69,6 +69,7 @@ class GenerateImageTool(ToolInterface):
             # Try Google Gemini first, fallback to Replicate
             image_data = None
             service_used = None
+            s3_url = None
 
             if settings.GOOGLE_API_KEY:
                 try:
@@ -109,40 +110,10 @@ class GenerateImageTool(ToolInterface):
                                 "status": "error",
                                 "message": "Image generation requires S3 storage but S3 service is not available"
                             }
-                        
-                        # Ensure the image is uploaded to S3 and return CloudFront URL
                         try:
                             s3_url = await context.s3_service.ensure_s3_url(image_url)
-                            
                             if s3_url and context.s3_service.is_s3_url(s3_url):
-                                result = {
-                                    "status": "success",
-                                    "message": f"Generated image using {service_used} for prompt: {prompt[:50]}...",
-                                    "image_url": s3_url,  # Always S3/CloudFront URL
-                                    "s3_image_url": s3_url,  # Backward compatibility
-                                    "prompt_used": prompt,
-                                    "service_used": service_used,
-                                    "aspect_ratio": aspect_ratio,
-                                    "next_actions_suggestion": f"Use 'send_matrix_image' or 'send_farcaster_post' with image_s3_url parameter to share this image: {s3_url}"
-                                }
-
-                                # Record this action result in world state for AI visibility
-                                context.world_state_manager.add_action_result(
-                                    action_type="generate_image",
-                                    parameters={"prompt": prompt, "aspect_ratio": aspect_ratio},
-                                    result=s3_url
-                                )
-
-                                # Record in generated media library
-                                context.world_state_manager.record_generated_media(
-                                    media_url=s3_url,
-                                    media_type="image",
-                                    prompt=prompt,
-                                    service_used=service_used,
-                                    aspect_ratio=aspect_ratio
-                                )
-
-                                return result
+                                pass  # s3_url is set
                             else:
                                 logger.error(f"Failed to ensure image is on S3 - received: {s3_url}")
                                 return {
@@ -163,58 +134,22 @@ class GenerateImageTool(ToolInterface):
                         }
                 except Exception as e:
                     logger.error(f"Replicate image generation failed: {e}")
-                    # Continue to try other services or return error
 
             # If we have image data from Gemini, upload to S3
             if image_data:
-                # ALWAYS require S3 service for uploads - fail if not available
                 if not hasattr(context, "s3_service"):
                     logger.error("S3 service not available - image generation requires S3 storage")
                     return {
                         "status": "error",
                         "message": "Image generation requires S3 storage but S3 service is not available"
                     }
-                
                 try:
-                    # Generate a filename
                     timestamp = int(time.time())
                     filename = f"generated_image_{timestamp}.png"
-
-                    # Upload to S3
                     s3_url = await context.s3_service.upload_image_data(
                         image_data, filename
                     )
-
-                    if s3_url:
-                        result = {
-                            "status": "success",
-                            "message": f"Generated image using {service_used} for prompt: {prompt[:50]}...",
-                            "image_url": s3_url,  # Always S3/CloudFront URL
-                            "s3_image_url": s3_url,  # Backward compatibility
-                            "prompt_used": prompt,
-                            "service_used": service_used,
-                            "aspect_ratio": aspect_ratio,
-                            "next_actions_suggestion": f"Use 'send_matrix_image' or 'send_farcaster_post' with image_s3_url parameter to share this image: {s3_url}"
-                        }
-
-                        # Record this action result in world state for AI visibility
-                        context.world_state_manager.add_action_result(
-                            action_type="generate_image",
-                            parameters={"prompt": prompt, "aspect_ratio": aspect_ratio},
-                            result=s3_url
-                        )
-
-                        # Record in generated media library
-                        context.world_state_manager.record_generated_media(
-                            media_url=s3_url,
-                            media_type="image",
-                            prompt=prompt,
-                            service_used=service_used,
-                            aspect_ratio=aspect_ratio
-                        )
-
-                        return result
-                    else:
+                    if not s3_url:
                         logger.error("Failed to upload image data to S3")
                         return {
                             "status": "error",
@@ -227,10 +162,56 @@ class GenerateImageTool(ToolInterface):
                         "message": f"Image generated but S3 upload failed: {str(e)}"
                     }
 
-            return {
-                "status": "error",
-                "message": "Failed to generate image with available services (Google Gemini and/or Replicate)",
+            if not s3_url:
+                return {
+                    "status": "error",
+                    "message": "Failed to generate image with available services (Google Gemini and/or Replicate)",
+                }
+
+            # Record this action result in world state for AI visibility
+            context.world_state_manager.add_action_result(
+                action_type="generate_image",
+                parameters={"prompt": prompt, "aspect_ratio": aspect_ratio},
+                result=s3_url
+            )
+
+            # Record in generated media library
+            context.world_state_manager.record_generated_media(
+                media_url=s3_url,
+                media_type="image",
+                prompt=prompt,
+                service_used=service_used,
+                aspect_ratio=aspect_ratio
+            )
+
+            # --- Always post to Farcaster ---
+            try:
+                from chatbot.tools.farcaster_tools import SendFarcasterPostTool
+                farcaster_tool = SendFarcasterPostTool()
+                farcaster_params = {
+                    "content": f"[AI Image] {prompt[:100]}",
+                    "image_s3_url": s3_url
+                }
+                # Optionally, add channel if available in params
+                if "channel" in params:
+                    farcaster_params["channel"] = params["channel"]
+                farcaster_result = await farcaster_tool.execute(farcaster_params, context)
+            except Exception as farcaster_exc:
+                logger.error(f"Failed to auto-post image to Farcaster: {farcaster_exc}")
+                farcaster_result = {"status": "error", "message": f"Farcaster post failed: {str(farcaster_exc)}"}
+
+            result = {
+                "status": "success",
+                "message": f"Generated image using {service_used} for prompt: {prompt[:50]}...",
+                "image_url": s3_url,
+                "s3_image_url": s3_url,
+                "prompt_used": prompt,
+                "service_used": service_used,
+                "aspect_ratio": aspect_ratio,
+                "farcaster_post_result": farcaster_result,
+                "next_actions_suggestion": f"Use 'send_matrix_image' or 'send_farcaster_post' with image_s3_url parameter to share this image: {s3_url}"
             }
+            return result
 
         except Exception as e:
             logger.error(f"Image generation tool error: {e}")

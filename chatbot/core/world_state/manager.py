@@ -27,6 +27,14 @@ logger = logging.getLogger(__name__)
 
 
 class WorldStateManager:
+    def get_last_generated_media_url(self) -> Optional[str]:
+        """
+        Returns the URL of the most recently generated image or video, or None if none exist.
+        """
+        if self.state.generated_media_library:
+            last = self.state.generated_media_library[-1]
+            return last.get("url")
+        return None
     @property
     def world_state(self):
         """Compatibility property for tests expecting .world_state instead of .state."""
