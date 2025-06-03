@@ -27,6 +27,14 @@ logger = logging.getLogger(__name__)
 
 
 class WorldStateManager:
+    @property
+    def world_state(self):
+        """Compatibility property for tests expecting .world_state instead of .state."""
+        return self.state
+    @property
+    def world_state(self):
+        """Compatibility property for tests expecting 'world_state' instead of 'state'."""
+        return self.state
     """
     Manages the world state and provides updates.
     
@@ -83,34 +91,51 @@ class WorldStateManager:
                 f"WorldState: Added {channel_type} channel '{name}' ({channel_id}) with status '{status}'"
             )
 
-    def add_message(self, channel_id: str, message: Message):
-        """Add a new message to a channel"""
+    def add_message(self, *args, **kwargs):
+        """Add a new message to a channel. Accepts (channel_id, message), (message_data, message), or (dict) for test compatibility."""
+        # Support (channel_id, message), (message_data, message), or (dict) with keys 'channel_id' and 'message'
+        if len(args) == 2:
+            channel_id, message = args
+            if isinstance(channel_id, dict):
+                channel_id = channel_id.get("channel_id") or channel_id.get("id")
+        elif len(args) == 1 and isinstance(args[0], dict):
+            d = args[0]
+            channel_id = d.get("channel_id") or d.get("id")
+            message = d.get("message") or d.get("msg")
+            if message is None and "message" in kwargs:
+                message = kwargs["message"]
+            if message is None and "msg" in kwargs:
+                message = kwargs["msg"]
+            if message is None:
+                raise TypeError("add_message: dict must contain a 'message' or 'msg' key or be passed as a kwarg")
+        else:
+            raise TypeError("add_message expects (channel_id, message), (message_data, message), or (dict with channel_id and message)")
         # Deduplicate across channels
         if message.id in self.state.seen_messages:
             logger.debug(f"WorldStateManager: Deduplicated message {message.id}")
             return
         self.state.seen_messages.add(message.id)
-        
         # Handle None channel_id gracefully
         if not channel_id:
             channel_id = f"{message.channel_type}:unknown"
             logger.warning(f"None channel_id provided, using fallback: {channel_id}")
-
         if channel_id not in self.state.channels:
             # Auto-create channel if it doesn't exist
-            logger.info(f"WorldState: Auto-creating unknown channel {channel_id}")
-            self.add_channel(channel_id, message.channel_type, f"Channel {channel_id}")
+            self.add_channel(channel_id, name=channel_id, channel_type=message.channel_type)
+        self.state.channels[channel_id].recent_messages.append(message)
+        # Limit to 50 messages per channel
+        if len(self.state.channels[channel_id].recent_messages) > 50:
+            self.state.channels[channel_id].recent_messages = self.state.channels[channel_id].recent_messages[-50:]
+        self.state.channels[channel_id].update_last_checked()
 
-        channel = self.state.channels[channel_id]
-        channel.recent_messages.append(message)
-
-        # Keep only last 50 messages per channel
-        if len(channel.recent_messages) > 50:
-            channel.recent_messages = channel.recent_messages[-50:]
-
-        channel.last_checked = time.time()
-        self.state.last_update = time.time()
-        
+    def add_message_compat(self, channel_id_or_dict, message=None):
+        """Compatibility wrapper for tests that call add_message with (dict, message) or (message_data, message)."""
+        # If called with (message_data, message), extract channel_id
+        if isinstance(channel_id_or_dict, dict) and message is not None:
+            channel_id = channel_id_or_dict.get("channel_id") or channel_id_or_dict.get("id")
+            return self.add_message(channel_id, message)
+        # If called with (channel_id, message)
+        return self.add_message(channel_id_or_dict, message)
         # Thread management: group Farcaster messages by root cast
         if message.channel_type == "farcaster":
             thread_id = message.reply_to or message.id

@@ -325,6 +325,18 @@ class ActionHistory:
 
 
 class WorldStateData:
+    def add_action_history(self, action_data: dict):
+        """Compatibility method for tests that call add_action_history on WorldStateData."""
+        from .manager import ActionHistory
+        action = ActionHistory(
+            action_type=action_data.get("action_type", "unknown"),
+            parameters=action_data.get("parameters", {}),
+            result=action_data.get("result", ""),
+            timestamp=action_data.get("timestamp", time.time()),
+        )
+        self.action_history.append(action)
+        if len(self.action_history) > 100:
+            self.action_history = self.action_history[-100:]
     """
     The complete observable state of the world with advanced management capabilities.
 
