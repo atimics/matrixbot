@@ -445,8 +445,12 @@ class WorldStateData:
         self.channels[channel_id] = ch
         self.last_update = time.time()
 
-    def add_message(self, message: Message):
-        """Add a message to the world state, deduplicating and managing channel history."""
+    def add_message(self, message):
+        """Add a message to the world state, deduplicating and managing channel history. Accepts Message or dict."""
+        from .structures import Message
+        # Convert dict to Message if needed
+        if isinstance(message, dict):
+            message = Message(**message)
         # Deduplicate
         if message.id in self.seen_messages:
             return

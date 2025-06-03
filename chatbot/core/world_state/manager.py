@@ -93,7 +93,8 @@ class WorldStateManager:
 
     def add_message(self, *args, **kwargs):
         """Add a new message to a channel. Accepts (channel_id, message), (message_data, message), or (dict) for test compatibility."""
-        # Support (channel_id, message), (message_data, message), or (dict) with keys 'channel_id' and 'message'
+        from .structures import Message
+        # Accept (channel_id, message), (message_data, message), or (dict) with keys 'channel_id' and 'message'
         if len(args) == 2:
             channel_id, message = args
             if isinstance(channel_id, dict):
@@ -106,10 +107,15 @@ class WorldStateManager:
                 message = kwargs["message"]
             if message is None and "msg" in kwargs:
                 message = kwargs["msg"]
-            if message is None:
-                raise TypeError("add_message: dict must contain a 'message' or 'msg' key or be passed as a kwarg")
+            # If the dict itself is a message dict, treat it as the message
+            if message is None and all(k in d for k in ("id", "sender", "content", "timestamp", "channel_type")):
+                message = d
         else:
             raise TypeError("add_message expects (channel_id, message), (message_data, message), or (dict with channel_id and message)")
+
+        # Convert dict to Message if needed
+        if isinstance(message, dict):
+            message = Message(**message)
         # Deduplicate across channels
         if message.id in self.state.seen_messages:
             logger.debug(f"WorldStateManager: Deduplicated message {message.id}")
@@ -117,11 +123,11 @@ class WorldStateManager:
         self.state.seen_messages.add(message.id)
         # Handle None channel_id gracefully
         if not channel_id:
-            channel_id = f"{message.channel_type}:unknown"
+            channel_id = message.channel_id or f"{message.channel_type}:unknown"
             logger.warning(f"None channel_id provided, using fallback: {channel_id}")
         if channel_id not in self.state.channels:
             # Auto-create channel if it doesn't exist
-            self.add_channel(channel_id, name=channel_id, channel_type=message.channel_type)
+            self.add_channel(channel_id, channel_type=message.channel_type, name=channel_id)
         self.state.channels[channel_id].recent_messages.append(message)
         # Limit to 50 messages per channel
         if len(self.state.channels[channel_id].recent_messages) > 50:
@@ -223,9 +229,32 @@ class WorldStateManager:
         for key, value in updates.items():
             logger.info(f"WorldState: System status update - {key}: {value}")
 
-    def get_observation_data(self, lookback_seconds: int = 300) -> Dict[str, Any]:
-        """Get current world state data for AI observation"""
+    def get_observation_data(self, channels_or_lookback=None, lookback_seconds: int = 300) -> Dict[str, Any]:
+        """Get current world state data for AI observation
+        
+        Args:
+            channels_or_lookback: Either a list of channel IDs to filter, or lookback_seconds for backward compatibility
+            lookback_seconds: Time window for recent activity (default 300 seconds)
+        """
+        # Handle backward compatibility: if first arg is int, treat as lookback_seconds
+        if isinstance(channels_or_lookback, int):
+            lookback_seconds = channels_or_lookback
+            channels_filter = None
+        elif isinstance(channels_or_lookback, list):
+            channels_filter = channels_or_lookback
+        else:
+            channels_filter = None
+            
         observation = self.state.get_recent_activity(lookback_seconds)
+        
+        # Filter channels if specified
+        if channels_filter and "channels" in observation:
+            filtered_channels = {
+                ch_id: ch_data for ch_id, ch_data in observation["channels"].items()
+                if ch_id in channels_filter
+            }
+            observation["channels"] = filtered_channels
+        
         # Include thread context for AI to follow conversation threads
         observation["threads"] = {
             thread_id: [msg.__dict__ for msg in msgs]
@@ -291,9 +320,11 @@ class WorldStateManager:
         """
         for action in self.state.action_history:
             if action.action_type == "send_farcaster_reply":
-                reply_to_hash = action.parameters.get("reply_to_hash")
-                if reply_to_hash == cast_hash:
-                    # Only count as replied if it was actually successful, not just scheduled
+                params = action.parameters or {}
+                # Accept both 'reply_to_hash' and 'cast_hash' as valid keys
+                reply_to_hash = params.get("reply_to_hash")
+                cast_hash_param = params.get("cast_hash")
+                if (reply_to_hash == cast_hash or cast_hash_param == cast_hash):
                     if action.result not in ["scheduled", "failure"]:
                         return True
         return False

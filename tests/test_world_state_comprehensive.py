@@ -8,8 +8,9 @@ from unittest.mock import Mock, patch, MagicMock
 from chatbot.core.world_state import (
     WorldState, 
     WorldStateManager, 
-    Message, 
-    Channel, 
+    WorldStateData,
+    Message,
+    Channel,
     ActionHistory
 )
 
@@ -128,7 +129,7 @@ class TestWorldStateComprehensive:
 
     def test_world_state_cleanup_old_messages(self):
         """Test cleanup of old messages"""
-        world_state = WorldState()
+        world_state = WorldStateData()
         world_state.add_channel("test_channel", "matrix", "Test Channel")
         
         # Add more than 50 messages to trigger cleanup
@@ -138,7 +139,8 @@ class TestWorldStateComprehensive:
                 sender="user1",
                 content=f"Message {i}",
                 timestamp=time.time() - (55 - i),  # Older messages have lower timestamps
-                channel_type="matrix"
+                channel_type="matrix",
+                channel_id="test_channel"  # Ensure channel_id is set
             )
             world_state.add_message(msg)
         
