@@ -379,6 +379,9 @@ class WorldStateData:
 
         # Initialize timestamp tracking
         self.last_update = time.time()
+        # Backward compatibility placeholders
+        self.user_details: Dict[str, Any] = {}
+        self.bot_media: Dict[str, Any] = {}  # alias for bot_media_on_farcaster
 
     def get_state_metrics(self) -> Dict[str, Any]:
         """
@@ -398,6 +401,128 @@ class WorldStateData:
             "media_library_size": len(self.generated_media_library),
             "last_update": self.last_update
         }
+    # Backward-compatible methods for direct WorldState usage
+    def add_channel(self, channel_id: str, channel_type: str, name: str, status: str = "active"):
+        """Add a new channel to the world state."""
+        ch = Channel(
+            id=channel_id,
+            type=channel_type,
+            name=name,
+            recent_messages=[],
+            last_checked=time.time(),
+            status=status,
+            last_status_update=time.time(),
+        )
+        self.channels[channel_id] = ch
+        self.last_update = time.time()
+
+    def add_message(self, message: Message):
+        """Add a message to the world state, deduplicating and managing channel history."""
+        # Deduplicate
+        if message.id in self.seen_messages:
+            return
+        self.seen_messages.add(message.id)
+        # Determine channel_id
+        chan_id = message.channel_id or f"{message.channel_type}:unknown"
+        # Auto-create channel if missing
+        if chan_id not in self.channels:
+            self.add_channel(chan_id, message.channel_type, chan_id)
+        ch = self.channels[chan_id]
+        ch.recent_messages.append(message)
+        # Keep only last 50
+        if len(ch.recent_messages) > 50:
+            ch.recent_messages = ch.recent_messages[-50:]
+        self.last_update = time.time()
+        # Thread management
+        if message.channel_type == "farcaster":
+            thread_id = message.reply_to or message.id
+            self.threads.setdefault(thread_id, []).append(message)
+
+    def get_recent_messages(self, channel_id: str, limit: int = 10) -> List[Message]:
+        """Get up to `limit` most recent messages for a channel."""
+        ch = self.channels.get(channel_id)
+        if not ch:
+            return []
+        return ch.recent_messages[-limit:]
+
+    def has_replied_to_cast(self, cast_hash: str) -> bool:
+        """Check if a Farcaster reply action exists for the given cast_hash."""
+        for action in self.action_history:
+            if action.action_type == "send_farcaster_reply" and action.result not in ["scheduled", "failure"]:
+                # support multiple parameter keys
+                params = action.parameters or {}
+                if cast_hash in params.values():
+                    return True
+        return False
+
+    def set_rate_limits(self, key: str, limits: Dict[str, Any]):
+        """Set rate limit info for a service."""
+        self.rate_limits[key] = limits
+
+    def get_rate_limits(self, key: str) -> Optional[Dict[str, Any]]:
+        """Get rate limit info for a service."""
+        return self.rate_limits.get(key)
+
+    def add_pending_invite(self, invite_info: Dict[str, Any]):
+        """Add a pending Matrix invite."""
+        # Use pending_matrix_invites list
+        room = invite_info.get("room_id")
+        if room:
+            self.pending_matrix_invites.append(invite_info)
+            self.last_update = time.time()
+
+    def remove_pending_invite(self, room_id: str) -> bool:
+        """Remove a pending Matrix invite by room_id."""
+        original = len(self.pending_matrix_invites)
+        self.pending_matrix_invites = [inv for inv in self.pending_matrix_invites if inv.get("room_id") != room_id]
+        removed = len(self.pending_matrix_invites) < original
+        if removed:
+            self.last_update = time.time()
+        return removed
+
+    def track_bot_media(self, cast_hash: str, media_info: Dict[str, Any]):
+        """Record tracking info for bot media engagement."""
+        self.bot_media_on_farcaster[cast_hash] = media_info
+        # Maintain alias
+        self.bot_media = self.bot_media_on_farcaster
+        self.last_update = time.time()
+
+    def add_action(self, action: ActionHistory):
+        """Add an action to history with a default limit of 10 entries."""
+        self.action_history.append(action)
+        # Keep only last 10
+        if len(self.action_history) > 10:
+            self.action_history = self.action_history[-10:]
+        self.last_update = time.time()
+
+    def to_dict_for_ai(self, include_channels: List[str] = None, max_messages_per_channel: int = None, message_limit_per_channel: int = None, max_actions: int = None) -> Dict[str, Any]:
+        """Convert world state to AI-friendly dict with optional limits."""
+        data: Dict[str, Any] = {}
+        # Channels
+        data["channels"] = {}
+        # Determine message limit
+        limit = message_limit_per_channel or max_messages_per_channel
+        for cid, ch in self.channels.items():
+            if include_channels and cid not in include_channels:
+                continue
+            msgs = ch.recent_messages
+            if limit is not None:
+                msgs = msgs[-limit:]
+            data["channels"][cid] = {
+                "recent_messages": [asdict(msg) for msg in msgs]
+            }
+        # Action history
+        actions = self.action_history
+        if max_actions is not None:
+            actions = actions[-max_actions:]
+        data["action_history"] = [asdict(act) for act in actions]
+        # Recent media actions
+        data["recent_media_actions"] = self.get_recent_media_actions()
+        return data
+
+    def get_observation_data(self) -> Dict[str, Any]:
+        """Alias for to_dict, for backward compatibility with direct world state use."""
+        return self.to_dict()
 
     def get_all_messages(self) -> List[Message]:
         """Get all messages from all channels"""
@@ -432,6 +557,9 @@ class WorldStateData:
                 thread_id: [asdict(msg) for msg in msgs]
                 for thread_id, msgs in self.threads.items()
             },
+            "rate_limits": self.rate_limits,
+            "pending_invites": self.pending_matrix_invites,
+            "recent_activity": self.get_recent_activity(),
         }
 
     def get_recent_activity(self, lookback_seconds: int = 300) -> Dict[str, Any]:
