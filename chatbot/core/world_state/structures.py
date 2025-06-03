@@ -621,6 +621,7 @@ class WorldStateData:
                     "name": ch.name,
                     "type": ch.type,
                     "message_count": len(ch.recent_messages),
+                    "recent_messages": [asdict(msg) for msg in ch.recent_messages],
                 }
                 for id, ch in self.channels.items()
             },

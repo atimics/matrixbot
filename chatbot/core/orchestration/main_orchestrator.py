@@ -337,7 +337,35 @@ class MainOrchestrator:
         if hasattr(self.processing_hub, 'traditional_processor') and self.processing_hub.traditional_processor:
             await self.processing_hub.traditional_processor._execute_actions([action])
         else:
-            logger.warning("No traditional processor available")
+            logger.warning("No traditional processor available, executing action directly")
+            # For test compatibility, execute matrix actions directly
+            if action.action_type in ["send_matrix_reply", "send_matrix_message"]:
+                await self._execute_matrix_action_directly(action)
+            else:
+                logger.warning(f"Cannot execute action type {action.action_type} without traditional processor")
+    
+    async def _execute_matrix_action_directly(self, action) -> None:
+        """Execute matrix actions directly for test compatibility."""
+        try:
+            from ...tools.matrix_tools import SendMatrixReplyTool, SendMatrixMessageTool
+            
+            # Update action context with matrix observer
+            self.action_context.matrix_observer = self.matrix_observer
+            
+            if action.action_type == "send_matrix_reply":
+                tool = SendMatrixReplyTool()
+            elif action.action_type == "send_matrix_message":
+                tool = SendMatrixMessageTool()
+            else:
+                logger.error(f"Unknown matrix action type: {action.action_type}")
+                return
+                
+            result = await tool.execute(action.parameters, self.action_context)
+            logger.info(f"Direct matrix action execution result: {result}")
+            
+        except Exception as e:
+            logger.error(f"Error executing matrix action directly: {str(e)}")
+            logger.exception(e)
 
     async def _process_channel(self, channel_id: str) -> None:
         """Process a specific channel - simplified implementation for tests."""

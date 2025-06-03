@@ -5,6 +5,7 @@ import logging
 import time
 from typing import Any, Dict
 
+from ..config import settings
 from ..utils.markdown_utils import format_for_matrix
 from .base import ActionContext, ToolInterface
 
@@ -88,6 +89,33 @@ class SendMatrixReplyTool(ToolInterface):
                     success_msg = f"Sent Matrix message (fallback from reply) to {room_id} (event: {event_id})"
                     logger.info(success_msg)
 
+                    # Record the sent message in world state for AI blindness fix
+                    if context.world_state_manager:
+                        from ..core.world_state.structures import Message
+                        bot_message = Message(
+                            id=event_id,
+                            channel_id=room_id,
+                            channel_type="matrix",
+                            sender=settings.MATRIX_USER_ID,
+                            content=content,
+                            timestamp=time.time(),
+                            reply_to=None  # This is a fallback message, not a reply
+                        )
+                        context.world_state_manager.add_message(room_id, bot_message)
+                        logger.debug(f"Recorded sent Matrix fallback message in world state: {event_id}")
+
+                    # Record the sent message in context manager for AI blindness fix
+                    if context.context_manager:
+                        assistant_message = {
+                            "event_id": event_id,
+                            "sender": settings.MATRIX_USER_ID,
+                            "content": content,
+                            "timestamp": time.time(),
+                            "type": "assistant"
+                        }
+                        await context.context_manager.add_assistant_message(room_id, assistant_message)
+                        logger.debug(f"Recorded sent Matrix fallback message in context manager: {event_id}")
+
                     return {
                         "status": "success",
                         "message": success_msg,
@@ -134,6 +162,33 @@ class SendMatrixReplyTool(ToolInterface):
                 event_id = result.get("event_id", "unknown")
                 success_msg = f"Sent Matrix reply to {room_id} (event: {event_id})"
                 logger.info(success_msg)
+
+                # Record the sent message in world state for AI blindness fix
+                if context.world_state_manager:
+                    from ..core.world_state.structures import Message
+                    bot_message = Message(
+                        id=event_id,
+                        channel_id=room_id,
+                        channel_type="matrix",
+                        sender=settings.MATRIX_USER_ID,  # Use bot user ID from settings
+                        content=content,
+                        timestamp=time.time(),
+                        reply_to=reply_to_event_id
+                    )
+                    context.world_state_manager.add_message(room_id, bot_message)
+                    logger.debug(f"Recorded sent Matrix reply in world state: {event_id}")
+
+                # Record the sent message in context manager for AI blindness fix
+                if context.context_manager:
+                    assistant_message = {
+                        "event_id": event_id,
+                        "sender": settings.MATRIX_USER_ID,
+                        "content": content,
+                        "timestamp": time.time(),
+                        "type": "assistant"
+                    }
+                    await context.context_manager.add_assistant_message(room_id, assistant_message)
+                    logger.debug(f"Recorded sent Matrix reply in context manager: {event_id}")
 
                 return {
                     "status": "success",
@@ -226,6 +281,36 @@ class SendMatrixMessageTool(ToolInterface):
                 event_id = result.get("event_id", "unknown")
                 success_msg = f"Sent Matrix message to {room_id} (event: {event_id})"
                 logger.info(success_msg)
+
+                # Record the sent message in world state for AI blindness fix
+                if context.world_state_manager:
+                    from ..core.world_state.structures import Message
+                    bot_message = Message(
+                        id=event_id,
+                        channel_id=room_id,
+                        channel_type="matrix",
+                        sender=settings.MATRIX_USER_ID,
+                        content=content,
+                        timestamp=time.time(),
+                        reply_to=None  # This is a regular message, not a reply
+                    )
+                    context.world_state_manager.add_message(room_id, bot_message)
+                    logger.debug(f"Recorded sent Matrix message in world state: {event_id}")
+
+                # Record the sent message in context manager for AI blindness fix
+                if context.context_manager:
+                    assistant_message = {
+                        "content": content,
+                        "sender": settings.MATRIX_USER_ID,
+                        "timestamp": time.time(),
+                        "event_id": event_id,
+                        "channel_type": "matrix"
+                    }
+                    try:
+                        await context.context_manager.add_assistant_message(room_id, assistant_message)
+                        logger.debug(f"Recorded sent Matrix message in context manager: {event_id}")
+                    except Exception as e:
+                        logger.warning(f"Failed to record message in context manager: {e}")
 
                 return {
                     "status": "success",
