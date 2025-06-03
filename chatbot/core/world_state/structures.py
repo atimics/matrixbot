@@ -353,10 +353,10 @@ class MemoryEntry:
     Represents a specific memory or observation about a user.
     
     Attributes:
-        memory_id: Unique identifier for this memory entry
         user_platform_id: Platform-specific user identifier (e.g., "matrix:@user:server.com", "farcaster:fid:123")
         timestamp: Unix timestamp when this memory was created
         content: The core text content of the memory
+        memory_id: Unique identifier for this memory entry
         source_message_id: Optional ID of the message this memory relates to
         source_cast_hash: Optional Farcaster cast hash this memory relates to
         related_entities: List of related users, topics, or entities
@@ -364,10 +364,10 @@ class MemoryEntry:
         importance: Importance score from 0.0 to 1.0
         ai_summary: Optional AI-generated summary of this memory
     """
-    memory_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     user_platform_id: str
     timestamp: float
     content: str
+    memory_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     source_message_id: Optional[str] = None
     source_cast_hash: Optional[str] = None
     related_entities: List[str] = field(default_factory=list)
@@ -517,6 +517,14 @@ class WorldStateData:
         self.farcaster_users: Dict[str, FarcasterUserDetails] = {}  # fid -> user details
         self.matrix_users: Dict[str, MatrixUserDetails] = {}  # user_id -> user details
         self.user_memory_bank: Dict[str, List[MemoryEntry]] = {}  # user_platform_id -> memories
+        
+        # Tool result caching
+        self.tool_cache: Dict[str, Dict[str, Any]] = {}  # cache_key -> cached result
+        self.search_cache: Dict[str, Dict[str, Any]] = {}  # query_hash -> search results
+        
+        # Backward compatibility placeholders
+        self.user_details: Dict[str, Any] = {}
+        self.bot_media: Dict[str, Any] = {}  # alias for bot_media_on_farcaster
         
         # Tool result caching for persistent access
         self.tool_cache: Dict[str, Any] = {}  # Stores cached tool results

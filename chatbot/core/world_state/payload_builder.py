@@ -605,9 +605,103 @@ class PayloadBuilder:
                                     break
                         return user_info
             
-            elif path_parts[0] == "farcaster" and len(path_parts) >= 3:
+            elif path_parts[0] == "tools" and len(path_parts) >= 2:
+                if path_parts[1] == "cache":
+                    if len(path_parts) == 2:
+                        # Return overview of cached tools
+                        tool_summary = {}
+                        for cache_key, cache_data in world_state_data.tool_cache.items():
+                            tool_name = cache_key.split(":")[0] if ":" in cache_key else cache_key
+                            if tool_name not in tool_summary:
+                                tool_summary[tool_name] = {
+                                    "count": 0,
+                                    "most_recent": 0,
+                                    "examples": []
+                                }
+                            tool_summary[tool_name]["count"] += 1
+                            tool_summary[tool_name]["most_recent"] = max(
+                                tool_summary[tool_name]["most_recent"],
+                                cache_data.get("timestamp", 0)
+                            )
+                            if len(tool_summary[tool_name]["examples"]) < 3:
+                                tool_summary[tool_name]["examples"].append(cache_key)
+                        return {
+                            "cached_tools": tool_summary,
+                            "total_cache_entries": len(world_state_data.tool_cache)
+                        }
+                    elif len(path_parts) == 3:
+                        # Return cached results for specific tool
+                        tool_name = path_parts[2]
+                        tool_results = {}
+                        for cache_key, cache_data in world_state_data.tool_cache.items():
+                            if cache_key.startswith(f"{tool_name}:"):
+                                tool_results[cache_key] = cache_data
+                        return {
+                            "tool_name": tool_name,
+                            "cached_results": tool_results
+                        }
+            
+            elif path_parts[0] == "memory_bank":
+                if len(path_parts) == 1:
+                    # Return overview of memory bank
+                    memory_stats = {}
+                    for user_platform_id, memories in world_state_data.user_memory_bank.items():
+                        platform = user_platform_id.split(":")[0] if ":" in user_platform_id else "unknown"
+                        if platform not in memory_stats:
+                            memory_stats[platform] = {"users": 0, "total_memories": 0}
+                        memory_stats[platform]["users"] += 1
+                        memory_stats[platform]["total_memories"] += len(memories)
+                    return {
+                        "platform_breakdown": memory_stats,
+                        "total_users_with_memories": len(world_state_data.user_memory_bank)
+                    }
+                elif len(path_parts) == 2:
+                    # Return memories for specific platform
+                    platform = path_parts[1]
+                    platform_memories = {}
+                    for user_platform_id, memories in world_state_data.user_memory_bank.items():
+                        if user_platform_id.startswith(f"{platform}:"):
+                            platform_memories[user_platform_id] = [
+                                {
+                                    "memory_id": mem.memory_id,
+                                    "content": mem.content[:100] + "..." if len(mem.content) > 100 else mem.content,
+                                    "memory_type": mem.memory_type,
+                                    "importance": mem.importance,
+                                    "timestamp": mem.timestamp
+                                }
+                                for mem in memories[-3:]  # Recent memories
+                            ]
+                    return {
+                        "platform": platform,
+                        "user_memories": platform_memories
+                    }
+            
+            elif path_parts[0] == "farcaster" and len(path_parts) >= 2:
+                if path_parts[1] == "search_cache":
+                    if len(path_parts) == 2:
+                        # Return overview of search cache
+                        search_overview = {}
+                        for query_hash, search_data in world_state_data.search_cache.items():
+                            search_overview[query_hash] = {
+                                "query": search_data.get("query", "Unknown"),
+                                "channel_id": search_data.get("channel_id"),
+                                "result_count": search_data.get("result_count", 0),
+                                "timestamp": search_data.get("timestamp", 0)
+                            }
+                        return {
+                            "cached_searches": search_overview,
+                            "total_searches": len(world_state_data.search_cache)
+                        }
+                    elif len(path_parts) == 3:
+                        # Return specific search results
+                        query_hash = path_parts[2]
+                        search_data = world_state_data.search_cache.get(query_hash)
+                        if search_data:
+                            return search_data
+                        return {"error": f"Search cache not found for hash: {query_hash}"}
+                
                 # Handle farcaster.feeds.* nodes
-                if path_parts[1] == "feeds":
+                elif len(path_parts) >= 3 and path_parts[1] == "feeds":
                     feed_type = path_parts[2]
                     
                     if feed_type == "home":

@@ -229,6 +229,45 @@ Example for generation: User asks "Can you create an image of a futuristic robot
   "priority": 8
 }
 
+PERSISTENT TOOL RESULTS AND ENHANCED USER TRACKING:
+When you use information-gathering tools like `get_user_timeline`, `search_casts`, `get_trending_casts`, or `get_cast_by_url`, their results are now stored persistently in the world state for future reference:
+
+- Timeline data appears under user profiles: `users.farcaster.{fid}.timeline_cache`
+- Search results are cached for quick re-access: `farcaster.search_cache.{query_hash}`
+- Tool results are available under: `tools.cache.{tool_name}`
+- You can see cached data as new or updated nodes in the node-based world state
+
+This means:
+1. You can refer to previously fetched timeline data without re-fetching
+2. Search results persist across cycles for continued analysis
+3. Building knowledge over time about users and topics becomes possible
+4. Use the cached data to avoid redundant API calls when the information is still relevant
+
+USER SENTIMENT AND MEMORY TRACKING:
+The system now tracks enhanced user information:
+- **Sentiment Analysis**: User sentiment (positive/negative/neutral with scores) is tracked based on recent messages and visible in user profiles
+- **Memory Bank**: You can store and retrieve specific memories about users using tools like `store_user_memory` and `search_user_memories`
+- **Enhanced User Profiles**: Farcaster users now have persistent profiles with cached timeline data, sentiment, and memory entries
+
+Use this enhanced user context to:
+- Tailor your responses based on user sentiment and interaction history
+- Remember important details about ongoing conversations or user preferences
+- Build more personalized and contextual interactions over time
+- Reference previous interactions and build relationships
+
+Example memory storage:
+{
+  "action_type": "store_user_memory",
+  "parameters": {
+    "user_identifier": "123456",
+    "platform": "farcaster", 
+    "memory_text": "User is interested in AI development and prefers technical explanations",
+    "memory_type": "preference"
+  },
+  "reasoning": "Storing user preference for future interactions",
+  "priority": 6
+}
+
 RATE LIMIT AWARENESS:
 Check system_status.rate_limits before taking actions that use external APIs:
 - "farcaster_api": Neynar/Farcaster API limits
