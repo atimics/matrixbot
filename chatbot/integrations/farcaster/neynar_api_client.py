@@ -33,6 +33,13 @@ class NeynarAPIClient:
         self.bot_fid = bot_fid
         self.base_url = base_url or self.DEFAULT_BASE_URL
         self._client = httpx.AsyncClient(timeout=30.0)
+        
+        # Rate limit tracking
+        self.rate_limit_info = {
+            "limit": None,
+            "remaining": None, 
+            "reset": None
+        }
 
     def _get_headers(self, is_post: bool = False) -> Dict[str, str]:
         headers = {

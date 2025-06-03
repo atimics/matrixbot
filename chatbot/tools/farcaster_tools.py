@@ -1133,10 +1133,14 @@ class GetCastByUrlTool(ToolInterface):
     def parameters_schema(self) -> Dict[str, Any]:
         """Return the JSON schema for the tool parameters."""
         return {
-            "farcaster_url": {
-                "type": "string",
-                "description": "The cast URL (like https://warpcast.com/username/0x12345) or cast hash"
-            }
+            "type": "object",
+            "properties": {
+                "farcaster_url": {
+                    "type": "string",
+                    "description": "The cast URL (like https://warpcast.com/username/0x12345) or cast hash"
+                }
+            },
+            "required": ["farcaster_url"]
         }
 
     async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
