@@ -307,7 +307,14 @@ Follow Farcaster users.
     "name": "follow_farcaster_user",
     "description": "Follow a user on Farcaster",
     "parameters_schema": {
-        "fid": "number - Farcaster ID of user to follow"
+        "type": "object",
+        "properties": {
+            "fid": {
+                "type": "integer",
+                "description": "The Farcaster ID of the user to follow"
+            }
+        },
+        "required": ["fid"]
     }
 }
 ```
