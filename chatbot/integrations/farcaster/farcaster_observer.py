@@ -177,7 +177,6 @@ class FarcasterObserver:
                     include_trending=True,
                     include_home_feed=False,  # Already collected above if requested
                     include_notifications=False,  # Already collected above if requested
-                    include_dms=True,
                     trending_limit=world_state_trending_limit,
                 )
                 
@@ -300,29 +299,6 @@ class FarcasterObserver:
             logger.error(f"Error observing mentions/replies: {e}", exc_info=True)
             return []
 
-    async def _observe_direct_messages(self) -> List[Message]:
-        """Observe direct messages for the bot."""
-        if not self.api_client or not self.bot_fid:
-            logger.warning(
-                "DM observation skipped: API client or bot_fid not configured."
-            )
-            return []
-        logger.debug("Observing direct messages.")
-        try:
-            data = await self.api_client.get_direct_messages(fid=self.bot_fid)
-            # Convert DM data to messages - for now treat as special channel
-            return convert_api_casts_to_messages(
-                data.get("messages", []),  # DMs might use different structure
-                channel_id_prefix="farcaster:direct_messages",
-                cast_type_metadata="direct_message",
-                bot_fid=self.bot_fid,
-                last_check_time_for_filtering=self.last_check_time,
-                last_seen_hashes=self.last_seen_hashes,
-            )
-        except Exception as e:
-            logger.error(f"Error observing direct messages: {e}", exc_info=True)
-            return []
-
     async def _observe_trending_casts(self, limit: int = 10) -> List[Message]:
         """Observe trending casts for world state context."""
         if not self.api_client:
@@ -347,7 +323,6 @@ class FarcasterObserver:
         include_trending: bool = True,
         include_home_feed: bool = True,
         include_notifications: bool = True,
-        include_dms: bool = True,
         trending_limit: int = 10,
     ) -> Dict[str, List[Message]]:
         """
@@ -357,7 +332,6 @@ class FarcasterObserver:
         - trending: Recent trending casts
         - home: Home timeline messages
         - notifications: Notifications and mentions
-        - direct_messages: DMs and conversations
         """
         if not self.api_client:
             logger.warning("Cannot observe world state data: API client not initialized.")
@@ -381,11 +355,6 @@ class FarcasterObserver:
                 mention_messages = await self._observe_mentions()
                 world_state_data["notifications"] = notification_messages + mention_messages
                 logger.info(f"Collected {len(notification_messages + mention_messages)} notifications for world state")
-
-            if include_dms and self.bot_fid:
-                dm_messages = await self._observe_direct_messages()
-                world_state_data["direct_messages"] = dm_messages
-                logger.info(f"Collected {len(dm_messages)} DMs for world state")
 
         except Exception as e:
             logger.error(f"Error collecting world state data: {e}", exc_info=True)
@@ -456,10 +425,8 @@ class FarcasterObserver:
         return await self.api_client.unfollow_user(fid, self.signer_uuid)
 
     async def send_dm(self, fid: int, content: str) -> Dict[str, Any]:
-        """Send a direct message."""
-        if not self.api_client:
-            return {"success": False, "error": "API client not initialized"}
-        return await self.api_client.send_dm(fid, content, self.signer_uuid)
+        """Send a direct message - DEPRECATED: Farcaster DM API not supported."""
+        return {"success": False, "error": "Farcaster DM functionality is not supported by the API"}
 
     async def get_user_casts(
         self, user_identifier: str, limit: int = 10
@@ -777,7 +744,6 @@ class FarcasterObserver:
                     include_trending=True,
                     include_home_feed=True,
                     include_notifications=True,
-                    include_dms=True,
                     trending_limit=5,  # Keep smaller for regular collection
                 )
                 
@@ -818,7 +784,6 @@ class FarcasterObserver:
                 include_trending=True,
                 include_home_feed=True,
                 include_notifications=True,
-                include_dms=True,
                 trending_limit=10,  # Larger limit for manual collection
             )
             

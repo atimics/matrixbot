@@ -704,7 +704,7 @@ class UnfollowFarcasterUserTool(ToolInterface):
 
 class SendFarcasterDMTool(ToolInterface):
     """
-    Tool for sending a direct message (DM) to a Farcaster user.
+    Tool for sending a direct message (DM) to a Farcaster user - DEPRECATED.
     """
 
     @property
@@ -713,7 +713,7 @@ class SendFarcasterDMTool(ToolInterface):
 
     @property
     def description(self) -> str:
-        return "Send a direct message to a Farcaster user by FID."
+        return "DEPRECATED: Send a direct message to a Farcaster user by FID. DM functionality is not supported by the Farcaster API."
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
@@ -725,31 +725,11 @@ class SendFarcasterDMTool(ToolInterface):
     async def execute(
         self, params: Dict[str, Any], context: ActionContext
     ) -> Dict[str, Any]:
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
-        if not context.farcaster_observer:
-            err = "Farcaster integration not configured."
-            logger.error(err)
-            return {"status": "failure", "error": err, "timestamp": time.time()}
-        fid = params.get("fid")
-        content = params.get("content")
-        if fid is None or not content:
-            err = "Missing required parameters: fid and content"
-            logger.error(err)
-            return {"status": "failure", "error": err, "timestamp": time.time()}
-
-        # Strip markdown formatting for Farcaster
-        content = strip_markdown(content)
-        result = await context.farcaster_observer.send_dm(fid, content)
-        if result.get("success"):
-            return {
-                "status": "success",
-                "message_id": result.get("message_id"),
-                "timestamp": time.time(),
-            }
+        logger.info(f"Executing deprecated tool '{self.name}' with params: {params}")
         return {
-            "status": "failure",
-            "error": result.get("error"),
-            "timestamp": time.time(),
+            "status": "failure", 
+            "error": "Farcaster DM functionality is not supported by the API", 
+            "timestamp": time.time()
         }
 
 

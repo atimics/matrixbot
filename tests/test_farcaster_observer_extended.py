@@ -119,11 +119,10 @@ async def test_quote_and_like_methods(observer):
 
 @pytest.mark.asyncio
 async def test_follow_unfollow_and_dm_methods(observer):
-    """Test follow_user, unfollow_user, and send_dm observer methods"""
+    """Test follow_user, unfollow_user methods and deprecated send_dm method"""
     # Mock the API client methods directly
     observer.api_client.follow_user = AsyncMock(return_value={'success': True, 'fid': 999})
     observer.api_client.unfollow_user = AsyncMock(return_value={'success': True, 'fid': 999})
-    observer.api_client.send_dm = AsyncMock(return_value={'message': {'id': 'dm123'}})
 
     # Follow user
     out1 = await observer.follow_user(999)
@@ -133,6 +132,7 @@ async def test_follow_unfollow_and_dm_methods(observer):
     out2 = await observer.unfollow_user(999)
     assert out2['success'] is True and out2['fid'] == 999
 
-    # Send direct message
+    # Send direct message - now deprecated and returns failure
     out3 = await observer.send_dm(1000, 'Hello DM')
-    assert out3['message']['id'] == 'dm123'
+    assert out3['success'] is False
+    assert "not supported by the API" in out3['error']

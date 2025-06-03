@@ -186,19 +186,6 @@ class NeynarAPIClient:
         )
         return response.json()
 
-    async def send_direct_message(
-        self, signer_uuid: str, recipient_fid: int, text: str
-    ) -> Dict[str, Any]:
-        if not signer_uuid:
-            raise ValueError("signer_uuid is required to send a DM.")
-        payload = {
-            "signer_uuid": signer_uuid,
-            "recipient_fid": recipient_fid,
-            "text": text,
-        }
-        response = await self._make_request("POST", "/farcaster/dm", json_data=payload)
-        return response.json()
-
     async def search_casts_by_query(
         self, query: str, limit: int = 25, channel_id: Optional[str] = None
     ) -> Dict[str, Any]:
@@ -279,9 +266,8 @@ class NeynarAPIClient:
     async def send_dm(
         self, recipient_fid: int, text: str, signer_uuid: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Send a direct message."""
-        uuid = signer_uuid or self.signer_uuid
-        return await self.send_direct_message(uuid, recipient_fid, text)
+        """Send a direct message - DEPRECATED: Farcaster DM API not supported."""
+        raise NotImplementedError("Farcaster DM functionality is not supported by the API")
 
     async def quote_cast(
         self,
@@ -322,29 +308,11 @@ class NeynarAPIClient:
         """Get trending casts, optionally within a specific channel and timeframe."""
         return await self.get_trending_casts_feed(limit, channel_id)
 
-    async def get_direct_messages(
-        self, fid: str, limit: int = 25
-    ) -> Dict[str, Any]:
-        """Get direct messages for a user."""
-        params = {"fid": fid, "limit": limit}
-        response = await self._make_request(
-            "GET", "/farcaster/dm", params=params
-        )
-        return response.json()
-
     async def get_conversation_messages(
         self, fid: str, conversation_with_fid: str, limit: int = 25
     ) -> Dict[str, Any]:
-        """Get conversation messages between two users."""
-        params = {
-            "fid": fid,
-            "conversation_with": conversation_with_fid,
-            "limit": limit
-        }
-        response = await self._make_request(
-            "GET", "/farcaster/dm/conversation", params=params
-        )
-        return response.json()
+        """Get conversation messages between two users - DEPRECATED: DM functionality not supported."""
+        raise NotImplementedError("Farcaster DM conversation functionality is not supported by the API")
 
     async def close(self):
         await self._client.aclose()
