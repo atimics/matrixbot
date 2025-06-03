@@ -991,27 +991,34 @@ class SearchCastsTool(ToolInterface):
                     "type": "string",
                     "description": "Search query to find relevant casts"
                 },
+                "channel_id": {
+                    "type": "string",
+                    "description": "Optional Farcaster channel ID to scope the search"
+                },
                 "limit": {
                     "type": "integer",
-                    "description": "Maximum number of results to return (default: 10)",
+                    "description": "Maximum number of results to return",
                     "default": 10
                 }
             },
             "required": ["query"]
         }
 
-    async def execute(self, context: ActionContext, query: str, limit: int = 10) -> str:
-        """Execute the tool to search for casts."""
+    async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
+        """Execute the tool to search for casts with given parameters."""
+        query = params.get("query")
+        limit = params.get("limit", 10)
+        channel_id = params.get("channel_id")
+        if not query:
+            return {"status": "failure", "error": "Missing required parameter 'query'", "timestamp": time.time()}
         if not context.farcaster_observer:
-            return "❌ Farcaster observer not available"
-            
+            return {"status": "failure", "error": "Farcaster observer not available", "timestamp": time.time()}
         try:
-            # Search casts using the API client
-            if not context.farcaster_observer.api_client:
-                return "❌ Farcaster API client not initialized"
-                
+            if not getattr(context.farcaster_observer, 'api_client', None):
+                return {"status": "failure", "error": "Farcaster API client not initialized", "timestamp": time.time()}
             result = await context.farcaster_observer.api_client.search_casts(
-                query=query, 
+                query=query,
+                channel_id=channel_id,
                 limit=min(limit, 25)
             )
             
@@ -1030,18 +1037,22 @@ class SearchCastsTool(ToolInterface):
                         timestamp=time.time(),
                     )
                 
+                # Record action in world state
+                if context.world_state_manager:
+                    context.world_state_manager.add_action_result(
+                        action_type="search_casts",
+                        parameters={"query": query, "limit": limit, "channel_id": channel_id},
+                        result="success"
+                    )
                 return {
                     "status": "success",
                     "query": query,
-                    "cast_summaries": cast_summaries,
+                    "channel_id": channel_id,
+                    "casts": cast_summaries,
                     "timestamp": time.time(),
                 }
             else:
-                return {
-                    "status": "failure",
-                    "error": f"No casts found for query: {query}",
-                    "timestamp": time.time(),
-                }
+                return {"status": "failure", "error": f"No casts found for query: {query}", "timestamp": time.time()}
                 
         except Exception as e:
             logger.error(f"Error in SearchCastsTool: {e}", exc_info=True)
