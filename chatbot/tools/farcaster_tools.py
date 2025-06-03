@@ -897,6 +897,41 @@ class GetUserTimelineTool(ToolInterface):
                     _summarize_cast_for_ai(cast) for cast in result.get("casts", [])
                 ]
                 
+                # Store timeline data in world state for persistent access
+                if context.world_state_manager and result.get("user_info"):
+                    try:
+                        fid = result.get("user_info", {}).get("fid")
+                        if fid:
+                            timeline_cache_data = {
+                                "casts": cast_summaries,
+                                "last_fetched": time.time(),
+                                "fetched_by_tool": "get_user_timeline",
+                                "limit": limit,
+                                "query_params": {
+                                    "user_identifier": user_identifier,
+                                    "limit": limit
+                                }
+                            }
+                            
+                            # Update user details with cached timeline
+                            context.world_state_manager.update_farcaster_user_timeline_cache(
+                                str(fid), timeline_cache_data
+                            )
+                            
+                            # Also cache for general tool result retrieval
+                            params_key = f"{user_identifier}_{limit}"
+                            context.world_state_manager.cache_tool_result(
+                                "get_user_timeline", params_key, {
+                                    "casts": cast_summaries,
+                                    "user_info": result.get("user_info"),
+                                    "timestamp": time.time()
+                                }
+                            )
+                            
+                            logger.info(f"Cached timeline data for Farcaster user FID {fid}")
+                    except Exception as cache_error:
+                        logger.warning(f"Failed to cache timeline data: {cache_error}")
+                
                 return {
                     "status": "success",
                     "user_identifier": user_identifier,
@@ -1065,6 +1100,19 @@ class GetTrendingCastsTool(ToolInterface):
                         result="success",
                         timestamp=time.time(),
                     )
+                    
+                    # Cache trending results
+                    params_key = f"{channel_id or 'all'}_{timeframe_hours}_{limit}"
+                    context.world_state_manager.cache_tool_result(
+                        "get_trending_casts", params_key, {
+                            "casts": cast_summaries,
+                            "channel_id": channel_id,
+                            "timeframe_hours": timeframe_hours,
+                            "timestamp": time.time()
+                        }
+                    )
+                    logger.info(f"Cached trending casts for channel: {channel_id or 'all'}")
+                
                 return {
                     "status": "success",
                     "channel_id": channel_id,
@@ -1159,7 +1207,7 @@ class SearchCastsTool(ToolInterface):
                     summary = _summarize_cast_for_ai(cast)
                     cast_summaries.append(summary)
                 
-                # Record action in world state
+                # Record action in world state and cache results
                 if context.world_state_manager:
                     context.world_state_manager.add_action_result(
                         action_type="search_casts",
@@ -1167,6 +1215,36 @@ class SearchCastsTool(ToolInterface):
                         result="success",
                         timestamp=time.time(),
                     )
+                    
+                    # Cache search results for future reference
+                    import hashlib
+                    query_hash = hashlib.md5(f"{query}_{channel_id or 'all'}_{limit}".encode()).hexdigest()[:12]
+                    search_cache_data = {
+                        "query": query,
+                        "channel_id": channel_id,
+                        "casts": cast_summaries,
+                        "result_count": len(cast_summaries),
+                        "timestamp": time.time(),
+                        "fetched_by_tool": "search_casts"
+                    }
+                    
+                    # Store in search cache
+                    if query_hash not in context.world_state_manager.state.search_cache:
+                        context.world_state_manager.state.search_cache[query_hash] = {}
+                    context.world_state_manager.state.search_cache[query_hash] = search_cache_data
+                    
+                    # Also cache as general tool result
+                    params_key = f"{query}_{channel_id or 'all'}_{limit}"
+                    context.world_state_manager.cache_tool_result(
+                        "search_casts", params_key, {
+                            "casts": cast_summaries,
+                            "query": query,
+                            "channel_id": channel_id,
+                            "timestamp": time.time()
+                        }
+                    )
+                    
+                    logger.info(f"Cached search results for query: {query} (hash: {query_hash})")
                 
                 return {
                     "status": "success",
@@ -1244,7 +1322,7 @@ class GetCastByUrlTool(ToolInterface):
             if result.get("success") and result.get("cast"):
                 cast = result["cast"]
                 
-                # Record action in world state
+                # Record action in world state and cache result
                 if context.world_state_manager:
                     context.world_state_manager.add_action_result(
                         action_type="get_cast_by_url",
@@ -1252,6 +1330,18 @@ class GetCastByUrlTool(ToolInterface):
                         result="success",
                         timestamp=time.time(),
                     )
+                    
+                    # Cache the cast data for future reference
+                    import hashlib
+                    url_hash = hashlib.md5(farcaster_url.encode()).hexdigest()[:12]
+                    context.world_state_manager.cache_tool_result(
+                        "get_cast_by_url", url_hash, {
+                            "cast": cast,
+                            "url": farcaster_url,
+                            "timestamp": time.time()
+                        }
+                    )
+                    logger.info(f"Cached cast data for URL: {farcaster_url}")
                 
                 return {
                     "status": "success",

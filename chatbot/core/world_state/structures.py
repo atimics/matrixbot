@@ -7,9 +7,13 @@ This module defines the core data structures for the world state management syst
 - Channel: Communication channel/room with activity tracking
 - ActionHistory: Audit trail of bot actions
 - WorldStateData: Central data container (renamed from WorldState class)
+- SentimentData: User sentiment tracking
+- MemoryEntry: User memory bank entries
+- FarcasterUserDetails: Enhanced user information with caching
 """
 
 import time
+import uuid
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -324,6 +328,106 @@ class ActionHistory:
     action_id: Optional[str] = None  # Unique ID for tracking/updating scheduled actions
 
 
+@dataclass
+class SentimentData:
+    """
+    Tracks user sentiment based on their interactions.
+    
+    Attributes:
+        score: Sentiment score from -1.0 (very negative) to 1.0 (very positive)
+        label: Human-readable sentiment label (positive, negative, neutral)
+        last_updated: Unix timestamp of last sentiment update
+        confidence: Optional confidence score for the sentiment analysis
+        history: List of recent sentiment scores for trending analysis
+    """
+    score: float  # -1.0 to 1.0
+    label: str    # "positive", "negative", "neutral"
+    last_updated: float
+    confidence: Optional[float] = None
+    history: List[Dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass
+class MemoryEntry:
+    """
+    Represents a specific memory or observation about a user.
+    
+    Attributes:
+        memory_id: Unique identifier for this memory entry
+        user_platform_id: Platform-specific user identifier (e.g., "matrix:@user:server.com", "farcaster:fid:123")
+        timestamp: Unix timestamp when this memory was created
+        content: The core text content of the memory
+        source_message_id: Optional ID of the message this memory relates to
+        source_cast_hash: Optional Farcaster cast hash this memory relates to
+        related_entities: List of related users, topics, or entities
+        memory_type: Type of memory (observation, preference, fact, etc.)
+        importance: Importance score from 0.0 to 1.0
+        ai_summary: Optional AI-generated summary of this memory
+    """
+    memory_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    user_platform_id: str
+    timestamp: float
+    content: str
+    source_message_id: Optional[str] = None
+    source_cast_hash: Optional[str] = None
+    related_entities: List[str] = field(default_factory=list)
+    memory_type: str = "observation"  # observation, preference, fact, important_interaction
+    importance: float = 0.5  # 0.0 to 1.0
+    ai_summary: Optional[str] = None
+
+
+@dataclass
+class FarcasterUserDetails:
+    """
+    Enhanced Farcaster user information with caching capabilities.
+    
+    Attributes:
+        fid: Farcaster ID number
+        username: Farcaster username
+        display_name: Display name
+        bio: User biography
+        follower_count: Number of followers
+        following_count: Number of following
+        pfp_url: Profile picture URL
+        power_badge: Whether user has power badge
+        timeline_cache: Cached recent casts from user's timeline
+        last_timeline_fetch: Timestamp of last timeline fetch
+        sentiment: Current sentiment analysis for this user
+        memory_entries: List of memory entries for this user
+    """
+    fid: str
+    username: Optional[str] = None
+    display_name: Optional[str] = None
+    bio: Optional[str] = None
+    follower_count: Optional[int] = None
+    following_count: Optional[int] = None
+    pfp_url: Optional[str] = None
+    power_badge: bool = False
+    timeline_cache: Optional[Dict[str, Any]] = None  # Contains casts and metadata
+    last_timeline_fetch: Optional[float] = None
+    sentiment: Optional[SentimentData] = None
+    memory_entries: List[MemoryEntry] = field(default_factory=list)
+
+
+@dataclass
+class MatrixUserDetails:
+    """
+    Enhanced Matrix user information.
+    
+    Attributes:
+        user_id: Matrix user ID (@user:server.com)
+        display_name: Display name
+        avatar_url: Avatar URL
+        sentiment: Current sentiment analysis for this user
+        memory_entries: List of memory entries for this user
+    """
+    user_id: str
+    display_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    sentiment: Optional[SentimentData] = None
+    memory_entries: List[MemoryEntry] = field(default_factory=list)
+
+
 class WorldStateData:
     def add_action_history(self, action_data: dict):
         """Compatibility method for tests that call add_action_history on WorldStateData."""
@@ -408,6 +512,18 @@ class WorldStateData:
 
         # Initialize timestamp tracking
         self.last_update = time.time()
+        
+        # Enhanced user tracking with sentiment and memory
+        self.farcaster_users: Dict[str, FarcasterUserDetails] = {}  # fid -> user details
+        self.matrix_users: Dict[str, MatrixUserDetails] = {}  # user_id -> user details
+        self.user_memory_bank: Dict[str, List[MemoryEntry]] = {}  # user_platform_id -> memories
+        
+        # Tool result caching for persistent access
+        self.tool_cache: Dict[str, Any] = {}  # Stores cached tool results
+        
+        # Search result caching
+        self.search_cache: Dict[str, Dict[str, Any]] = {}  # query_hash -> search results
+        
         # Backward compatibility placeholders
         self.user_details: Dict[str, Any] = {}
         self.bot_media: Dict[str, Any] = {}  # alias for bot_media_on_farcaster

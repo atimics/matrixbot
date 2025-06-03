@@ -417,7 +417,7 @@ class PayloadBuilder:
                 "farcaster.feeds.trending"
             ])
         
-        # User nodes (from recent activity) 
+        # Enhanced user nodes with cached data
         user_fids = set()
         user_usernames = set()
         
@@ -428,11 +428,60 @@ class PayloadBuilder:
                 if msg.sender_username:
                     user_usernames.add(msg.sender_username)
         
+        # Add users from enhanced user tracking
+        for fid in world_state_data.farcaster_users.keys():
+            user_fids.add(fid)
+        
+        for user_id in world_state_data.matrix_users.keys():
+            user_usernames.add(user_id)
+        
+        # Create user node paths with enhanced data
         for fid in user_fids:
-            paths.append(f"users.farcaster.{fid}")
+            base_path = f"users.farcaster.{fid}"
+            paths.append(base_path)
+            
+            # Add sub-nodes for cached data
+            if fid in world_state_data.farcaster_users:
+                user = world_state_data.farcaster_users[fid]
+                if user.timeline_cache:
+                    paths.append(f"{base_path}.timeline_cache")
+                if user.sentiment:
+                    paths.append(f"{base_path}.sentiment")
+                if user.memory_entries:
+                    paths.append(f"{base_path}.memories")
         
         for username in user_usernames:
-            paths.append(f"users.matrix.{username}")
+            base_path = f"users.matrix.{username}"
+            paths.append(base_path)
+            
+            # Add sub-nodes for enhanced Matrix user data
+            if username in world_state_data.matrix_users:
+                user = world_state_data.matrix_users[username]
+                if user.sentiment:
+                    paths.append(f"{base_path}.sentiment")
+                if user.memory_entries:
+                    paths.append(f"{base_path}.memories")
+        
+        # Tool cache nodes
+        if world_state_data.tool_cache:
+            paths.append("tools.cache")
+            # Add specific tool result nodes
+            for cache_key in world_state_data.tool_cache.keys():
+                tool_name = cache_key.split(":")[0] if ":" in cache_key else cache_key
+                paths.append(f"tools.cache.{tool_name}")
+        
+        # Search cache nodes
+        if world_state_data.search_cache:
+            paths.append("farcaster.search_cache")
+            for query_hash in world_state_data.search_cache.keys():
+                paths.append(f"farcaster.search_cache.{query_hash}")
+        
+        # Memory bank nodes (organized by platform)
+        if world_state_data.user_memory_bank:
+            paths.append("memory_bank")
+            for user_platform_id in world_state_data.user_memory_bank.keys():
+                platform = user_platform_id.split(":")[0] if ":" in user_platform_id else "unknown"
+                paths.append(f"memory_bank.{platform}")
         
         # Thread nodes
         for thread_id in world_state_data.threads:
@@ -490,34 +539,71 @@ class PayloadBuilder:
             
             elif path_parts[0] == "users" and len(path_parts) >= 3:
                 user_type, user_id = path_parts[1], path_parts[2]
-                # Extract user info from recent messages
-                user_info = {"type": user_type, "id": user_id}
                 
-                # Collect user information from recent messages
-                for channel in world_state_data.channels.values():
-                    for msg in channel.recent_messages[-5:]:  # Recent messages
-                        if user_type == "farcaster" and str(msg.sender_fid) == user_id:
-                            # Compact user info for node data
-                            bio = msg.sender_bio
-                            if bio and len(bio) > 75:
-                                bio = bio[:75] + "..."
-                            
-                            user_info.update({
-                                "username": msg.sender_username,
-                                "display_name": msg.sender_display_name,
-                                "fid": msg.sender_fid,
-                                "follower_count": msg.sender_follower_count,
-                                "bio_snippet": bio if bio else None
-                            })
-                            break
-                        elif user_type == "matrix" and msg.sender_username == user_id:
-                            user_info.update({
-                                "username": msg.sender_username,
-                                "display_name": msg.sender_display_name
-                            })
-                            break
+                # Handle enhanced user data with sub-nodes
+                if user_type == "farcaster":
+                    farcaster_user = world_state_data.farcaster_users.get(user_id)
+                    if farcaster_user:
+                        # Check for sub-node requests
+                        if len(path_parts) == 4:
+                            sub_node = path_parts[3]
+                            if sub_node == "timeline_cache" and farcaster_user.timeline_cache:
+                                return farcaster_user.timeline_cache
+                            elif sub_node == "sentiment" and farcaster_user.sentiment:
+                                return asdict(farcaster_user.sentiment)
+                            elif sub_node == "memories" and farcaster_user.memory_entries:
+                                return [asdict(memory) for memory in farcaster_user.memory_entries[-5:]]
+                        
+                        # Return main user info
+                        user_data = asdict(farcaster_user)
+                        # Truncate bio for display
+                        if user_data.get("bio") and len(user_data["bio"]) > 75:
+                            user_data["bio"] = user_data["bio"][:75] + "..."
+                        return user_data
+                    else:
+                        # Fallback to extracting from messages
+                        user_info = {"type": user_type, "id": user_id}
+                        for channel in world_state_data.channels.values():
+                            for msg in channel.recent_messages[-5:]:
+                                if str(msg.sender_fid) == user_id:
+                                    bio = msg.sender_bio
+                                    if bio and len(bio) > 75:
+                                        bio = bio[:75] + "..."
+                                    user_info.update({
+                                        "username": msg.sender_username,
+                                        "display_name": msg.sender_display_name,
+                                        "fid": msg.sender_fid,
+                                        "follower_count": msg.sender_follower_count,
+                                        "bio_snippet": bio if bio else None
+                                    })
+                                    break
+                        return user_info
                 
-                return user_info
+                elif user_type == "matrix":
+                    matrix_user = world_state_data.matrix_users.get(user_id)
+                    if matrix_user:
+                        # Check for sub-node requests
+                        if len(path_parts) == 4:
+                            sub_node = path_parts[3]
+                            if sub_node == "sentiment" and matrix_user.sentiment:
+                                return asdict(matrix_user.sentiment)
+                            elif sub_node == "memories" and matrix_user.memory_entries:
+                                return [asdict(memory) for memory in matrix_user.memory_entries[-5:]]
+                        
+                        # Return main user info
+                        return asdict(matrix_user)
+                    else:
+                        # Fallback to extracting from messages
+                        user_info = {"type": user_type, "id": user_id}
+                        for channel in world_state_data.channels.values():
+                            for msg in channel.recent_messages[-5:]:
+                                if msg.sender_username == user_id:
+                                    user_info.update({
+                                        "username": msg.sender_username,
+                                        "display_name": msg.sender_display_name
+                                    })
+                                    break
+                        return user_info
             
             elif path_parts[0] == "farcaster" and len(path_parts) >= 3:
                 # Handle farcaster.feeds.* nodes

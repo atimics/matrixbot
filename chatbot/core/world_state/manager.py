@@ -21,7 +21,16 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
-from .structures import WorldStateData, Message, Channel, ActionHistory
+from .structures import (
+    WorldStateData, 
+    Message, 
+    Channel, 
+    ActionHistory,
+    SentimentData,
+    MemoryEntry,
+    FarcasterUserDetails,
+    MatrixUserDetails
+)
 
 logger = logging.getLogger(__name__)
 
@@ -608,3 +617,144 @@ class WorldStateManager:
             The WorldStateData instance managed by this manager
         """
         return self.state
+
+    # === Enhanced User Management ===
+    
+    def get_or_create_farcaster_user(self, fid: str) -> FarcasterUserDetails:
+        """Get or create a FarcasterUserDetails object for the given FID."""
+        fid_str = str(fid)
+        if fid_str not in self.state.farcaster_users:
+            self.state.farcaster_users[fid_str] = FarcasterUserDetails(fid=fid_str)
+            self.state.last_update = time.time()
+        return self.state.farcaster_users[fid_str]
+    
+    def get_or_create_matrix_user(self, user_id: str) -> MatrixUserDetails:
+        """Get or create a MatrixUserDetails object for the given user ID."""
+        if user_id not in self.state.matrix_users:
+            self.state.matrix_users[user_id] = MatrixUserDetails(user_id=user_id)
+            self.state.last_update = time.time()
+        return self.state.matrix_users[user_id]
+    
+    def update_user_sentiment(self, platform: str, user_identifier: str, sentiment_data: SentimentData):
+        """Update sentiment data for a user."""
+        try:
+            if platform == "farcaster":
+                user = self.get_or_create_farcaster_user(user_identifier)
+                user.sentiment = sentiment_data
+                logger.info(f"Updated sentiment for Farcaster user {user_identifier}: {sentiment_data.label} ({sentiment_data.score})")
+            elif platform == "matrix":
+                user = self.get_or_create_matrix_user(user_identifier)
+                user.sentiment = sentiment_data
+                logger.info(f"Updated sentiment for Matrix user {user_identifier}: {sentiment_data.label} ({sentiment_data.score})")
+            else:
+                logger.warning(f"Unknown platform for sentiment update: {platform}")
+                return
+                
+            self.state.last_update = time.time()
+        except Exception as e:
+            logger.error(f"Error updating user sentiment: {e}", exc_info=True)
+    
+    # === Memory Bank Management ===
+    
+    def add_user_memory(self, user_platform_id: str, memory_entry: MemoryEntry):
+        """Add a memory entry for a specific user."""
+        try:
+            if user_platform_id not in self.state.user_memory_bank:
+                self.state.user_memory_bank[user_platform_id] = []
+            
+            self.state.user_memory_bank[user_platform_id].append(memory_entry)
+            
+            # Keep only the most recent 100 memories per user to prevent bloat
+            if len(self.state.user_memory_bank[user_platform_id]) > 100:
+                # Sort by importance and recency, keep top 100
+                memories = self.state.user_memory_bank[user_platform_id]
+                memories.sort(key=lambda m: (m.importance, m.timestamp), reverse=True)
+                self.state.user_memory_bank[user_platform_id] = memories[:100]
+            
+            self.state.last_update = time.time()
+            logger.info(f"Added memory for user {user_platform_id}: {memory_entry.memory_type}")
+            
+        except Exception as e:
+            logger.error(f"Error adding user memory: {e}", exc_info=True)
+    
+    def get_user_memories(self, user_platform_id: str, limit: int = 10) -> List[MemoryEntry]:
+        """Get recent memories for a user."""
+        memories = self.state.user_memory_bank.get(user_platform_id, [])
+        # Sort by timestamp (most recent first)
+        sorted_memories = sorted(memories, key=lambda m: m.timestamp, reverse=True)
+        return sorted_memories[:limit]
+    
+    def search_user_memories(self, user_platform_id: str, query: str, top_k: int = 3) -> List[MemoryEntry]:
+        """Search memories for a user using simple keyword matching."""
+        memories = self.state.user_memory_bank.get(user_platform_id, [])
+        if not memories:
+            return []
+        
+        query_lower = query.lower()
+        scored_memories = []
+        
+        for memory in memories:
+            score = 0.0
+            content_lower = memory.content.lower()
+            
+            # Simple keyword matching - count keyword occurrences
+            for word in query_lower.split():
+                if word in content_lower:
+                    score += 1
+                # Boost for exact phrase match
+                if query_lower in content_lower:
+                    score += 2
+            
+            # Factor in memory importance
+            score *= memory.importance
+            
+            if score > 0:
+                scored_memories.append((score, memory))
+        
+        # Sort by score and return top_k
+        scored_memories.sort(key=lambda x: x[0], reverse=True)
+        return [memory for _, memory in scored_memories[:top_k]]
+    
+    # === Tool Result Caching ===
+    
+    def cache_tool_result(self, tool_name: str, params_key: str, result: Dict[str, Any]):
+        """Cache a tool result for later retrieval."""
+        cache_key = f"{tool_name}:{params_key}"
+        self.state.tool_cache[cache_key] = {
+            "result": result,
+            "timestamp": time.time(),
+            "tool_name": tool_name,
+            "params_key": params_key
+        }
+        
+        # Clean up old cache entries (keep only last 24 hours)
+        cutoff_time = time.time() - (24 * 3600)
+        keys_to_remove = [
+            key for key, value in self.state.tool_cache.items()
+            if value.get("timestamp", 0) < cutoff_time
+        ]
+        for key in keys_to_remove:
+            del self.state.tool_cache[key]
+        
+        self.state.last_update = time.time()
+        logger.debug(f"Cached tool result: {cache_key}")
+    
+    def get_cached_tool_result(self, tool_name: str, params_key: str, max_age_seconds: int = 3600) -> Optional[Dict[str, Any]]:
+        """Retrieve a cached tool result if it's still fresh."""
+        cache_key = f"{tool_name}:{params_key}"
+        cached = self.state.tool_cache.get(cache_key)
+        
+        if cached and (time.time() - cached["timestamp"]) < max_age_seconds:
+            return cached["result"]
+        return None
+    
+    def update_farcaster_user_timeline_cache(self, fid: str, timeline_data: Dict[str, Any]):
+        """Update the timeline cache for a Farcaster user."""
+        try:
+            user = self.get_or_create_farcaster_user(fid)
+            user.timeline_cache = timeline_data
+            user.last_timeline_fetch = time.time()
+            self.state.last_update = time.time()
+            logger.info(f"Updated timeline cache for Farcaster user {fid}")
+        except Exception as e:
+            logger.error(f"Error updating Farcaster user timeline cache: {e}", exc_info=True)
