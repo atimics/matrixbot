@@ -280,6 +280,67 @@ class S3Service:
 
         return ".jpg"
 
+    def generate_embeddable_url(
+        self, 
+        image_url: str, 
+        title: Optional[str] = None, 
+        description: Optional[str] = None
+    ) -> str:
+        """
+        Generate an embeddable page URL for use with Farcaster and other platforms
+        that support OG tag previews. This creates a shareable URL that will display
+        proper OG meta tags for the image.
+
+        Args:
+            image_url: The S3/CloudFront URL of the image
+            title: Optional title for the page
+            description: Optional description for the page
+
+        Returns:
+            Embeddable page URL that will show proper OG tags
+        """
+        try:
+            if not self.cloudfront_domain:
+                logger.warning("CLOUDFRONT_DOMAIN not set, returning image URL directly")
+                return image_url
+
+            # Create a simple page URL that will serve OG tags
+            # This assumes there's a frontend service that can serve OG tags for images
+            base_url = f"https://{self.cloudfront_domain}"
+            
+            # Extract the image path from the S3 URL
+            if image_url.startswith(base_url):
+                image_path = image_url.replace(base_url, "").lstrip("/")
+            else:
+                # If it's not our CloudFront URL, use the full URL as a parameter
+                image_path = image_url
+
+            # Create embeddable URL (this would need a corresponding frontend route)
+            embeddable_url = f"{base_url}/embed/image/{image_path}"
+            
+            # Add query parameters if provided
+            params = []
+            if title:
+                params.append(f"title={self._url_encode(title)}")
+            if description:
+                params.append(f"description={self._url_encode(description)}")
+            
+            if params:
+                embeddable_url += "?" + "&".join(params)
+
+            logger.info(f"Generated embeddable URL: {embeddable_url}")
+            return embeddable_url
+
+        except Exception as e:
+            logger.error(f"Error generating embeddable URL for {image_url}: {e}")
+            # Fallback to original image URL
+            return image_url
+
+    def _url_encode(self, text: str) -> str:
+        """Simple URL encoding for query parameters."""
+        import urllib.parse
+        return urllib.parse.quote(text, safe='')
+
 
 # Create a singleton instance
 s3_service = S3Service()

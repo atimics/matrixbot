@@ -1173,6 +1173,8 @@ class MatrixObserver:
             import httpx
             from urllib.parse import urlparse
             import mimetypes
+            import io
+            from PIL import Image
             
             # Determine filename if not provided
             if not filename:
@@ -1190,10 +1192,23 @@ class MatrixObserver:
                     logger.error(error_msg)
                     return {"success": False, "error": error_msg}
             
-            # Determine MIME type
+            # Determine MIME type and image dimensions
             mime_type, _ = mimetypes.guess_type(filename)
             if not mime_type or not mime_type.startswith('image/'):
                 mime_type = "image/jpeg"  # Default fallback
+            
+            # Extract image properties using Pillow
+            actual_mime_type = mime_type
+            width, height = None, None
+            try:
+                img = Image.open(io.BytesIO(image_data))
+                width, height = img.size
+                if img.format:
+                    actual_mime_type = Image.MIME.get(img.format.upper()) or mime_type
+                logger.info(f"Image properties: w={width}, h={height}, mime={actual_mime_type}")
+            except Exception as e:
+                logger.warning(f"Could not get image dimensions/MIME for {filename}: {e}")
+                actual_mime_type = mime_type
             
             # Get the file size for content-length
             file_size = len(image_data)
@@ -1201,7 +1216,7 @@ class MatrixObserver:
             # Upload the image to Matrix media repository
             upload_response = await self.client.upload(
                 data_provider=lambda got_429, got_timeouts: image_data,
-                content_type=mime_type,
+                content_type=actual_mime_type,
                 filename=filename,
                 filesize=file_size
             )
@@ -1228,15 +1243,20 @@ class MatrixObserver:
                 logger.error(error_msg)
                 return {"success": False, "error": error_msg}
             
-            # Create the image message content
+            # Create the image message content with proper info field
+            image_info = {
+                "mimetype": actual_mime_type,
+                "size": file_size,
+            }
+            if width and height:
+                image_info["w"] = width
+                image_info["h"] = height
+            
             message_content = {
                 "msgtype": "m.image",
                 "body": content or filename,
                 "url": upload_response.content_uri,
-                "info": {
-                    "mimetype": mime_type,
-                    "size": len(image_data),
-                }
+                "info": image_info
             }
             
             # Send the image message

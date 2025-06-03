@@ -72,7 +72,49 @@ class NeynarAPIClient:
             raise
 
     def _update_rate_limits(self, response: httpx.Response):
-        pass
+        """
+        Parse and store rate limit information from Neynar API response headers.
+        Neynar typically provides rate limit headers like:
+        - x-ratelimit-limit: The rate limit ceiling for that given request
+        - x-ratelimit-remaining: The number of requests left for the time window  
+        - x-ratelimit-reset: The remaining window before the rate limit resets
+        """
+        try:
+            # Standard rate limit headers (adjust based on Neynar's actual headers)
+            limit = response.headers.get("x-ratelimit-limit")
+            remaining = response.headers.get("x-ratelimit-remaining") 
+            reset = response.headers.get("x-ratelimit-reset")
+            
+            # Alternative header names Neynar might use
+            if not limit:
+                limit = response.headers.get("ratelimit-limit")
+            if not remaining:
+                remaining = response.headers.get("ratelimit-remaining")
+            if not reset:
+                reset = response.headers.get("ratelimit-reset")
+                
+            if limit:
+                self.rate_limit_info["limit"] = int(limit)
+            if remaining:
+                self.rate_limit_info["remaining"] = int(remaining)
+            if reset:
+                # Reset time could be timestamp or seconds from now
+                try:
+                    self.rate_limit_info["reset"] = int(reset)
+                except ValueError:
+                    pass
+                    
+            # Log rate limit info for monitoring
+            if any([limit, remaining, reset]):
+                logger.debug(f"Rate limit: {remaining}/{limit}, resets: {reset}")
+                
+                # Warn when approaching limits
+                if remaining and int(remaining) < 10:
+                    logger.warning(f"Approaching Neynar rate limit: {remaining} requests remaining")
+                    
+        except (ValueError, TypeError) as e:
+            logger.debug(f"Could not parse rate limit headers: {e}")
+            pass
 
     async def get_casts_by_fid(
         self, fid: int, limit: int = 25, include_replies: bool = True

@@ -105,6 +105,12 @@ class SendFarcasterPostTool(ToolInterface):
         # Strip markdown formatting for Farcaster
         content = strip_markdown(content)
 
+        # Truncate content if too long for Farcaster
+        MAX_FARCASTER_CONTENT_LENGTH = 320
+        if len(content) > MAX_FARCASTER_CONTENT_LENGTH:
+            content = content[:MAX_FARCASTER_CONTENT_LENGTH - 3] + "..."
+            logger.warning(f"Farcaster content truncated to {MAX_FARCASTER_CONTENT_LENGTH} chars.")
+
         # Prepare embeds for media attachments
         embeds = []
         media_type = None
@@ -282,6 +288,12 @@ class SendFarcasterReplyTool(ToolInterface):
 
         # Strip markdown formatting for Farcaster
         content = strip_markdown(content)
+
+        # Truncate content if too long for Farcaster
+        MAX_FARCASTER_CONTENT_LENGTH = 320
+        if len(content) > MAX_FARCASTER_CONTENT_LENGTH:
+            content = content[:MAX_FARCASTER_CONTENT_LENGTH - 3] + "..."
+            logger.warning(f"Farcaster reply content truncated to {MAX_FARCASTER_CONTENT_LENGTH} chars.")
 
         # Check if we've already replied to this cast
         if (
