@@ -349,8 +349,10 @@ class MainOrchestrator:
         try:
             from ...tools.matrix_tools import SendMatrixReplyTool, SendMatrixMessageTool
             
-            # Update action context with matrix observer
+            # Update action context with required components
             self.action_context.matrix_observer = self.matrix_observer
+            self.action_context.world_state_manager = self.world_state
+            self.action_context.context_manager = self.context_manager
             
             if action.action_type == "send_matrix_reply":
                 tool = SendMatrixReplyTool()
