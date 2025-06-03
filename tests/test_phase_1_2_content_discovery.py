@@ -275,7 +275,7 @@ class TestGetCastByUrlTool:
     def test_tool_properties(self, tool):
         assert tool.name == "get_cast_by_url"
         assert "url" in tool.description.lower()
-        assert "farcaster_url" in tool.parameters_schema
+        assert "farcaster_url" in tool.parameters_schema["properties"]
 
     @pytest.mark.asyncio
     async def test_execute_success(self, tool, mock_context, sample_cast_data):
