@@ -100,6 +100,15 @@ class WorldStateManager:
         logger.info(
             f"WorldState: New message in {channel.name}: {message.sender}: {message.content[:100]}..."
         )
+    
+    def add_messages(self, messages: List[Message]) -> None:
+        """Batch add multiple messages to the world state."""
+        for msg in messages:
+            # Use each message's channel_id when adding
+            try:
+                self.add_message(msg.channel_id, msg)
+            except Exception as e:
+                logger.error(f"WorldStateManager: Failed to add message {getattr(msg, 'id', None)}: {e}")
 
     def add_action_result(
         self,

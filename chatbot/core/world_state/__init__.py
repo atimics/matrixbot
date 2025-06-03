@@ -8,6 +8,7 @@ This package handles all aspects of world state management:
 """
 
 from .structures import Message, Channel, ActionHistory, WorldStateData
+from .structures import WorldStateData as WorldState  # Alias for backward compatibility
 from .manager import WorldStateManager
 from .payload_builder import PayloadBuilder
 
@@ -16,6 +17,7 @@ __all__ = [
     "Channel", 
     "ActionHistory",
     "WorldStateData",
+    "WorldState",  # Backward compatibility
     "WorldStateManager",
     "PayloadBuilder"
 ]

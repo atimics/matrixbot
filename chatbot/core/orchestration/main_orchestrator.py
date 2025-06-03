@@ -102,16 +102,17 @@ class MainOrchestrator:
         from ...tools.describe_image_tool import DescribeImageTool
         from ...tools.farcaster_tools import (
             FollowFarcasterUserTool,
-            GetCastByUrlTool,
-            GetTrendingCastsTool,
             GetUserTimelineTool,
             LikeFarcasterPostTool,
             QuoteFarcasterPostTool,
-            SearchCastsTool,
             SendFarcasterDMTool,
             SendFarcasterPostTool,
             SendFarcasterReplyTool,
             UnfollowFarcasterUserTool,
+            CollectWorldStateTool,
+            GetTrendingCastsTool,
+            SearchCastsTool,
+            GetCastByUrlTool,
         )
         from ...tools.matrix_tools import (
             AcceptMatrixInviteTool,
@@ -152,6 +153,7 @@ class MainOrchestrator:
         self.tool_registry.register_tool(SearchCastsTool())
         self.tool_registry.register_tool(GetTrendingCastsTool())
         self.tool_registry.register_tool(GetCastByUrlTool())
+        self.tool_registry.register_tool(CollectWorldStateTool())
         
         # Media generation tools
         self.tool_registry.register_tool(GenerateImageTool())

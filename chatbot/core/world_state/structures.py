@@ -58,11 +58,11 @@ class Message:
     """
 
     id: str
-    channel_id: str
     channel_type: str  # 'matrix' or 'farcaster'
     sender: str  # Display name for Matrix, username for Farcaster
     content: str
     timestamp: float
+    channel_id: Optional[str] = None  # Channel/room identifier where the message was posted
     reply_to: Optional[str] = None
 
     # Enhanced user information for social platforms like Farcaster
@@ -303,6 +303,7 @@ class ActionHistory:
     parameters: Dict[str, Any]
     result: str
     timestamp: float
+    metadata: Dict[str, Any] = field(default_factory=dict)
     action_id: Optional[str] = None  # Unique ID for tracking/updating scheduled actions
 
 
@@ -367,6 +368,8 @@ class WorldStateData:
         self.bot_media_on_farcaster: Dict[
             str, Dict[str, Any]
         ] = {}  # cast_hash -> media_info
+        # Pending invites alias
+        # pending_matrix_invites: List[Dict] already defined
 
         # Image library: Track AI-generated media for reuse and reference
         self.generated_media_library: List[Dict[str, Any]] = []

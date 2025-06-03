@@ -322,5 +322,29 @@ class NeynarAPIClient:
         """Get trending casts, optionally within a specific channel and timeframe."""
         return await self.get_trending_casts_feed(limit, channel_id)
 
+    async def get_direct_messages(
+        self, fid: str, limit: int = 25
+    ) -> Dict[str, Any]:
+        """Get direct messages for a user."""
+        params = {"fid": fid, "limit": limit}
+        response = await self._make_request(
+            "GET", "/farcaster/dm", params=params
+        )
+        return response.json()
+
+    async def get_conversation_messages(
+        self, fid: str, conversation_with_fid: str, limit: int = 25
+    ) -> Dict[str, Any]:
+        """Get conversation messages between two users."""
+        params = {
+            "fid": fid,
+            "conversation_with": conversation_with_fid,
+            "limit": limit
+        }
+        response = await self._make_request(
+            "GET", "/farcaster/dm/conversation", params=params
+        )
+        return response.json()
+
     async def close(self):
         await self._client.aclose()

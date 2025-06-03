@@ -4,8 +4,10 @@ Farcaster Observer (Refactored)
 
 Orchestrates Farcaster API, data conversion, and scheduling.
 """
+import asyncio
 import logging
 import time
+from dataclasses import asdict
 from typing import Any, Dict, List, Optional
 
 from ...core.world_state import Message
@@ -60,6 +62,12 @@ class FarcasterObserver:
         self.last_check_time = time.time()
         self.observed_channels = set()
         self.last_seen_hashes = set()
+        
+        # World state collection settings
+        self.world_state_collection_enabled = True
+        self.world_state_collection_interval = 300.0  # 5 minutes
+        self._world_state_task: Optional[Any] = None  # asyncio.Task
+        
         logger.info("Farcaster observer initialized (refactored)")
 
     async def start(self):
@@ -73,9 +81,25 @@ class FarcasterObserver:
             logger.info("Farcaster observer and scheduler started.")
         else:
             logger.info("Farcaster observer started (scheduler not available).")
+            
+        # Start world state collection loop if enabled
+        if self.world_state_collection_enabled and self.world_state_manager:
+            self._world_state_task = asyncio.create_task(self._world_state_collection_loop())
+            logger.info("World state collection loop started.")
 
     async def stop(self):
         logger.info("Stopping Farcaster observer...")
+        
+        # Stop world state collection task
+        if self._world_state_task and not self._world_state_task.done():
+            self._world_state_task.cancel()
+            try:
+                await self._world_state_task
+            except asyncio.CancelledError:
+                logger.info("World state collection task cancelled successfully.")
+            except Exception as e:
+                logger.error(f"Error during world state task cancellation: {e}")
+        
         if self.scheduler:
             await self.scheduler.stop()
         if self.api_client:
@@ -120,6 +144,8 @@ class FarcasterObserver:
         channels: Optional[List[str]] = None,
         include_notifications: bool = False,
         include_home_feed: bool = False,
+        include_world_state_data: bool = False,
+        world_state_trending_limit: int = 5,
     ) -> List[Message]:
         if not self.api_client:
             logger.warning("Cannot observe feeds: API client not initialized.")
@@ -143,6 +169,25 @@ class FarcasterObserver:
                 new_messages.extend(notification_messages)
                 mention_messages = await self._observe_mentions()
                 new_messages.extend(mention_messages)
+                
+            # Enhanced world state data collection
+            if include_world_state_data:
+                logger.info("Collecting enhanced world state data...")
+                world_state_data = await self.observe_world_state_data(
+                    include_trending=True,
+                    include_home_feed=False,  # Already collected above if requested
+                    include_notifications=False,  # Already collected above if requested
+                    include_dms=True,
+                    trending_limit=world_state_trending_limit,
+                )
+                
+                # Add world state data to messages and store in world state manager
+                for data_type, messages in world_state_data.items():
+                    new_messages.extend(messages)
+                    if self.world_state_manager and messages:
+                        logger.info(f"Storing {len(messages)} {data_type} messages in world state")
+                        self._store_world_state_data(data_type, messages)
+                        
             unique_messages_dict = {msg.id: msg for msg in new_messages}
             new_messages = list(unique_messages_dict.values())
             self.last_check_time = current_time
@@ -255,6 +300,98 @@ class FarcasterObserver:
             logger.error(f"Error observing mentions/replies: {e}", exc_info=True)
             return []
 
+    async def _observe_direct_messages(self) -> List[Message]:
+        """Observe direct messages for the bot."""
+        if not self.api_client or not self.bot_fid:
+            logger.warning(
+                "DM observation skipped: API client or bot_fid not configured."
+            )
+            return []
+        logger.debug("Observing direct messages.")
+        try:
+            data = await self.api_client.get_direct_messages(fid=self.bot_fid)
+            # Convert DM data to messages - for now treat as special channel
+            return convert_api_casts_to_messages(
+                data.get("messages", []),  # DMs might use different structure
+                channel_id_prefix="farcaster:direct_messages",
+                cast_type_metadata="direct_message",
+                bot_fid=self.bot_fid,
+                last_check_time_for_filtering=self.last_check_time,
+                last_seen_hashes=self.last_seen_hashes,
+            )
+        except Exception as e:
+            logger.error(f"Error observing direct messages: {e}", exc_info=True)
+            return []
+
+    async def _observe_trending_casts(self, limit: int = 10) -> List[Message]:
+        """Observe trending casts for world state context."""
+        if not self.api_client:
+            return []
+        logger.debug("Observing trending casts for world state.")
+        try:
+            data = await self.api_client.get_trending_casts(limit=limit)
+            return convert_api_casts_to_messages(
+                data.get("casts", []),
+                channel_id_prefix="farcaster:trending",
+                cast_type_metadata="trending_cast",
+                bot_fid=self.bot_fid,
+                last_check_time_for_filtering=self.last_check_time,
+                last_seen_hashes=self.last_seen_hashes,
+            )
+        except Exception as e:
+            logger.error(f"Error observing trending casts: {e}", exc_info=True)
+            return []
+
+    async def observe_world_state_data(
+        self,
+        include_trending: bool = True,
+        include_home_feed: bool = True,
+        include_notifications: bool = True,
+        include_dms: bool = True,
+        trending_limit: int = 10,
+    ) -> Dict[str, List[Message]]:
+        """
+        Collect comprehensive world state data for AI context.
+
+        Returns a dictionary with categorized message lists:
+        - trending: Recent trending casts
+        - home: Home timeline messages
+        - notifications: Notifications and mentions
+        - direct_messages: DMs and conversations
+        """
+        if not self.api_client:
+            logger.warning("Cannot observe world state data: API client not initialized.")
+            return {}
+
+        world_state_data = {}
+
+        try:
+            if include_trending:
+                trending_messages = await self._observe_trending_casts(limit=trending_limit)
+                world_state_data["trending"] = trending_messages
+                logger.info(f"Collected {len(trending_messages)} trending casts for world state")
+
+            if include_home_feed:
+                home_messages = await self._observe_home_feed()
+                world_state_data["home"] = home_messages
+                logger.info(f"Collected {len(home_messages)} home feed messages for world state")
+
+            if include_notifications and self.bot_fid:
+                notification_messages = await self._observe_notifications()
+                mention_messages = await self._observe_mentions()
+                world_state_data["notifications"] = notification_messages + mention_messages
+                logger.info(f"Collected {len(notification_messages + mention_messages)} notifications for world state")
+
+            if include_dms and self.bot_fid:
+                dm_messages = await self._observe_direct_messages()
+                world_state_data["direct_messages"] = dm_messages
+                logger.info(f"Collected {len(dm_messages)} DMs for world state")
+
+        except Exception as e:
+            logger.error(f"Error collecting world state data: {e}", exc_info=True)
+
+        return world_state_data
+
     # --- Direct Action Methods ---
 
     async def post_cast(
@@ -357,7 +494,7 @@ class FarcasterObserver:
             )
             return {
                 "success": True,
-                "casts": [msg.model_dump() for msg in messages],
+                "casts": [asdict(msg) for msg in messages],
                 "error": None,
             }
         except Exception as e:
@@ -387,7 +524,7 @@ class FarcasterObserver:
             )
             return {
                 "success": True,
-                "casts": [msg.model_dump() for msg in messages],
+                "casts": [asdict(msg) for msg in messages],
                 "error": None,
             }
         except Exception as e:
@@ -422,7 +559,7 @@ class FarcasterObserver:
             )
             return {
                 "success": True,
-                "casts": [msg.model_dump() for msg in messages],
+                "casts": [asdict(msg) for msg in messages],
                 "error": None,
             }
         except Exception as e:
@@ -481,7 +618,7 @@ class FarcasterObserver:
             )
             return {
                 "success": True,
-                "cast": message.model_dump() if message else None,
+                "cast": asdict(message) if message else None,
                 "error": None,
             }
         except Exception as e:
@@ -584,3 +721,124 @@ class FarcasterObserver:
             context["engagement_level"] = "low"
 
         return context
+
+    def _store_world_state_data(self, data_type: str, messages: List[Message]) -> None:
+        """Store categorized world state data in the world state manager."""
+        if not self.world_state_manager:
+            return
+            
+        try:
+            # Create a special channel for each data type
+            channel_id = f"farcaster:world_state_{data_type}"
+            
+            # Add messages to world state manager
+            for msg in messages:
+                # Update the channel_id to reflect the world state category
+                msg.channel_id = channel_id
+                
+            # Store messages in world state manager
+            for msg in messages:
+                try:
+                    # Ensure proper signature: channel_id and message
+                    self.world_state_manager.add_message(msg.channel_id, msg)
+                except Exception:
+                    # Log and continue on error
+                    logger.error(f"WorldStateManager: Failed to add message {getattr(msg, 'id', None)}", exc_info=True)
+                        
+            logger.debug(f"Stored {len(messages)} {data_type} messages in world state")
+            
+        except Exception as e:
+            logger.error(f"Error storing {data_type} world state data: {e}", exc_info=True)
+
+    async def _world_state_collection_loop(self) -> None:
+        """
+        Periodic collection of world state data for AI context.
+        
+        This loop runs in the background and regularly collects:
+        - Trending casts
+        - Home timeline updates  
+        - Direct messages
+        - Notifications and mentions
+        """
+        logger.info(f"Starting world state collection loop (interval: {self.world_state_collection_interval}s)")
+        
+        while True:
+            try:
+                await asyncio.sleep(self.world_state_collection_interval)
+                
+                if not self.world_state_manager:
+                    logger.warning("World state manager not available, skipping collection")
+                    continue
+                    
+                logger.debug("Collecting world state data...")
+                
+                # Collect comprehensive world state data
+                world_state_data = await self.observe_world_state_data(
+                    include_trending=True,
+                    include_home_feed=True,
+                    include_notifications=True,
+                    include_dms=True,
+                    trending_limit=5,  # Keep smaller for regular collection
+                )
+                
+                # Store the collected data
+                total_messages = 0
+                for data_type, messages in world_state_data.items():
+                    if messages:
+                        self._store_world_state_data(data_type, messages)
+                        total_messages += len(messages)
+                        
+                if total_messages > 0:
+                    logger.info(f"World state collection: stored {total_messages} messages across {len(world_state_data)} categories")
+                else:
+                    logger.debug("World state collection: no new messages found")
+                    
+            except asyncio.CancelledError:
+                logger.info("World state collection loop cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Error in world state collection loop: {e}", exc_info=True)
+                # Continue the loop despite errors
+                continue
+
+    async def collect_world_state_now(self) -> Dict[str, Any]:
+        """
+        Manually trigger immediate world state collection.
+        
+        Returns:
+            Dictionary with collection results and statistics
+        """
+        if not self.world_state_manager:
+            return {"error": "World state manager not available"}
+            
+        try:
+            logger.info("Manual world state collection triggered")
+            
+            world_state_data = await self.observe_world_state_data(
+                include_trending=True,
+                include_home_feed=True,
+                include_notifications=True,
+                include_dms=True,
+                trending_limit=10,  # Larger limit for manual collection
+            )
+            
+            results = {}
+            total_messages = 0
+            
+            for data_type, messages in world_state_data.items():
+                if messages:
+                    self._store_world_state_data(data_type, messages)
+                    results[data_type] = len(messages)
+                    total_messages += len(messages)
+                else:
+                    results[data_type] = 0
+                    
+            results["total_messages"] = total_messages
+            results["success"] = True
+            
+            logger.info(f"Manual world state collection complete: {total_messages} messages collected")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error in manual world state collection: {e}", exc_info=True)
+            return {"error": str(e), "success": False}

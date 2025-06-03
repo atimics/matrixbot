@@ -11,6 +11,50 @@ from ..utils.markdown_utils import strip_markdown
 logger = logging.getLogger(__name__)
 
 
+def _summarize_cast_for_ai(cast_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Create an AI-optimized summary of a cast, removing verbose metadata.
+
+    Args:
+        cast_data: Full cast data dictionary from asdict() conversion
+
+    Returns:
+        Compact cast summary suitable for AI context
+    """
+    # Extract essential information only
+    summary = {
+        "id": cast_data.get("id"),
+        "sender": cast_data.get("sender_username") or cast_data.get("sender"),
+        "content": cast_data.get("content", "")[:200] + "..." if len(cast_data.get("content", "")) > 200 else cast_data.get("content", ""),
+        "timestamp": cast_data.get("timestamp"),
+        "engagement": {
+            "likes": cast_data.get("metadata", {}).get("reactions", {}).get("likes_count", 0),
+            "recasts": cast_data.get("metadata", {}).get("reactions", {}).get("recasts_count", 0),
+            "replies": cast_data.get("metadata", {}).get("replies_count", 0)
+        },
+        "user_info": {
+            "username": cast_data.get("sender_username"),
+            "display_name": cast_data.get("sender_display_name"),
+            "followers": cast_data.get("sender_follower_count"),
+            "power_badge": cast_data.get("metadata", {}).get("power_badge", False)
+        }
+    }
+
+    # Add reply context if it's a reply
+    if cast_data.get("reply_to"):
+        summary["reply_to"] = cast_data.get("reply_to")
+
+    # Add channel if it's in a specific channel
+    channel_id = cast_data.get("channel_id", "")
+    if ":" in channel_id and not channel_id.endswith("_all"):
+        # Extract meaningful channel name (e.g., "farcaster:trending_all:chatbfg" -> "chatbfg")
+        parts = channel_id.split(":")
+        if len(parts) > 2:
+            summary["channel"] = parts[-1]
+
+    return summary
+
+
 class SendFarcasterPostTool(ToolInterface):
     """
     Tool for sending new posts to Farcaster.
@@ -136,10 +180,10 @@ class SendFarcasterPostTool(ToolInterface):
                 embed_urls.append(image_s3_url)
             if video_s3_url:
                 embed_urls.append(video_s3_url)
-                
+
             result = await context.farcaster_observer.post_cast(
-                content=content, 
-                channel=channel, 
+                content=content,
+                channel=channel,
                 embed_urls=embed_urls if embed_urls else None
             )
             logger.info(f"Farcaster observer post_cast returned: {result}")
@@ -692,7 +736,7 @@ class SendFarcasterDMTool(ToolInterface):
             err = "Missing required parameters: fid and content"
             logger.error(err)
             return {"status": "failure", "error": err, "timestamp": time.time()}
-        
+
         # Strip markdown formatting for Farcaster
         content = strip_markdown(content)
         result = await context.farcaster_observer.send_dm(fid, content)
@@ -771,12 +815,17 @@ class GetUserTimelineTool(ToolInterface):
                 logger.info(
                     f"Retrieved {len(result.get('casts', []))} casts for user {user_identifier}"
                 )
+                # Create AI-optimized summaries of the casts
+                cast_summaries = [
+                    _summarize_cast_for_ai(cast) for cast in result.get("casts", [])
+                ]
+                
                 return {
                     "status": "success",
                     "user_identifier": user_identifier,
-                    "casts": result.get("casts", []),
+                    "casts": cast_summaries,  # Use summarized data
                     "user_info": result.get("user_info"),
-                    "count": len(result.get("casts", [])),
+                    "count": len(cast_summaries),
                     "timestamp": time.time(),
                 }
             else:
@@ -790,232 +839,301 @@ class GetUserTimelineTool(ToolInterface):
                     "timestamp": time.time(),
                 }
         except Exception as e:
-            error_msg = f"Error fetching user timeline: {e}"
-            logger.exception(error_msg)
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+            logger.error(f"Error in GetUserTimelineTool: {e}", exc_info=True)
+            return {
+                "status": "failure", 
+                "error": str(e),
+                "timestamp": time.time(),
+            }
 
 
-class SearchCastsTool(ToolInterface):
-    """
-    Tool for searching Farcaster casts based on keywords.
-    """
-
+class CollectWorldStateTool(ToolInterface):
+    """Tool to manually trigger Farcaster world state collection."""
+    
     @property
     def name(self) -> str:
-        return "search_casts"
+        return "collect_farcaster_world_state"
 
     @property
     def description(self) -> str:
-        return "Search for casts on Farcaster using keywords. Optionally filter by channel. Use this to find relevant content or discussions."
+        return "Manually trigger collection of Farcaster world state data including trending casts, home timeline, DMs, and notifications for enhanced AI context"
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
+        """Return the JSON schema for the tool parameters."""
         return {
-            "query": "string - Search keywords or phrases to look for in casts",
-            "channel_id": "string (optional) - Channel ID to search within (e.g., 'dev', 'warpcast', 'base')",
-            "limit": "integer (optional) - Number of results to return (default: 10, max: 50)",
+            "type": "object",
+            "properties": {},
+            "required": []
         }
 
-    async def execute(
-        self, params: Dict[str, Any], context: ActionContext
-    ) -> Dict[str, Any]:
-        """
-        Execute the search casts action.
-        """
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
-
-        # Check if Farcaster integration is available
+    async def execute(self, context: ActionContext) -> str:
+        """Execute world state collection."""
         if not context.farcaster_observer:
-            error_msg = "Farcaster integration (observer) not configured."
-            logger.error(error_msg)
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
-
-        # Extract and validate parameters
-        query = params.get("query")
-        channel_id = params.get("channel_id")
-        limit = params.get("limit", 10)
-
-        if not query:
-            error_msg = "Missing required parameter 'query'"
-            logger.error(error_msg)
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
-
+            return "❌ Farcaster observer not available"
+            
         try:
-            limit = int(limit)
-            if limit < 1 or limit > 50:
-                limit = min(max(limit, 1), 50)  # Clamp to valid range
-        except (ValueError, TypeError):
-            limit = 10
-
-        try:
-            result = await context.farcaster_observer.search_casts(
-                query=query, channel_id=channel_id, limit=limit
-            )
-            logger.info(
-                f"Found {len(result.get('casts', []))} casts for query '{query}'"
-            )
-            return {
-                "status": "success",
-                "query": query,
-                "channel_id": channel_id,
-                "casts": result.get("casts", []),
-                "count": len(result.get("casts", [])),
-                "timestamp": time.time(),
-            }
+            results = await context.farcaster_observer.collect_world_state_now()
+            
+            if results.get("success"):
+                total = results.get("total_messages", 0)
+                breakdown = []
+                for data_type, count in results.items():
+                    if data_type not in ["total_messages", "success"] and count > 0:
+                        breakdown.append(f"{data_type}: {count}")
+                
+                summary = f"✅ Collected {total} messages"
+                if breakdown:
+                    summary += f" ({', '.join(breakdown)})"
+                    
+                return summary
+            else:
+                error = results.get("error", "Unknown error")
+                return f"❌ World state collection failed: {error}"
+                
         except Exception as e:
-            error_msg = f"Error searching casts: {e}"
-            logger.exception(error_msg)
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+            logger.error(f"Error in CollectWorldStateTool: {e}", exc_info=True)
+            return f"❌ Error collecting world state: {str(e)}"
 
 
 class GetTrendingCastsTool(ToolInterface):
-    """
-    Tool for fetching trending/popular casts from Farcaster.
-    """
-
-    @property
-    def name(self) -> str:
-        return "get_trending_casts"
-
-    @property
-    def description(self) -> str:
-        return "Get trending or popular casts from Farcaster based on engagement metrics. Optionally filter by channel and timeframe."
+    """Tool to get trending casts from Farcaster."""
+    
+    name = "get_trending_casts"
+    description = "Get trending casts from Farcaster to see what's popular on the platform"
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
+        """Return the JSON schema for the tool parameters."""
         return {
-            "channel_id": "string (optional) - Channel ID to get trending casts from (e.g., 'dev', 'warpcast', 'base')",
-            "timeframe_hours": "integer (optional) - Timeframe in hours to consider for trending (default: 24, max: 168)",
-            "limit": "integer (optional) - Number of trending casts to return (default: 10, max: 50)",
+            "type": "object",
+            "properties": {},
+            "required": []
         }
 
-    async def execute(
-        self, params: Dict[str, Any], context: ActionContext
-    ) -> Dict[str, Any]:
-        """
-        Execute the get trending casts action.
-        """
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
-
-        # Check if Farcaster integration is available
+    async def execute(self, context: ActionContext) -> str:
+        """Execute the tool to get trending casts."""
         if not context.farcaster_observer:
-            error_msg = "Farcaster integration (observer) not configured."
-            logger.error(error_msg)
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
-
-        # Extract and validate parameters
-        channel_id = params.get("channel_id")
-        timeframe_hours = params.get("timeframe_hours", 24)
-        limit = params.get("limit", 10)
-
+            return "❌ Farcaster observer not available"
+            
         try:
-            timeframe_hours = int(timeframe_hours)
-            if timeframe_hours < 1 or timeframe_hours > 168:  # Max 1 week
-                timeframe_hours = min(max(timeframe_hours, 1), 168)
-        except (ValueError, TypeError):
-            timeframe_hours = 24
-
-        try:
-            limit = int(limit)
-            if limit < 1 or limit > 50:
-                limit = min(max(limit, 1), 50)  # Clamp to valid range
-        except (ValueError, TypeError):
-            limit = 10
-
-        try:
-            result = await context.farcaster_observer.get_trending_casts(
-                channel_id=channel_id, timeframe_hours=timeframe_hours, limit=limit
-            )
-            logger.info(f"Retrieved {len(result.get('casts', []))} trending casts")
-            return {
-                "status": "success",
-                "channel_id": channel_id,
-                "timeframe_hours": timeframe_hours,
-                "casts": result.get("casts", []),
-                "count": len(result.get("casts", [])),
-                "timestamp": time.time(),
-            }
-        except Exception as e:
-            error_msg = f"Error fetching trending casts: {e}"
-            logger.exception(error_msg)
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
-
-
-class GetCastByUrlTool(ToolInterface):
-    """
-    Tool for fetching cast details from a Farcaster/Warpcast URL.
-    """
-
-    @property
-    def name(self) -> str:
-        return "get_cast_by_url"
-
-    @property
-    def description(self) -> str:
-        return "Fetch details of a specific cast using its Farcaster/Warpcast URL. Use this to get information about a cast when you have the URL."
-
-    @property
-    def parameters_schema(self) -> Dict[str, Any]:
-        return {
-            "farcaster_url": "string - Full Farcaster/Warpcast URL of the cast (e.g., 'https://warpcast.com/username/0x123abc')",
-        }
-
-    async def execute(
-        self, params: Dict[str, Any], context: ActionContext
-    ) -> Dict[str, Any]:
-        """
-        Execute the get cast by URL action.
-        """
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
-
-        # Check if Farcaster integration is available
-        if not context.farcaster_observer:
-            error_msg = "Farcaster integration (observer) not configured."
-            logger.error(error_msg)
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
-
-        # Extract and validate parameters
-        farcaster_url = params.get("farcaster_url")
-
-        if not farcaster_url:
-            error_msg = "Missing required parameter 'farcaster_url'"
-            logger.error(error_msg)
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
-
-        # Basic URL validation
-        if not any(
-            domain in farcaster_url.lower()
-            for domain in ["warpcast.com", "farcaster.xyz"]
-        ):
-            error_msg = (
-                "Invalid Farcaster URL. Must be a warpcast.com or farcaster.xyz URL."
-            )
-            logger.error(error_msg)
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
-
-        try:
-            result = await context.farcaster_observer.get_cast_by_url(
-                farcaster_url=farcaster_url
-            )
-            if result.get("cast"):
-                logger.info(f"Successfully retrieved cast from URL: {farcaster_url}")
+            # Get trending casts using the API client directly
+            if not context.farcaster_observer.api_client:
+                return "❌ Farcaster API client not initialized"
+                
+            result = await context.farcaster_observer.api_client.get_trending_casts(limit=10)
+            
+            if result.get("casts"):
+                cast_summaries = []
+                for cast in result["casts"][:10]:  # Limit to 10 for readability
+                    summary = _summarize_cast_for_ai(cast)
+                    cast_summaries.append(summary)
+                
+                # Record action in world state
+                if context.world_state_manager:
+                    context.world_state_manager.add_action_result(
+                        action_type="get_trending_casts",
+                        parameters={},
+                        result="success",
+                        timestamp=time.time(),
+                    )
+                
                 return {
                     "status": "success",
-                    "url": farcaster_url,
-                    "cast": result.get("cast"),
+                    "cast_summaries": cast_summaries,
                     "timestamp": time.time(),
                 }
             else:
-                error_msg = result.get("error", "Cast not found or URL invalid")
-                logger.warning(
-                    f"Failed to retrieve cast from URL {farcaster_url}: {error_msg}"
-                )
                 return {
                     "status": "failure",
-                    "error": error_msg,
+                    "error": "No trending casts found",
                     "timestamp": time.time(),
                 }
+                
         except Exception as e:
-            error_msg = f"Error fetching cast by URL: {e}"
-            logger.exception(error_msg)
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+            logger.error(f"Error in GetTrendingCastsTool: {e}", exc_info=True)
+            return {
+                "status": "failure", 
+                "error": str(e),
+                "timestamp": time.time(),
+            }
+
+
+class SearchCastsTool(ToolInterface):
+    """Tool to search for casts on Farcaster."""
+    
+    name = "search_casts"
+    description = "Search for casts on Farcaster by query text"
+
+    def __init__(self):
+        self.parameters = [
+            {
+                "name": "query",
+                "type": "string", 
+                "description": "Search query to find relevant casts",
+                "required": True,
+            },
+            {
+                "name": "limit",
+                "type": "integer",
+                "description": "Maximum number of results to return (default: 10)",
+                "required": False,
+            },
+        ]
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        """Return the JSON schema for the tool parameters."""
+        return {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query to find relevant casts"
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of results to return (default: 10)",
+                    "default": 10
+                }
+            },
+            "required": ["query"]
+        }
+
+    async def execute(self, context: ActionContext, query: str, limit: int = 10) -> str:
+        """Execute the tool to search for casts."""
+        if not context.farcaster_observer:
+            return "❌ Farcaster observer not available"
+            
+        try:
+            # Search casts using the API client
+            if not context.farcaster_observer.api_client:
+                return "❌ Farcaster API client not initialized"
+                
+            result = await context.farcaster_observer.api_client.search_casts(
+                query=query, 
+                limit=min(limit, 25)
+            )
+            
+            if result.get("casts"):
+                cast_summaries = []
+                for cast in result["casts"][:limit]:
+                    summary = _summarize_cast_for_ai(cast)
+                    cast_summaries.append(summary)
+                
+                # Record action in world state
+                if context.world_state_manager:
+                    context.world_state_manager.add_action_result(
+                        action_type="search_casts",
+                        parameters={"query": query, "limit": limit},
+                        result="success",
+                        timestamp=time.time(),
+                    )
+                
+                return {
+                    "status": "success",
+                    "query": query,
+                    "cast_summaries": cast_summaries,
+                    "timestamp": time.time(),
+                }
+            else:
+                return {
+                    "status": "failure",
+                    "error": f"No casts found for query: {query}",
+                    "timestamp": time.time(),
+                }
+                
+        except Exception as e:
+            logger.error(f"Error in SearchCastsTool: {e}", exc_info=True)
+            return {
+                "status": "failure", 
+                "error": str(e),
+                "timestamp": time.time(),
+            }
+
+
+class GetCastByUrlTool(ToolInterface):
+    """Tool to get a specific cast by its URL or hash."""
+    
+    name = "get_cast_by_url"
+    description = "Get details about a specific Farcaster cast by its URL or hash"
+
+    def __init__(self):
+        self.parameters = [
+            {
+                "name": "cast_url_or_hash",
+                "type": "string",
+                "description": "The cast URL (like https://warpcast.com/username/0x12345) or cast hash",
+                "required": True,
+            },
+        ]
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        """Return the JSON schema for the tool parameters."""
+        return {
+            "type": "object",
+            "properties": {
+                "cast_url_or_hash": {
+                    "type": "string",
+                    "description": "The cast URL (like https://warpcast.com/username/0x12345) or cast hash"
+                }
+            },
+            "required": ["cast_url_or_hash"]
+        }
+
+    async def execute(self, context: ActionContext, cast_url_or_hash: str) -> str:
+        """Execute the tool to get cast details."""
+        if not context.farcaster_observer:
+            return "❌ Farcaster observer not available"
+            
+        try:
+            # Extract hash from URL if needed
+            from ..integrations.farcaster.farcaster_data_converter import extract_cast_hash_from_url
+            
+            if cast_url_or_hash.startswith("http"):
+                cast_hash = extract_cast_hash_from_url(cast_url_or_hash)
+                if not cast_hash:
+                    return "❌ Could not extract cast hash from URL"
+            else:
+                cast_hash = cast_url_or_hash
+                
+            # Get cast using the API client
+            if not context.farcaster_observer.api_client:
+                return "❌ Farcaster API client not initialized"
+                
+            result = await context.farcaster_observer.api_client.get_cast_by_hash(cast_hash)
+            
+            if result.get("cast"):
+                cast = result["cast"]
+                summary = _summarize_cast_for_ai(cast)
+                
+                # Record action in world state
+                if context.world_state_manager:
+                    context.world_state_manager.add_action_result(
+                        action_type="get_cast_by_url",
+                        parameters={"cast_url_or_hash": cast_url_or_hash},
+                        result="success",
+                        timestamp=time.time(),
+                    )
+                
+                return {
+                    "status": "success",
+                    "cast_summary": summary,
+                    "timestamp": time.time(),
+                }
+            else:
+                return {
+                    "status": "failure",
+                    "error": f"Cast not found: {cast_url_or_hash}",
+                    "timestamp": time.time(),
+                }
+                
+        except Exception as e:
+            logger.error(f"Error in GetCastByUrlTool: {e}", exc_info=True)
+            return {
+                "status": "failure", 
+                "error": str(e),
+                "timestamp": time.time(),
+            }
+
