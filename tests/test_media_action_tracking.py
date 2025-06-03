@@ -133,12 +133,20 @@ class TestMediaActionTracking:
             # Mock httpx response
             with patch('chatbot.tools.describe_image_tool.httpx.AsyncClient') as mock_client_class:
                 mock_client = AsyncMock()
-                mock_response = Mock()
-                mock_response.status_code = 200
-                mock_response.json.return_value = {
+                
+                # Mock HEAD response for image accessibility check
+                mock_head_response = Mock()
+                mock_head_response.status_code = 200
+                mock_head_response.headers = {'content-type': 'image/jpeg'}
+                mock_client.head = AsyncMock(return_value=mock_head_response)
+                
+                # Mock POST response for OpenRouter API
+                mock_post_response = Mock()
+                mock_post_response.status_code = 200
+                mock_post_response.json.return_value = {
                     "choices": [{"message": {"content": "A test image description"}}]
                 }
-                mock_client.post = AsyncMock(return_value=mock_response)
+                mock_client.post = AsyncMock(return_value=mock_post_response)
                 mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
                 mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
                 
@@ -159,3 +167,45 @@ class TestMediaActionTracking:
                 assert call_args[1]["action_type"] == "describe_image"
                 assert call_args[1]["parameters"]["image_url"] == "http://example.com/test.jpg"
                 assert call_args[1]["result"] == "A test image description"
+
+    @pytest.mark.asyncio
+    async def test_describe_image_tool_handles_inaccessible_image(self):
+        """Test that DescribeImageTool fails gracefully when image is not accessible"""
+        tool = DescribeImageTool()
+        
+        # Mock the context and world state manager
+        mock_context = Mock()
+        mock_world_state_manager = Mock()
+        mock_context.world_state_manager = mock_world_state_manager
+        
+        # Mock settings
+        with patch('chatbot.tools.describe_image_tool.settings') as mock_settings:
+            mock_settings.OPENROUTER_API_KEY = "test_key"
+            mock_settings.OPENROUTER_MULTIMODAL_MODEL = "test_model"
+            mock_settings.YOUR_SITE_URL = "http://test.com"
+            mock_settings.YOUR_SITE_NAME = "Test"
+            
+            # Mock httpx response with inaccessible image (404 error)
+            with patch('chatbot.tools.describe_image_tool.httpx.AsyncClient') as mock_client_class:
+                mock_client = AsyncMock()
+                
+                # Mock HEAD response for image accessibility check (404 error)
+                mock_head_response = Mock()
+                mock_head_response.status_code = 404
+                mock_client.head = AsyncMock(return_value=mock_head_response)
+                
+                mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+                
+                # Execute the tool
+                result = await tool.execute(
+                    {"image_url": "http://example.com/nonexistent.jpg", "prompt_text": "What's this?"}, 
+                    mock_context
+                )
+                
+                # Verify the tool failed gracefully
+                assert result["status"] == "failure"
+                assert "not accessible" in result["error"]
+                
+                # Verify that add_action_result was NOT called since the image wasn't accessible
+                mock_world_state_manager.add_action_result.assert_not_called()

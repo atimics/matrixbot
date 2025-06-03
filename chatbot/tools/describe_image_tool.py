@@ -13,13 +13,16 @@ from .base import ActionContext, ToolInterface
 logger = logging.getLogger(__name__)
 
 
-async def ensure_publicly_accessible_image_url(image_url: str, context: ActionContext) -> str:
+async def ensure_publicly_accessible_image_url(image_url: str, context: ActionContext) -> tuple[str, bool]:
     """
     Ensure the image URL is publicly accessible.
     For Matrix URLs, download via nio client and upload to S3.
+    Returns tuple of (url, is_accessible)
     """
     if not image_url.startswith("https://chat.ratimics.com/_matrix/media/"):
-        return image_url
+        # For non-Matrix URLs, verify accessibility
+        is_accessible = await _verify_image_accessibility(image_url)
+        return image_url, is_accessible
     
     try:
         # Extract server and media_id from Matrix URL
@@ -51,23 +54,50 @@ async def ensure_publicly_accessible_image_url(image_url: str, context: ActionCo
                                 f"matrix_media_{media_id}.jpg"
                             )
                             logger.info(f"Successfully uploaded Matrix media to S3: {s3_url}")
-                            return s3_url
+                            return s3_url, True
                         else:
                             logger.warning("No S3 service available")
+                            return image_url, False
                     else:
                         logger.error(f"Failed to download Matrix media: {mxc_uri}")
+                        return image_url, False
                         
                 except Exception as e:
                     logger.error(f"Error downloading Matrix media via nio client: {e}")
+                    return image_url, False
             else:
                 logger.warning("No Matrix observer available for media download")
+                return image_url, False
                 
     except Exception as e:
         logger.error(f"Error processing Matrix URL {image_url}: {e}")
+        return image_url, False
     
-    # If all else fails, return original URL
+    # If all else fails, return original URL as inaccessible
     logger.warning(f"Could not convert Matrix URL to S3, returning original: {image_url}")
-    return image_url
+    return image_url, False
+
+
+async def _verify_image_accessibility(image_url: str) -> bool:
+    """
+    Verify that an image URL is accessible by making a HEAD request.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.head(image_url)
+            if response.status_code == 200:
+                content_type = response.headers.get('content-type', '').lower()
+                if content_type.startswith('image/'):
+                    return True
+                else:
+                    logger.warning(f"URL {image_url} is accessible but not an image (content-type: {content_type})")
+                    return False
+            else:
+                logger.warning(f"Image URL {image_url} returned status code: {response.status_code}")
+                return False
+    except Exception as e:
+        logger.warning(f"Failed to verify image accessibility for {image_url}: {e}")
+        return False
 
 
 class DescribeImageTool(ToolInterface):
@@ -117,7 +147,13 @@ class DescribeImageTool(ToolInterface):
 
         # Ensure the image URL is publicly accessible (convert Matrix URLs to S3)
         try:
-            public_image_url = await ensure_publicly_accessible_image_url(image_url, context)
+            public_image_url, is_accessible = await ensure_publicly_accessible_image_url(image_url, context)
+            
+            if not is_accessible:
+                error_msg = f"Image is not accessible: {image_url}"
+                logger.error(error_msg)
+                return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+            
             logger.info(f"Using public image URL: {public_image_url}")
         except Exception as e:
             error_msg = f"Failed to access image: {e}"
