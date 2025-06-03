@@ -71,10 +71,26 @@ class SendFarcasterPostTool(ToolInterface):
     @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
-            "content": "string - The text content of the cast to post",
-            "channel": "string (optional) - The channel to post in (if not provided, posts to user's timeline)",
-            "image_s3_url": "string (optional) - S3 URL of an image to attach to the post",
-            "video_s3_url": "string (optional) - S3 URL of a video to attach to the post",
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "description": "The text content of the cast to post"
+                },
+                "channel": {
+                    "type": "string",
+                    "description": "The channel to post in (if not provided, posts to user's timeline)"
+                },
+                "image_s3_url": {
+                    "type": "string",
+                    "description": "S3 URL of an image to attach to the post"
+                },
+                "video_s3_url": {
+                    "type": "string",
+                    "description": "S3 URL of a video to attach to the post"
+                }
+            },
+            "required": ["content"]
         }
 
     async def execute(
@@ -253,8 +269,18 @@ class SendFarcasterReplyTool(ToolInterface):
     @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
-            "content": "string - The text content of the reply",
-            "reply_to_hash": "string - The hash of the cast to reply to",
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "description": "The text content of the reply"
+                },
+                "reply_to_hash": {
+                    "type": "string",
+                    "description": "The hash of the cast to reply to"
+                }
+            },
+            "required": ["content", "reply_to_hash"]
         }
 
     async def execute(
@@ -406,7 +432,14 @@ class LikeFarcasterPostTool(ToolInterface):
     @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
-            "cast_hash": "string - The hash of the cast to like",
+            "type": "object",
+            "properties": {
+                "cast_hash": {
+                    "type": "string",
+                    "description": "The hash of the cast to like"
+                }
+            },
+            "required": ["cast_hash"]
         }
 
     async def execute(
@@ -511,9 +544,22 @@ class QuoteFarcasterPostTool(ToolInterface):
     @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
-            "content": "string - Your commentary/thoughts to add to the quoted cast",
-            "quoted_cast_hash": "string - The hash of the cast to quote",
-            "channel": "string (optional) - The channel to post in (if not provided, posts to user's timeline)",
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "description": "Your commentary/thoughts to add to the quoted cast"
+                },
+                "quoted_cast_hash": {
+                    "type": "string",
+                    "description": "The hash of the cast to quote"
+                },
+                "channel": {
+                    "type": "string",
+                    "description": "The channel to post in (if not provided, posts to user's timeline)"
+                }
+            },
+            "required": ["content", "quoted_cast_hash"]
         }
 
     async def execute(
@@ -649,7 +695,16 @@ class FollowFarcasterUserTool(ToolInterface):
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
-        return {"fid": "integer - The Farcaster ID of the user to follow"}
+        return {
+            "type": "object",
+            "properties": {
+                "fid": {
+                    "type": "integer",
+                    "description": "The Farcaster ID of the user to follow"
+                }
+            },
+            "required": ["fid"]
+        }
 
     async def execute(
         self, params: Dict[str, Any], context: ActionContext
@@ -689,7 +744,16 @@ class UnfollowFarcasterUserTool(ToolInterface):
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
-        return {"fid": "integer - The Farcaster ID of the user to unfollow"}
+        return {
+            "type": "object",
+            "properties": {
+                "fid": {
+                    "type": "integer",
+                    "description": "The Farcaster ID of the user to unfollow"
+                }
+            },
+            "required": ["fid"]
+        }
 
     async def execute(
         self, params: Dict[str, Any], context: ActionContext
@@ -730,8 +794,18 @@ class SendFarcasterDMTool(ToolInterface):
     @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
-            "fid": "integer - The Farcaster ID of the recipient",
-            "content": "string - The DM content",
+            "type": "object",
+            "properties": {
+                "fid": {
+                    "type": "integer",
+                    "description": "The Farcaster ID of the recipient"
+                },
+                "content": {
+                    "type": "string",
+                    "description": "The DM content"
+                }
+            },
+            "required": ["fid", "content"]
         }
 
     async def execute(

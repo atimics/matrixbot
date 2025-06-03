@@ -168,7 +168,7 @@ class TestFarcasterTools:
         # Test properties
         assert tool.name == "send_farcaster_post"
         assert "farcaster" in tool.description.lower()
-        assert "content" in tool.parameters_schema
+        assert "content" in tool.parameters_schema["properties"]
         
         # Test execution with mock observer
         mock_observer = AsyncMock()
@@ -194,8 +194,8 @@ class TestFarcasterTools:
         # Test properties
         assert tool.name == "send_farcaster_reply"
         assert "reply" in tool.description.lower()
-        assert "content" in tool.parameters_schema
-        assert "reply_to_hash" in tool.parameters_schema
+        assert "content" in tool.parameters_schema["properties"]
+        assert "reply_to_hash" in tool.parameters_schema["properties"]
         
         # Test execution with mock observer
         mock_observer = AsyncMock()
