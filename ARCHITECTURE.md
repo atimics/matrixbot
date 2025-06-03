@@ -241,17 +241,25 @@ Neynar API → HTTP Client → Farcaster Observer → Message Conversion → Wor
 ```
 
 **Features**:
-- **Complete API Coverage**: All major Farcaster operations
-- **Social Features**: Following, liking, quoting, direct messaging
+- **Complete API Coverage**: All major Farcaster operations (posts, replies, likes, follows)
+- **Social Features**: Following, liking, quoting, public engagement
 - **Rich User Profiles**: Comprehensive user metadata and social signals
 - **Thread Management**: Conversation thread tracking and context
-- **Rate Limiting**: Intelligent rate limiting with backoff strategies
+- **Rate Limiting**: Intelligent rate limiting with automatic header parsing and warning systems
+- **Enhanced Media Sharing**: Embeddable URLs with Open Graph metadata for better social previews
 
 **Implementation Details**:
 - **API Client**: Custom HTTP client with Neynar API integration
 - **Authentication**: Signer-based authentication for bot actions
 - **Deduplication**: Action deduplication to prevent spam
 - **Error Handling**: Comprehensive error handling and retry logic
+- **Rate Limit Monitoring**: Automatic parsing of `x-ratelimit-*` headers with proactive warnings
+- **Media Optimization**: S3 service integration with embeddable URL generation for social media
+
+**Important Limitations**:
+- **No DM Support**: Direct messaging is not supported by the Farcaster API
+- **Public Engagement Only**: Focus on public posts, replies, likes, and follows
+- **Content Length**: Cast content is subject to platform character limits
 
 ## 📊 State Management
 
