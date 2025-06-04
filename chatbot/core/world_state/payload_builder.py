@@ -299,6 +299,18 @@ class PayloadBuilder:
                         if "recent_messages" in ch
                     ),
                     "bot_fid": bot_fid
+                },
+                "ecosystem_token_info": {
+                    "contract_address": world_state_data.ecosystem_token_contract,
+                    "monitored_holders_activity": [
+                        {
+                            "fid": holder.fid,
+                            "username": holder.username,
+                            "display_name": holder.display_name,
+                            "recent_casts": [msg.to_ai_summary_dict() for msg in holder.recent_casts]
+                        }
+                        for holder in world_state_data.monitored_token_holders.values()
+                    ] if world_state_data.monitored_token_holders else []
                 }
             }
             
@@ -339,6 +351,18 @@ class PayloadBuilder:
                     ),
                     "bot_identity": {"fid": bot_fid, "username": bot_username},
                     "pending_invites_count": len(world_state_data.pending_matrix_invites),
+                },
+                "ecosystem_token_info": {
+                    "contract_address": world_state_data.ecosystem_token_contract,
+                    "monitored_holders_activity": [
+                        {
+                            "fid": holder.fid,
+                            "username": holder.username,
+                            "display_name": holder.display_name,
+                            "recent_casts": [msg.to_ai_summary_dict() for msg in holder.recent_casts]
+                        }
+                        for holder in world_state_data.monitored_token_holders.values()
+                    ] if world_state_data.monitored_token_holders else []
                 },
             }
         

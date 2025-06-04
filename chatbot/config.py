@@ -41,6 +41,12 @@ class AppConfig(BaseSettings):
     FARCASTER_BOT_SIGNER_UUID: Optional[str] = None
     FARCASTER_BOT_USERNAME: Optional[str] = None  # Bot's username for filtering
 
+    # Ecosystem Token Tracking
+    ECOSYSTEM_TOKEN_CONTRACT_ADDRESS: Optional[str] = None  # Contract address of the token
+    NUM_TOP_HOLDERS_TO_TRACK: int = 10  # Number of top holders to monitor
+    TOP_HOLDERS_UPDATE_INTERVAL_MINUTES: int = 60  # How often to refresh the top holders list
+    HOLDER_CAST_HISTORY_LENGTH: int = 5  # Number of recent casts to store per holder
+
     # OpenRouter specific from original .env.example (these might be for other services or documentation)
     OPENROUTER_MODEL: str = "openai/gpt-4o-mini"  # Matches AI_MODEL typically
     OPENROUTER_MULTIMODAL_MODEL: str = (

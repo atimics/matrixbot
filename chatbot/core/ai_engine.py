@@ -274,6 +274,20 @@ Example memory storage:
   "priority": 6
 }
 
+ECOSYSTEM TOKEN AWARENESS:
+The world state may include 'ecosystem_token_info' containing:
+- "contract_address": The contract address of a specific ecosystem token being monitored.
+- "monitored_holders_activity": A list of top holders for this token, including:
+  - "fid", "username", "display_name": Information about the holder.
+  - "recent_casts": A list of their most recent casts (summarized).
+
+Use this information to:
+1. Understand discussions and sentiments related to the ecosystem token.
+2. Identify key influencers (top holders) within the token's community.
+3. Consider engaging with or highlighting content from these holders if relevant to current conversations or bot objectives.
+4. Be aware of new posts from these holders as they will appear in the general message feeds with special channel prefixes like "farcaster:holder_{fid}".
+5. Provide insights about token holder activity when relevant to conversations about the ecosystem or token.
+
 RATE LIMIT AWARENESS:
 Check system_status.rate_limits before taking actions that use external APIs:
 - "farcaster_api": Neynar/Farcaster API limits

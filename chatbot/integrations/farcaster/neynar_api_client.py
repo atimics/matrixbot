@@ -127,7 +127,7 @@ class NeynarAPIClient:
         self, fid: int, limit: int = 25, include_replies: bool = True
     ) -> Dict[str, Any]:
         params = {"fid": fid, "limit": limit, "include_replies": include_replies}
-        response = await self._make_request("GET", "/farcaster/casts", params=params)
+        response = await self._make_request("GET", "/farcaster/feed/user/casts", params=params)
         return response.json()
 
     async def get_feed_by_channel_ids(
@@ -398,6 +398,69 @@ class NeynarAPIClient:
     ) -> Dict[str, Any]:
         """Get conversation messages between two users - DEPRECATED: DM functionality not supported."""
         raise NotImplementedError("Farcaster DM conversation functionality is not supported by the API")
+
+    async def get_token_holders(
+        self, token_contract_address: str, limit: int = 100
+    ) -> Dict[str, Any]:
+        """
+        Fetches a list of FIDs holding a specific token.
+        
+        Note: This is a workaround implementation since direct token holder endpoints may not be available.
+        In practice, you might need to:
+        1. Get users from a token-gated channel
+        2. Or use external indexers (like Alchemy, Moralis) to get holder addresses
+        3. Then resolve those addresses to FIDs using Neynar's address-to-FID endpoints
+        
+        For now, this returns a placeholder response indicating the limitation.
+        """
+        logger.warning(f"get_token_holders: Direct token holder fetching for {token_contract_address} "
+                      "may require a combination of external token indexers and address-to-FID resolution. "
+                      "Consider implementing via: 1) External token APIs (Alchemy/Moralis) + "
+                      "2) Neynar's address-to-FID endpoints + 3) User balance verification.")
+        
+        # Return structured placeholder data for simulation
+        return {
+            "holders": [],
+            "total_count": 0,
+            "contract_address": token_contract_address,
+            "note": "Implementation requires external token indexer + address-to-FID resolution",
+            "suggested_approach": [
+                "Use external API (Alchemy/Moralis) to get token holder addresses",
+                "Use Neynar's /farcaster/user/bulk-by-address to resolve addresses to FIDs",
+                "Verify balances using /farcaster/user/token-balance if needed"
+            ]
+        }
+
+    async def get_user_token_balance(
+        self, fid: int, token_contract_address: str
+    ) -> Dict[str, Any]:
+        """
+        Fetches a user's balance for a specific token.
+        Corresponds to: https://docs.neynar.com/reference/fetch-user-balance
+        """
+        params = {"fid": fid}
+        response = await self._make_request("GET", "/farcaster/user/token-balance", params=params)
+        balance_data = response.json()
+        
+        # Filter for the specific token if multiple tokens are returned
+        if "balances" in balance_data:
+            for balance in balance_data["balances"]:
+                if balance.get("contract_address", "").lower() == token_contract_address.lower():
+                    return {"balance": balance, "fid": fid}
+        
+        return {"balance": None, "fid": fid, "error": "Token not found in user's balance"}
+
+    async def get_user_details_for_fids(self, fids: List[int]) -> Dict[str, Any]:
+        """
+        Fetches user details for a list of FIDs.
+        Corresponds to: https://docs.neynar.com/reference/fetch-bulk-users
+        """
+        if not fids:
+            return {"users": []}
+        fids_str = ",".join(map(str, fids))
+        params = {"fids": fids_str}
+        response = await self._make_request("GET", "/farcaster/user/bulk", params=params)
+        return response.json()
 
     async def close(self):
         await self._client.aclose()

@@ -410,6 +410,25 @@ class FarcasterUserDetails:
 
 
 @dataclass
+class MonitoredTokenHolder:
+    """
+    Represents a monitored token holder with their Farcaster activity.
+    
+    Attributes:
+        fid: Farcaster ID of the holder
+        username: Farcaster username
+        display_name: Display name
+        last_cast_seen_timestamp: Timestamp of the last cast seen from this holder
+        recent_casts: List of recent messages from this holder
+    """
+    fid: str
+    username: Optional[str] = None
+    display_name: Optional[str] = None
+    last_cast_seen_timestamp: Optional[float] = None
+    recent_casts: List[Message] = field(default_factory=list)
+
+
+@dataclass
 class MatrixUserDetails:
     """
     Enhanced Matrix user information.
@@ -509,6 +528,11 @@ class WorldStateData:
 
         # Image library: Track AI-generated media for reuse and reference
         self.generated_media_library: List[Dict[str, Any]] = []
+
+        # Ecosystem token tracking
+        self.ecosystem_token_contract: Optional[str] = None
+        # Stores FIDs of top holders and their details + recent activity
+        self.monitored_token_holders: Dict[str, MonitoredTokenHolder] = {}
 
         # Initialize timestamp tracking
         self.last_update = time.time()

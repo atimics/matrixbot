@@ -68,6 +68,9 @@ class FarcasterObserver:
         self.world_state_collection_interval = 300.0  # 5 minutes
         self._world_state_task: Optional[Any] = None  # asyncio.Task
         
+        # Ecosystem token service
+        self.ecosystem_token_service: Optional[Any] = None  # EcosystemTokenService
+        
         logger.info("Farcaster observer initialized (refactored)")
 
     async def start(self):
@@ -82,6 +85,14 @@ class FarcasterObserver:
         else:
             logger.info("Farcaster observer started (scheduler not available).")
             
+        # Initialize and start ecosystem token service if configured
+        from ...config import settings
+        if settings.ECOSYSTEM_TOKEN_CONTRACT_ADDRESS and self.api_client and self.world_state_manager:
+            from ...integrations.ecosystem_token_service import EcosystemTokenService
+            self.ecosystem_token_service = EcosystemTokenService(self.api_client, self.world_state_manager)
+            await self.ecosystem_token_service.start()
+            logger.info("Ecosystem Token Service started.")
+            
         # Start world state collection loop if enabled
         if self.world_state_collection_enabled and self.world_state_manager:
             self._world_state_task = asyncio.create_task(self._world_state_collection_loop())
@@ -89,6 +100,10 @@ class FarcasterObserver:
 
     async def stop(self):
         logger.info("Stopping Farcaster observer...")
+        
+        # Stop ecosystem token service
+        if self.ecosystem_token_service:
+            await self.ecosystem_token_service.stop()
         
         # Stop world state collection task
         if self._world_state_task and not self._world_state_task.done():
@@ -186,6 +201,11 @@ class FarcasterObserver:
                     if self.world_state_manager and messages:
                         logger.info(f"Storing {len(messages)} {data_type} messages in world state")
                         self._store_world_state_data(data_type, messages)
+                        
+            # Check for new casts from monitored token holders
+            if self.ecosystem_token_service:
+                holder_feed_messages = await self.ecosystem_token_service.observe_monitored_holder_feeds()
+                new_messages.extend(holder_feed_messages)
                         
             unique_messages_dict = {msg.id: msg for msg in new_messages}
             new_messages = list(unique_messages_dict.values())
