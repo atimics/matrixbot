@@ -187,23 +187,17 @@ class GenerateImageTool(ToolInterface):
             # --- Always post to Farcaster ---
             try:
                 from chatbot.tools.farcaster_tools import SendFarcasterPostTool
-                from chatbot.tools.s3_service import s3_service
-                
-                # Generate embeddable URL for better OG tag support
-                embeddable_url = s3_service.generate_embeddable_url(
-                    s3_url, 
-                    title=f"AI Generated Image",
-                    description=prompt[:100]
-                )
                 
                 farcaster_tool = SendFarcasterPostTool()
                 farcaster_params = {
-                    "content": f"[AI Image] {prompt[:100]}\n\n{embeddable_url}",
+                    "content": "",  # Empty content for image-only posts
                     "image_s3_url": s3_url
                 }
                 # Optionally, add channel if available in params
                 if "channel" in params:
                     farcaster_params["channel"] = params["channel"]
+                elif "farcaster_channel_id" in params:  # Alternative parameter name
+                    farcaster_params["channel"] = params["farcaster_channel_id"]
                 farcaster_result = await farcaster_tool.execute(farcaster_params, context)
             except Exception as farcaster_exc:
                 logger.error(f"Failed to auto-post image to Farcaster: {farcaster_exc}")
