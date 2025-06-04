@@ -97,7 +97,7 @@ class SendFarcasterPostTool(ToolInterface):
         self, params: Dict[str, Any], context: ActionContext
     ) -> Dict[str, Any]:
         """
-        Execute the Farcaster post action.
+       
         """
         logger.info(f"Executing tool '{self.name}' with params: {params}")
 

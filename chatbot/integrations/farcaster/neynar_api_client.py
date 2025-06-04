@@ -467,5 +467,55 @@ class NeynarAPIClient:
         response = await self._make_request("GET", "/farcaster/user/bulk", params=params)
         return response.json()
 
+    async def get_relevant_fungible_owners(
+        self,
+        contract_address: str,
+        network: str,  # 'ethereum', 'optimism', 'base', 'arbitrum', 'solana'
+        viewer_fid: Optional[int] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Fetch a list of relevant owners for a specific fungible asset.
+        API Docs: https://docs.neynar.com/reference/fetch-relevant-owners-for-a-fungible-asset
+        
+        Args:
+            contract_address: The contract address of the fungible token
+            network: Network of the fungible asset ('ethereum', 'optimism', 'base', 'arbitrum', 'solana')
+            viewer_fid: Optional FID to personalize results based on social graph
+            
+        Returns:
+            Dictionary containing relevant owners data or None if error/no data
+        """
+        endpoint = "/farcaster/fungible/owner/relevant"
+        params = {
+            "contract_address": contract_address,
+            "network": network,
+        }
+        if viewer_fid:
+            params["viewer_fid"] = viewer_fid
+
+        try:
+            response = await self._make_request("GET", endpoint, params=params)
+            response_data = response.json()
+            
+            # Minimal validation - check for expected response structure
+            if response_data and (
+                "top_relevant_fungible_owners_hydrated" in response_data or 
+                "all_relevant_fungible_owners_dehydrated" in response_data
+            ):
+                return response_data
+            
+            logger.warning(
+                f"Relevant fungible owners response missing expected keys for {contract_address} "
+                f"on {network}. Response: {response_data}"
+            )
+            return None
+            
+        except Exception as e:
+            logger.error(
+                f"Error fetching relevant fungible owners for {contract_address} "
+                f"on {network}: {e}"
+            )
+            return None
+
     async def close(self):
         await self._client.aclose()
