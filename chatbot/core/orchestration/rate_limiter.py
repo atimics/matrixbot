@@ -16,13 +16,13 @@ class RateLimitConfig:
     """Enhanced rate limiting configuration."""
 
     # Global rate limits
-    max_cycles_per_hour: int = 300
-    min_cycle_interval: float = 12.0  # Minimum seconds between cycles
+    max_cycles_per_hour: int = 60  # Changed from 300 to 60 (1 cycle per minute)
+    min_cycle_interval: float = 60.0  # Changed from 12.0 to 60.0 (Minimum seconds between cycles)
 
     # Adaptive rate limiting
     enable_adaptive_limits: bool = True
     burst_window_seconds: int = 300  # 5 minutes
-    max_burst_cycles: int = 20
+    max_burst_cycles: int = 5  # Adjusted from 20 to 5 (5 cycles in 5-min burst window)
     cooldown_multiplier: float = 1.5  # How much to slow down after burst
 
     # Action-specific limits (per hour)
@@ -85,18 +85,27 @@ class RateLimiter:
         if current_time < self.cooldown_until:
             return False, self.cooldown_until - current_time
 
-        # Check basic rate limit
-        base_interval = self.config.min_cycle_interval * self.adaptive_multiplier
-        cycles_per_hour = len(self.cycle_history)
+        # Check minimum cycle interval - CRITICAL: This enforces the 60-second minimum
+        if self.cycle_history:
+            last_cycle_time = self.cycle_history[-1]  # Most recent cycle
+            time_since_last = current_time - last_cycle_time
+            base_interval = self.config.min_cycle_interval * self.adaptive_multiplier
+            
+            if time_since_last < base_interval:
+                wait_time = base_interval - time_since_last
+                return False, wait_time
 
+        # Check hourly rate limit
+        cycles_per_hour = len(self.cycle_history)
         if cycles_per_hour >= self.config.max_cycles_per_hour:
             # Hit hourly limit
             oldest_cycle = self.cycle_history[0] if self.cycle_history else current_time
             wait_time = 3600 - (current_time - oldest_cycle) + 1
-            return False, max(wait_time, base_interval)
+            return False, wait_time
 
         # Check for burst conditions
         if self.config.enable_adaptive_limits:
+            base_interval = self.config.min_cycle_interval * self.adaptive_multiplier
             burst_cycles = len(
                 [
                     t

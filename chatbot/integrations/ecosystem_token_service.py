@@ -10,12 +10,14 @@ monitors their recent casts, and integrates this information into the world stat
 import asyncio
 import logging
 import time
-from typing import List, Dict, Optional
+import aiohttp
+import json
+from typing import List, Dict, Optional, Any
 
 from chatbot.config import settings
 from chatbot.integrations.farcaster.neynar_api_client import NeynarAPIClient
 from chatbot.core.world_state.manager import WorldStateManager
-from chatbot.core.world_state.structures import MonitoredTokenHolder, Message
+from chatbot.core.world_state.structures import MonitoredTokenHolder, Message, TokenMetadata, TokenHolderData
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +42,10 @@ class EcosystemTokenService:
         self.update_interval = settings.TOP_HOLDERS_UPDATE_INTERVAL_MINUTES * 60
         self._running = False
         self._task: Optional[asyncio.Task] = None
+        
+        # Token metadata update settings
+        self.token_metadata_update_interval = 5 * 60  # 5 minutes for metadata updates
+        self.last_metadata_update = 0
 
     async def _fetch_and_rank_holders(self) -> List[Dict]:
         """
@@ -164,12 +170,20 @@ class EcosystemTokenService:
             # Don't fail the entire update process for one holder
 
     async def periodic_holder_update_loop(self):
-        """Main loop for periodic token holder updates."""
+        """Main loop for periodic token holder updates and metadata refresh."""
         self._running = True
-        logger.info("Starting periodic token holder update loop.")
+        logger.info("Starting periodic token holder update loop with metadata tracking.")
         while self._running:
             try:
+                # Update token metadata (has its own frequency control)
+                await self.update_token_metadata()
+                
+                # Update top holders and their activity
                 await self.update_top_token_holders_in_world_state()
+                
+                # Update social influence scores for all holders
+                await self._update_holder_influence_scores()
+                
                 await asyncio.sleep(self.update_interval)
             except asyncio.CancelledError:
                 logger.info("Token holder update loop cancelled.")
@@ -253,3 +267,257 @@ class EcosystemTokenService:
         if all_new_holder_casts:
             logger.info(f"Collected {len(all_new_holder_casts)} new casts from monitored token holders.")
         return all_new_holder_casts
+
+    async def _fetch_token_metadata_from_dexscreener(self, contract_address: str) -> Optional[TokenMetadata]:
+        """
+        Fetch token metadata from DexScreener API.
+        
+        Args:
+            contract_address: The token contract address
+            
+        Returns:
+            TokenMetadata object with comprehensive token information
+        """
+        try:
+            url = f"https://api.dexscreener.com/latest/dex/tokens/{contract_address}"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as response:
+                    if response.status != 200:
+                        logger.warning(f"DexScreener API returned status {response.status} for token {contract_address}")
+                        return None
+                    
+                    data = await response.json()
+                    
+                    if not data.get("pairs"):
+                        logger.info(f"No trading pairs found for token {contract_address}")
+                        return None
+                    
+                    # Get the most liquid pair (highest liquidity USD)
+                    pairs = data["pairs"]
+                    main_pair = max(pairs, key=lambda p: float(p.get("liquidity", {}).get("usd", 0)))
+                    
+                    token_info = None
+                    # Find our token in the pair (baseToken or quoteToken)
+                    if main_pair["baseToken"]["address"].lower() == contract_address.lower():
+                        token_info = main_pair["baseToken"]
+                        price_usd = float(main_pair.get("priceUsd", 0))
+                    elif main_pair["quoteToken"]["address"].lower() == contract_address.lower():
+                        token_info = main_pair["quoteToken"]
+                        price_usd = 1 / float(main_pair.get("priceUsd", 1)) if main_pair.get("priceUsd") else 0
+                    else:
+                        logger.warning(f"Token {contract_address} not found in main trading pair")
+                        return None
+                    
+                    # Calculate market cap if we have price and supply
+                    market_cap = None
+                    if price_usd and token_info.get("totalSupply"):
+                        try:
+                            total_supply = float(token_info["totalSupply"])
+                            market_cap = price_usd * total_supply
+                        except (ValueError, TypeError):
+                            pass
+                    
+                    # Extract DEX information
+                    dex_info = {
+                        "main_pair_address": main_pair.get("pairAddress"),
+                        "dex_id": main_pair.get("dexId"),
+                        "liquidity_usd": float(main_pair.get("liquidity", {}).get("usd", 0)),
+                        "volume_24h": float(main_pair.get("volume", {}).get("h24", 0)),
+                        "price_change_24h": float(main_pair.get("priceChange", {}).get("h24", 0)),
+                        "transactions_24h": main_pair.get("txns", {}).get("h24", {}),
+                        "fdv": float(main_pair.get("fdv", 0)),
+                    }
+                    
+                    metadata = TokenMetadata(
+                        contract_address=contract_address,
+                        ticker=token_info.get("symbol"),
+                        name=token_info.get("name"),
+                        price_usd=price_usd,
+                        price_change_24h=dex_info["price_change_24h"],
+                        volume_24h=dex_info["volume_24h"],
+                        market_cap=market_cap,
+                        total_supply=float(token_info.get("totalSupply", 0)) if token_info.get("totalSupply") else None,
+                        last_updated=time.time(),
+                        dex_info=dex_info
+                    )
+                    
+                    logger.info(f"Successfully fetched metadata for token {contract_address}: {metadata.ticker} (${metadata.price_usd:.6f})")
+                    return metadata
+                    
+        except Exception as e:
+            logger.error(f"Error fetching token metadata from DexScreener for {contract_address}: {e}", exc_info=True)
+            return None
+
+    async def _fetch_token_social_metrics(self, contract_address: str, ticker: str) -> Dict[str, Any]:
+        """
+        Fetch social media metrics for the token.
+        
+        Args:
+            contract_address: The token contract address
+            ticker: Token ticker symbol
+            
+        Returns:
+            Dictionary with social media metrics
+        """
+        try:
+            # This is a placeholder for social metrics collection
+            # In a real implementation, you would integrate with:
+            # - Twitter API for mentions
+            # - Telegram API for group activity
+            # - Discord API for server activity
+            # - Reddit API for subreddit activity
+            # - Farcaster for ecosystem activity
+            
+            social_metrics = {
+                "farcaster_mentions_24h": 0,
+                "twitter_mentions_24h": 0,
+                "telegram_activity_score": 0,
+                "discord_activity_score": 0,
+                "reddit_mentions_24h": 0,
+                "social_sentiment_score": 0.0,  # -1 to 1
+                "trending_score": 0.0,
+                "last_updated": time.time()
+            }
+            
+            # TODO: Implement actual social media tracking
+            logger.info(f"Social metrics placeholder for {ticker} ({contract_address})")
+            return social_metrics
+            
+        except Exception as e:
+            logger.error(f"Error fetching social metrics for {contract_address}: {e}")
+            return {}
+
+    async def update_token_metadata(self):
+        """
+        Update comprehensive token metadata including market data and social metrics.
+        """
+        if not self.token_contract:
+            logger.warning("No token contract configured for metadata updates")
+            return
+        
+        current_time = time.time()
+        if current_time - self.last_metadata_update < self.token_metadata_update_interval:
+            return  # Skip if updated recently
+        
+        logger.info(f"Updating token metadata for contract {self.token_contract}")
+        
+        try:
+            # Fetch market data
+            token_metadata = await self._fetch_token_metadata_from_dexscreener(self.token_contract)
+            
+            if token_metadata:
+                # Fetch social metrics
+                social_metrics = await self._fetch_token_social_metrics(
+                    self.token_contract, 
+                    token_metadata.ticker or "UNKNOWN"
+                )
+                token_metadata.social_metrics = social_metrics
+                
+                # Calculate additional metrics
+                await self._enhance_token_metadata(token_metadata)
+                
+                # Update world state
+                self.world_state_manager.state.token_metadata = token_metadata
+                self.last_metadata_update = current_time
+                
+                logger.info(f"Updated token metadata: {token_metadata.ticker} - "
+                           f"Price: ${token_metadata.price_usd:.6f}, "
+                           f"Market Cap: ${token_metadata.market_cap:,.2f}" if token_metadata.market_cap else "Market Cap: N/A")
+            else:
+                logger.warning(f"Failed to fetch token metadata for {self.token_contract}")
+                
+        except Exception as e:
+            logger.error(f"Error updating token metadata: {e}", exc_info=True)
+
+    async def _enhance_token_metadata(self, metadata: TokenMetadata):
+        """
+        Enhance token metadata with calculated metrics and holder information.
+        
+        Args:
+            metadata: TokenMetadata object to enhance
+        """
+        try:
+            # Calculate holder count from monitored holders
+            if self.world_state_manager.state.monitored_token_holders:
+                metadata.holder_count = len(self.world_state_manager.state.monitored_token_holders)
+                
+                # Calculate top holder percentage if we have holder data
+                top_holders = list(self.world_state_manager.state.monitored_token_holders.values())
+                if top_holders and hasattr(top_holders[0], 'token_holder_data') and top_holders[0].token_holder_data:
+                    max_percentage = max(
+                        holder.token_holder_data.percentage_of_supply 
+                        for holder in top_holders 
+                        if holder.token_holder_data and holder.token_holder_data.percentage_of_supply
+                    )
+                    metadata.top_holder_percentage = max_percentage
+            
+            # Add description based on available data
+            if not metadata.description and metadata.ticker:
+                metadata.description = f"Ecosystem token {metadata.ticker} tracked for holder activity analysis"
+                
+        except Exception as e:
+            logger.error(f"Error enhancing token metadata: {e}")
+
+    async def _calculate_social_influence_score(self, holder: MonitoredTokenHolder) -> float:
+        """
+        Calculate a social influence score for a token holder based on their activity and holdings.
+        
+        Args:
+            holder: MonitoredTokenHolder object
+            
+        Returns:
+            Influence score between 0.0 and 1.0
+        """
+        try:
+            score = 0.0
+            
+            # Base score from token holdings (30% weight)
+            if holder.token_holder_data and holder.token_holder_data.percentage_of_supply:
+                holding_score = min(holder.token_holder_data.percentage_of_supply * 10, 1.0)  # Cap at 1.0
+                score += holding_score * 0.3
+            
+            # Social activity score (40% weight)
+            if holder.recent_casts:
+                activity_score = min(len(holder.recent_casts) / 10, 1.0)  # Normalize to max 10 casts
+                score += activity_score * 0.4
+            
+            # Recency score (30% weight)
+            if holder.last_activity_timestamp:
+                hours_since_activity = (time.time() - holder.last_activity_timestamp) / 3600
+                recency_score = max(0, 1 - (hours_since_activity / 168))  # Decay over 1 week
+                score += recency_score * 0.3
+            
+            return min(score, 1.0)  # Cap at 1.0
+            
+        except Exception as e:
+            logger.error(f"Error calculating social influence score for holder {holder.fid}: {e}")
+            return 0.0
+
+    async def _update_holder_influence_scores(self):
+        """
+        Update social influence scores for all monitored token holders.
+        """
+        try:
+            if not self.world_state_manager.state.monitored_token_holders:
+                return
+            
+            for fid, holder in self.world_state_manager.state.monitored_token_holders.items():
+                try:
+                    # Calculate and update influence score
+                    influence_score = await self._calculate_social_influence_score(holder)
+                    holder.social_influence_score = influence_score
+                    
+                    # Update last activity timestamp if we have recent casts
+                    if holder.recent_casts:
+                        latest_cast_time = max(cast.timestamp for cast in holder.recent_casts)
+                        if not holder.last_activity_timestamp or latest_cast_time > holder.last_activity_timestamp:
+                            holder.last_activity_timestamp = latest_cast_time
+                            
+                except Exception as e:
+                    logger.error(f"Error updating influence score for holder {fid}: {e}")
+                    
+            logger.debug(f"Updated influence scores for {len(self.world_state_manager.state.monitored_token_holders)} holders")
+            
+        except Exception as e:
+            logger.error(f"Error updating holder influence scores: {e}", exc_info=True)

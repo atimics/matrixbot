@@ -302,12 +302,16 @@ class PayloadBuilder:
                 },
                 "ecosystem_token_info": {
                     "contract_address": world_state_data.ecosystem_token_contract,
+                    "token_metadata": asdict(world_state_data.token_metadata) if world_state_data.token_metadata else None,
                     "monitored_holders_activity": [
                         {
                             "fid": holder.fid,
                             "username": holder.username,
                             "display_name": holder.display_name,
-                            "recent_casts": [msg.to_ai_summary_dict() for msg in holder.recent_casts]
+                            "recent_casts": [msg.to_ai_summary_dict() for msg in holder.recent_casts],
+                            "token_holder_data": asdict(holder.token_holder_data) if holder.token_holder_data else None,
+                            "social_influence_score": holder.social_influence_score,
+                            "last_activity_timestamp": holder.last_activity_timestamp
                         }
                         for holder in world_state_data.monitored_token_holders.values()
                     ] if world_state_data.monitored_token_holders else []
@@ -354,12 +358,16 @@ class PayloadBuilder:
                 },
                 "ecosystem_token_info": {
                     "contract_address": world_state_data.ecosystem_token_contract,
+                    "token_metadata": asdict(world_state_data.token_metadata) if world_state_data.token_metadata else None,
                     "monitored_holders_activity": [
                         {
                             "fid": holder.fid,
                             "username": holder.username,
                             "display_name": holder.display_name,
-                            "recent_casts": [msg.to_ai_summary_dict() for msg in holder.recent_casts]
+                            "recent_casts": [msg.to_ai_summary_dict() for msg in holder.recent_casts],
+                            "token_holder_data": asdict(holder.token_holder_data) if holder.token_holder_data else None,
+                            "social_influence_score": holder.social_influence_score,
+                            "last_activity_timestamp": holder.last_activity_timestamp
                         }
                         for holder in world_state_data.monitored_token_holders.values()
                     ] if world_state_data.monitored_token_holders else []
