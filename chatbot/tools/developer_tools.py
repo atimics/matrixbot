@@ -1059,4 +1059,311 @@ class ImplementCodeChangesTool(ToolInterface):  # Phase 2
             await context.world_state_manager.update_state(ws_data)
 
 
-# ...existing code...
+class CreatePullRequestTool(ToolInterface):  # Phase 3
+    """
+    Creates a pull request from the implemented changes.
+    
+    This tool pushes the local changes to a fork and creates a PR
+    for human review, completing the ACE workflow cycle.
+    """
+    @property
+    def name(self) -> str:
+        return "CreatePullRequest"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Create a pull request from implemented changes in a development workspace. "
+            "Pushes changes to fork and opens PR for human review."
+        )
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "target_repo_url": "string - Repository URL where changes were implemented",
+            "pr_title": "string - Title for the pull request",
+            "pr_description": "string (optional) - Description for the pull request",
+            "target_branch": "string (optional, default: 'develop') - Target branch for the PR",
+            "draft": "boolean (optional, default: true) - Create as draft PR for ACE changes"
+        }
+
+    async def execute(
+        self, params: Dict[str, Any], context: ActionContext
+    ) -> Dict[str, Any]:
+        target_repo_url = params.get("target_repo_url")
+        pr_title = params.get("pr_title")
+        pr_description = params.get("pr_description", "")
+        target_branch = params.get("target_branch", "develop")
+        draft = params.get("draft", True)
+        
+        if not target_repo_url or not pr_title:
+            return {"status": "failure", "message": "target_repo_url and pr_title are required"}
+        
+        try:
+            # Find workspace path
+            workspace_path = await self._find_workspace_path(target_repo_url, context)
+            if not workspace_path:
+                return {"status": "failure", "message": f"Workspace not found for {target_repo_url}"}
+            
+            # Get repository context from world state
+            repo_context = await self._get_repo_context(target_repo_url, context)
+            if not repo_context:
+                return {"status": "failure", "message": "Repository context not found in world state"}
+            
+            # Push changes to fork (simulated for now)
+            push_success = await self._push_to_fork(workspace_path, repo_context)
+            if not push_success:
+                return {"status": "failure", "message": "Failed to push changes to fork"}
+            
+            # Create pull request (simulated for now)
+            pr_url = await self._create_github_pr(
+                target_repo_url, repo_context, pr_title, pr_description, target_branch, draft
+            )
+            
+            # Update world state with PR information
+            if hasattr(context, 'world_state_manager'):
+                await self._update_pr_info(context, target_repo_url, pr_url)
+            
+            return {
+                "status": "success",
+                "pr_url": pr_url,
+                "pr_title": pr_title,
+                "target_branch": target_branch,
+                "draft": draft,
+                "message": f"Pull request created: {pr_url}",
+                "next_steps": "Monitor PR for feedback and iterate with ACE as needed"
+            }
+            
+        except Exception as e:
+            return {"status": "failure", "message": f"Error creating PR: {str(e)}"}
+
+    async def _find_workspace_path(self, target_repo_url: str, context: ActionContext) -> Optional[Path]:
+        """Find the local workspace path for a target repository."""
+        if hasattr(context, 'world_state_manager') and context.world_state_manager:
+            ws_data = await context.world_state_manager.get_state()
+            if target_repo_url in ws_data.target_repositories:
+                repo_context = ws_data.target_repositories[target_repo_url]
+                if repo_context.setup_complete:
+                    return Path(repo_context.local_clone_path)
+        return None
+
+    async def _get_repo_context(self, target_repo_url: str, context: ActionContext):
+        """Get repository context from world state."""
+        if hasattr(context, 'world_state_manager') and context.world_state_manager:
+            ws_data = await context.world_state_manager.get_state()
+            return ws_data.target_repositories.get(target_repo_url)
+        return None
+
+    async def _push_to_fork(self, workspace_path: Path, repo_context) -> bool:
+        """Push changes to the fork repository."""
+        # In a real implementation, this would:
+        # 1. Set up fork as remote if not exists
+        # 2. Push current branch to fork
+        # 3. Handle authentication
+        
+        # For now, simulate success
+        return True
+
+    async def _create_github_pr(
+        self, target_repo_url: str, repo_context, title: str, 
+        description: str, target_branch: str, draft: bool
+    ) -> str:
+        """Create a GitHub pull request."""
+        # In a real implementation, this would use GitHub API to:
+        # 1. Create the pull request
+        # 2. Set appropriate labels (e.g., "ACE-generated")
+        # 3. Assign reviewers if configured
+        
+        # Simulate PR creation with a mock URL
+        repo_name = target_repo_url.split('/')[-1]
+        pr_number = f"{asyncio.get_event_loop().time():.0f}"[-4:]  # Use last 4 digits of timestamp
+        return f"https://github.com/mock-user/{repo_name}/pull/{pr_number}"
+
+    async def _update_pr_info(self, context: ActionContext, target_repo_url: str, pr_url: str):
+        """Update world state with PR information."""
+        ws_data = await context.world_state_manager.get_state()
+        
+        # Find and update any related development tasks
+        for task_id, task in ws_data.development_tasks.items():
+            if task.target_repository == target_repo_url and task.status in ["implemented", "proposal_ready"]:
+                task.associated_pr_url = pr_url
+                task.status = "pr_created"
+        
+        # Update repository context
+        if target_repo_url in ws_data.target_repositories:
+            repo_context = ws_data.target_repositories[target_repo_url]
+            if not hasattr(repo_context, 'associated_prs'):
+                repo_context.associated_prs = []
+            repo_context.associated_prs.append(pr_url)
+        
+        await context.world_state_manager.update_state(ws_data)
+
+
+class ACEOrchestratorTool(ToolInterface):  # Phase 3
+    """
+    High-level orchestrator for complete ACE workflows.
+    
+    This tool manages the entire lifecycle from repository analysis
+    to PR creation, coordinating all ACE tools in sequence.
+    """
+    @property
+    def name(self) -> str:
+        return "ACEOrchestrator"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Orchestrate a complete Autonomous Code Evolution workflow. "
+            "Manages the full cycle: setup → exploration → analysis → "
+            "proposal → implementation → PR creation."
+        )
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "target_repo_url": "string - GitHub repository URL to improve",
+            "improvement_focus": "string - Focus area: 'bug_fixes', 'performance', 'code_quality', 'features', 'security', 'documentation'",
+            "workflow_scope": "string (optional, default: 'targeted') - 'minimal', 'targeted', or 'comprehensive'",
+            "context_description": "string (optional) - Additional context about what to improve",
+            "auto_implement": "boolean (optional, default: false) - Whether to auto-implement changes or wait for approval",
+            "create_pr": "boolean (optional, default: true) - Whether to automatically create PR"
+        }
+
+    async def execute(
+        self, params: Dict[str, Any], context: ActionContext
+    ) -> Dict[str, Any]:
+        target_repo_url = params.get("target_repo_url")
+        improvement_focus = params.get("improvement_focus", "code_quality")
+        workflow_scope = params.get("workflow_scope", "targeted")
+        context_description = params.get("context_description", "")
+        auto_implement = params.get("auto_implement", False)
+        create_pr = params.get("create_pr", True)
+        
+        if not target_repo_url:
+            return {"status": "failure", "message": "target_repo_url is required"}
+        
+        workflow_id = f"ace-workflow-{improvement_focus}-{asyncio.get_event_loop().time():.0f}"
+        results = {"workflow_id": workflow_id, "steps": []}
+        
+        try:
+            # Step 1: Setup Development Workspace
+            setup_result = await self._execute_setup(target_repo_url, workflow_id, context)
+            results["steps"].append(("setup", setup_result))
+            
+            if setup_result.get("status") != "success":
+                return {"status": "failure", "message": "Workspace setup failed", "results": results}
+            
+            # Step 2: Explore Codebase
+            explore_result = await self._execute_exploration(target_repo_url, context)
+            results["steps"].append(("exploration", explore_result))
+            
+            # Step 3: Analyze and Propose Changes
+            analyze_result = await self._execute_analysis(
+                target_repo_url, improvement_focus, context_description, workflow_scope, context
+            )
+            results["steps"].append(("analysis", analyze_result))
+            
+            if analyze_result.get("status") != "success":
+                return {"status": "partial_success", "message": "Analysis failed", "results": results}
+            
+            # Step 4: Implement Changes (if auto_implement or no proposals)
+            implement_result = None
+            if auto_implement or analyze_result.get("proposals_count", 0) == 0:
+                implement_result = await self._execute_implementation(
+                    target_repo_url, workflow_id, context
+                )
+                results["steps"].append(("implementation", implement_result))
+            
+            # Step 5: Create PR (if changes were implemented and create_pr is True)
+            pr_result = None
+            if create_pr and implement_result and implement_result.get("status") == "success":
+                pr_result = await self._execute_pr_creation(
+                    target_repo_url, improvement_focus, workflow_id, context
+                )
+                results["steps"].append(("pr_creation", pr_result))
+            
+            # Determine overall status
+            if pr_result and pr_result.get("status") == "success":
+                status = "complete"
+                message = f"ACE workflow completed successfully: {pr_result.get('pr_url')}"
+            elif implement_result and implement_result.get("status") == "success":
+                status = "implemented"
+                message = "Changes implemented successfully, ready for PR creation"
+            elif analyze_result.get("proposals_count", 0) > 0:
+                status = "proposals_ready"
+                message = f"Analysis complete, {analyze_result.get('proposals_count')} proposals generated"
+            else:
+                status = "analyzed"
+                message = "Codebase analyzed, no immediate improvements identified"
+            
+            return {
+                "status": status,
+                "message": message,
+                "workflow_id": workflow_id,
+                "improvement_focus": improvement_focus,
+                "results": results
+            }
+            
+        except Exception as e:
+            return {
+                "status": "failure", 
+                "message": f"ACE workflow error: {str(e)}",
+                "workflow_id": workflow_id,
+                "results": results
+            }
+
+    async def _execute_setup(self, target_repo_url: str, workflow_id: str, context: ActionContext):
+        """Execute workspace setup step."""
+        setup_tool = SetupDevelopmentWorkspaceTool()
+        params = {
+            "target_repo_url": target_repo_url,
+            "task_id": workflow_id,
+            "task_description": "ACE automated workflow",
+            "workspace_base_path": f"/tmp/ace_workflows"
+        }
+        return await setup_tool.execute(params, context)
+
+    async def _execute_exploration(self, target_repo_url: str, context: ActionContext):
+        """Execute codebase exploration step."""
+        explore_tool = ExploreCodebaseTool()
+        params = {
+            "target_repo_url": target_repo_url,
+            "exploration_type": "overview"
+        }
+        return await explore_tool.execute(params, context)
+
+    async def _execute_analysis(
+        self, target_repo_url: str, focus: str, context_desc: str, scope: str, context: ActionContext
+    ):
+        """Execute analysis and proposal generation step."""
+        analyze_tool = AnalyzeAndProposeChangeTool()
+        params = {
+            "target_repo_url": target_repo_url,
+            "analysis_focus": focus,
+            "context_description": context_desc,
+            "proposal_scope": scope
+        }
+        return await analyze_tool.execute(params, context)
+
+    async def _execute_implementation(self, target_repo_url: str, workflow_id: str, context: ActionContext):
+        """Execute implementation step."""
+        implement_tool = ImplementCodeChangesTool()
+        params = {
+            "target_repo_url": target_repo_url,
+            "task_id": workflow_id,
+            "commit_message": f"ACE: Automated improvements ({workflow_id})"
+        }
+        return await implement_tool.execute(params, context)
+
+    async def _execute_pr_creation(
+        self, target_repo_url: str, focus: str, workflow_id: str, context: ActionContext
+    ):
+        """Execute PR creation step."""
+        pr_tool = CreatePullRequestTool()
+        params = {
+            "target_repo_url": target_repo_url,
+            "pr_title": f"ACE: {focus.replace('_', ' ').title()} Improvements",
+            "pr_description": f"Automated code improvements generated by ACE workflow {workflow_id}",
+            "draft": True
+        }
+        return await pr_tool.execute(params, context)

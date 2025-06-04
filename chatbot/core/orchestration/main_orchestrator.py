@@ -133,7 +133,8 @@ class MainOrchestrator:
         from ...tools.developer_tools import (
             GetCodebaseStructureTool, UpdateProjectPlanTool, SummarizeChannelTool,
             SetupDevelopmentWorkspaceTool, ExploreCodebaseTool,
-            AnalyzeAndProposeChangeTool, ImplementCodeChangesTool
+            AnalyzeAndProposeChangeTool, ImplementCodeChangesTool,
+            CreatePullRequestTool, ACEOrchestratorTool
         )
         
         # Core tools
@@ -177,12 +178,14 @@ class MainOrchestrator:
         
         # Permaweb tools
         self.tool_registry.register_tool(StorePermanentMemoryTool())
-        # Developer tools (ACE Phase 1 & 2)
+        # Developer tools (ACE Phase 1, 2 & 3)
         self.tool_registry.register_tool(GetCodebaseStructureTool())
         self.tool_registry.register_tool(SetupDevelopmentWorkspaceTool())
         self.tool_registry.register_tool(ExploreCodebaseTool())
         self.tool_registry.register_tool(AnalyzeAndProposeChangeTool())
         self.tool_registry.register_tool(ImplementCodeChangesTool())
+        self.tool_registry.register_tool(CreatePullRequestTool())
+        self.tool_registry.register_tool(ACEOrchestratorTool())
         self.tool_registry.register_tool(UpdateProjectPlanTool())
         self.tool_registry.register_tool(SummarizeChannelTool())
 
