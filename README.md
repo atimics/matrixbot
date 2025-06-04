@@ -61,6 +61,8 @@ All platform interactions are handled through standardized tools with consistent
 - `LikeFarcasterPostTool` - Social engagement actions with deduplication
 - `QuoteFarcasterPostTool` - Quote casting with content attribution
 - `FollowFarcasterUserTool` - User following functionality
+- `DeleteFarcasterPostTool` - Delete your own Farcaster posts/casts
+- `DeleteFarcasterReactionTool` - Remove likes/recasts from posts
 - `SendFarcasterDirectMessageTool` - Private messaging capabilities
 
 ### 🎯 Key Benefits

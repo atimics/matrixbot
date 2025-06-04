@@ -37,6 +37,8 @@ class RateLimitConfig:
             "FollowFarcasterUserTool": 20,
             "UnfollowFarcasterUserTool": 20,
             "QuoteFarcasterPostTool": 30,
+            "DeleteFarcasterPostTool": 10,  # Conservative limit for deletions
+            "DeleteFarcasterReactionTool": 50,  # Higher limit for reaction deletions
             "ReactToMatrixMessageTool": 100,
             # Discovery tools - higher limits as they're read-only
             "GetUserTimelineTool": 150,

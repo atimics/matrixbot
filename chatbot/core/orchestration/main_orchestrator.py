@@ -109,6 +109,8 @@ class MainOrchestrator:
             SendFarcasterPostTool,
             SendFarcasterReplyTool,
             UnfollowFarcasterUserTool,
+            DeleteFarcasterPostTool,
+            DeleteFarcasterReactionTool,
             CollectWorldStateTool,
             GetTrendingCastsTool,
             SearchCastsTool,
@@ -149,6 +151,8 @@ class MainOrchestrator:
         self.tool_registry.register_tool(QuoteFarcasterPostTool())
         self.tool_registry.register_tool(FollowFarcasterUserTool())
         self.tool_registry.register_tool(UnfollowFarcasterUserTool())
+        self.tool_registry.register_tool(DeleteFarcasterPostTool())
+        self.tool_registry.register_tool(DeleteFarcasterReactionTool())
         self.tool_registry.register_tool(GetUserTimelineTool())
         self.tool_registry.register_tool(SearchCastsTool())
         self.tool_registry.register_tool(GetTrendingCastsTool())

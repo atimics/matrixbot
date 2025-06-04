@@ -729,6 +729,210 @@ class FollowFarcasterUserTool(ToolInterface):
         }
 
 
+class DeleteFarcasterPostTool(ToolInterface):
+    """
+    Tool for deleting a Farcaster post (cast) by hash.
+    """
+
+    @property
+    def name(self) -> str:
+        return "delete_farcaster_post"
+
+    @property
+    def description(self) -> str:
+        return "Delete a Farcaster cast by its hash. Use this to remove a post you previously made."
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "cast_hash": {
+                    "type": "string",
+                    "description": "The hash of the cast to delete"
+                }
+            },
+            "required": ["cast_hash"]
+        }
+
+    async def execute(
+        self, params: Dict[str, Any], context: ActionContext
+    ) -> Dict[str, Any]:
+        """
+        Execute the Farcaster delete cast action.
+        """
+        logger.info(f"Executing tool '{self.name}' with params: {params}")
+
+        # Check if Farcaster integration is available
+        if not context.farcaster_observer:
+            error_msg = "Farcaster integration (observer) not configured."
+            logger.error(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+        # Extract and validate parameters
+        cast_hash = params.get("cast_hash")
+
+        if not cast_hash:
+            error_msg = "Missing required parameter 'cast_hash' for Farcaster delete"
+            logger.error(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+        try:
+            # Use the observer's delete_cast method
+            result = await context.farcaster_observer.delete_cast(cast_hash)
+            logger.info(f"Farcaster observer delete_cast returned: {result}")
+
+            # Record this action in world state
+            if context.world_state_manager:
+                if result.get("success"):
+                    context.world_state_manager.add_action_result(
+                        action_type=self.name,
+                        parameters={"cast_hash": cast_hash},
+                        result="success",
+                    )
+                else:
+                    context.world_state_manager.add_action_result(
+                        action_type=self.name,
+                        parameters={"cast_hash": cast_hash},
+                        result=f"failure: {result.get('error', 'unknown')}",
+                    )
+
+            if result.get("success"):
+                success_msg = f"Successfully deleted Farcaster cast: {cast_hash}"
+                logger.info(success_msg)
+                return {
+                    "status": "success",
+                    "message": success_msg,
+                    "cast_hash": cast_hash,
+                    "timestamp": time.time(),
+                }
+            else:
+                error_msg = f"Failed to delete Farcaster cast: {result.get('error', 'unknown error')}"
+                logger.error(error_msg)
+                return {
+                    "status": "failure",
+                    "error": error_msg,
+                    "cast_hash": cast_hash,
+                    "timestamp": time.time(),
+                }
+
+        except Exception as e:
+            error_msg = f"Error executing {self.name}: {str(e)}"
+            logger.exception(error_msg)
+
+            # Record this action failure in world state
+            if context.world_state_manager:
+                context.world_state_manager.add_action_result(
+                    action_type=self.name,
+                    parameters={"cast_hash": cast_hash},
+                    result=f"failure: {str(e)}",
+                )
+
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+
+class DeleteFarcasterReactionTool(ToolInterface):
+    """
+    Tool for deleting a reaction (like/recast) from a Farcaster post.
+    """
+
+    @property
+    def name(self) -> str:
+        return "delete_farcaster_reaction"
+
+    @property
+    def description(self) -> str:
+        return "Delete a reaction (like or recast) from a Farcaster cast. Use this to remove a like or recast you previously made."
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "cast_hash": {
+                    "type": "string",
+                    "description": "The hash of the cast to remove reaction from"
+                }
+            },
+            "required": ["cast_hash"]
+        }
+
+    async def execute(
+        self, params: Dict[str, Any], context: ActionContext
+    ) -> Dict[str, Any]:
+        """
+        Execute the Farcaster delete reaction action.
+        """
+        logger.info(f"Executing tool '{self.name}' with params: {params}")
+
+        # Check if Farcaster integration is available
+        if not context.farcaster_observer:
+            error_msg = "Farcaster integration (observer) not configured."
+            logger.error(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+        # Extract and validate parameters
+        cast_hash = params.get("cast_hash")
+
+        if not cast_hash:
+            error_msg = "Missing required parameter 'cast_hash' for Farcaster reaction delete"
+            logger.error(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+        try:
+            # Use the observer's delete_reaction method
+            result = await context.farcaster_observer.delete_reaction(cast_hash)
+            logger.info(f"Farcaster observer delete_reaction returned: {result}")
+
+            # Record this action in world state
+            if context.world_state_manager:
+                if result.get("success"):
+                    context.world_state_manager.add_action_result(
+                        action_type=self.name,
+                        parameters={"cast_hash": cast_hash},
+                        result="success",
+                    )
+                else:
+                    context.world_state_manager.add_action_result(
+                        action_type=self.name,
+                        parameters={"cast_hash": cast_hash},
+                        result=f"failure: {result.get('error', 'unknown')}",
+                    )
+
+            if result.get("success"):
+                success_msg = f"Successfully deleted reaction from Farcaster cast: {cast_hash}"
+                logger.info(success_msg)
+                return {
+                    "status": "success",
+                    "message": success_msg,
+                    "cast_hash": cast_hash,
+                    "timestamp": time.time(),
+                }
+            else:
+                error_msg = f"Failed to delete reaction from Farcaster cast: {result.get('error', 'unknown error')}"
+                logger.error(error_msg)
+                return {
+                    "status": "failure",
+                    "error": error_msg,
+                    "cast_hash": cast_hash,
+                    "timestamp": time.time(),
+                }
+
+        except Exception as e:
+            error_msg = f"Error executing {self.name}: {str(e)}"
+            logger.exception(error_msg)
+
+            # Record this action failure in world state
+            if context.world_state_manager:
+                context.world_state_manager.add_action_result(
+                    action_type=self.name,
+                    parameters={"cast_hash": cast_hash},
+                    result=f"failure: {str(e)}",
+                )
+
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+
 class UnfollowFarcasterUserTool(ToolInterface):
     """
     Tool for unfollowing a Farcaster user.
@@ -1369,4 +1573,208 @@ class GetCastByUrlTool(ToolInterface):
                 "error": str(e),
                 "timestamp": time.time(),
             }
+
+
+class DeleteFarcasterPostTool(ToolInterface):
+    """
+    Tool for deleting a Farcaster post (cast) by hash.
+    """
+
+    @property
+    def name(self) -> str:
+        return "delete_farcaster_post"
+
+    @property
+    def description(self) -> str:
+        return "Delete a Farcaster cast by its hash. Use this to remove a post you previously made."
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "cast_hash": {
+                    "type": "string",
+                    "description": "The hash of the cast to delete"
+                }
+            },
+            "required": ["cast_hash"]
+        }
+
+    async def execute(
+        self, params: Dict[str, Any], context: ActionContext
+    ) -> Dict[str, Any]:
+        """
+        Execute the Farcaster delete cast action.
+        """
+        logger.info(f"Executing tool '{self.name}' with params: {params}")
+
+        # Check if Farcaster integration is available
+        if not context.farcaster_observer:
+            error_msg = "Farcaster integration (observer) not configured."
+            logger.error(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+        # Extract and validate parameters
+        cast_hash = params.get("cast_hash")
+
+        if not cast_hash:
+            error_msg = "Missing required parameter 'cast_hash' for Farcaster delete"
+            logger.error(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+        try:
+            # Use the observer's delete_cast method
+            result = await context.farcaster_observer.delete_cast(cast_hash)
+            logger.info(f"Farcaster observer delete_cast returned: {result}")
+
+            # Record this action in world state
+            if context.world_state_manager:
+                if result.get("success"):
+                    context.world_state_manager.add_action_result(
+                        action_type=self.name,
+                        parameters={"cast_hash": cast_hash},
+                        result="success",
+                    )
+                else:
+                    context.world_state_manager.add_action_result(
+                        action_type=self.name,
+                        parameters={"cast_hash": cast_hash},
+                        result=f"failure: {result.get('error', 'unknown')}",
+                    )
+
+            if result.get("success"):
+                success_msg = f"Successfully deleted Farcaster cast: {cast_hash}"
+                logger.info(success_msg)
+                return {
+                    "status": "success",
+                    "message": success_msg,
+                    "cast_hash": cast_hash,
+                    "timestamp": time.time(),
+                }
+            else:
+                error_msg = f"Failed to delete Farcaster cast: {result.get('error', 'unknown error')}"
+                logger.error(error_msg)
+                return {
+                    "status": "failure",
+                    "error": error_msg,
+                    "cast_hash": cast_hash,
+                    "timestamp": time.time(),
+                }
+
+        except Exception as e:
+            error_msg = f"Error executing {self.name}: {str(e)}"
+            logger.exception(error_msg)
+
+            # Record this action failure in world state
+            if context.world_state_manager:
+                context.world_state_manager.add_action_result(
+                    action_type=self.name,
+                    parameters={"cast_hash": cast_hash},
+                    result=f"failure: {str(e)}",
+                )
+
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+
+class DeleteFarcasterReactionTool(ToolInterface):
+    """
+    Tool for deleting a reaction (like/recast) from a Farcaster post.
+    """
+
+    @property
+    def name(self) -> str:
+        return "delete_farcaster_reaction"
+
+    @property
+    def description(self) -> str:
+        return "Delete a reaction (like or recast) from a Farcaster cast. Use this to remove a like or recast you previously made."
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "cast_hash": {
+                    "type": "string",
+                    "description": "The hash of the cast to remove reaction from"
+                }
+            },
+            "required": ["cast_hash"]
+        }
+
+    async def execute(
+        self, params: Dict[str, Any], context: ActionContext
+    ) -> Dict[str, Any]:
+        """
+        Execute the Farcaster delete reaction action.
+        """
+        logger.info(f"Executing tool '{self.name}' with params: {params}")
+
+        # Check if Farcaster integration is available
+        if not context.farcaster_observer:
+            error_msg = "Farcaster integration (observer) not configured."
+            logger.error(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+        # Extract and validate parameters
+        cast_hash = params.get("cast_hash")
+
+        if not cast_hash:
+            error_msg = "Missing required parameter 'cast_hash' for Farcaster reaction delete"
+            logger.error(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+        try:
+            # Use the observer's delete_reaction method
+            result = await context.farcaster_observer.delete_reaction(cast_hash)
+            logger.info(f"Farcaster observer delete_reaction returned: {result}")
+
+            # Record this action in world state
+            if context.world_state_manager:
+                if result.get("success"):
+                    context.world_state_manager.add_action_result(
+                        action_type=self.name,
+                        parameters={"cast_hash": cast_hash},
+                        result="success",
+                    )
+                else:
+                    context.world_state_manager.add_action_result(
+                        action_type=self.name,
+                        parameters={"cast_hash": cast_hash},
+                        result=f"failure: {result.get('error', 'unknown')}",
+                    )
+
+            if result.get("success"):
+                success_msg = f"Successfully deleted reaction from Farcaster cast: {cast_hash}"
+                logger.info(success_msg)
+                return {
+                    "status": "success",
+                    "message": success_msg,
+                    "cast_hash": cast_hash,
+                    "timestamp": time.time(),
+                }
+            else:
+                error_msg = f"Failed to delete reaction from Farcaster cast: {result.get('error', 'unknown error')}"
+                logger.error(error_msg)
+                return {
+                    "status": "failure",
+                    "error": error_msg,
+                    "cast_hash": cast_hash,
+                    "timestamp": time.time(),
+                }
+
+        except Exception as e:
+            error_msg = f"Error executing {self.name}: {str(e)}"
+            logger.exception(error_msg)
+
+            # Record this action failure in world state
+            if context.world_state_manager:
+                context.world_state_manager.add_action_result(
+                    action_type=self.name,
+                    parameters={"cast_hash": cast_hash},
+                    result=f"failure: {str(e)}",
+                )
+
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 

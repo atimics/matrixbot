@@ -424,6 +424,18 @@ class FarcasterObserver:
             return {"success": False, "error": "API client not initialized"}
         return await self.api_client.unfollow_user(fid, self.signer_uuid)
 
+    async def delete_cast(self, cast_hash: str) -> Dict[str, Any]:
+        """Delete a cast by hash."""
+        if not self.api_client:
+            return {"success": False, "error": "API client not initialized"}
+        return await self.api_client.delete_cast(cast_hash, self.signer_uuid)
+
+    async def delete_reaction(self, cast_hash: str) -> Dict[str, Any]:
+        """Delete a reaction (like/recast) from a cast."""
+        if not self.api_client:
+            return {"success": False, "error": "API client not initialized"}
+        return await self.api_client.delete_reaction(cast_hash, self.signer_uuid)
+
     async def send_dm(self, fid: int, content: str) -> Dict[str, Any]:
         """Send a direct message - DEPRECATED: Farcaster DM API not supported."""
         return {"success": False, "error": "Farcaster DM functionality is not supported by the API"}

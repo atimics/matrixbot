@@ -318,6 +318,42 @@ class NeynarAPIClient:
         """Send a direct message - DEPRECATED: Farcaster DM API not supported."""
         raise NotImplementedError("Farcaster DM functionality is not supported by the API")
 
+    async def delete_cast(
+        self, cast_hash: str, signer_uuid: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Delete a cast by hash."""
+        uuid = signer_uuid or self.signer_uuid
+        if not uuid:
+            raise ValueError("signer_uuid is required to delete a cast.")
+        
+        payload = {
+            "signer_uuid": uuid,
+            "target_hash": cast_hash
+        }
+        
+        response = await self._make_request(
+            "DELETE", "/farcaster/cast", json_data=payload
+        )
+        return response.json()
+
+    async def delete_reaction(
+        self, cast_hash: str, signer_uuid: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Delete a reaction (like/recast) from a cast."""
+        uuid = signer_uuid or self.signer_uuid
+        if not uuid:
+            raise ValueError("signer_uuid is required to delete a reaction.")
+        
+        payload = {
+            "signer_uuid": uuid,
+            "target_hash": cast_hash
+        }
+        
+        response = await self._make_request(
+            "DELETE", "/farcaster/reaction", json_data=payload
+        )
+        return response.json()
+
     async def quote_cast(
         self,
         content: str,

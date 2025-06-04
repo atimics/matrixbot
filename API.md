@@ -319,6 +319,67 @@ Follow Farcaster users.
 }
 ```
 
+#### DeleteFarcasterPostTool
+
+Delete Farcaster posts (casts) that you have previously created.
+
+```python
+{
+    "name": "delete_farcaster_post",
+    "description": "Delete a Farcaster cast by its hash",
+    "parameters_schema": {
+        "type": "object",
+        "properties": {
+            "cast_hash": {
+                "type": "string",
+                "description": "The hash of the cast to delete"
+            }
+        },
+        "required": ["cast_hash"]
+    }
+}
+```
+
+**Requirements:**
+- You must be the author of the cast to delete it
+- Your `signer_uuid` must be approved for the Neynar API
+- The cast must still exist on the network
+
+**Use Cases:**
+- Remove mistaken or incorrect posts
+- Delete outdated information
+- Clean up your timeline
+
+#### DeleteFarcasterReactionTool
+
+Remove reactions (likes or recasts) from Farcaster posts.
+
+```python
+{
+    "name": "delete_farcaster_reaction",
+    "description": "Delete a reaction from a Farcaster cast",
+    "parameters_schema": {
+        "type": "object",
+        "properties": {
+            "cast_hash": {
+                "type": "string",
+                "description": "The hash of the cast to remove reaction from"
+            }
+        },
+        "required": ["cast_hash"]
+    }
+}
+```
+
+**Requirements:**
+- You must have previously reacted to the cast
+- Your `signer_uuid` must be approved for the Neynar API
+
+**Use Cases:**
+- Unlike a post you accidentally liked
+- Remove a recast that's no longer relevant
+- Correct engagement mistakes
+
 #### SendFarcasterDirectMessageTool ⚠️ DEPRECATED
 
 **IMPORTANT: This tool is deprecated and non-functional.** Direct message functionality is not supported by the Farcaster API.
