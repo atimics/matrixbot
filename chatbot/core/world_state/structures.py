@@ -523,6 +523,38 @@ class MonitoredTokenHolder:
     last_activity_timestamp: Optional[float] = None
 
 
+@dataclass
+class ResearchEntry:
+    """
+    Represents a research entry in the persistent knowledge base.
+    
+    This stores information gathered through web searches and user interactions
+    to build an evolving knowledge base that improves the AI's reliability over time.
+    
+    Attributes:
+        topic: Key topic or subject (normalized to lowercase for deduplication)
+        summary: Concise summary of current knowledge about the topic
+        key_facts: List of important facts or data points
+        sources: List of sources where information was gathered
+        confidence_level: Confidence in the information accuracy (1-10 scale)
+        last_updated: Timestamp when this entry was last updated
+        last_verified: Timestamp when information was last verified
+        tags: List of tags for categorization and cross-referencing
+        related_topics: List of related topic keys for knowledge graph connections
+        verification_notes: Notes about information verification or concerns
+    """
+    topic: str
+    summary: str
+    key_facts: List[str] = field(default_factory=list)
+    sources: List[str] = field(default_factory=list)
+    confidence_level: int = 5  # 1-10 scale, 5 is neutral
+    last_updated: float = field(default_factory=time.time)
+    last_verified: Optional[float] = None
+    tags: List[str] = field(default_factory=list)
+    related_topics: List[str] = field(default_factory=list)
+    verification_notes: Optional[str] = None
+
+
 class WorldStateData:
     def add_action_history(self, action_data: dict):
         """Compatibility method for tests that call add_action_history on WorldStateData."""

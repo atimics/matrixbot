@@ -315,6 +315,11 @@ class PayloadBuilder:
                         }
                         for holder in world_state_data.monitored_token_holders.values()
                     ] if world_state_data.monitored_token_holders else []
+                },
+                "research_knowledge": {
+                    "available_topics": list(world_state_data.research_database.keys()),
+                    "topic_count": len(world_state_data.research_database),
+                    "note": "Use query_research tool to access detailed research information"
                 }
             }
             
@@ -372,6 +377,11 @@ class PayloadBuilder:
                         for holder in world_state_data.monitored_token_holders.values()
                     ] if world_state_data.monitored_token_holders else []
                 },
+                "research_knowledge": {
+                    "available_topics": list(world_state_data.research_database.keys()),
+                    "topic_count": len(world_state_data.research_database),
+                    "note": "Use query_research tool to access detailed research information"
+                }
             }
         
         return payload

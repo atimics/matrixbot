@@ -128,10 +128,17 @@ class MainOrchestrator:
         )
         from ...tools.media_generation_tools import GenerateImageTool, GenerateVideoTool
         from ...tools.permaweb_tools import StorePermanentMemoryTool
+        from ...tools.web_tools import WebSearchTool
+        from ...tools.research_tools import UpdateResearchTool, QueryResearchTool
         
         # Core tools
         self.tool_registry.register_tool(WaitTool())
         self.tool_registry.register_tool(DescribeImageTool())
+        
+        # Web search and research tools
+        self.tool_registry.register_tool(WebSearchTool())
+        self.tool_registry.register_tool(UpdateResearchTool())
+        self.tool_registry.register_tool(QueryResearchTool())
         
         # Matrix tools
         self.tool_registry.register_tool(SendMatrixMessageTool())
