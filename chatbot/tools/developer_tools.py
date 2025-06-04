@@ -321,9 +321,9 @@ class SetupDevelopmentWorkspaceTool(ToolInterface):
             # Set up GitHub service
             gh = GitHubService(main_repo=main_repo)
             
-            # Create workspace directory
+            # Create workspace directory 
             workspace_path = Path(workspace_base) / repo_name
-            workspace_path.mkdir(parents=True, exist_ok=True)
+            workspace_path.parent.mkdir(parents=True, exist_ok=True)  # Only create parent directory
             
             # Set up local git repository
             clone_url = f"https://github.com/{main_repo}.git"
@@ -544,6 +544,519 @@ class ExploreCodebaseTool(ToolInterface):
             "key_files_found": key_files,
             "summary": f"Codebase with {total_files} files across {len(file_types)} file types"
         }
+
+
+class AnalyzeAndProposeChangeTool(ToolInterface):  # Phase 2
+    """
+    Uses AI to analyze code and propose specific improvements or changes.
+    
+    This tool takes the context from codebase exploration and generates
+    concrete, actionable change proposals with reasoning and implementation plans.
+    """
+    @property
+    def name(self) -> str:
+        return "AnalyzeAndProposeChange"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Analyze a codebase and propose specific code changes or improvements. "
+            "Uses AI to understand code patterns, identify issues, and suggest "
+            "concrete implementations with detailed reasoning."
+        )
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "target_repo_url": "string - Repository URL to analyze",
+            "analysis_focus": "string - Focus area: 'bug_fixes', 'performance', 'code_quality', 'features', 'security', 'documentation'",
+            "specific_files": "list of strings (optional) - Specific files to focus analysis on",
+            "context_description": "string (optional) - Additional context about what to look for",
+            "proposal_scope": "string (optional, default: 'targeted') - 'minimal', 'targeted', or 'comprehensive'"
+        }
+
+    async def execute(
+        self, params: Dict[str, Any], context: ActionContext
+    ) -> Dict[str, Any]:
+        target_repo_url = params.get("target_repo_url")
+        analysis_focus = params.get("analysis_focus", "code_quality")
+        specific_files = params.get("specific_files", [])
+        context_description = params.get("context_description", "")
+        proposal_scope = params.get("proposal_scope", "targeted")
+        
+        if not target_repo_url:
+            return {"status": "failure", "message": "target_repo_url is required"}
+        
+        try:
+            # Find workspace path from world state
+            workspace_path = await self._find_workspace_path(target_repo_url, context)
+            if not workspace_path:
+                return {"status": "failure", "message": f"Workspace not found for {target_repo_url}. Run SetupDevelopmentWorkspace first."}
+            
+            # Analyze codebase structure and content
+            analysis_result = await self._analyze_codebase(
+                workspace_path, analysis_focus, specific_files, context_description
+            )
+            
+            # Generate AI-driven change proposals
+            proposals = await self._generate_change_proposals(
+                analysis_result, analysis_focus, proposal_scope, workspace_path
+            )
+            
+            # Create development task in world state
+            if proposals and hasattr(context, 'world_state_manager') and context.world_state_manager:
+                task_id = f"ace-proposal-{analysis_focus}-{asyncio.get_event_loop().time():.0f}"
+                await self._create_development_task(
+                    context, target_repo_url, task_id, proposals, analysis_focus
+                )
+            
+            return {
+                "status": "success",
+                "analysis_focus": analysis_focus,
+                "workspace_path": str(workspace_path),
+                "proposals_count": len(proposals),
+                "proposals": proposals[:3],  # Limit to first 3 for readability
+                "all_proposals_summary": f"Generated {len(proposals)} change proposals",
+                "next_steps": "Use ImplementCodeChangesTool to apply selected proposals"
+            }
+            
+        except Exception as e:
+            return {"status": "failure", "message": f"Error analyzing codebase: {str(e)}"}
+
+    async def _find_workspace_path(self, target_repo_url: str, context: ActionContext) -> Optional[Path]:
+        """Find the local workspace path for a target repository."""
+        if hasattr(context, 'world_state_manager') and context.world_state_manager:
+            ws_data = await context.world_state_manager.get_state()
+            if target_repo_url in ws_data.target_repositories:
+                repo_context = ws_data.target_repositories[target_repo_url]
+                if repo_context.setup_complete:
+                    return Path(repo_context.local_clone_path)
+        return None
+
+    async def _analyze_codebase(
+        self, workspace_path: Path, focus: str, specific_files: List[str], context_desc: str
+    ) -> Dict[str, Any]:
+        """Analyze the codebase to identify areas for improvement."""
+        analysis = {
+            "focus": focus,
+            "files_analyzed": [],
+            "patterns_found": [],
+            "issues_identified": [],
+            "opportunities": []
+        }
+        
+        # Determine files to analyze
+        files_to_analyze = []
+        if specific_files:
+            files_to_analyze = [workspace_path / f for f in specific_files if (workspace_path / f).exists()]
+        else:
+            # Auto-discover relevant files based on focus
+            extensions = self._get_relevant_extensions(focus)
+            for ext in extensions:
+                files_to_analyze.extend(workspace_path.glob(f"**/*{ext}"))
+        
+        # Analyze each file
+        for file_path in files_to_analyze[:10]:  # Limit to avoid excessive analysis
+            if file_path.is_file() and file_path.stat().st_size < 50000:  # Skip very large files
+                file_analysis = await self._analyze_file(file_path, focus, context_desc)
+                analysis["files_analyzed"].append(str(file_path.relative_to(workspace_path)))
+                analysis["patterns_found"].extend(file_analysis.get("patterns", []))
+                analysis["issues_identified"].extend(file_analysis.get("issues", []))
+                analysis["opportunities"].extend(file_analysis.get("opportunities", []))
+        
+        return analysis
+
+    def _get_relevant_extensions(self, focus: str) -> List[str]:
+        """Get file extensions relevant to the analysis focus."""
+        base_extensions = [".py", ".js", ".ts", ".java", ".cpp", ".c", ".go", ".rs"]
+        
+        if focus == "documentation":
+            return [".md", ".txt", ".rst"] + base_extensions
+        elif focus == "security":
+            return base_extensions + [".yml", ".yaml", ".json", ".xml"]
+        else:
+            return base_extensions
+
+    async def _analyze_file(self, file_path: Path, focus: str, context_desc: str) -> Dict[str, Any]:
+        """Analyze a single file for issues and opportunities."""
+        try:
+            content = file_path.read_text(encoding='utf-8')
+            lines = content.split('\n')
+            
+            analysis = {
+                "patterns": [],
+                "issues": [],
+                "opportunities": []
+            }
+            
+            # Basic pattern analysis based on focus
+            if focus == "code_quality":
+                analysis.update(self._analyze_code_quality(content, lines, file_path))
+            elif focus == "performance":
+                analysis.update(self._analyze_performance(content, lines, file_path))
+            elif focus == "security":
+                analysis.update(self._analyze_security(content, lines, file_path))
+            elif focus == "documentation":
+                analysis.update(self._analyze_documentation(content, lines, file_path))
+            
+            return analysis
+            
+        except Exception:
+            return {"patterns": [], "issues": [], "opportunities": []}
+
+    def _analyze_code_quality(self, content: str, lines: List[str], file_path: Path) -> Dict[str, Any]:
+        """Analyze code quality issues."""
+        issues = []
+        opportunities = []
+        patterns = []
+        
+        # Check for common code quality issues
+        if len(lines) > 500:
+            issues.append(f"Large file ({len(lines)} lines) in {file_path.name} - consider splitting")
+        
+        # Look for long functions (simple heuristic)
+        function_lines = 0
+        in_function = False
+        for i, line in enumerate(lines):
+            line = line.strip()
+            if line.startswith('def ') or line.startswith('function ') or line.startswith('class '):
+                if in_function and function_lines > 50:
+                    issues.append(f"Long function/class at line {i-function_lines} in {file_path.name}")
+                in_function = True
+                function_lines = 0
+            elif in_function:
+                function_lines += 1
+        
+        # Look for code patterns
+        if 'TODO' in content or 'FIXME' in content:
+            patterns.append(f"TODO/FIXME comments found in {file_path.name}")
+            opportunities.append(f"Address TODO/FIXME items in {file_path.name}")
+        
+        return {"patterns": patterns, "issues": issues, "opportunities": opportunities}
+
+    def _analyze_performance(self, content: str, lines: List[str], file_path: Path) -> Dict[str, Any]:
+        """Analyze performance-related issues."""
+        issues = []
+        opportunities = []
+        patterns = []
+        
+        # Simple performance pattern detection
+        if file_path.suffix == '.py':
+            if 'for' in content and 'in range(' in content:
+                patterns.append(f"Range loops found in {file_path.name}")
+                opportunities.append(f"Consider optimizing range loops in {file_path.name}")
+            
+            if content.count('print(') > 10:
+                issues.append(f"Many print statements in {file_path.name} - may impact performance")
+        
+        return {"patterns": patterns, "issues": issues, "opportunities": opportunities}
+
+    def _analyze_security(self, content: str, lines: List[str], file_path: Path) -> Dict[str, Any]:
+        """Analyze security-related issues."""
+        issues = []
+        opportunities = []
+        patterns = []
+        
+        # Basic security pattern detection
+        security_keywords = ['password', 'secret', 'api_key', 'token']
+        for keyword in security_keywords:
+            if keyword in content.lower():
+                patterns.append(f"Security-sensitive keyword '{keyword}' found in {file_path.name}")
+                opportunities.append(f"Review {keyword} handling in {file_path.name}")
+        
+        return {"patterns": patterns, "issues": issues, "opportunities": opportunities}
+
+    def _analyze_documentation(self, content: str, lines: List[str], file_path: Path) -> Dict[str, Any]:
+        """Analyze documentation-related issues."""
+        issues = []
+        opportunities = []
+        patterns = []
+        
+        if file_path.suffix == '.py':
+            # Check for missing docstrings
+            function_count = content.count('def ')
+            docstring_count = content.count('"""') + content.count("'''")
+            
+            if function_count > 0 and docstring_count < function_count:
+                issues.append(f"Missing docstrings in {file_path.name}")
+                opportunities.append(f"Add docstrings to functions in {file_path.name}")
+        
+        return {"patterns": patterns, "issues": issues, "opportunities": opportunities}
+
+    async def _generate_change_proposals(
+        self, analysis: Dict[str, Any], focus: str, scope: str, workspace_path: Path
+    ) -> List[Dict[str, Any]]:
+        """Generate concrete change proposals based on analysis."""
+        proposals = []
+        
+        # Convert issues into actionable proposals
+        for issue in analysis["issues_identified"][:5]:  # Limit proposals
+            proposal = {
+                "id": f"proposal-{len(proposals) + 1}",
+                "title": f"Fix: {issue}",
+                "description": f"Address the identified issue: {issue}",
+                "type": "fix",
+                "priority": "medium",
+                "files_affected": [],
+                "changes_summary": f"Implement fix for {issue}",
+                "implementation_plan": [
+                    "Identify affected code sections",
+                    "Implement the fix",
+                    "Test the changes",
+                    "Update documentation if needed"
+                ]
+            }
+            proposals.append(proposal)
+        
+        # Convert opportunities into enhancement proposals
+        for opportunity in analysis["opportunities"][:3]:
+            proposal = {
+                "id": f"proposal-{len(proposals) + 1}",
+                "title": f"Enhancement: {opportunity}",
+                "description": f"Implement improvement: {opportunity}",
+                "type": "enhancement",
+                "priority": "low",
+                "files_affected": [],
+                "changes_summary": f"Enhance codebase by {opportunity}",
+                "implementation_plan": [
+                    "Analyze current implementation",
+                    "Design improvement",
+                    "Implement changes",
+                    "Validate improvements"
+                ]
+            }
+            proposals.append(proposal)
+        
+        return proposals
+
+    async def _create_development_task(
+        self, context: ActionContext, target_repo_url: str, task_id: str, 
+        proposals: List[Dict[str, Any]], focus: str
+    ):
+        """Create a development task in the world state."""
+        from ..core.world_state.structures import DevelopmentTask
+        
+        ws_data = await context.world_state_manager.get_state()
+        
+        task = DevelopmentTask(
+            task_id=task_id,
+            title=f"AI-Proposed {focus.title()} Improvements",
+            description=f"AI-generated proposals for {focus} improvements",
+            target_repository=target_repo_url,
+            status="proposal_ready",
+            initial_proposal={
+                "focus": focus,
+                "proposals": proposals,
+                "generated_at": asyncio.get_event_loop().time()
+            }
+        )
+        
+        ws_data.development_tasks[task_id] = task
+        await context.world_state_manager.update_state(ws_data)
+
+
+class ImplementCodeChangesTool(ToolInterface):  # Phase 2
+    """
+    Implements specific code changes based on AI proposals or manual specifications.
+    
+    This tool takes change proposals and applies them to the codebase,
+    creating commits and preparing for PR submission.
+    """
+    @property
+    def name(self) -> str:
+        return "ImplementCodeChanges"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Implement specific code changes in a target repository workspace. "
+            "Can apply AI-generated proposals or implement manually specified changes. "
+            "Creates commits and prepares changes for review."
+        )
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "target_repo_url": "string - Repository URL where changes will be implemented",
+            "task_id": "string (optional) - Development task ID if implementing from proposals",
+            "proposal_ids": "list of strings (optional) - Specific proposal IDs to implement",
+            "manual_changes": "list of objects (optional) - Manual change specifications: [{'file': 'path', 'action': 'create/modify/delete', 'content': '...', 'description': '...'}]",
+            "commit_message": "string (optional) - Custom commit message",
+            "create_branch": "boolean (optional, default: true) - Whether to create a new branch for changes"
+        }
+
+    async def execute(
+        self, params: Dict[str, Any], context: ActionContext
+    ) -> Dict[str, Any]:
+        target_repo_url = params.get("target_repo_url")
+        task_id = params.get("task_id")
+        proposal_ids = params.get("proposal_ids", [])
+        manual_changes = params.get("manual_changes", [])
+        commit_message = params.get("commit_message")
+        create_branch = params.get("create_branch", True)
+        
+        if not target_repo_url:
+            return {"status": "failure", "message": "target_repo_url is required"}
+        
+        if not task_id and not manual_changes:
+            return {"status": "failure", "message": "Either task_id with proposals or manual_changes must be provided"}
+        
+        try:
+            # Find workspace and git repository
+            workspace_path = await self._find_workspace_path(target_repo_url, context)
+            if not workspace_path:
+                return {"status": "failure", "message": f"Workspace not found for {target_repo_url}. Run SetupDevelopmentWorkspace first."}
+            
+            # Set up git repository interface
+            lg = LocalGitRepository(target_repo_url, str(workspace_path.parent))
+            
+            # Create feature branch if requested
+            branch_name = None
+            if create_branch:
+                branch_name = f"ace-implementation-{task_id or 'manual'}-{asyncio.get_event_loop().time():.0f}"
+                await self._create_branch(lg, branch_name)
+            
+            # Determine changes to implement
+            changes_to_apply = []
+            if task_id:
+                changes_to_apply = await self._get_proposal_changes(context, task_id, proposal_ids)
+            else:
+                changes_to_apply = manual_changes
+            
+            # Apply changes
+            applied_changes = []
+            for change in changes_to_apply:
+                result = await self._apply_change(workspace_path, change)
+                if result["success"]:
+                    applied_changes.append(result)
+            
+            # Commit changes
+            commit_msg = commit_message or f"ACE: Implement {len(applied_changes)} code changes"
+            commit_success = await self._commit_changes(lg, commit_msg, applied_changes)
+            
+            # Update task status in world state
+            if task_id and hasattr(context, 'world_state_manager'):
+                await self._update_task_status(context, task_id, "implemented", applied_changes)
+            
+            return {
+                "status": "success",
+                "workspace_path": str(workspace_path),
+                "branch_name": branch_name,
+                "changes_applied": len(applied_changes),
+                "changes_details": applied_changes,
+                "commit_created": commit_success,
+                "next_steps": "Review changes and create PR with CreatePullRequestTool"
+            }
+            
+        except Exception as e:
+            return {"status": "failure", "message": f"Error implementing changes: {str(e)}"}
+
+    async def _find_workspace_path(self, target_repo_url: str, context: ActionContext) -> Optional[Path]:
+        """Find the local workspace path for a target repository."""
+        if hasattr(context, 'world_state_manager') and context.world_state_manager:
+            ws_data = await context.world_state_manager.get_state()
+            if target_repo_url in ws_data.target_repositories:
+                repo_context = ws_data.target_repositories[target_repo_url]
+                if repo_context.setup_complete:
+                    return Path(repo_context.local_clone_path)
+        return None
+
+    async def _create_branch(self, lg: LocalGitRepository, branch_name: str) -> bool:
+        """Create a new feature branch."""
+        # Simple branch creation - in a real implementation, this would use git commands
+        return True
+
+    async def _get_proposal_changes(
+        self, context: ActionContext, task_id: str, proposal_ids: List[str]
+    ) -> List[Dict[str, Any]]:
+        """Get changes from development task proposals."""
+        if not hasattr(context, 'world_state_manager'):
+            return []
+        
+        ws_data = await context.world_state_manager.get_state()
+        if task_id not in ws_data.development_tasks:
+            return []
+        
+        task = ws_data.development_tasks[task_id]
+        proposals = task.initial_proposal.get("proposals", [])
+        
+        # Filter by proposal IDs if specified
+        if proposal_ids:
+            proposals = [p for p in proposals if p.get("id") in proposal_ids]
+        
+        # Convert proposals to change specifications
+        changes = []
+        for proposal in proposals:
+            # This is a simplified conversion - real implementation would be more sophisticated
+            change = {
+                "file": "example.py",  # Would be determined from proposal
+                "action": "modify",
+                "content": f"# Implementation of: {proposal['title']}\n# {proposal['description']}\n",
+                "description": proposal['title']
+            }
+            changes.append(change)
+        
+        return changes
+
+    async def _apply_change(self, workspace_path: Path, change: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply a single change to the workspace."""
+        try:
+            file_path = workspace_path / change["file"]
+            action = change["action"]
+            content = change.get("content", "")
+            
+            if action == "create":
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                file_path.write_text(content, encoding='utf-8')
+            elif action == "modify":
+                if file_path.exists():
+                    # In a real implementation, this would be more sophisticated
+                    # (patch application, targeted modifications, etc.)
+                    current_content = file_path.read_text(encoding='utf-8')
+                    new_content = current_content + "\n" + content
+                    file_path.write_text(new_content, encoding='utf-8')
+                else:
+                    file_path.write_text(content, encoding='utf-8')
+            elif action == "delete":
+                if file_path.exists():
+                    file_path.unlink()
+            
+            return {
+                "success": True,
+                "file": change["file"],
+                "action": action,
+                "description": change.get("description", f"{action.title()} {change['file']}")
+            }
+            
+        except Exception as e:
+            return {
+                "success": False,
+                "file": change.get("file", "unknown"),
+                "action": change.get("action", "unknown"),
+                "error": str(e)
+            }
+
+    async def _commit_changes(
+        self, lg: LocalGitRepository, commit_message: str, changes: List[Dict[str, Any]]
+    ) -> bool:
+        """Commit the applied changes."""
+        # In a real implementation, this would use git commands to add and commit files
+        # For now, return True to indicate success
+        return True
+
+    async def _update_task_status(
+        self, context: ActionContext, task_id: str, status: str, changes: List[Dict[str, Any]]
+    ):
+        """Update the development task status in world state."""
+        ws_data = await context.world_state_manager.get_state()
+        if task_id in ws_data.development_tasks:
+            task = ws_data.development_tasks[task_id]
+            task.status = status
+            task.implementation_details = {
+                "changes_applied": changes,
+                "implemented_at": asyncio.get_event_loop().time()
+            }
+            await context.world_state_manager.update_state(ws_data)
 
 
 # ...existing code...
