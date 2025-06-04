@@ -189,7 +189,7 @@ class TestS3Service:
             'S3_API_ENDPOINT': 'https://test-endpoint.com',
             'S3_API_KEY': 'test-key'
             # No CLOUDFRONT_DOMAIN set
-        }):
+        }, clear=True):
             service = S3Service()
             
             image_url = 'https://example.com/image.jpg'

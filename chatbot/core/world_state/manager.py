@@ -758,3 +758,36 @@ class WorldStateManager:
             logger.info(f"Updated timeline cache for Farcaster user {fid}")
         except Exception as e:
             logger.error(f"Error updating Farcaster user timeline cache: {e}", exc_info=True)
+
+    def has_bot_replied_to_matrix_event(self, original_event_id: str) -> bool:
+        """
+        Check if the bot has already sent a reply to a specific Matrix event.
+        
+        Args:
+            original_event_id: The Matrix event ID that was replied to
+            
+        Returns:
+            True if the bot has successfully replied to this event
+        """
+        from ...config import settings
+        
+        # First check in action_history for successful send_matrix_reply actions
+        for action in self.state.action_history:
+            if action.action_type == "send_matrix_reply":
+                params = action.parameters or {}
+                # Check both parameter names since input params use 'reply_to_id'
+                reply_to_event_id = params.get("reply_to_id") or params.get("reply_to_event_id")
+                if reply_to_event_id == original_event_id:
+                    if action.result not in ["scheduled", "failure"]:
+                        logger.debug(f"Bot reply found in action_history for event {original_event_id}: {action.result}")
+                        return True
+        
+        # Also check in messages for bot replies (as a secondary verification)
+        for channel in self.state.channels.values():
+            if channel.type == "matrix":
+                for msg in channel.recent_messages:
+                    if (msg.sender == settings.MATRIX_USER_ID and 
+                        msg.reply_to == original_event_id):
+                        logger.debug(f"Bot reply found in messages for event {original_event_id}: message_id {msg.id}")
+                        return True
+        return False

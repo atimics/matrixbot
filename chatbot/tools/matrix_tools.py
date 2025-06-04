@@ -65,6 +65,20 @@ class SendMatrixReplyTool(ToolInterface):
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
+        # Deduplication check: prevent replying to events we've already replied to
+        if reply_to_event_id and context.world_state_manager:
+            if context.world_state_manager.has_bot_replied_to_matrix_event(reply_to_event_id):
+                warning_msg = f"Bot has already replied to Matrix event {reply_to_event_id}, skipping to prevent feedback loop"
+                logger.warning(warning_msg)
+                return {
+                    "status": "skipped",
+                    "message": warning_msg,
+                    "event_id": reply_to_event_id,
+                    "room_id": room_id,
+                    "reason": "already_replied",
+                    "timestamp": time.time(),
+                }
+
         # If reply_to_id is missing but we have channel_id and content, fall back to regular message
         if not reply_to_event_id:
             logger.info(

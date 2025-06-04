@@ -157,61 +157,47 @@ async def main():
     """Main test function."""
     try:
         await test_matrix_image_fix()
+        print("\n🎉 Matrix Image Handling Fix Test Complete!")
+        print("=" * 50)
     except Exception as e:
         print(f"❌ Test failed with error: {e}")
         import traceback
         traceback.print_exc()
 
-if __name__ == "__main__":
-    asyncio.run(main())
-    mock_matrix_client.download.assert_called_once_with("mxc://chat.ratimics.com/test123")
-    
-    # Verify S3 upload was called
-    mock_s3_service.upload_image_data.assert_called_once_with(
-        b"fake_image_data",
-        "matrix_media_test123.jpg"
-    )
-    
-    # Verify we got the S3 URL back
-    assert result == "https://cdn.example.com/matrix_media_test123.jpg"
-    
-    print("✅ Matrix URL conversion test passed!")
+
+import pytest
 
 
+@pytest.mark.asyncio
 async def test_non_matrix_url_passthrough():
     """Test that non-Matrix URLs are passed through unchanged"""
+    from chatbot.tools.describe_image_tool import ensure_publicly_accessible_image_url
+    from chatbot.tools.base import ActionContext
     
     context = ActionContext()
     
     regular_url = "https://example.com/image.jpg"
-    result = await ensure_publicly_accessible_image_url(regular_url, context)
+    result_url, is_accessible = await ensure_publicly_accessible_image_url(regular_url, context)
     
-    assert result == regular_url
+    # Should return the original URL (accessibility may vary based on network)
+    assert result_url == regular_url
     print("✅ Non-Matrix URL passthrough test passed!")
 
 
+@pytest.mark.asyncio
 async def test_matrix_url_with_missing_context():
     """Test graceful fallback when Matrix client is not available"""
+    from chatbot.tools.describe_image_tool import ensure_publicly_accessible_image_url
+    from chatbot.tools.base import ActionContext
     
     context = ActionContext()  # No matrix_observer
     
     matrix_url = "https://chat.ratimics.com/_matrix/media/r0/download/chat.ratimics.com/test123"
-    result = await ensure_publicly_accessible_image_url(matrix_url, context)
+    result_url, is_accessible = await ensure_publicly_accessible_image_url(matrix_url, context)
     
     # Should return original URL as fallback
-    assert result == matrix_url
+    assert result_url == matrix_url
     print("✅ Missing context fallback test passed!")
-
-
-async def main():
-    """Run all tests"""
-    print("Testing Matrix image URL handling fix...")
-    
-    await test_matrix_image_url_conversion()
-    await test_non_matrix_url_passthrough()
-    await test_matrix_url_with_missing_context()
-    
-    print("\n🎉 All tests passed! The Matrix image URL fix is working correctly.")
 
 
 if __name__ == "__main__":

@@ -289,6 +289,19 @@ RATE LIMITING AWARENESS:
 * When rate limited, prefer Wait actions or focus on highest-priority responses only
 * Rate limit status is logged periodically - failed actions will indicate rate limiting
 
+IMPORTANT REPLY HANDLING AND DEDUPLICATION:
+To prevent feedback loops and duplicate responses:
+* Before replying to a user's message, check if YOUR MOST RECENT message in that channel was already a reply to THAT SAME user message
+* You can identify this by examining your `action_history` for recent successful `send_matrix_reply` or `send_farcaster_reply` actions with the same `reply_to_id`
+* Messages in the `channels` data where `sender` matches your user ID are YOUR OWN previous messages - use them for context
+* If you have ALREADY REPLIED to a specific message in your immediately preceding actions or very recently, DO NOT reply to it again unless:
+  - The user has added new information or asked a follow-up question
+  - The conversation has naturally progressed beyond that message
+  - The user explicitly requests clarification or additional response
+* Aim to provide one thoughtful reply per user message unless the conversation naturally progresses
+* Avoid sending multiple, slightly different replies to the same initial prompt from a user
+* When in doubt, prefer to wait and observe rather than risk duplicate responses
+
 You should respond with JSON in this format:
 {
   "observations": "What you notice about the current state",
