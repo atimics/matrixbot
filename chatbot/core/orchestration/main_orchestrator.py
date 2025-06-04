@@ -130,6 +130,7 @@ class MainOrchestrator:
         from ...tools.permaweb_tools import StorePermanentMemoryTool
         from ...tools.web_tools import WebSearchTool
         from ...tools.research_tools import UpdateResearchTool, QueryResearchTool
+        from ...tools.developer_tools import GetCodebaseStructureTool
         
         # Core tools
         self.tool_registry.register_tool(WaitTool())
@@ -172,6 +173,8 @@ class MainOrchestrator:
         
         # Permaweb tools
         self.tool_registry.register_tool(StorePermanentMemoryTool())
+        # Developer tools (Phase 1)
+        self.tool_registry.register_tool(GetCodebaseStructureTool())
 
     async def start(self) -> None:
         """Start the entire orchestrator system."""
