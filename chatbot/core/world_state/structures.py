@@ -555,6 +555,61 @@ class ResearchEntry:
     verification_notes: Optional[str] = None
 
 
+@dataclass
+class TargetRepositoryContext:
+    """
+    Comprehensive context for a target repository in the ACE system.
+    
+    This structure maintains all necessary information for the AI to work on
+    improving a specific codebase, whether external or its own.
+    """
+    url: str = ""  # Main repository URL (e.g., "https://github.com/owner/repo")
+    fork_url: Optional[str] = None  # AI's fork URL
+    local_clone_path: Optional[str] = None  # Local workspace path
+    current_branch: Optional[str] = None  # Current working branch
+    active_task_id: Optional[str] = None  # Currently active development task
+    open_issues_summary: List[Dict[str, Any]] = field(default_factory=list)  # GitHub issues
+    open_prs_summary: List[Dict[str, Any]] = field(default_factory=list)  # GitHub PRs
+    codebase_structure: Optional[Dict[str, Any]] = None  # File tree and analysis
+    last_synced_with_upstream: Optional[float] = None
+    setup_complete: bool = False  # Whether workspace is ready for development
+
+
+@dataclass
+class DevelopmentTask:
+    """
+    Represents a development task in the ACE system lifecycle.
+    
+    Tracks the complete evolution from identification through implementation
+    and feedback, enabling the AI to learn from outcomes.
+    """
+    task_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    title: str = ""
+    description: str = ""  # Detailed task description from AI or human
+    target_repository: str = ""  # Repository URL this task applies to
+    target_files: List[str] = field(default_factory=list)  # Files to modify
+    status: str = "proposed"  # proposed, feedback_pending, approved, implementation_in_progress, pr_submitted, merged, closed
+    priority: int = 5  # 1-10
+    
+    # ACE Lifecycle tracking
+    initial_proposal: Optional[str] = None  # AI's initial proposal text
+    feedback_summary: Optional[str] = None  # Human feedback from Matrix/PR
+    implementation_plan: Optional[str] = None  # Detailed plan for code changes
+    associated_pr_url: Optional[str] = None  # GitHub PR URL
+    pr_status: Optional[str] = None  # open, merged, closed
+    
+    # Learning and evaluation
+    validation_results: Optional[str] = None  # Test results, error logs, etc.
+    key_learnings: Optional[str] = None  # What the AI learned from this task
+    performance_impact: Optional[str] = None  # Measurable impact if available
+    
+    # Metadata
+    source_reference: Optional[str] = None  # Matrix room, log entry, etc. that triggered this
+    created_at: float = field(default_factory=time.time)
+    updated_at: float = field(default_factory=time.time)
+    completed_at: Optional[float] = None
+
+
 class WorldStateData:
     def add_action_history(self, action_data: dict):
         """Compatibility method for tests that call add_action_history on WorldStateData."""
@@ -659,6 +714,16 @@ class WorldStateData:
         # Research knowledge base - persistent AI learning and knowledge accumulation
         self.research_database: Dict[str, Dict[str, Any]] = {}  # topic -> research_entry
         
+        # Autonomous Code Evolution (ACE) capabilities
+        self.target_repositories: Dict[str, TargetRepositoryContext] = {}  # repo_url -> context
+        self.development_tasks: Dict[str, DevelopmentTask] = {}  # task_id -> task
+        self.evolutionary_knowledge_base: Dict[str, Dict[str, Any]] = {}  # patterns and learnings
+        
+        # Legacy compatibility (Phase 1 backward compatibility)
+        self.codebase_structure: Optional[Dict[str, Any]] = None
+        self.project_plan: Dict[str, DevelopmentTask] = {}  # task_id -> DevelopmentTask  
+        self.github_repository_state: Optional[TargetRepositoryContext] = None
+        
         # Backward compatibility placeholders
         self.user_details: Dict[str, Any] = {}
         self.bot_media: Dict[str, Any] = {}  # alias for bot_media_on_farcaster
@@ -679,6 +744,10 @@ class WorldStateData:
             "thread_count": len(self.threads),
             "pending_invites": len(self.pending_matrix_invites),
             "media_library_size": len(self.generated_media_library),
+            "development_task_count": len(self.development_tasks),
+            "target_repository_count": len(self.target_repositories),
+            "active_tasks": len([t for t in self.development_tasks.values() if t.status in ["approved", "implementation_in_progress"]]),
+            "codebase_structure_available": self.codebase_structure is not None,
             "last_update": self.last_update
         }
     # Backward-compatible methods for direct WorldState usage
@@ -844,6 +913,14 @@ class WorldStateData:
             "rate_limits": self.rate_limits,
             "pending_invites": self.pending_matrix_invites,
             "recent_activity": self.get_recent_activity(),
+            # Autonomous Code Evolution (ACE) fields
+            "target_repositories": {url: asdict(ctx) for url, ctx in self.target_repositories.items()},
+            "development_tasks": {task_id: asdict(task) for task_id, task in self.development_tasks.items()},
+            "evolutionary_knowledge_base": self.evolutionary_knowledge_base,
+            # Legacy compatibility
+            "codebase_structure": self.codebase_structure,
+            "project_plan": {task_id: asdict(task) for task_id, task in self.project_plan.items()},
+            "github_repository_state": asdict(self.github_repository_state) if self.github_repository_state else None,
         }
 
     def get_recent_activity(self, lookback_seconds: int = 300) -> Dict[str, Any]:
@@ -935,3 +1012,49 @@ class WorldStateData:
                 "recent_generation_count": len(recent_generations),
             },
         }
+
+    def update_codebase_structure(self, structure: Dict[str, Any]):
+        """Update the codebase structure from GitHub or local analysis."""
+        self.codebase_structure = structure
+        self.last_update = time.time()
+
+    def add_project_task(self, task: DevelopmentTask):
+        """Add a new development task to the plan (legacy compatibility)."""
+        self.project_plan[task.task_id] = task
+        self.development_tasks[task.task_id] = task  # Also add to new structure
+        self.last_update = time.time()
+
+    def update_project_task(self, task_id: str, **kwargs):
+        """Update an existing development task."""
+        if task_id in self.development_tasks:
+            task = self.development_tasks[task_id]
+            for key, value in kwargs.items():
+                if hasattr(task, key):
+                    setattr(task, key, value)
+            task.updated_at = time.time()
+            self.last_update = time.time()
+            # Keep legacy structure in sync
+            if task_id in self.project_plan:
+                self.project_plan[task_id] = task
+
+    def get_project_tasks_by_status(self, status: str) -> List[DevelopmentTask]:
+        """Get all development tasks with a specific status."""
+        return [task for task in self.development_tasks.values() if task.status == status]
+
+    def add_target_repository(self, repo_url: str, context: TargetRepositoryContext):
+        """Add or update target repository context for ACE operations."""
+        self.target_repositories[repo_url] = context
+        self.last_update = time.time()
+
+    def get_target_repository(self, repo_url: str) -> Optional[TargetRepositoryContext]:
+        """Get target repository context by URL."""
+        return self.target_repositories.get(repo_url)
+
+    def update_github_repo_state(self, **kwargs):
+        """Update GitHub repository state fields (legacy compatibility)."""
+        if self.github_repository_state is None:
+            self.github_repository_state = TargetRepositoryContext()
+        for key, value in kwargs.items():
+            if hasattr(self.github_repository_state, key):
+                setattr(self.github_repository_state, key, value)
+        self.last_update = time.time()

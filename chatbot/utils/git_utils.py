@@ -34,6 +34,7 @@ class LocalGitRepository:
         """
         os.makedirs(self.local_base_path, exist_ok=True)
         if not self.repo_path.exists():
+            # First try to clone with the specific branch
             cmd = ['git', 'clone', '-b', branch, self.repo_url, str(self.repo_path)]
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -41,9 +42,36 @@ class LocalGitRepository:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
-            _, _ = await proc.communicate()
-            return proc.returncode == 0
-        # Fetch and hard-reset
+            stdout, stderr = await proc.communicate()
+            
+            if proc.returncode == 0:
+                return True
+            
+            # If that failed, try cloning without specifying branch, then checkout
+            cmd = ['git', 'clone', self.repo_url, str(self.repo_path)]
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                cwd=str(self.local_base_path),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await proc.communicate()
+            
+            if proc.returncode != 0:
+                return False
+            
+            # Try to checkout the requested branch
+            checkout_cmd = ['git', '-C', str(self.repo_path), 'checkout', branch]
+            proc = await asyncio.create_subprocess_exec(
+                *checkout_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            await proc.communicate()
+            # Don't fail if checkout fails - we'll be on default branch
+            return True
+            
+        # Fetch and hard-reset for existing repo
         fetch_cmd = ['git', '-C', str(self.repo_path), 'fetch', 'origin', branch]
         proc1 = await asyncio.create_subprocess_exec(
             *fetch_cmd,
