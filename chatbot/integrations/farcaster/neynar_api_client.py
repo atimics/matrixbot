@@ -484,10 +484,24 @@ class NeynarAPIClient:
             
         Returns:
             Dictionary containing relevant owners data or None if error/no data
+            Response includes:
+            - top_relevant_fungible_owners_hydrated: Array of User objects with full profile data
+            - all_relevant_fungible_owners_dehydrated: Array of User objects with minimal data
         """
+        # Input validation
+        if not contract_address or not contract_address.strip():
+            raise ValueError("contract_address is required and cannot be empty")
+        
+        valid_networks = ['ethereum', 'optimism', 'base', 'arbitrum', 'solana']
+        if network not in valid_networks:
+            raise ValueError(f"network must be one of {valid_networks}, got: {network}")
+        
+        if viewer_fid is not None and viewer_fid <= 0:
+            raise ValueError("viewer_fid must be a positive integer if provided")
+        
         endpoint = "/farcaster/fungible/owner/relevant"
         params = {
-            "contract_address": contract_address,
+            "contract_address": contract_address.strip(),
             "network": network,
         }
         if viewer_fid:
@@ -497,16 +511,21 @@ class NeynarAPIClient:
             response = await self._make_request("GET", endpoint, params=params)
             response_data = response.json()
             
-            # Minimal validation - check for expected response structure
+            # Validate expected response structure
             if response_data and (
                 "top_relevant_fungible_owners_hydrated" in response_data or 
                 "all_relevant_fungible_owners_dehydrated" in response_data
             ):
+                logger.debug(
+                    f"Successfully fetched relevant fungible owners for {contract_address} "
+                    f"on {network}. Hydrated: {len(response_data.get('top_relevant_fungible_owners_hydrated', []))}, "
+                    f"Dehydrated: {len(response_data.get('all_relevant_fungible_owners_dehydrated', []))}"
+                )
                 return response_data
             
             logger.warning(
                 f"Relevant fungible owners response missing expected keys for {contract_address} "
-                f"on {network}. Response: {response_data}"
+                f"on {network}. Response keys: {list(response_data.keys()) if response_data else 'None'}"
             )
             return None
             
