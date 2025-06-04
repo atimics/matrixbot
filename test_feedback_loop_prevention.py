@@ -27,9 +27,13 @@ class TestFeedbackLoopPrevention:
         self.world_state_manager = WorldStateManager()
         self.world_state_manager.add_channel("!test:example.com", "matrix", "Test Room")
         
-        # Mock Matrix observer
+        # Mock Matrix observer with async methods
         self.mock_matrix_observer = Mock()
         self.mock_matrix_observer.send_reply = AsyncMock(return_value={
+            "success": True,
+            "event_id": "$bot_reply_123",
+        })
+        self.mock_matrix_observer.send_formatted_reply = AsyncMock(return_value={
             "success": True,
             "event_id": "$bot_reply_123",
         })
@@ -72,7 +76,7 @@ class TestFeedbackLoopPrevention:
         # Verify the reply succeeded
         assert result["status"] == "success"
         assert "event_id" in result
-        self.mock_matrix_observer.send_reply.assert_called_once()
+        self.mock_matrix_observer.send_formatted_reply.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_duplicate_reply_prevented_by_action_history(self):
@@ -99,7 +103,7 @@ class TestFeedbackLoopPrevention:
         # Verify the reply was skipped
         assert result["status"] == "skipped"
         assert "already_replied" in result["reason"]
-        self.mock_matrix_observer.send_reply.assert_not_called()
+        self.mock_matrix_observer.send_formatted_reply.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_duplicate_reply_prevented_by_message_history(self):
@@ -140,7 +144,7 @@ class TestFeedbackLoopPrevention:
         # Verify the reply was skipped
         assert result["status"] == "skipped"
         assert "already_replied" in result["reason"]
-        self.mock_matrix_observer.send_reply.assert_not_called()
+        self.mock_matrix_observer.send_formatted_reply.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_new_message_allows_reply(self):
@@ -166,7 +170,7 @@ class TestFeedbackLoopPrevention:
         
         # Verify the reply succeeded
         assert result["status"] == "success"
-        self.mock_matrix_observer.send_reply.assert_called_once()
+        self.mock_matrix_observer.send_formatted_reply.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_failed_reply_allows_retry(self):
@@ -192,7 +196,7 @@ class TestFeedbackLoopPrevention:
         
         # Verify the reply succeeded (retry allowed for failed attempts)
         assert result["status"] == "success"
-        self.mock_matrix_observer.send_reply.assert_called_once()
+        self.mock_matrix_observer.send_formatted_reply.assert_called_once()
 
     def test_has_bot_replied_to_matrix_event_method(self):
         """Test the has_bot_replied_to_matrix_event method directly"""
