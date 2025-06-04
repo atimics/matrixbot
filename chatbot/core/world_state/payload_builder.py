@@ -35,8 +35,16 @@ class PayloadBuilder:
     3. Payload size estimation for strategy selection
     """
 
-    def __init__(self):
-        pass
+    def __init__(self, world_state_manager=None, node_manager=None):
+        """
+        Initialize PayloadBuilder.
+        
+        Args:
+            world_state_manager: Optional WorldStateManager instance
+            node_manager: Optional NodeManager for node-based payloads
+        """
+        self.world_state_manager = world_state_manager
+        self.node_manager = node_manager
 
     def build_full_payload(
         self,
@@ -482,8 +490,8 @@ class PayloadBuilder:
         
         return payload
 
+    @staticmethod
     def estimate_payload_size(
-        self,
         world_state_data: WorldStateData,
         config: Optional[Dict[str, Any]] = None
     ) -> int:

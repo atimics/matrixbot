@@ -70,9 +70,8 @@ class TestPayloadBuilderFullPayload:
         action = ActionHistory(
             action_type="send_reply",
             parameters={"content": "Hi there!"},
-            timestamp=time.time() - 900,
-            channel_id="matrix_room",
-            success=True
+            result="success",
+            timestamp=time.time() - 900
         )
         world_state_manager.add_action(action)
         
@@ -261,11 +260,13 @@ class TestPayloadBuilderCrossPlatform:
         for i in range(5):
             msg = Message(
                 id=f"msg_{i}",
-                author_fid=f"user_{i}",
-                author_username=f"user_{i}",
+                sender_fid=f"user_{i}",
+                sender_username=f"user_{i}",
                 content=f"Message {i}",
                 timestamp=time.time() - (i * 100),
-                channel_id="active_room"
+                channel_id="active_room",
+                channel_type="matrix",
+                sender=f"user_{i}"
             )
             world_state_manager.add_message("active_room", msg)
         
@@ -291,11 +292,13 @@ class TestPayloadBuilderNodeIntegration:
         for i in range(10):
             msg = Message(
                 id=f"node_msg_{i}",
-                author_fid=f"user_{i}",
-                author_username=f"user_{i}",
+                sender_fid=f"user_{i}",
+                sender_username=f"user_{i}",
                 content=f"Node test message {i}",
                 timestamp=time.time() - (i * 60),
-                channel_id="main_room"
+                channel_id="main_room",
+                channel_type="matrix",
+                sender=f"user_{i}"
             )
             world_state_manager.add_message("main_room", msg)
         
@@ -368,11 +371,13 @@ class TestPayloadBuilderEdgeCases:
             for msg_i in range(20):
                 msg = Message(
                     id=f"large_msg_{ch_i}_{msg_i}",
-                    author_fid=f"user_{msg_i}",
-                    author_username=f"user_{msg_i}",
+                    sender_fid=f"user_{msg_i}",
+                    sender_username=f"user_{msg_i}",
                     content=f"Large dataset test message {msg_i} in channel {ch_i}",
                     timestamp=time.time() - (msg_i * 30),
-                    channel_id=channel_id
+                    channel_id=channel_id,
+                    channel_type="matrix",
+                    sender=f"user_{msg_i}"
                 )
                 world_state_manager.add_message(channel_id, msg)
         
@@ -394,10 +399,12 @@ class TestPayloadBuilderEdgeCases:
         for i in range(10):
             msg = Message(
                 id=f"memory_test_{i}",
-                author_fid="test_user",
-                author_username="test_user",
+                sender_fid="test_user",
+                sender_username="test_user",
                 content=large_content,
                 timestamp=time.time(),
+                channel_type="matrix",
+                sender="test_user",
                 channel_id="memory_test_channel"
             )
             world_state_manager.add_message("memory_test_channel", msg)
@@ -456,11 +463,13 @@ class TestPayloadBuilderPerformance:
             for msg_i in range(50):
                 msg = Message(
                     id=f"perf_msg_{ch_i}_{msg_i}",
-                    author_fid=f"user_{msg_i % 10}",  # 10 different users
-                    author_username=f"user_{msg_i % 10}",
+                    sender_fid=f"user_{msg_i % 10}",  # 10 different users
+                    sender_username=f"user_{msg_i % 10}",
                     content=f"Performance test message {msg_i}",
                     timestamp=time.time() - (msg_i * 60),
-                    channel_id=channel_id
+                    channel_id=channel_id,
+                    channel_type="matrix",
+                    sender=f"user_{msg_i % 10}"
                 )
                 world_state_manager.add_message(channel_id, msg)
         

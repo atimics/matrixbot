@@ -75,7 +75,8 @@ class TestHistoryRecorderBasic:
             potential_actions=[{"action": "check_weather"}],
             selected_actions=[{"action": "check_weather"}],
             reasoning="User needs weather info",
-            channel_id="test_channel"
+            channel_id="test_channel",
+            raw_llm_response={"response": "mock_response"}
         )
         
         assert len(recorder.state_changes) >= 1

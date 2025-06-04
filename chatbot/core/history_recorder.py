@@ -161,6 +161,37 @@ class HistoryRecorder:
         await self._store_state_change(state_change)
         logger.debug(f"HistoryRecorder: Recorded world update: {update_type}")
 
+    async def record_tool_execution(
+        self,
+        tool_name: str,
+        tool_params: Dict[str, Any],
+        tool_result: Dict[str, Any],
+        channel_id: Optional[str] = None
+    ):
+        """Record the execution of a tool/action."""
+        state_change = StateChangeBlock(
+            timestamp=time.time(),
+            change_type="tool_execution",
+            source="system",
+            channel_id=channel_id,
+            observations=None,
+            potential_actions=None,
+            selected_actions=[{
+                "tool": tool_name,
+                "parameters": tool_params,
+                "result": tool_result
+            }],
+            reasoning=f"Tool execution: {tool_name}",
+            raw_content={
+                "tool_name": tool_name,
+                "parameters": tool_params,
+                "result": tool_result
+            }
+        )
+        
+        await self._store_state_change(state_change)
+        logger.debug(f"HistoryRecorder: Recorded tool execution {tool_name}")
+
     async def _store_state_change(self, state_change: StateChangeBlock):
         """Permanently store a state change block."""
         self.state_changes.append(state_change)
@@ -362,7 +393,8 @@ class HistoryRecorder:
                     recent_count = (await cursor.fetchone())[0]
 
                 return {
-                    "total_state_changes": total_count,
+                    "total_records": total_count,
+                    "total_state_changes": total_count,  # Keep for backward compatibility
                     "changes_by_type": type_counts,
                     "changes_by_source": source_counts,
                     "recent_activity_24h": recent_count,
