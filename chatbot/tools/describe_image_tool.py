@@ -1,4 +1,5 @@
 import logging
+import re
 import time
 from typing import Any, Dict, List
 from urllib.parse import urlparse
@@ -19,63 +20,74 @@ async def ensure_publicly_accessible_image_url(image_url: str, context: ActionCo
     For Matrix URLs, download via nio client and upload to S3.
     Returns tuple of (url, is_accessible)
     """
-    if not image_url.startswith("https://chat.ratimics.com/_matrix/media/"):
+    import re
+    
+    # Check if this is a Matrix media URL using a generic pattern
+    matrix_url_pattern = r"https://([^/]+)/_matrix/media/(?:r0|v3)/download/([^/]+)/(.+)"
+    matrix_match = re.match(matrix_url_pattern, image_url)
+    
+    if not matrix_match:
         # For non-Matrix URLs, verify accessibility
         is_accessible = await _verify_image_accessibility(image_url)
         return image_url, is_accessible
     
     try:
-        # Extract server and media_id from Matrix URL
-        # https://chat.ratimics.com/_matrix/media/r0/download/chat.ratimics.com/fZEbZIjeCUtTYtFGJqnaxlru
-        parts = image_url.split('/')
-        if len(parts) >= 2:
-            server = parts[-2]  # chat.ratimics.com
-            media_id = parts[-1]  # fZEbZIjeCUtTYtFGJqnaxlru
-            mxc_uri = f"mxc://{server}/{media_id}"
-            
-            logger.info(f"Converting Matrix URL to MXC: {mxc_uri}")
-            
-            # Use Matrix client to download the media
-            if hasattr(context, 'matrix_observer') and context.matrix_observer:
-                try:
-                    # Check if client is authenticated
-                    if not context.matrix_observer.client.access_token:
-                        logger.warning(f"Matrix client not authenticated, cannot download {mxc_uri}")
-                        raise Exception("Matrix client not authenticated")
-                    
-                    # Use nio client's built-in download method with MXC URI
-                    download_response = await context.matrix_observer.client.download(mxc_uri)
-                    
-                    if download_response and hasattr(download_response, 'body'):
-                        # Upload to S3
-                        if hasattr(context, 's3_service') and context.s3_service:
-                            s3_url = await context.s3_service.upload_image_data(
-                                download_response.body,
-                                f"matrix_media_{media_id}.jpg"
-                            )
-                            logger.info(f"Successfully uploaded Matrix media to S3: {s3_url}")
-                            return s3_url, True
-                        else:
-                            logger.warning("No S3 service available")
-                            return image_url, False
-                    else:
-                        logger.error(f"Failed to download Matrix media: {mxc_uri}")
-                        return image_url, False
-                        
-                except Exception as e:
-                    logger.error(f"Error downloading Matrix media via nio client: {e}")
-                    return image_url, False
-            else:
-                logger.warning("No Matrix observer available for media download")
-                return image_url, False
+        # Extract server and media_id from Matrix URL generically
+        server_name = matrix_match.group(2)  # Server hosting the media
+        media_id = matrix_match.group(3)     # Media ID
+        mxc_uri = f"mxc://{server_name}/{media_id}"
+        
+        logger.info(f"Converting Matrix URL to MXC: {mxc_uri}")
+        
+        # Use Matrix client to download the media
+        if hasattr(context, 'matrix_observer') and context.matrix_observer:
+            try:
+                # Check if client is authenticated
+                if not context.matrix_observer.client.access_token:
+                    logger.warning(f"Matrix client not authenticated, cannot download {mxc_uri}")
+                    # Fall back to trying the original URL
+                    is_accessible = await _verify_image_accessibility(image_url)
+                    return image_url, is_accessible
                 
+                # Use nio client's built-in download method with MXC URI
+                download_response = await context.matrix_observer.client.download(mxc_uri)
+                
+                if download_response and hasattr(download_response, 'body'):
+                    # Upload to S3
+                    if hasattr(context, 's3_service') and context.s3_service:
+                        s3_url = await context.s3_service.upload_image_data(
+                            download_response.body,
+                            f"matrix_media_{media_id}.jpg"
+                        )
+                        logger.info(f"Successfully uploaded Matrix media to S3: {s3_url}")
+                        return s3_url, True
+                    else:
+                        logger.warning("No S3 service available")
+                        # Fall back to trying the original URL
+                        is_accessible = await _verify_image_accessibility(image_url)
+                        return image_url, is_accessible
+                else:
+                    logger.error(f"Failed to download Matrix media: {mxc_uri}")
+                    # Fall back to trying the original URL
+                    is_accessible = await _verify_image_accessibility(image_url)
+                    return image_url, is_accessible
+                    
+            except Exception as e:
+                logger.error(f"Error downloading Matrix media via nio client: {e}")
+                # Fall back to trying the original URL
+                is_accessible = await _verify_image_accessibility(image_url)
+                return image_url, is_accessible
+        else:
+            logger.warning("No Matrix observer available for media download")
+            # Fall back to trying the original URL
+            is_accessible = await _verify_image_accessibility(image_url)
+            return image_url, is_accessible
+            
     except Exception as e:
         logger.error(f"Error processing Matrix URL {image_url}: {e}")
-        return image_url, False
-    
-    # If all else fails, return original URL as inaccessible
-    logger.warning(f"Could not convert Matrix URL to S3, returning original: {image_url}")
-    return image_url, False
+        # Fall back to trying the original URL
+        is_accessible = await _verify_image_accessibility(image_url)
+        return image_url, is_accessible
 
 
 async def _verify_image_accessibility(image_url: str) -> bool:
@@ -115,7 +127,9 @@ class DescribeImageTool(ToolInterface):
         return (
             "Analyzes an image from a given URL and provides a textual description of its content. "
             "Use this tool when a message includes an image_url and you need to understand what the image depicts "
-            "to generate an appropriate response or take further actions."
+            "to generate an appropriate response or take further actions. "
+            "IMPORTANT: When using this tool for images from messages, always use the URL from the message's "
+            "image_urls array, NOT the content field which contains only the filename."
         )
 
     @property

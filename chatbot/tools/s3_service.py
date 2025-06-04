@@ -27,6 +27,13 @@ class S3Service:
         self.s3_api_endpoint = os.getenv("S3_API_ENDPOINT")
         self.s3_api_key = os.getenv("S3_API_KEY")
         self.cloudfront_domain = os.getenv("CLOUDFRONT_DOMAIN")
+        
+        # Ensure cloudfront_domain doesn't include protocol
+        if self.cloudfront_domain:
+            if self.cloudfront_domain.startswith("https://"):
+                self.cloudfront_domain = self.cloudfront_domain.replace("https://", "", 1)
+            if self.cloudfront_domain.startswith("http://"):
+                self.cloudfront_domain = self.cloudfront_domain.replace("http://", "", 1)
 
         if not all([self.s3_api_endpoint, self.s3_api_key]):
             raise ValueError(

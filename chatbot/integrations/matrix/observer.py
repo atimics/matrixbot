@@ -236,8 +236,18 @@ class MatrixObserver:
                         f"MatrixObserver: Failed to process Matrix image {mxc_uri}: {e}"
                     )
 
-            # For image messages, use the body as content (usually contains filename or description)
-            content = getattr(event, "body", "Image")
+            # For image messages, enhance content to reduce AI confusion
+            original_body = getattr(event, "body", "Image")
+            
+            # Check if the body looks like just a filename
+            if original_body and any(original_body.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg']):
+                # Store the filename in metadata and use a generic content
+                content = "[Image]"
+                image_filename = original_body
+            else:
+                # Use the original body (might be a caption)
+                content = original_body
+                image_filename = None
 
         elif isinstance(event, RoomMessageText):
             # Handle text messages
@@ -247,6 +257,14 @@ class MatrixObserver:
             content = getattr(event, "body", str(event.content))
 
         # Create message object
+        metadata = {
+            "matrix_event_type": getattr(event, "msgtype", type(event).__name__)
+        }
+        
+        # Add original filename to metadata for image messages if available
+        if isinstance(event, RoomMessageImage) and 'image_filename' in locals() and image_filename:
+            metadata["original_filename"] = image_filename
+        
         message = Message(
             id=event.event_id,
             channel_id=room.room_id,
@@ -256,9 +274,7 @@ class MatrixObserver:
             timestamp=time.time(),
             reply_to=None,  # TODO: Extract reply information if present
             image_urls=image_urls_list if image_urls_list else None,
-            metadata={
-                "matrix_event_type": getattr(event, "msgtype", type(event).__name__)
-            },
+            metadata=metadata,
         )
 
         # Add to world state

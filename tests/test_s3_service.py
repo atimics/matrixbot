@@ -23,7 +23,21 @@ class TestS3Service:
             service = S3Service()
             assert service.s3_api_endpoint == 'https://test-endpoint.com'
             assert service.s3_api_key == 'test-key'
-            assert service.cloudfront_domain == 'https://test-cloudfront.com'
+            # CloudFront domain should have https:// prefix stripped
+            assert service.cloudfront_domain == 'test-cloudfront.com'
+
+    def test_initialization_with_domain_no_protocol(self):
+        """Test S3Service initialization with domain that has no protocol."""
+        with patch.dict('os.environ', {
+            'S3_API_ENDPOINT': 'https://test-endpoint.com',
+            'S3_API_KEY': 'test-key',
+            'CLOUDFRONT_DOMAIN': 'test-cloudfront.com'
+        }):
+            service = S3Service()
+            assert service.s3_api_endpoint == 'https://test-endpoint.com'
+            assert service.s3_api_key == 'test-key'
+            # CloudFront domain should remain unchanged if no protocol
+            assert service.cloudfront_domain == 'test-cloudfront.com'
 
     def test_initialization_missing_env_vars(self):
         """Test S3Service initialization fails with missing environment variables."""

@@ -213,6 +213,12 @@ IMPORTANT IMAGE TOOL USAGE GUIDELINES:
 - Generated images will have URLs returned - use these in follow-up messages when appropriate
 - Check recent action_history to avoid redundant image operations
 
+CRITICAL: When using describe_image tool for images from messages:
+- ALWAYS use the URL from the message's `image_urls` array, NOT the `content` field
+- The `content` field contains the original filename (e.g., "image.png") which is NOT a valid URL
+- The `image_urls` field contains the actual accessible URLs (e.g., S3 or Matrix URLs)
+- Example: If a message shows `content: "photo.jpg"` and `image_urls: ["https://s3.../abc123.jpg"]`, use "https://s3.../abc123.jpg" as the image_url parameter
+
 Example for understanding: A message has `image_urls: ["http://example.com/photo.jpg"]`.
 {
   "action_type": "describe_image",

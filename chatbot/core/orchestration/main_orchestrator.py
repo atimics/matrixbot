@@ -465,6 +465,10 @@ class TraditionalProcessor:
                     # Record action for rate limiting
                     self.rate_limiter.record_action(action_name, current_time)
                     
+                    # Fix describe_image parameters if using invalid URL
+                    if action_name == "describe_image":
+                        action_params = await self._fix_describe_image_params(action_params)
+                    
                     # Execute action with context
                     if self.action_context:
                         result = await tool.execute(action_params, self.action_context)
@@ -482,6 +486,64 @@ class TraditionalProcessor:
             except Exception as e:
                 logger.error(f"Error executing action {action_name}: {e}")
                 continue
+
+    async def _fix_describe_image_params(self, action_params: dict) -> dict:
+        """
+        Fix describe_image parameters to ensure proper image URL is used.
+        
+        If the image_url parameter appears to be a filename (e.g., 'image.png'), 
+        attempt to find the actual URL from recent messages with image_urls.
+        """
+        image_url = action_params.get("image_url", "")
+        
+        # Check if the image_url looks like a filename rather than a URL
+        if image_url and not image_url.startswith(("http://", "https://", "mxc://")):
+            logger.info(f"describe_image received filename '{image_url}' instead of URL, attempting to fix")
+            
+            # Search recent messages for actual image URLs
+            # Get the channel_id if available for more targeted search
+            channel_id = action_params.get("channel_id")
+            
+            # Look through recent messages in the world state
+            if hasattr(self, 'action_context') and hasattr(self.action_context, 'world_state_manager'):
+                world_state = self.action_context.world_state_manager
+                
+                # Search through channels for recent messages with image URLs
+                channels_to_search = [channel_id] if channel_id else list(world_state.state.channels.keys())
+                
+                for ch_id in channels_to_search:
+                    if ch_id in world_state.state.channels:
+                        channel = world_state.state.channels[ch_id]
+                        # Look at recent messages (last 10)
+                        recent_messages = channel.messages[-10:] if len(channel.messages) > 10 else channel.messages
+                        
+                        for message in reversed(recent_messages):  # Start with most recent
+                            if message.image_urls:
+                                # Check if this message's content matches the filename
+                                if message.content and image_url in message.content:
+                                    # Use the first image URL from this message
+                                    corrected_url = message.image_urls[0]
+                                    logger.info(f"Fixed describe_image URL: '{image_url}' -> '{corrected_url}'")
+                                    
+                                    # Create corrected parameters
+                                    corrected_params = action_params.copy()
+                                    corrected_params["image_url"] = corrected_url
+                                    return corrected_params
+                                
+                                # Also check if the filename appears to match (basic heuristic)
+                                if any(ext in image_url.lower() for ext in ['.png', '.jpg', '.jpeg', '.gif', '.webp']):
+                                    # If we have a recent image and the URL is clearly a filename, use the most recent image
+                                    corrected_url = message.image_urls[0]
+                                    logger.info(f"Used most recent image URL for describe_image: '{image_url}' -> '{corrected_url}'")
+                                    
+                                    corrected_params = action_params.copy()
+                                    corrected_params["image_url"] = corrected_url
+                                    return corrected_params
+                
+                logger.warning(f"Could not find matching image URL for filename '{image_url}' in recent messages")
+        
+        # Return original parameters if no fix was needed or possible
+        return action_params
 
     async def _coordinate_image_actions(self, actions: list) -> list:
         """
