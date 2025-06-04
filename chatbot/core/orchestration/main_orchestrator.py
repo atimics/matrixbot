@@ -529,7 +529,9 @@ class TraditionalProcessor:
                     if ch_id in world_state.state.channels:
                         channel = world_state.state.channels[ch_id]
                         # Look at recent messages (last 10)
-                        recent_messages = channel.messages[-10:] if len(channel.messages) > 10 else channel.messages
+                        recent_messages = (channel.recent_messages[-10:] \
+                                           if len(channel.recent_messages) > 10 \
+                                           else channel.recent_messages)
                         
                         for message in reversed(recent_messages):  # Start with most recent
                             if message.image_urls:

@@ -971,12 +971,27 @@ class MatrixObserver:
             return {"success": False, "error": "Matrix client not connected"}
 
         try:
-            # Check if we have an invite for this room
-            if room_id not in self.client.invited_rooms:
+            # Determine if invite exists in client or world state
+            is_in_client_invites = room_id in getattr(self.client, 'invited_rooms', {})
+            is_in_world_state_invites = False
+            if hasattr(self, 'world_state') and self.world_state:
+                pending = self.world_state.get_pending_matrix_invites()
+                is_in_world_state_invites = any(
+                    inv.get('room_id') == room_id for inv in pending
+                )
+
+            if not is_in_client_invites and not is_in_world_state_invites:
                 return {
                     "success": False,
-                    "error": f"No pending invitation for room {room_id}",
+                    "error": f"No pending invitation for room {room_id} in client or world state.",
                 }
+
+            # Log if invite was only in world state
+            if not is_in_client_invites and is_in_world_state_invites:
+                logger.info(
+                    f"MatrixObserver: Invite for {room_id} found in world state but not client state. "
+                    "Attempting direct join."
+                )
 
             # Accept the invitation by joining the room
             response = await self.client.join(room_id)
