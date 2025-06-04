@@ -14,6 +14,60 @@ from chatbot.core.world_state.structures import Channel, Message, ActionHistory
 from chatbot.core.node_system.node_manager import NodeManager
 
 
+@pytest.fixture
+def sample_world_state_data(world_state_manager):
+    """Create sample world state data for testing."""
+    # Add channels
+    world_state_manager.add_channel("matrix_room", "matrix", "Test Matrix Room")
+    world_state_manager.add_channel("farcaster_feed", "farcaster", "Farcaster Feed")
+    
+    # Add messages
+    message1 = Message(
+        id="msg1",
+        channel_type="matrix",
+        sender="testuser1",
+        content="Hello world!",
+        timestamp=time.time() - 3600,
+        channel_id="matrix_room",
+        sender_fid=12345
+    )
+    
+    message2 = Message(
+        id="msg2",
+        channel_type="farcaster", 
+        sender="testuser2",
+        content="How's everyone doing?",
+        timestamp=time.time() - 1800,
+        channel_id="farcaster_feed",
+        sender_fid=67890
+    )
+    
+    world_state_manager.add_message("matrix_room", message1)
+    world_state_manager.add_message("farcaster_feed", message2)
+    
+    # Add action history
+    action_data = {
+        "action_type": "send_reply",
+        "parameters": {"content": "Hi there!"},
+        "result": "success",
+        "timestamp": time.time() - 900
+    }
+    world_state_manager.add_action_history(action_data)
+    
+    return world_state_manager.state
+
+
+@pytest.fixture
+def builder_with_node_manager(world_state_manager):
+    """Create PayloadBuilder with node manager for testing."""
+    node_manager = Mock(spec=NodeManager)
+    # Configure mock methods
+    node_manager.expand_context = Mock(return_value={"expanded": True})
+    node_manager.collapse_context = Mock(return_value={"collapsed": True})
+    builder = PayloadBuilder(world_state_manager, node_manager=node_manager)
+    return builder, node_manager
+
+
 class TestPayloadBuilderInitialization:
     """Test PayloadBuilder initialization."""
     
@@ -35,52 +89,11 @@ class TestPayloadBuilderInitialization:
 class TestPayloadBuilderFullPayload:
     """Test full payload generation."""
     
-    @pytest.fixture
-    def sample_world_state_data(self, world_state_manager):
-        """Create sample world state data."""
-        # Add channels
-        world_state_manager.add_channel("matrix_room", "matrix", "Test Matrix Room")
-        world_state_manager.add_channel("farcaster_feed", "farcaster", "Farcaster Feed")
-        
-        # Add messages
-        message1 = Message(
-            id="msg1",
-            channel_type="matrix",
-            sender="testuser1",
-            content="Hello world!",
-            timestamp=time.time() - 3600,
-            channel_id="matrix_room",
-            sender_fid=12345
-        )
-        
-        message2 = Message(
-            id="msg2",
-            channel_type="farcaster", 
-            sender="testuser2",
-            content="How's everyone doing?",
-            timestamp=time.time() - 1800,
-            channel_id="farcaster_feed",
-            sender_fid=67890
-        )
-        
-        world_state_manager.add_message("matrix_room", message1)
-        world_state_manager.add_message("farcaster_feed", message2)
-        
-        # Add action history
-        action = ActionHistory(
-            action_type="send_reply",
-            parameters={"content": "Hi there!"},
-            result="success",
-            timestamp=time.time() - 900
-        )
-        world_state_manager.add_action(action)
-        
-        return world_state_manager.state
-    
     def test_build_full_payload_basic(self, sample_world_state_data):
         """Test basic full payload generation."""
         builder = PayloadBuilder()
-        payload = builder.build_full_payload(sample_world_state_data)
+        config = {"optimize_for_size": False}
+        payload = builder.build_full_payload(sample_world_state_data, config=config)
         
         assert isinstance(payload, dict)
         assert "channels" in payload
@@ -95,9 +108,11 @@ class TestPayloadBuilderFullPayload:
     def test_build_full_payload_with_primary_channel(self, sample_world_state_data):
         """Test full payload with primary channel specified."""
         builder = PayloadBuilder()
+        config = {"optimize_for_size": False}
         payload = builder.build_full_payload(
             sample_world_state_data, 
-            primary_channel_id="matrix_room"
+            primary_channel_id="matrix_room",
+            config=config
         )
         
         assert isinstance(payload, dict)
@@ -111,7 +126,8 @@ class TestPayloadBuilderFullPayload:
         config = {
             "max_messages_per_channel": 5,
             "include_system_status": True,
-            "compact_format": False
+            "compact_format": False,
+            "optimize_for_size": False
         }
         
         payload = builder.build_full_payload(sample_world_state_data, config=config)
@@ -124,7 +140,9 @@ class TestPayloadBuilderFullPayload:
         builder = PayloadBuilder()
         empty_state = WorldStateData()
         
-        payload = builder.build_full_payload(empty_state)
+        # Disable size optimization to get action_history instead of actions
+        config = {"optimize_for_size": False}
+        payload = builder.build_full_payload(empty_state, config=config)
         
         assert isinstance(payload, dict)
         assert "channels" in payload
@@ -148,18 +166,29 @@ class TestPayloadBuilderNodeBasedPayload:
         """Test basic node-based payload generation."""
         builder, node_manager = builder_with_node_manager
         
-        payload = builder.build_node_based_payload(sample_world_state_data)
+        payload = builder.build_node_based_payload(
+            sample_world_state_data, 
+            node_manager,
+            "matrix_room"
+        )
         
         assert isinstance(payload, dict)
-        # Node-based payload should have different structure
-        assert "world_state_summary" in payload or "nodes" in payload or "channels" in payload
+        # Node-based payload should have node structure
+        assert "collapsed_node_summaries" in payload or "expanded_nodes" in payload or "channels" in payload
     
     def test_build_node_based_payload_without_node_manager(self, sample_world_state_data):
         """Test node-based payload without NodeManager falls back gracefully."""
         builder = PayloadBuilder()
         # No node manager set
         
-        payload = builder.build_node_based_payload(sample_world_state_data)
+        # Create a mock node manager for the test
+        mock_node_manager = Mock()
+        
+        payload = builder.build_node_based_payload(
+            sample_world_state_data,
+            mock_node_manager,
+            "matrix_room"
+        )
         
         # Should either fallback to full payload or return meaningful error structure
         assert isinstance(payload, dict)
@@ -168,9 +197,14 @@ class TestPayloadBuilderNodeBasedPayload:
         """Test node-based payload with expansion limits."""
         builder, node_manager = builder_with_node_manager
         
+        # The method doesn't support max_expanded_nodes parameter directly
+        # but may support it via config
+        config = {"max_expanded_nodes": 2}
         payload = builder.build_node_based_payload(
             sample_world_state_data,
-            max_expanded_nodes=2
+            node_manager,
+            "matrix_room",
+            config=config
         )
         
         assert isinstance(payload, dict)
@@ -309,9 +343,12 @@ class TestPayloadBuilderNodeIntegration:
         builder, node_manager, world_state_manager = setup_node_system
         
         # Test with different expansion settings
+        config = {"max_expanded_nodes": 3}
         payload = builder.build_node_based_payload(
             world_state_manager.state,
-            max_expanded_nodes=3
+            node_manager,
+            "main_room",
+            config=config
         )
         
         assert isinstance(payload, dict)
@@ -320,9 +357,12 @@ class TestPayloadBuilderNodeIntegration:
         """Test payload with collapsed nodes."""
         builder, node_manager, world_state_manager = setup_node_system
         
+        config = {"max_expanded_nodes": 1}  # Force most nodes to be collapsed
         payload = builder.build_node_based_payload(
             world_state_manager.state,
-            max_expanded_nodes=1  # Force most nodes to be collapsed
+            node_manager,
+            "main_room",
+            config=config
         )
         
         assert isinstance(payload, dict)

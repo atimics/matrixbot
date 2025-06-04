@@ -22,6 +22,26 @@ class TestPayloadBuilderSimple:
         manager.current_state.messages = {}
         manager.current_state.recent_activity = []
         manager.current_state.current_channel_id = None
+        manager.current_state.action_history = []
+        manager.current_state.rate_limits = {}
+        manager.current_state.ecosystem_token_contract = None
+        manager.current_state.token_metadata = None
+        manager.current_state.monitored_token_holders = {}
+        manager.current_state.recent_token_activity = []
+        manager.current_state.research_database = {}
+        manager.current_state.threads = {}
+        manager.current_state.generated_media_library = []
+        manager.current_state.bot_media_on_farcaster = {}
+        manager.current_state.pending_matrix_invites = []
+        manager.current_state.system_status = {}
+        
+        # Add methods that are called by PayloadBuilder
+        manager.current_state.get_recent_media_actions.return_value = {
+            "recent_media_actions": []
+        }
+        
+        # Tests expect .state attribute
+        manager.state = manager.current_state
         return manager
     
     def test_initialization(self, world_state_manager):
@@ -40,7 +60,7 @@ class TestPayloadBuilderSimple:
         """Test basic full payload generation."""
         builder = PayloadBuilder(world_state_manager)
         
-        payload = builder.build_full_payload()
+        payload = builder.build_full_payload(world_state_manager.state)
         
         assert isinstance(payload, dict)
         # Should have basic structure
@@ -54,7 +74,7 @@ class TestPayloadBuilderSimple:
         world_state_manager.current_state.recent_activity = []
         
         builder = PayloadBuilder(world_state_manager)
-        payload = builder.build_full_payload()
+        payload = builder.build_full_payload(world_state_manager.state)
         
         assert isinstance(payload, dict)
         # Should handle empty state gracefully
@@ -74,7 +94,7 @@ class TestPayloadBuilderSimple:
         world_state_manager.current_state = None
         
         try:
-            payload = builder.build_full_payload()
+            payload = builder.build_full_payload(world_state_manager.state)
             # If it doesn't crash, that's good
             assert isinstance(payload, dict)
         except AttributeError:
