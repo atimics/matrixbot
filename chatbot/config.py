@@ -24,6 +24,9 @@ class AppConfig(BaseSettings):
     AI_MODEL: str = "openai/gpt-4o-mini"
     OPENROUTER_API_KEY: str
     LOG_LEVEL: str = "INFO"
+    
+    # Web Search and Research
+    WEB_SEARCH_MODEL: str = "openai/gpt-4o-mini:online"  # OpenRouter online model for web search
 
     # Matrix
     MATRIX_HOMESERVER: str

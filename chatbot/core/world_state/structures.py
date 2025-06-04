@@ -624,6 +624,9 @@ class WorldStateData:
         self.tool_cache: Dict[str, Dict[str, Any]] = {}  # cache_key -> cached result
         self.search_cache: Dict[str, Dict[str, Any]] = {}  # query_hash -> search results
         
+        # Research knowledge base - persistent AI learning and knowledge accumulation
+        self.research_database: Dict[str, Dict[str, Any]] = {}  # topic -> research_entry
+        
         # Backward compatibility placeholders
         self.user_details: Dict[str, Any] = {}
         self.bot_media: Dict[str, Any] = {}  # alias for bot_media_on_farcaster
