@@ -99,7 +99,7 @@ async def test_working_functionality():
         logger.info("\n=== Test 5: AI Payload Generation ===")
         try:
             payload_builder = PayloadBuilder()
-            payload = payload_builder.build_optimized_payload(world_state_manager.state)
+            payload = payload_builder.build_full_payload(world_state_manager.state)
             
             if "ecosystem_token_info" in payload:
                 token_payload = payload["ecosystem_token_info"]
