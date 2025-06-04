@@ -5,11 +5,14 @@ Farcaster Data Converter
 Utilities for converting Farcaster API data into standardized Message objects
 and other parsing tasks.
 """
+import asyncio
 import logging
 import re
 import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+
+import httpx
 
 from ...core.world_state import Message
 
@@ -58,7 +61,7 @@ def extract_cast_hash_from_url(url: str) -> Optional[str]:
     return None
 
 
-def _create_message_from_cast_data(
+async def _create_message_from_cast_data(
     cast_data: Dict[str, Any],
     channel_id_prefix: str,
     cast_type_metadata: str = "unknown",
@@ -154,6 +157,24 @@ def _create_message_from_cast_data(
                     f"FarcasterConverter: Detected image URL in text: {img_url}"
                 )
 
+        # Extract and validate all URLs from text content
+        validated_urls_list = []
+        extracted_urls = extract_urls_from_text(content)
+        if extracted_urls:
+            logger.debug(f"FarcasterConverter: Found {len(extracted_urls)} URLs to validate")
+            # Validate URLs asynchronously  
+            validation_tasks = [validate_url(url) for url in extracted_urls]
+            try:
+                validation_results = await asyncio.gather(*validation_tasks, return_exceptions=True)
+                for result in validation_results:
+                    if isinstance(result, dict):
+                        validated_urls_list.append(result)
+                        logger.debug(f"FarcasterConverter: URL {result['url']} status: {result['status']}")
+                    else:
+                        logger.warning(f"FarcasterConverter: URL validation exception: {result}")
+            except Exception as e:
+                logger.error(f"FarcasterConverter: Error during URL validation: {e}")
+
         message = Message(
             id=cast_hash,
             channel_id=derived_channel_id,
@@ -170,6 +191,7 @@ def _create_message_from_cast_data(
             sender_follower_count=author.get("follower_count"),
             sender_following_count=author.get("following_count"),
             image_urls=image_urls_list if image_urls_list else None,
+            validated_urls=validated_urls_list if validated_urls_list else None,
             metadata=metadata_dict,
         )
         if last_seen_hashes is not None:
@@ -262,3 +284,68 @@ def convert_single_api_cast_to_message(
         cast_type_metadata=cast_type_metadata,
         custom_metadata=custom_metadata,
     )
+
+
+async def validate_url(url: str) -> Dict[str, Any]:
+    """
+    Validate a URL by making an HTTP request and checking its status.
+
+    Args:
+        url: The URL to validate
+
+    Returns:
+        Dictionary with validation results:
+        - url: original URL
+        - status: 'valid', 'invalid', 'error_timeout', 'error_dns', 'error_other'
+        - http_status_code: HTTP status code if request succeeded
+        - content_type: Content-Type header if available
+        - error_message: Error description if validation failed
+    """
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.head(url, follow_redirects=True)
+
+            status = "valid" if 200 <= response.status_code < 400 else "invalid"
+            content_type = response.headers.get("content-type", "").split(";")[0].strip()
+
+            return {
+                "url": url,
+                "status": status,
+                "http_status_code": response.status_code,
+                "content_type": content_type or None,
+                "error_message": None,
+            }
+
+    except httpx.TimeoutException:
+        return {
+            "url": url,
+            "status": "error_timeout",
+            "http_status_code": None,
+            "content_type": None,
+            "error_message": "Request timed out",
+        }
+    except httpx.ConnectError:
+        return {
+            "url": url,
+            "status": "error_dns",
+            "http_status_code": None,
+            "content_type": None,
+            "error_message": "DNS resolution or connection failed",
+        }
+    except Exception as e:
+        return {
+            "url": url,
+            "status": "error_other",
+            "http_status_code": None,
+            "content_type": None,
+            "error_message": str(e),
+        }
+
+
+def extract_urls_from_text(text: str) -> List[str]:
+    """Extract all URLs from text content."""
+    url_pattern = re.compile(
+        r"https?://(?:[-\w.])+(?:[:\d]+)?(?:/(?:[\w/_.])*(?:\?(?:[\w&=%.])*)?(?:#(?:[\w.])*)?)?",
+        re.IGNORECASE,
+    )
+    return url_pattern.findall(text)

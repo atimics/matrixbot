@@ -95,6 +95,11 @@ class Message:
         default_factory=list
     )  # List of Arweave TXIDs if media archived
 
+    # URL validation results
+    validated_urls: Optional[List[Dict[str, Any]]] = field(
+        default_factory=list
+    )  # [{"url": "...", "status": "valid/invalid/error", "http_status_code": 200, "content_type": "text/html"}, ...]
+
     def to_ai_summary_dict(self) -> Dict[str, Any]:
         """
         Return a summarized version of the message optimized for AI consumption.
