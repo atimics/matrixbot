@@ -436,19 +436,24 @@ class NeynarAPIClient:
     ) -> Dict[str, Any]:
         """
         Fetches a user's balance for a specific token.
-        Corresponds to: https://docs.neynar.com/reference/fetch-user-balance
+        Based on the pattern from Neynar docs: https://docs.neynar.com/reference/fetch-user-balance
         """
         params = {"fid": fid}
-        response = await self._make_request("GET", "/farcaster/user/token-balance", params=params)
-        balance_data = response.json()
-        
-        # Filter for the specific token if multiple tokens are returned
-        if "balances" in balance_data:
-            for balance in balance_data["balances"]:
-                if balance.get("contract_address", "").lower() == token_contract_address.lower():
-                    return {"balance": balance, "fid": fid}
-        
-        return {"balance": None, "fid": fid, "error": "Token not found in user's balance"}
+        try:
+            # Try the documented endpoint pattern
+            response = await self._make_request("GET", "/farcaster/user/balance", params=params)
+            balance_data = response.json()
+            
+            # Filter for the specific token if multiple tokens are returned
+            if "balances" in balance_data:
+                for balance in balance_data["balances"]:
+                    if balance.get("contract_address", "").lower() == token_contract_address.lower():
+                        return {"balance": balance, "fid": fid}
+            
+            return {"balance": None, "fid": fid, "error": "Token not found in user's balance"}
+        except Exception as e:
+            logger.warning(f"get_user_token_balance failed for FID {fid}: {e}")
+            return {"balance": None, "fid": fid, "error": str(e)}
 
     async def get_user_details_for_fids(self, fids: List[int]) -> Dict[str, Any]:
         """

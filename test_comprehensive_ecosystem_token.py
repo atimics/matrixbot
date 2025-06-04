@@ -47,15 +47,18 @@ async def test_comprehensive_ecosystem_token_flow():
         
         # Test 2: Payload builder integration
         logger.info("\n=== Test 2: Payload Builder Integration ===")
-        payload_builder = PayloadBuilder(world_state_manager)
+        payload_builder = PayloadBuilder()
         
         # Test optimized payload
-        optimized_payload = payload_builder.generate_optimized_payload()
+        optimized_payload = payload_builder.build_node_based_payload(
+            world_state_manager.state,
+            config={"node_expansion_limit": 100}
+        )
         ecosystem_info = optimized_payload.get("ecosystem_token_info", {})
-        logger.info(f"Optimized payload ecosystem info: {len(ecosystem_info)} fields")
+        logger.info(f"Node-based payload ecosystem info: {len(ecosystem_info)} fields")
         
         # Test full payload
-        full_payload = payload_builder.generate_full_payload()
+        full_payload = payload_builder.build_full_payload(world_state_manager.state)
         ecosystem_info_full = full_payload.get("ecosystem_token_info", {})
         logger.info(f"Full payload ecosystem info: {len(ecosystem_info_full)} fields")
         
