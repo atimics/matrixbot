@@ -222,7 +222,7 @@ class FarcasterObserver:
         logger.debug(f"Observing user feed for FID: {fid}")
         try:
             data = await self.api_client.get_casts_by_fid(fid)
-            return convert_api_casts_to_messages(
+            return await convert_api_casts_to_messages(
                 data.get("casts", []),
                 channel_id_prefix=f"farcaster:user_{fid}",
                 cast_type_metadata="user_feed",
@@ -242,7 +242,7 @@ class FarcasterObserver:
             data = await self.api_client.get_feed_by_channel_ids(
                 channel_ids=channel_name
             )
-            return convert_api_casts_to_messages(
+            return await convert_api_casts_to_messages(
                 data.get("casts", []),
                 channel_id_prefix=f"farcaster:channel_{channel_name}",
                 cast_type_metadata="channel_feed",
@@ -265,7 +265,7 @@ class FarcasterObserver:
         logger.debug("Observing home feed.")
         try:
             data = await self.api_client.get_home_feed(fid=self.bot_fid)
-            return convert_api_casts_to_messages(
+            return await convert_api_casts_to_messages(
                 data.get("casts", []),
                 channel_id_prefix="farcaster:home",
                 cast_type_metadata="home_feed",
@@ -286,7 +286,7 @@ class FarcasterObserver:
         logger.debug("Observing notifications.")
         try:
             data = await self.api_client.get_notifications(fid=self.bot_fid)
-            return convert_api_notifications_to_messages(
+            return await convert_api_notifications_to_messages(
                 data.get("notifications", []),
                 bot_fid=self.bot_fid,
                 last_check_time_for_filtering=self.last_check_time,
@@ -307,7 +307,7 @@ class FarcasterObserver:
             data = await self.api_client.get_replies_and_recasts_for_user(
                 fid=self.bot_fid, filter_type="replies"
             )
-            return convert_api_casts_to_messages(
+            return await convert_api_casts_to_messages(
                 data.get("casts", []),
                 channel_id_prefix="farcaster:mentions_and_replies",
                 cast_type_metadata="mention_or_reply",
@@ -326,7 +326,7 @@ class FarcasterObserver:
         logger.debug("Observing trending casts for world state.")
         try:
             data = await self.api_client.get_trending_casts(limit=limit)
-            return convert_api_casts_to_messages(
+            return await convert_api_casts_to_messages(
                 data.get("casts", []),
                 channel_id_prefix="farcaster:trending",
                 cast_type_metadata="trending_cast",
@@ -485,7 +485,7 @@ class FarcasterObserver:
                 fid = user_data["users"][0]["fid"]
 
             data = await self.api_client.get_casts_by_fid(fid, limit=limit)
-            messages = convert_api_casts_to_messages(
+            messages = await convert_api_casts_to_messages(
                 data.get("casts", []),
                 channel_id_prefix=f"farcaster:user_{fid}",
                 cast_type_metadata="user_feed",
@@ -515,7 +515,7 @@ class FarcasterObserver:
 
         try:
             data = await self.api_client.search_casts(query, channel_id, limit)
-            messages = convert_api_casts_to_messages(
+            messages = await convert_api_casts_to_messages(
                 data.get("casts", []),
                 channel_id_prefix=f"farcaster:search_{query}",
                 cast_type_metadata="search_result",
@@ -550,7 +550,7 @@ class FarcasterObserver:
             data = await self.api_client.get_trending_casts(
                 channel_id, timeframe_hours, limit
             )
-            messages = convert_api_casts_to_messages(
+            messages = await convert_api_casts_to_messages(
                 data.get("casts", []),
                 channel_id_prefix=f"farcaster:trending_{channel_id or 'all'}",
                 cast_type_metadata="trending",
@@ -609,11 +609,10 @@ class FarcasterObserver:
             if not data.get("cast"):
                 return {"success": False, "cast": None, "error": "Cast not found"}
 
-            message = convert_single_api_cast_to_message(
+            message = await convert_single_api_cast_to_message(
                 data["cast"],
-                channel_id_prefix="farcaster:cast_details",
+                channel_id_if_unknown="farcaster:cast_details",
                 cast_type_metadata="cast_detail",
-                bot_fid=self.bot_fid,
             )
             return {
                 "success": True,

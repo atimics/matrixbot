@@ -205,7 +205,7 @@ async def _create_message_from_cast_data(
         return None
 
 
-def convert_api_casts_to_messages(
+async def convert_api_casts_to_messages(
     api_casts: List[Dict[str, Any]],
     channel_id_prefix: str,
     cast_type_metadata: str,
@@ -218,7 +218,7 @@ def convert_api_casts_to_messages(
     if not api_casts:
         return messages
     for cast_data in api_casts:
-        message = _create_message_from_cast_data(
+        message = await _create_message_from_cast_data(
             cast_data=cast_data,
             channel_id_prefix=channel_id_prefix,
             cast_type_metadata=cast_type_metadata,
@@ -232,7 +232,7 @@ def convert_api_casts_to_messages(
     return messages
 
 
-def convert_api_notifications_to_messages(
+async def convert_api_notifications_to_messages(
     api_notifications: List[Dict[str, Any]],
     bot_fid: Optional[str] = None,
     last_check_time_for_filtering: Optional[float] = None,
@@ -250,7 +250,7 @@ def convert_api_notifications_to_messages(
                 )
                 continue
             notification_type = notification_data.get("type", "unknown_notification")
-            message = _create_message_from_cast_data(
+            message = await _create_message_from_cast_data(
                 cast_data=cast_data,
                 channel_id_prefix=f"farcaster:notifications:{notification_type}",
                 cast_type_metadata=f"notification_{notification_type}",
@@ -270,7 +270,7 @@ def convert_api_notifications_to_messages(
     return messages
 
 
-def convert_single_api_cast_to_message(
+async def convert_single_api_cast_to_message(
     api_cast_data: Dict[str, Any],
     channel_id_if_unknown: str = "farcaster:direct",
     cast_type_metadata: str = "direct_access",
@@ -278,7 +278,7 @@ def convert_single_api_cast_to_message(
 ) -> Optional[Message]:
     if not api_cast_data:
         return None
-    return _create_message_from_cast_data(
+    return await _create_message_from_cast_data(
         cast_data=api_cast_data,
         channel_id_prefix=channel_id_if_unknown,
         cast_type_metadata=cast_type_metadata,

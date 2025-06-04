@@ -151,7 +151,7 @@ class EcosystemTokenService:
             if casts_data and "casts" in casts_data:
                 # The converter needs to be available or its logic inlined here
                 from chatbot.integrations.farcaster.farcaster_data_converter import convert_api_casts_to_messages
-                messages = convert_api_casts_to_messages(
+                messages = await convert_api_casts_to_messages(
                     api_casts=casts_data["casts"],
                     channel_id_prefix=f"farcaster:holder_{fid}",  # Special channel prefix
                     cast_type_metadata="holder_cast"
@@ -230,7 +230,7 @@ class EcosystemTokenService:
                 
                 if casts_data and "casts" in casts_data:
                     from chatbot.integrations.farcaster.farcaster_data_converter import convert_api_casts_to_messages
-                    potential_new_messages = convert_api_casts_to_messages(
+                    potential_new_messages = await convert_api_casts_to_messages(
                         api_casts=casts_data["casts"],
                         channel_id_prefix=f"farcaster:holder_{holder.fid}",
                         cast_type_metadata="holder_cast_update"
