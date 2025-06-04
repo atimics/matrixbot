@@ -23,7 +23,7 @@ from pydantic import BaseModel
 import uvicorn
 
 # Import our context management components
-from chatbot.core.history_recorder import HistoryRecorder
+# Note: HistoryRecorder was consolidated into ContextManager for cleaner architecture
 from chatbot.core.orchestration import MainOrchestrator
 from chatbot.core.world_state import WorldStateManager
 
