@@ -161,6 +161,43 @@ class TestS3Service:
             assert service._get_file_extension_from_filename(None) == '.jpg'
             assert service._get_file_extension_from_filename('') == '.jpg'
 
+    def test_generate_embeddable_url(self):
+        """Test embeddable URL generation with fixed CloudFront domain."""
+        with patch.dict('os.environ', {
+            'S3_API_ENDPOINT': 'https://test-endpoint.com',
+            'S3_API_KEY': 'test-key',
+            'CLOUDFRONT_DOMAIN': 'https://test-cloudfront.com'  # Note: has https:// prefix
+        }):
+            service = S3Service()
+            
+            # CloudFront domain should be stripped of protocol
+            assert service.cloudfront_domain == 'test-cloudfront.com'
+            
+            # Test embeddable URL generation
+            image_url = 'https://test-cloudfront.com/images/test.jpg'
+            embeddable_url = service.generate_embeddable_url(image_url, 'Test Title', 'Test Description')
+            
+            # Should not have double https:// in the URL
+            assert 'https://https://' not in embeddable_url
+            assert embeddable_url.startswith('https://test-cloudfront.com/embed/image/')
+            assert 'title=Test%20Title' in embeddable_url
+            assert 'description=Test%20Description' in embeddable_url
+
+    def test_generate_embeddable_url_no_domain(self):
+        """Test embeddable URL generation when no CloudFront domain is set."""
+        with patch.dict('os.environ', {
+            'S3_API_ENDPOINT': 'https://test-endpoint.com',
+            'S3_API_KEY': 'test-key'
+            # No CLOUDFRONT_DOMAIN set
+        }):
+            service = S3Service()
+            
+            image_url = 'https://example.com/image.jpg'
+            embeddable_url = service.generate_embeddable_url(image_url)
+            
+            # Should return original URL when no domain is configured
+            assert embeddable_url == image_url
+
 
 class TestS3ServiceSingleton:
     """Test the S3 service singleton instance."""
