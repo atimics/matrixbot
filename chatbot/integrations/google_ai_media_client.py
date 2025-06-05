@@ -111,7 +111,7 @@ class GoogleAIMediaClient:
             response = await self.client.aio.models.generate_content(
                 model=self.default_gemini_image_model,
                 contents=[enhanced_prompt],
-                generation_config=generation_config_obj,
+                config=generation_config_obj,
             )
 
             for part in response.parts:
@@ -195,7 +195,7 @@ class GoogleAIMediaClient:
             response = await self.client.aio.models.generate_content(
                 model=self.default_gemini_image_model,
                 contents=content_parts, # List can contain PIL.Image objects and strings
-                generation_config=generation_config_obj
+                config=generation_config_obj
             )
             
             for part in response.parts:
