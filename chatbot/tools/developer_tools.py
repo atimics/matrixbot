@@ -940,9 +940,11 @@ class ImplementCodeChangesTool(ToolInterface):  # Phase 2
                 if result["success"]:
                     applied_changes.append(result)
             
-            # Commit changes
-            commit_msg = commit_message or f"ACE: Implement {len(applied_changes)} code changes"
-            commit_success = await self._commit_changes(lg, commit_msg, applied_changes)
+            # Commit changes if any were applied
+            commit_success = False
+            if applied_changes:
+                commit_msg = commit_message or f"ACE: Implement {len(applied_changes)} changes for task {task_id or 'manual'}"
+                commit_success = await lg.add_and_commit(commit_msg)
             
             # Update task status in world state
             if task_id and hasattr(context, 'world_state_manager'):
