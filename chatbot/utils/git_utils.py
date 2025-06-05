@@ -68,13 +68,31 @@ class LocalGitRepository:
         """
         if not self.repo_path.exists():
             return None
-        cmd = ['git', '-C', str(self.repo_path), 'rev-parse', '--abbrev-ref', 'HEAD']
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        out, _ = await proc.communicate()
-        if proc.returncode != 0:
+        try:
+            return (await self._run_command('rev-parse', '--abbrev-ref', 'HEAD')).strip()
+        except RuntimeError:
             return None
-        return out.decode('utf-8').strip()
+
+    async def create_branch(self, branch_name: str, base_branch: str):
+        """Creates and checks out a new branch."""
+        await self._run_command('checkout', '-b', branch_name, base_branch)
+        return True
+
+    async def add_remote(self, name: str, url: str):
+        """Adds or updates a remote."""
+        try:
+            await self._run_command('remote', 'add', name, url)
+        except RuntimeError:
+            await self._run_command('remote', 'set-url', name, url)
+        return True
+
+    async def push(self, remote: str, branch: str):
+        """Pushes a branch to a remote, setting upstream tracking."""
+        await self._run_command('push', '-u', remote, branch)
+        return True
+
+    async def add_and_commit(self, message: str):
+        """Stages all changes and creates a commit."""
+        await self._run_command('add', '.')
+        await self._run_command('commit', '-m', message)
+        return True
