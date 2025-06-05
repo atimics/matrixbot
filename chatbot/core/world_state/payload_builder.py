@@ -156,8 +156,12 @@ class PayloadBuilder:
                 
                 if optimize_for_size:
                     # Compact format for size optimization
-                    messages_for_payload = [
-                        {
+                    messages_for_payload = []
+                    for msg in truncated_messages:
+                        # Check if the bot has already replied to this message
+                        has_replied = world_state_data.has_replied_to_cast(msg.id)
+                        
+                        msg_dict = {
                             "id": msg.id,
                             "sender": msg.sender_username or msg.sender,
                             "content": msg.content[:message_snippet_length] + "..." 
@@ -166,18 +170,20 @@ class PayloadBuilder:
                             "fid": msg.sender_fid,
                             "reply_to": msg.reply_to,
                             "has_images": bool(msg.image_urls),
-                            "power_badge": msg.metadata.get("power_badge", False) if msg.metadata else False
+                            "power_badge": msg.metadata.get("power_badge", False) if msg.metadata else False,
+                            "already_replied": has_replied  # Add the flag
                         }
-                        for msg in truncated_messages
-                    ]
+                        messages_for_payload.append(msg_dict)
                 else:
                     # Full detail when size optimization is disabled
-                    messages_for_payload = [
-                        msg.to_ai_summary_dict()
-                        if not include_detailed_user_info
-                        else asdict(msg)
-                        for msg in truncated_messages
-                    ]
+                    messages_for_payload = []
+                    for msg in truncated_messages:
+                        # Check if the bot has already replied to this message
+                        has_replied = world_state_data.has_replied_to_cast(msg.id)
+                        
+                        msg_dict = msg.to_ai_summary_dict() if not include_detailed_user_info else asdict(msg)
+                        msg_dict['already_replied'] = has_replied  # Add the flag
+                        messages_for_payload.append(msg_dict)
 
                 # Optimized timestamp range calculation
                 timestamp_range = {
@@ -269,23 +275,29 @@ class PayloadBuilder:
                     # Compact thread messages
                     all_thread_msgs = msgs[-max_thread_messages:]
                     if optimize_for_size:
-                        thread_msgs_for_payload = [
-                            {
+                        thread_msgs_for_payload = []
+                        for msg in all_thread_msgs:
+                            # Check if the bot has already replied to this message
+                            has_replied = world_state_data.has_replied_to_cast(msg.id)
+                            
+                            msg_dict = {
                                 "id": msg.id,
                                 "sender": msg.sender_username or msg.sender,
                                 "content": msg.content[:message_snippet_length] + "..." 
                                          if len(msg.content) > message_snippet_length else msg.content,
-                                "timestamp": msg.timestamp
+                                "timestamp": msg.timestamp,
+                                "already_replied": has_replied  # Add the flag
                             }
-                            for msg in all_thread_msgs
-                        ]
+                            thread_msgs_for_payload.append(msg_dict)
                     else:
-                        thread_msgs_for_payload = [
-                            msg.to_ai_summary_dict()
-                            if not include_detailed_user_info
-                            else asdict(msg)
-                            for msg in all_thread_msgs
-                        ]
+                        thread_msgs_for_payload = []
+                        for msg in all_thread_msgs:
+                            # Check if the bot has already replied to this message
+                            has_replied = world_state_data.has_replied_to_cast(msg.id)
+                            
+                            msg_dict = msg.to_ai_summary_dict() if not include_detailed_user_info else asdict(msg)
+                            msg_dict['already_replied'] = has_replied  # Add the flag
+                            thread_msgs_for_payload.append(msg_dict)
                     threads_payload[thread_id] = thread_msgs_for_payload
 
         # Build optimized final payload based on configuration
