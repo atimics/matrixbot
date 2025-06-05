@@ -244,7 +244,7 @@ class NeynarAPIClient:
             raise ValueError("signer_uuid is required to follow/unfollow.")
         payload_single_fid = {"signer_uuid": signer_uuid, "fid": target_fid}
         endpoint_original = (
-            "/farcaster/follow" if not unfollow else "/farcaster/unfollow"
+            "/farcaster/user/follow" if not unfollow else "/farcaster/user/unfollow"
         )
         response = await self._make_request(
             "POST", endpoint_original, json_data=payload_single_fid
@@ -383,8 +383,8 @@ class NeynarAPIClient:
         if not uuid:
             raise ValueError("signer_uuid is required to quote a cast.")
 
-        # Create embeds with the quoted cast and any additional URLs
-        embeds = [{"cast_id": {"hash": quoted_cast_hash}}]
+        # Create embeds with the quoted cast URL and any additional URLs
+        embeds = [{"url": f"https://warpcast.com/~/casts/{quoted_cast_hash}"}]
         if embed_urls:
             embeds.extend([{"url": url} for url in embed_urls])
 
