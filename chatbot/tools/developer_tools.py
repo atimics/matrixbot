@@ -1046,7 +1046,7 @@ class ImplementCodeChangesTool(ToolInterface):  # Phase 2
         self, context: ActionContext, task_id: str, status: str, changes: List[Dict[str, Any]]
     ):
         """Update the development task status in world state."""
-        ws_data = await context.world_state_manager.get_state()
+        ws_data = context.world_state_manager.world_state
         if task_id in ws_data.development_tasks:
             task = ws_data.development_tasks[task_id]
             task.status = status
@@ -1192,8 +1192,6 @@ class CreatePullRequestTool(ToolInterface):  # Phase 3
             if not hasattr(repo_context, 'associated_prs'):
                 repo_context.associated_prs = []
             repo_context.associated_prs.append(pr_url)
-        
-        await context.world_state_manager.update_state(ws_data)
 
 
 class ACEOrchestratorTool(ToolInterface):  # Phase 3

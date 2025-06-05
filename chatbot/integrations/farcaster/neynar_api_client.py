@@ -604,7 +604,7 @@ class NeynarAPIClient:
         params = {
             "fid": fid,
             "feed_type": "filter",
-            "filter_type": "algorithm_basic",
+            "filter_type": "global_trending",
             "limit": limit,
             "include_replies": include_replies,
             "with_recasts": with_recasts,

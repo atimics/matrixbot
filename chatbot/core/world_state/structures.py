@@ -617,6 +617,29 @@ class DevelopmentTask:
     completed_at: Optional[float] = None
 
 
+@dataclass
+class ProjectTask:
+    """
+    Represents a project task for legacy compatibility with UpdateProjectPlan tool.
+    
+    This is a simpler variant of DevelopmentTask focused on project planning
+    rather than the full ACE lifecycle.
+    """
+    task_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    title: str = ""
+    description: str = ""
+    status: str = "todo"  # todo, in_progress, completed, blocked
+    priority: int = 5  # 1-10, higher number = higher priority
+    estimated_complexity: Optional[int] = None  # 1-10 complexity estimate
+    related_code_files: List[str] = field(default_factory=list)  # Files this task affects
+    source_references: List[str] = field(default_factory=list)  # Source docs, issues, etc.
+    
+    # Metadata
+    created_at: float = field(default_factory=time.time)
+    updated_at: float = field(default_factory=time.time)
+    completed_at: Optional[float] = None
+
+
 class WorldStateData:
     def add_action_history(self, action_data: dict):
         """Compatibility method for tests that call add_action_history on WorldStateData."""
