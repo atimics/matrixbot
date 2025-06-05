@@ -117,7 +117,8 @@ async def test_quote_and_like_methods(observer):
     res_like = await observer.like_cast('cast123')
     assert res_like['cast']['hash'] == 'xyz'
     
-    res_quote = await observer.quote_cast('hello', 'cast123')
+    # Add the missing quoted_cast_author_fid argument. Assuming 0 as a placeholder.
+    res_quote = await observer.quote_cast('hello', 'cast123', 0)
     assert res_quote['success']
     assert res_quote['quoted_cast'] == 'cast123'
 

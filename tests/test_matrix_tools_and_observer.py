@@ -1,6 +1,6 @@
 import pytest
 import time
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import nio
 from chatbot.tools.matrix_tools import (
@@ -303,7 +303,8 @@ async def test_ignore_matrix_invite_tool_missing_params():
     result = await tool.execute({}, context)
 
     assert result["status"] == "failure"
-    assert "Unable to retrieve invites" in result["error"]
+    # Correct the assertion to check for the actual error message
+    assert "Missing required parameter: room_id" in result["error"]
 
 # ---- Tests for MatrixObserver basic methods ----
 def test_matrix_observer_user_and_room_details_empty(monkeypatch):
