@@ -2,7 +2,6 @@
 """
 Debug script to check world state for pending matrix invites
 """
-import asyncio
 import sys
 import sqlite3
 from pathlib import Path
@@ -14,22 +13,21 @@ sys.path.insert(0, str(project_root))
 from chatbot.core.world_state.manager import WorldStateManager
 
 
-async def debug_world_state():
+def debug_world_state():
     """Debug the current world state"""
     print("🔍 Debugging world state for pending Matrix invites...")
     
     # Initialize world state manager
-    ws_manager = WorldStateManager(db_path="chatbot.db")
-    await ws_manager.initialize()
+    ws_manager = WorldStateManager()
     
     # Get current state
-    state = await ws_manager.get_state()
+    state = ws_manager.get_state_data()
     
     print(f"📊 World State Summary:")
-    print(f"  Matrix rooms: {len(state.matrix_rooms)}")
+    print(f"  Channels: {len(state.channels)}")
     print(f"  Pending Matrix invites: {len(state.pending_matrix_invites)}")
-    print(f"  Target repositories: {len(state.target_repositories)}")
-    print(f"  Development tasks: {len(state.development_tasks)}")
+    print(f"  Action history: {len(state.action_history)}")
+    print(f"  Media library: {len(state.generated_media_library)}")
     
     if state.pending_matrix_invites:
         print(f"\n📨 Pending Matrix Invites:")
@@ -38,14 +36,11 @@ async def debug_world_state():
     else:
         print("\n✅ No pending Matrix invites")
     
-    if state.matrix_rooms:
-        print(f"\n🏠 Matrix Rooms:")
-        for room_id, room_info in list(state.matrix_rooms.items())[:5]:  # Show first 5
-            print(f"  {room_id}: {room_info.get('name', 'Unknown')}")
-    
-    # Close the manager
-    await ws_manager.close()
+    if state.channels:
+        print(f"\n📱 Channels:")
+        for channel_id, channel in list(state.channels.items())[:5]:  # Show first 5
+            print(f"  {channel_id}: {channel.name} ({channel.type})")
 
 
 if __name__ == "__main__":
-    asyncio.run(debug_world_state())
+    debug_world_state()

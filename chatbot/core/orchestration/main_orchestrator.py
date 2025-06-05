@@ -329,27 +329,105 @@ class MainOrchestrator:
         """Trigger immediate processing when world state changes."""
         self.processing_hub.trigger_state_change()
 
-    def get_system_status(self) -> Dict[str, Any]:
-        """Get comprehensive system status."""
-        return {
-            "running": self.running,
-            "processing_hub": self.processing_hub.get_processing_status(),
-            "rate_limits": self.processing_hub.get_rate_limit_status(),
-            "world_state_metrics": self.world_state.get_state_metrics(),
-            "observers": {
-                "matrix_connected": self.matrix_observer is not None,
-                "farcaster_connected": self.farcaster_observer is not None,
-            },
-            "tools_registered": len(self.tool_registry.get_all_tools()),
-        }
+    async def get_system_status(self) -> Dict[str, Any]:
+        """
+        Get comprehensive system status for the management UI.
+        
+        Returns:
+            Dictionary containing system status information
+        """
+        try:
+            # Get processing hub status
+            processing_status = await self.processing_hub.get_processing_status()
+            
+            # Get world state metrics
+            world_state_metrics = {
+                "channels_count": len(self.world_state.state.channels),
+                "total_messages": sum(len(ch.messages) for ch in self.world_state.state.channels.values()),
+                "action_history_count": len(self.world_state.state.action_history.actions),
+                "pending_invites": len(self.world_state.get_pending_matrix_invites()),
+                "generated_media_count": len(self.world_state.state.generated_media_library),
+                "research_entries": len(self.world_state.state.research_database.entries)
+            }
+            
+            # Get tool stats
+            tool_stats = self.tool_registry.get_tool_stats()
+            
+            # Get rate limiter status
+            rate_limit_status = self.rate_limiter.get_status()
+            
+            # Get integration status
+            integrations = {
+                "matrix": {
+                    "connected": self.matrix_observer is not None and getattr(self.matrix_observer.client, 'logged_in', False) if self.matrix_observer else False,
+                    "monitored_rooms": getattr(self.matrix_observer, 'channels_to_monitor', []) if self.matrix_observer else [],
+                    "pending_invites": len(self.world_state.get_pending_matrix_invites())
+                },
+                "farcaster": {
+                    "connected": self.farcaster_observer is not None,
+                    "bot_fid": settings.FARCASTER_BOT_FID,
+                    "post_queue_size": getattr(self.farcaster_observer.scheduler.post_queue, 'qsize', lambda: 0)() if self.farcaster_observer and hasattr(self.farcaster_observer, 'scheduler') else 0,
+                    "reply_queue_size": getattr(self.farcaster_observer.scheduler.reply_queue, 'qsize', lambda: 0)() if self.farcaster_observer and hasattr(self.farcaster_observer, 'scheduler') else 0
+                }
+            }
+            
+            return {
+                "system_running": self.running,
+                "cycle_count": self.cycle_count,
+                "processing": processing_status,
+                "world_state": world_state_metrics,
+                "tools": tool_stats,
+                "rate_limits": rate_limit_status,
+                "integrations": integrations,
+                "config": {
+                    "ai_model": self.config.ai_model,
+                    "processing_mode": "node_based" if self.config.processing_config.enable_node_based_processing else "traditional",
+                    "observation_interval": self.config.processing_config.observation_interval,
+                    "max_cycles_per_hour": self.config.processing_config.max_cycles_per_hour
+                }
+            }
+        except Exception as e:
+            logger.error(f"Error getting system status: {e}")
+            return {
+                "system_running": self.running,
+                "error": str(e)
+            }
 
-    async def force_processing_mode(self, mode: str) -> bool:
-        """Force a specific processing mode."""
-        return await self.processing_hub.force_processing_mode(mode)
+    def force_processing_mode(self, enable_node_based: bool) -> None:
+        """
+        Force the processing mode to a specific type.
+        
+        Args:
+            enable_node_based: True to force node-based processing, False for traditional
+        """
+        self.processing_hub.force_processing_mode(enable_node_based)
+        self.config.processing_config.enable_node_based_processing = enable_node_based
+        logger.info(f"Processing mode forced to {'node-based' if enable_node_based else 'traditional'}")
 
-    def reset_processing_mode(self):
-        """Reset to automatic processing mode selection."""
+    def reset_processing_mode(self) -> None:
+        """Reset processing mode to automatic determination."""
         self.processing_hub.reset_processing_mode()
+        logger.info("Processing mode reset to automatic determination")
+
+    def get_tool_registry(self) -> ToolRegistry:
+        """Get the tool registry instance."""
+        return self.tool_registry
+
+    def get_ai_engine(self) -> AIDecisionEngine:
+        """Get the AI engine instance."""
+        return self.ai_engine
+
+    def get_world_state_manager(self) -> WorldStateManager:
+        """Get the world state manager instance."""
+        return self.world_state
+
+    def get_processing_hub(self) -> ProcessingHub:
+        """Get the processing hub instance.""" 
+        return self.processing_hub
+
+    def increment_cycle_count(self) -> None:
+        """Increment the processing cycle counter."""
+        self.cycle_count += 1
 
     # Additional API methods for test compatibility and external usage
     async def process_payload(self, payload: Dict[str, Any], active_channels: list) -> None:

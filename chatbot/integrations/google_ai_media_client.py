@@ -1,308 +1,236 @@
-"""
-Google AI Media Generation Client
-
-This module provides integration with Google AI services for image and video generation,
-including Gemini for image generation and Veo for video generation. Enhanced with 
-JavaScript best practices including browser headers, retry logic, and robust polling.
-"""
-
 import asyncio
 import base64
 import io
 import logging
 import os
-import random
-import tempfile
-import time
-from typing import Dict, List, Optional, Tuple, Union
+import time # Kept for Veo polling timeout
+from typing import Dict, List, Optional, Union # Kept for type hints
 
-import httpx
+import httpx # Kept for Veo video downloads if URI is returned by SDK
+from google import genai
+from google.genai import types
+from PIL import Image # For handling image data
 
 logger = logging.getLogger(__name__)
 
 
 class GoogleAIMediaClient:
     """
-    Enhanced Google AI Media client with JavaScript best practices.
-
-    Features:
-    - Browser headers for downloads
-    - Exponential backoff retry logic
-    - Robust polling for long operations
-    - Enhanced error handling
-    - Rate limiting protection
+    Enhanced Google AI Media client.
+    Uses the google-genai SDK for Gemini image generation and Veo video generation.
     """
 
     def __init__(
         self,
         api_key: str,
-        default_gemini_image_model: str = "gemini-2.0-flash-exp-image-generation",
+        default_gemini_image_model: str = "gemini-1.5-flash-latest",
         default_veo_video_model: str = "veo-2.0-generate-001",
     ):
         """
         Initialize Google AI Media client.
 
         Args:
-            api_key: Google AI API key
-            default_gemini_image_model: Default Gemini model for image generation
-            default_veo_video_model: Default Veo model for video generation
+            api_key: Google AI API key (for Gemini Developer API).
+            default_gemini_image_model: Default Gemini model for image generation.
+                                       Ensure this model supports image generation via generate_content.
+            default_veo_video_model: Default Veo model for video generation.
         """
         self.api_key = api_key
+        try:
+            # Initialize the google-genai client for Gemini Developer API
+            self.client = genai.Client(api_key=self.api_key)
+        except Exception as e:
+            logger.error(f"Failed to initialize genai.Client: {e}. Ensure API key is valid or environment is configured.")
+            raise
+
         self.default_gemini_image_model = default_gemini_image_model
         self.default_veo_video_model = default_veo_video_model
-        self.base_url = "https://generativelanguage.googleapis.com/v1beta"
 
-        # Rate limiting tracking
-        self.recent_requests = []
-        self.rate_limit_per_minute = 10  # Conservative default
-        self.rate_limit_per_day = 100  # Conservative default
-
-        # Browser headers for downloads
         self.browser_headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
+            "Accept": "video/mp4,video/webm,video/*,*/*;q=0.8",
             "Accept-Encoding": "gzip, deflate, br",
             "Accept-Language": "en-US,en;q=0.9",
             "Cache-Control": "no-cache",
             "Pragma": "no-cache",
-            "Sec-Fetch-Dest": "image",
+            "Sec-Fetch-Dest": "video",
             "Sec-Fetch-Mode": "no-cors",
             "Sec-Fetch-Site": "cross-site",
         }
-
-    async def _retry_with_backoff(
-        self,
-        operation_func,
-        max_retries: int = 3,
-        initial_delay: float = 1.0,
-        backoff_factor: float = 2.0,
-        jitter: bool = True,
-    ):
-        """
-        Execute operation with exponential backoff retry logic.
-
-        Args:
-            operation_func: Async function to retry
-            max_retries: Maximum number of retry attempts
-            initial_delay: Initial delay between retries
-            backoff_factor: Exponential backoff multiplier
-            jitter: Add random jitter to delays
-
-        Returns:
-            Result from operation_func or None if all retries failed
-        """
-        last_exception = None
-
-        for attempt in range(max_retries):
-            try:
-                return await operation_func(attempt)
-            except Exception as e:
-                last_exception = e
-                logger.warning(
-                    f"GoogleAIMediaClient: Attempt {attempt + 1} failed: {e}"
-                )
-
-                if attempt < max_retries - 1:
-                    delay = initial_delay * (backoff_factor**attempt)
-                    if jitter:
-                        delay *= 0.5 + random.random() * 0.5  # Add 0-50% jitter
-
-                    logger.info(
-                        f"GoogleAIMediaClient: Retrying in {delay:.2f} seconds..."
-                    )
-                    await asyncio.sleep(delay)
-
-        logger.error(
-            f"GoogleAIMediaClient: Operation failed after {max_retries} attempts. Last error: {last_exception}"
-        )
-        return None
-
-    def _check_rate_limit(self) -> bool:
-        """Check if we're within rate limits."""
-        now = time.time()
-
-        # Filter recent requests within the last minute
-        recent_requests = [req for req in self.recent_requests if now - req < 60]
-        if len(recent_requests) >= self.rate_limit_per_minute:
-            return False
-
-        # Filter recent requests within the last day
-        daily_requests = [
-            req for req in self.recent_requests if now - req < 24 * 60 * 60
+        
+        self.gemini_safety_settings = [
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+            ),
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+            ),
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+            ),
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+            ),
         ]
-        if len(daily_requests) >= self.rate_limit_per_day:
-            return False
-
-        return True
-
-    def _record_request(self):
-        """Record a new request for rate limiting."""
-        self.recent_requests.append(time.time())
-        # Keep only last day's requests
-        cutoff = time.time() - 24 * 60 * 60
-        self.recent_requests = [req for req in self.recent_requests if req > cutoff]
 
     async def generate_image_gemini(
         self,
         prompt: str,
         aspect_ratio: str = "1:1",
         temperature: float = 0.9,
-        max_retries: int = 3,
     ) -> Optional[bytes]:
         """
-        Generate an image using Gemini's image generation model with enhanced retry logic.
+        Generate an image using a Gemini model with image generation capabilities.
+        Note: Ensure 'default_gemini_image_model' supports image generation.
+              Models like "gemini-1.5-flash-latest" are suitable if enabled for image gen.
 
         Args:
-            prompt: Text description for image generation
-            aspect_ratio: Desired aspect ratio (e.g., "1:1", "16:9", "4:3")
-            temperature: Generation temperature (0.0-1.0)
-            max_retries: Maximum retry attempts
+            prompt: Text description for image generation.
+            aspect_ratio: Desired aspect ratio (e.g., "1:1", "16:9"). Included in the prompt.
+            temperature: Generation temperature (0.0-1.0).
 
         Returns:
-            Image bytes or None if failed
+            Image bytes or None if failed.
         """
-        if not self._check_rate_limit():
-            logger.warning(
-                "GoogleAIMediaClient: Rate limit exceeded for image generation"
+        enhanced_prompt = (
+            f"{prompt}\n\n"
+            f"Generate an image with an aspect ratio of {aspect_ratio}. "
+            f"Only respond with the image, no accompanying text or description."
+        )
+
+        generation_config_obj = types.GenerateContentConfig(
+            temperature=temperature,
+            safety_settings=self.gemini_safety_settings,
+        )
+
+        try:
+            response = await self.client.aio.models.generate_content(
+                model=self.default_gemini_image_model,
+                contents=[enhanced_prompt],
+                generation_config=generation_config_obj,
             )
+
+            for part in response.parts:
+                if hasattr(part, "inline_data") and part.inline_data and \
+                   hasattr(part.inline_data, "data") and part.inline_data.data:
+                    return part.inline_data.data
+            
+            warning_message = "GoogleAIMediaClient: No image data found in Gemini response."
+            if response.text: # `.text` concatenates text from all parts
+                warning_message += f" Response text: {response.text}"
+            logger.warning(warning_message)
+
+            if response.prompt_feedback and response.prompt_feedback.block_reason:
+                block_reason_msg = str(response.prompt_feedback.block_reason)
+                if hasattr(response.prompt_feedback, 'block_reason_message') and response.prompt_feedback.block_reason_message:
+                     block_reason_msg = response.prompt_feedback.block_reason_message
+                logger.warning(f"GoogleAIMediaClient: Image generation may have been blocked. Reason: {block_reason_msg}")
+            
+            if response.candidates:
+                for candidate in response.candidates:
+                    if candidate.finish_reason not in (None, types.FinishReason.STOP, types.FinishReason.FINISH_REASON_UNSPECIFIED):
+                        logger.warning(f"GoogleAIMediaClient: Gemini generation candidate finished with reason: {candidate.finish_reason} ({candidate.finish_message or ''})")
             return None
 
-        # Enhance prompt with aspect ratio
-        enhanced_prompt = f"{prompt}\nDesired aspect ratio: {aspect_ratio}\nOnly respond with an image."
-
-        async def _generate_attempt(attempt: int) -> Optional[bytes]:
-            self._record_request()
-
-            # Add retry-specific enhancements to prompt
-            retry_prompt = enhanced_prompt
-            if attempt > 0:
-                retry_prompt += f"\nDo not include any text. If you cannot generate an image, try again."
-
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                payload = {
-                    "contents": [{"role": "user", "parts": [{"text": retry_prompt}]}],
-                    "generationConfig": {
-                        "temperature": temperature,
-                        "maxOutputTokens": 1000,
-                        "topP": 0.95,
-                        "topK": 40,
-                        "responseModalities": ["text", "image"],
-                    },
-                }
-
-                response = await client.post(
-                    f"{self.base_url}/models/{self.default_gemini_image_model}:generateContent",
-                    json=payload,
-                    headers={
-                        "Content-Type": "application/json",
-                        "Authorization": f"Bearer {self.api_key}",
-                    },
-                )
-
-                if response.status_code == 200:
-                    result = response.json()
-
-                    # Look for image in response
-                    for candidate in result.get("candidates", []):
-                        for part in candidate.get("content", {}).get("parts", []):
-                            if "inlineData" in part:
-                                image_data = part["inlineData"]["data"]
-                                return base64.b64decode(image_data)
-
-                    raise Exception("No image found in response")
-                else:
-                    raise Exception(f"HTTP {response.status_code}: {response.text}")
-
-        return await self._retry_with_backoff(_generate_attempt, max_retries)
+        except genai.errors.BlockedPromptError as e:
+            logger.error(f"GoogleAIMediaClient: Gemini image generation blocked: {e}")
+            return None
+        except genai.errors.APIError as e: # Catch specific API errors from the SDK
+            logger.error(f"GoogleAIMediaClient: Gemini image generation failed with APIError: {e}")
+            return None
+        except Exception as e: # Catch any other unexpected errors
+            logger.exception(f"GoogleAIMediaClient: Unexpected error in Gemini image generation: {e}")
+            return None
 
     async def compose_image_with_references(
         self,
         prompt: str,
-        reference_images: List[Dict[str, str]],
+        reference_images: List[Dict[str, str]], 
         aspect_ratio: str = "1:1",
     ) -> Optional[bytes]:
         """
-        Generate a composed image using reference images (avatar, location, items).
+        Generate a composed image using reference images with a Gemini vision model.
+        Requires a model capable of multimodal input and image generation output.
 
         Args:
-            prompt: Text description for the composition
-            reference_images: List of {"data": base64_string, "mimeType": mime_type, "label": description}
-            aspect_ratio: Desired aspect ratio
+            prompt: Text description for the composition.
+            reference_images: List of {"data": base64_string, "mimeType": mime_type}.
+            aspect_ratio: Desired aspect ratio for the output.
 
         Returns:
-            Composed image bytes or None if failed
+            Composed image bytes or None if failed.
         """
-        if not self._check_rate_limit():
+        # Gemini 1.5 Pro can handle more, but let's keep a reasonable default advice.
+        if not (1 <= len(reference_images) <= 16): 
             logger.warning(
-                "GoogleAIMediaClient: Rate limit exceeded for image composition"
+                "GoogleAIMediaClient: Number of reference images is outside the typical 1-16 range."
             )
-            return None
+            # Not returning None, allow model to decide if it can handle it.
 
-        if not reference_images or len(reference_images) > 3:
-            logger.warning(
-                "GoogleAIMediaClient: Need 1-3 reference images for composition"
-            )
-            return None
+        content_parts: list[Union[str, Image.Image]] = []
+        for img_ref in reference_images:
+            try:
+                img_bytes = base64.b64decode(img_ref["data"])
+                pil_image = Image.open(io.BytesIO(img_bytes))
+                content_parts.append(pil_image)
+            except Exception as e:
+                logger.error(f"GoogleAIMediaClient: Failed to decode/load reference image: {e}")
+                return None
+        
+        enhanced_prompt = (
+            f"{prompt}\n\n"
+            f"Using the provided image(s) as references, generate a new composite image. "
+            f"The new image should have an aspect ratio of {aspect_ratio}. "
+            f"Only respond with the newly generated image, no accompanying text."
+        )
+        content_parts.append(enhanced_prompt)
+        
+        generation_config_obj = types.GenerateContentConfig(
+            temperature=0.7, 
+            safety_settings=self.gemini_safety_settings,
+        )
 
         try:
-            self._record_request()
+            response = await self.client.aio.models.generate_content(
+                model=self.default_gemini_image_model,
+                contents=content_parts, # List can contain PIL.Image objects and strings
+                generation_config=generation_config_obj
+            )
+            
+            for part in response.parts:
+                if hasattr(part, "inline_data") and part.inline_data and \
+                   hasattr(part.inline_data, "data") and part.inline_data.data:
+                    return part.inline_data.data
 
-            # Build parts array with reference images and prompt
-            parts = []
+            warning_message = "GoogleAIMediaClient: No composed image data found in Gemini response."
+            if response.text:
+                warning_message += f" Response text: {response.text}"
+            logger.warning(warning_message)
 
-            # Add reference images
-            for img in reference_images:
-                parts.append(
-                    {
-                        "inline_data": {
-                            "mime_type": img.get("mimeType", "image/png"),
-                            "data": img["data"],
-                        }
-                    }
-                )
+            if response.prompt_feedback and response.prompt_feedback.block_reason:
+                block_reason_msg = str(response.prompt_feedback.block_reason)
+                if hasattr(response.prompt_feedback, 'block_reason_message') and response.prompt_feedback.block_reason_message:
+                     block_reason_msg = response.prompt_feedback.block_reason_message
+                logger.warning(f"GoogleAIMediaClient: Image composition may have been blocked. Reason: {block_reason_msg}")
 
-            # Add enhanced text prompt
-            enhanced_prompt = f"{prompt}\nCompose these elements together in aspect ratio {aspect_ratio}. Only respond with an image."
-            parts.append({"text": enhanced_prompt})
+            if response.candidates:
+                for candidate in response.candidates:
+                    if candidate.finish_reason not in (None, types.FinishReason.STOP, types.FinishReason.FINISH_REASON_UNSPECIFIED):
+                        logger.warning(f"GoogleAIMediaClient: Gemini composition candidate finished with reason: {candidate.finish_reason} ({candidate.finish_message or ''})")
+            return None
 
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                payload = {
-                    "contents": [{"role": "user", "parts": parts}],
-                    "generationConfig": {
-                        "temperature": 0.9,
-                        "maxOutputTokens": 1000,
-                        "topP": 0.95,
-                        "topK": 40,
-                        "responseModalities": ["text", "image"],
-                    },
-                }
-
-                response = await client.post(
-                    f"{self.base_url}/models/{self.default_gemini_image_model}:generateContent",
-                    json=payload,
-                    headers={
-                        "Content-Type": "application/json",
-                        "Authorization": f"Bearer {self.api_key}",
-                    },
-                )
-
-                if response.status_code == 200:
-                    result = response.json()
-
-                    # Extract image from response
-                    for candidate in result.get("candidates", []):
-                        for part in candidate.get("content", {}).get("parts", []):
-                            if "inlineData" in part:
-                                image_data = part["inlineData"]["data"]
-                                return base64.b64decode(image_data)
-
-                logger.warning(
-                    "GoogleAIMediaClient: No composed image found in response"
-                )
-                return None
-
+        except genai.errors.BlockedPromptError as e:
+            logger.error(f"GoogleAIMediaClient: Gemini image composition blocked: {e}")
+            return None
+        except genai.errors.APIError as e:
+            logger.error(f"GoogleAIMediaClient: Gemini image composition failed with APIError: {e}")
+            return None
         except Exception as e:
-            logger.error(f"GoogleAIMediaClient: Image composition failed: {e}")
+            logger.exception(f"GoogleAIMediaClient: Unexpected error in Gemini image composition: {e}")
             return None
 
     async def generate_video_veo(
@@ -313,147 +241,183 @@ class GoogleAIMediaClient:
         aspect_ratio: str = "16:9",
         num_videos: int = 1,
         person_generation: str = "allow_adult",
+        duration_seconds: float = 5.0,
+        fps: int = 24,
     ) -> List[bytes]:
         """
-        Generate videos using Google's Veo model with polling for completion.
-
-        Args:
-            prompt: Text description for video generation
-            input_image_bytes: Optional input image bytes as first frame
-            input_mime_type: MIME type of input image (e.g., "image/png")
-            aspect_ratio: Video aspect ratio
-            num_videos: Number of videos to generate
-            person_generation: Person generation policy
-
-        Returns:
-            List of video bytes (empty list if failed)
+        Generate videos using Google's Veo model (via google-genai SDK).
+        Note: input_image_bytes for image-to-video is not directly supported by
+              types.GenerateVideosConfig in current SDK examples. This is text-to-video.
         """
-        if not self._check_rate_limit():
+        if input_image_bytes:
             logger.warning(
-                "GoogleAIMediaClient: Rate limit exceeded for video generation"
+                "GoogleAIMediaClient: `input_image_bytes` for Veo image-to-video is not directly "
+                "supported by the SDK's `generate_videos` method in this implementation. "
+                "Proceeding with text-to-video."
             )
-            return []
+
+        pg_enum_map = {
+            "allow_adult": types.PersonGeneration.ALLOW_ADULT,
+            "allow_all": types.PersonGeneration.ALLOW_ALL,
+            "dont_allow": types.PersonGeneration.DONT_ALLOW,
+        }
+        sdk_person_generation = pg_enum_map.get(person_generation.lower(), types.PersonGeneration.ALLOW_ADULT)
+
+        video_gen_config = types.GenerateVideosConfig(
+            number_of_videos=num_videos,
+            person_generation=sdk_person_generation,
+            aspect_ratio=aspect_ratio,
+            duration_seconds=duration_seconds,
+            fps=fps,
+        )
 
         try:
-            self._record_request()
+            logger.info(f"GoogleAIMediaClient: Starting Veo video generation for prompt: '{prompt}' with model {self.default_veo_video_model}")
+            
+            # This returns an AsyncOperation object
+            operation = await self.client.aio.models.generate_videos(
+                model=self.default_veo_video_model,
+                prompt=prompt,
+                config=video_gen_config,
+            )
+            
+            operation_name = str(operation.name) if hasattr(operation, 'name') else "unknown_veo_operation"
+            logger.info(f"GoogleAIMediaClient: Veo video generation operation started: {operation_name}. Waiting for completion...")
 
-            # Prepare generation config
-            config = {
-                "numberOfVideos": num_videos,
-                "personGeneration": person_generation,
-                "aspectRatio": aspect_ratio,
-            }
+            max_wait_seconds = 600  # 10 minutes timeout for the operation to complete
+            op_result_payload = await asyncio.wait_for(operation.result(), timeout=max_wait_seconds)
+            
+            # operation.result() raises an exception if the operation failed.
+            # If we reach here, the operation was successful.
+            # op_result_payload is likely types.GenerateVideosResponse
 
-            # Prepare image parameter if provided
-            image_param = None
-            if input_image_bytes:
-                image_base64 = base64.b64encode(input_image_bytes).decode("utf-8")
-                image_param = {
-                    "imageBytes": image_base64,
-                    "mimeType": input_mime_type or "image/png",
-                }
+            video_bytes_list = []
+            if op_result_payload and hasattr(op_result_payload, 'generated_videos') and op_result_payload.generated_videos:
+                for gen_video_info in op_result_payload.generated_videos: # types.GeneratedVideo
+                    if hasattr(gen_video_info, 'video') and gen_video_info.video: # types.Video
+                        video_detail = gen_video_info.video
+                        if video_detail.video_bytes:
+                            video_bytes_list.append(video_detail.video_bytes)
+                            logger.info(f"GoogleAIMediaClient: Veo video generated ({len(video_detail.video_bytes)} bytes).")
+                        elif video_detail.uri:
+                            logger.info(f"GoogleAIMediaClient: Veo video generated, URI: {video_detail.uri}. Attempting download.")
+                            async with httpx.AsyncClient(timeout=300.0) as http_client:
+                                try:
+                                    download_url = video_detail.uri
+                                    # Minimal heuristic for adding API key, GCS URIs (gs://) or fully pre-signed URLs won't need this.
+                                    # This might be unnecessary if SDK returns directly downloadable URIs.
+                                    if "generativelanguage.googleapis.com" in download_url and "key=" not in download_url:
+                                         download_url = f"{download_url}{'&' if '?' in download_url else '?'}key={self.api_key}"
 
-            async with httpx.AsyncClient(timeout=300.0) as client:
-                # Start video generation operation
-                payload = {
-                    "model": self.default_veo_video_model,
-                    "prompt": prompt,
-                    "config": config,
-                }
-
-                if image_param:
-                    payload["image"] = image_param
-
-                response = await client.post(
-                    f"{self.base_url}/models:generateVideos",
-                    json=payload,
-                    headers={
-                        "Content-Type": "application/json",
-                        "Authorization": f"Bearer {self.api_key}",
-                    },
-                )
-
-                if response.status_code != 200:
-                    logger.error(
-                        f"GoogleAIMediaClient: Video generation start failed: {response.status_code} - {response.text}"
-                    )
-                    return []
-
-                operation = response.json()
-                operation_name = operation.get("name")
-
-                if not operation_name:
-                    logger.error("GoogleAIMediaClient: No operation name returned")
-                    return []
-
-                logger.info(
-                    f"GoogleAIMediaClient: Video generation started, polling operation: {operation_name}"
-                )
-
-                # Poll for completion
-                max_poll_time = 300  # 5 minutes
-                poll_interval = 10  # 10 seconds
-                start_time = time.time()
-
-                while time.time() - start_time < max_poll_time:
-                    await asyncio.sleep(poll_interval)
-
-                    poll_response = await client.get(
-                        f"{self.base_url}/operations/{operation_name}",
-                        headers={"Authorization": f"Bearer {self.api_key}"},
-                    )
-
-                    if poll_response.status_code == 200:
-                        operation_status = poll_response.json()
-
-                        if operation_status.get("done"):
-                            # Operation completed
-                            if "error" in operation_status:
-                                logger.error(
-                                    f"GoogleAIMediaClient: Video generation error: {operation_status['error']}"
-                                )
-                                return []
-
-                            response_data = operation_status.get("response", {})
-                            generated_videos = response_data.get("generatedVideos", [])
-
-                            # Download videos
-                            video_bytes_list = []
-                            for video_info in generated_videos:
-                                video_uri = video_info.get("video", {}).get("uri")
-                                if video_uri:
-                                    # Add API key to URI
-                                    video_url = f"{video_uri}&key={self.api_key}"
-
-                                    # Download video with browser headers
-                                    download_response = await client.get(
-                                        video_url, headers=self.browser_headers
-                                    )
-                                    if download_response.status_code == 200:
-                                        video_bytes_list.append(
-                                            download_response.content
-                                        )
-                                        logger.info(
-                                            f"GoogleAIMediaClient: Downloaded video ({len(download_response.content)} bytes)"
-                                        )
-                                    else:
-                                        logger.warning(
-                                            f"GoogleAIMediaClient: Failed to download video: {download_response.status_code}"
-                                        )
-
-                            return video_bytes_list
+                                    dl_response = await http_client.get(download_url, headers=self.browser_headers)
+                                    dl_response.raise_for_status()
+                                    video_bytes_list.append(dl_response.content)
+                                    logger.info(f"GoogleAIMediaClient: Downloaded Veo video from {download_url} ({len(dl_response.content)} bytes).")
+                                except httpx.HTTPStatusError as e_dl_http:
+                                    logger.error(f"GoogleAIMediaClient: Failed to download Veo video from {video_detail.uri}. Status: {e_dl_http.response.status_code}, Response: {e_dl_http.response.text}")
+                                except Exception as e_dl:
+                                    logger.exception(f"GoogleAIMediaClient: Error downloading Veo video from {video_detail.uri}: {e_dl}")
                         else:
-                            logger.info(
-                                f"GoogleAIMediaClient: Video generation in progress... ({time.time() - start_time:.1f}s)"
-                            )
+                            logger.warning("GoogleAIMediaClient: Generated Veo video info does not contain direct bytes or URI.")
                     else:
-                        logger.warning(
-                            f"GoogleAIMediaClient: Poll failed: {poll_response.status_code}"
-                        )
-
-                logger.error("GoogleAIMediaClient: Video generation timed out")
+                        logger.warning("GoogleAIMediaClient: Generated video info object is missing 'video' attribute or it's empty.")
+                return video_bytes_list
+            else:
+                logger.warning(f"GoogleAIMediaClient: Veo operation {operation_name} completed but no 'generated_videos' found in result.")
                 return []
 
-        except Exception as e:
-            logger.error(f"GoogleAIMediaClient: Video generation failed: {e}")
+        except asyncio.TimeoutError:
+            logger.error(f"GoogleAIMediaClient: Veo video generation timed out after {max_wait_seconds}s for operation {operation_name}")
+            # Log final status if possible
+            try:
+                if not operation.done(): # Check if operation itself also thinks it's not done
+                    logger.info(f"Attempting to get latest status for timed-out operation {operation_name}")
+                    updated_op = await self.client.aio.operations.get(name=operation_name)
+                    if updated_op.error:
+                        error_message = updated_op.error.message if hasattr(updated_op.error, 'message') else str(updated_op.error)
+                        logger.error(f"Timed-out Veo operation {operation_name} ended with error: {error_message}")
+                    elif updated_op.done():
+                         logger.info(f"Timed-out Veo operation {operation_name} was found to be completed after timeout check.")
+            except Exception as final_status_e:
+                logger.warning(f"Could not fetch final status for timed-out operation {operation_name}: {final_status_e}")
             return []
+        except genai.errors.APIError as e: # Errors from operation.result() or initial call
+            logger.error(f"GoogleAIMediaClient: Veo video generation failed for operation {operation_name} with APIError: {e}")
+            return []
+        except Exception as e:
+            logger.exception(f"GoogleAIMediaClient: Unexpected error during Veo video generation (operation {operation_name}): {e}")
+            return []
+
+async def main():
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        print("Please set the GOOGLE_API_KEY environment variable.")
+        return
+
+    try:
+        client = GoogleAIMediaClient(
+            api_key=api_key,
+            default_gemini_image_model="gemini-1.5-flash-latest",
+            default_veo_video_model="veo-2.0-generate-001" # Verify this model name
+        )
+    except Exception as e:
+        print(f"Failed to create GoogleAIMediaClient: {e}")
+        return
+
+    # --- Gemini Image Generation Example ---
+    print("\n--- Testing Gemini Image Generation ---")
+    image_prompt = "A vibrant coral reef teeming with alien marine life, underwater fantasy."
+    generated_image_bytes = await client.generate_image_gemini(prompt=image_prompt, aspect_ratio="16:9")
+    if generated_image_bytes:
+        try:
+            with open("generated_gemini_image.png", "wb") as f: f.write(generated_image_bytes)
+            print("Image generated by Gemini and saved to generated_gemini_image.png")
+        except IOError as e: print(f"Error saving Gemini image: {e}")
+    else:
+        print("Failed to generate image with Gemini.")
+
+    # --- Gemini Image Composition Example ---
+    print("\n--- Testing Gemini Image Composition ---")
+    def create_dummy_base64_image(width, height, color="grey") -> str:
+        img = Image.new("RGB", (width, height), color=color)
+        buffered = io.BytesIO(); img.save(buffered, format="PNG")
+        return base64.b64encode(buffered.getvalue()).decode('utf-8')
+
+    reference_images_data = [
+        {"data": create_dummy_base64_image(100, 100, "cyan"), "mimeType": "image/png"},
+        {"data": create_dummy_base64_image(120, 150, "magenta"), "mimeType": "image/png"},
+    ]
+    composition_prompt = "Create an abstract artwork blending these two colored shapes, perhaps with a futuristic geometric feel."
+    composed_image_bytes = await client.compose_image_with_references(
+        prompt=composition_prompt, reference_images=reference_images_data, aspect_ratio="1:1"
+    )
+    if composed_image_bytes:
+        try:
+            with open("composed_gemini_image.png", "wb") as f: f.write(composed_image_bytes)
+            print("Image composed by Gemini and saved to composed_gemini_image.png")
+        except IOError as e: print(f"Error saving composed Gemini image: {e}")
+    else:
+        print("Failed to compose image with Gemini.")
+
+    # --- Veo Video Generation Example ---
+    print("\n--- Testing Veo Video Generation ---")
+    video_prompt = "A humorous animation of a robot trying to bake a cake and failing spectacularly."
+    generated_videos = await client.generate_video_veo(
+        prompt=video_prompt, aspect_ratio="16:9", num_videos=1, duration_seconds=4, fps=24
+    )
+    if generated_videos:
+        for i, video_bytes in enumerate(generated_videos):
+            try:
+                with open(f"generated_veo_video_{i}.mp4", "wb") as f: f.write(video_bytes)
+                print(f"Video generated by Veo and saved to generated_veo_video_{i}.mp4")
+            except IOError as e: print(f"Error saving Veo video: {e}")
+    else:
+        print("Failed to generate video with Veo.")
+    print("\nNote: Veo generation is highly dependent on API access, correct model names, and quotas.")
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    print("Running Google AI Media Client examples...")
+    print("Ensure GOOGLE_API_KEY is set and required libraries (google-genai, Pillow, httpx) are installed.")
+    print("You can install them with: pip install google-genai Pillow httpx\n")
+    asyncio.run(main())
