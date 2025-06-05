@@ -4,7 +4,7 @@ A sophisticated, context-aware chatbot system with dynamic tool-based architectu
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Poetry](https://img.shields.io/badge/dependency%20management-poetry-blue)](https://python-poetry.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: CC BY-NC 4.0](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/)
 [![Code Quality](https://img.shields.io/badge/code%20quality-black%20%7C%20flake8%20%7C%20mypy-blue)](pyproject.toml)
 
 ## 📋 Table of Contents
@@ -489,7 +489,15 @@ poetry run pytest tests/ --cov     # With coverage
 
 ## 📄 License
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) file for details.
+This project is licensed under the Creative Commons Attribution-NonCommercial 4.0 International License. See [LICENSE](LICENSE) file for details.
+
+**Key Terms:**
+- ✅ **Share & Adapt**: You can copy, redistribute, remix, and build upon the material
+- 🏷️ **Attribution Required**: You must give appropriate credit and indicate changes
+- 🚫 **Non-Commercial**: Commercial use requires explicit written permission
+- 📧 **Commercial Licensing**: Contact us for commercial use permissions
+
+For commercial use, licensing, or any revenue-generating applications, please obtain written permission from the copyright holder.
 
 ## 🆘 Support
 
