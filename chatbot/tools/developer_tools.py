@@ -1110,38 +1110,44 @@ class CreatePullRequestTool(ToolInterface):  # Phase 3
         if not target_repo_url or not pr_title:
             return {"status": "failure", "message": "target_repo_url and pr_title are required"}
         
-        try:
-            # Find workspace path
-            workspace_path = await self._find_workspace_path(target_repo_url, context)
-            if not workspace_path:
-                return {"status": "failure", "message": f"Workspace not found for {target_repo_url}"}
+        try:           
+            ws_data = context.world_state_manager.get_state_data()
+            repo_context = ws_data.target_repositories.get(target_repo_url)
+            if not repo_context or not repo_context.setup_complete:
+                return {"status": "failure", "message": f"Workspace not set up for {target_repo_url}"}
+
+            workspace_path = Path(repo_context.local_clone_path)
+            feature_branch = repo_context.current_branch
             
-            # Get repository context from world state
-            repo_context = await self._get_repo_context(target_repo_url, context)
-            if not repo_context:
-                return {"status": "failure", "message": "Repository context not found in world state"}
+            # 1. Push changes to fork
+            lg = LocalGitRepository(target_repo_url, str(workspace_path.parent))
+            await lg.push("fork", feature_branch)
+
+            # 2. Create PR using GitHub service
+            repo_parts = target_repo_url.replace('https://github.com/', '').split('/')
+            main_repo_full_name = f"{repo_parts[0]}/{repo_parts[1]}"
+            gh = GitHubService(main_repo=main_repo_full_name)
             
-            # Push changes to fork (simulated for now)
-            push_success = await self._push_to_fork(workspace_path, repo_context)
-            if not push_success:
-                return {"status": "failure", "message": "Failed to push changes to fork"}
-            
-            # Create pull request (simulated for now)
-            pr_url = await self._create_github_pr(
-                target_repo_url, repo_context, pr_title, pr_description, target_branch, draft
+            pr_data = await gh.create_pull_request(
+                title=pr_title,
+                body=pr_description,
+                head_branch=feature_branch,
+                base_branch=target_branch,
+                is_draft=draft,
             )
+            pr_url = pr_data.get("html_url")
             
             # Update world state with PR information
-            if hasattr(context, 'world_state_manager'):
-                await self._update_pr_info(context, target_repo_url, pr_url)
+            if repo_context.active_task_id:
+                task = ws_data.development_tasks.get(repo_context.active_task_id)
+                if task:
+                    task.status = "pr_submitted"
+                    task.associated_pr_url = pr_url
             
             return {
                 "status": "success",
                 "pr_url": pr_url,
-                "pr_title": pr_title,
-                "target_branch": target_branch,
-                "draft": draft,
-                "message": f"Pull request created: {pr_url}",
+                "message": f"Successfully created pull request: {pr_url}",
                 "next_steps": "Monitor PR for feedback and iterate with ACE as needed"
             }
             
