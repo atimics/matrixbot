@@ -352,7 +352,9 @@ class FarcasterObserver:
         include_trending: bool = True,
         include_home_feed: bool = True,
         include_notifications: bool = True,
+        include_for_you_feed: bool = True,
         trending_limit: int = 10,
+        for_you_limit: int = 10,
     ) -> Dict[str, List[Message]]:
         """
         Collect comprehensive world state data for AI context.
@@ -361,6 +363,7 @@ class FarcasterObserver:
         - trending: Recent trending casts
         - home: Home timeline messages
         - notifications: Notifications and mentions
+        - for_you: Personalized "For You" feed content
         """
         if not self.api_client:
             logger.warning("Cannot observe world state data: API client not initialized.")
@@ -378,6 +381,11 @@ class FarcasterObserver:
                 home_messages = await self._observe_home_feed()
                 world_state_data["home"] = home_messages
                 logger.info(f"Collected {len(home_messages)} home feed messages for world state")
+                
+            if include_for_you_feed and self.bot_fid:
+                for_you_messages = await self._observe_for_you_feed(limit=for_you_limit)
+                world_state_data["for_you"] = for_you_messages
+                logger.info(f"Collected {len(for_you_messages)} 'For You' feed messages for world state")
 
             if include_notifications and self.bot_fid:
                 notification_messages = await self._observe_notifications()

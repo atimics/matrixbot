@@ -116,6 +116,13 @@ class MainOrchestrator:
             SearchCastsTool,
             GetCastByUrlTool,
         )
+        from ...tools.frame_tools import (
+            CreateTransactionFrameTool,
+            CreatePollFrameTool,
+            CreateCustomFrameTool,
+            SearchFramesTool,
+            GetFrameCatalogTool,
+        )
         from ...tools.matrix_tools import (
             AcceptMatrixInviteTool,
             IgnoreMatrixInviteTool,
@@ -171,6 +178,13 @@ class MainOrchestrator:
         self.tool_registry.register_tool(GetTrendingCastsTool())
         self.tool_registry.register_tool(GetCastByUrlTool())
         self.tool_registry.register_tool(CollectWorldStateTool())
+        
+        # Farcaster Frame tools
+        self.tool_registry.register_tool(CreateTransactionFrameTool())
+        self.tool_registry.register_tool(CreatePollFrameTool())
+        self.tool_registry.register_tool(CreateCustomFrameTool())
+        self.tool_registry.register_tool(SearchFramesTool())
+        self.tool_registry.register_tool(GetFrameCatalogTool())
         
         # Media generation tools
         self.tool_registry.register_tool(GenerateImageTool())
