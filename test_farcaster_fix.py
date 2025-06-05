@@ -19,6 +19,9 @@ async def test_farcaster_empty_content_with_image():
     # Create mock context
     context = ActionContext()
     context.farcaster_observer = AsyncMock()
+    # Ensure no post_queue attribute to avoid scheduling path
+    if hasattr(context.farcaster_observer, 'post_queue'):
+        delattr(context.farcaster_observer, 'post_queue')
     context.farcaster_observer.post_cast = AsyncMock(return_value={
         "success": True,
         "cast": {"hash": "0x123456"}
