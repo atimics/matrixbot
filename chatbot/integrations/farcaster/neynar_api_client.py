@@ -592,3 +592,22 @@ class NeynarAPIClient:
         except Exception as e:
             logger.error(f"Error fetching cast details for {cast_hash}: {e}")
             return {"error": str(e)}
+
+    async def get_for_you_feed(
+        self,
+        fid: str,
+        limit: int = 25,
+        include_replies: bool = True,
+        with_recasts: bool = True,
+    ) -> Dict[str, Any]:
+        """Get personalized 'For You' feed for a user based on their activity and preferences."""
+        params = {
+            "fid": fid,
+            "feed_type": "filter",
+            "filter_type": "algorithm_basic",
+            "limit": limit,
+            "include_replies": include_replies,
+            "with_recasts": with_recasts,
+        }
+        response = await self._make_request("GET", "/farcaster/feed", params=params)
+        return response.json()
