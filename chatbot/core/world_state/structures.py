@@ -806,13 +806,18 @@ class WorldStateData:
         return ch.recent_messages[-limit:]
 
     def has_replied_to_cast(self, cast_hash: str) -> bool:
-        """Check if a Farcaster reply action exists for the given cast_hash."""
+        """
+        Check if the AI has already replied to a specific cast.
+        This now checks for successful or scheduled actions.
+        """
         for action in self.action_history:
-            if action.action_type == "send_farcaster_reply" and action.result not in ["scheduled", "failure"]:
-                # support multiple parameter keys
-                params = action.parameters or {}
-                if cast_hash in params.values():
-                    return True
+            if action.action_type == "send_farcaster_reply":
+                reply_to_hash = action.parameters.get("reply_to_hash")
+                if reply_to_hash == cast_hash:
+                    # Consider it replied if the action was successful OR is still scheduled.
+                    # This prevents re-queueing a reply while one is already pending.
+                    if action.result != "failure":
+                        return True
         return False
 
     def set_rate_limits(self, key: str, limits: Dict[str, Any]):
@@ -868,8 +873,19 @@ class WorldStateData:
             msgs = ch.recent_messages
             if limit is not None:
                 msgs = msgs[-limit:]
+            
+            # Add already_replied flag to messages
+            messages_for_payload = []
+            for msg in msgs:
+                # Check if we have already replied to this Farcaster cast
+                has_replied = self.has_replied_to_cast(msg.id) if msg.channel_type == 'farcaster' else False
+                
+                msg_dict = asdict(msg)
+                msg_dict['already_replied'] = has_replied  # Add the flag
+                messages_for_payload.append(msg_dict)
+            
             data["channels"][cid] = {
-                "recent_messages": [asdict(msg) for msg in msgs]
+                "recent_messages": messages_for_payload
             }
         # Action history
         actions = self.action_history

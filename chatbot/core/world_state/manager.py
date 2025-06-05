@@ -331,21 +331,15 @@ class WorldStateManager:
     def has_replied_to_cast(self, cast_hash: str) -> bool:
         """
         Check if the AI has already replied to a specific cast.
-
-        Args:
-            cast_hash: The hash of the cast to check
-
-        Returns:
-            True if the AI has successfully replied to this cast (not just scheduled)
+        This now checks for successful or scheduled actions.
         """
         for action in self.state.action_history:
             if action.action_type == "send_farcaster_reply":
-                params = action.parameters or {}
-                # Accept both 'reply_to_hash' and 'cast_hash' as valid keys
-                reply_to_hash = params.get("reply_to_hash")
-                cast_hash_param = params.get("cast_hash")
-                if (reply_to_hash == cast_hash or cast_hash_param == cast_hash):
-                    if action.result not in ["scheduled", "failure"]:
+                reply_to_hash = action.parameters.get("reply_to_hash")
+                if reply_to_hash == cast_hash:
+                    # Consider it replied if the action was successful OR is still scheduled.
+                    # This prevents re-queueing a reply while one is already pending.
+                    if action.result != "failure":
                         return True
         return False
 
