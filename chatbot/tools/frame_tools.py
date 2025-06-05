@@ -338,81 +338,61 @@ class CreateCustomFrameTool(ToolInterface):
                 "error": str(e),
                 "timestamp": time.time()
             }
-                "image_url": image_url,
-                "buttons": buttons,
-                "input_placeholder": input_placeholder
-            }
-
-            # Use a frame builder service for custom frames
-            # This could integrate with services like frames.js, frog, or similar
-            frame_url = f"https://frame-builder.neynar.com/custom?title={title}&img={image_url}&btns={len(buttons)}"
-            
-            logger.info(f"Created custom frame: {title} with {len(buttons)} buttons")
-
-            return {
-                "status": "success", 
-                "frame_url": frame_url,
-                "frame_type": "custom",
-                "details": frame_data,
-                "note": "Using generic frame builder - custom frame APIs may vary by provider"
-            }
-
-        except Exception as e:
-            logger.error(f"Error creating custom frame: {e}", exc_info=True)
-            return {
-                "status": "failure",
-                "error": str(e)
-            }
 
 
-class SearchFramesTool(Tool):
+class SearchFramesTool(ToolInterface):
     """Search for existing Farcaster frames/mini apps."""
 
-    def __init__(self, farcaster_observer=None):
-        super().__init__(
-            name="search_frames",
-            description="Search for existing Farcaster frames/mini apps by query",
-            parameters={
-                "query": {
-                    "type": "string",
-                    "description": "Search query for frames/mini apps"
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "Maximum number of results to return",
-                    "default": 10,
-                    "minimum": 1,
-                    "maximum": 50
-                }
-            },
-            required_parameters=["query"]
-        )
-        self.farcaster_observer = farcaster_observer
+    @property
+    def name(self) -> str:
+        return "search_frames"
 
-    async def execute(self, **kwargs) -> Dict[str, Any]:
+    @property 
+    def description(self) -> str:
+        return """Search for existing Farcaster frames/mini apps by query.
+        
+        Use this tool when:
+        - Looking for existing frames that solve similar problems
+        - Discovering popular frames for inspiration
+        - Finding frames by specific functionality or topic
+        - Researching the frame ecosystem
+        
+        Returns a list of frames matching the search criteria."""
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "query": "string (search query for frames/mini apps)",
+            "limit": "integer (optional - maximum number of results to return, default: 10, max: 50)"
+        }
+
+    async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
         """Search for frames using Neynar's frame search API."""
         try:
-            query = kwargs.get("query")
-            limit = kwargs.get("limit", 10)
+            query = params.get("query")
+            limit = params.get("limit", 10)
 
             if not query:
                 return {
                     "status": "failure",
-                    "error": "Search query is required"
+                    "error": "Search query is required",
+                    "timestamp": time.time()
                 }
 
-            if not self.farcaster_observer or not self.farcaster_observer.api_client:
+            if not context.farcaster_observer or not context.farcaster_observer.api_client:
                 logger.warning("Farcaster API client not available for frame search")
                 return {
                     "status": "success",
+                    "message": "Frame search completed (no API client available)",
                     "frames": [],
                     "query": query,
-                    "note": "API client not available - no frames retrieved"
+                    "note": "API client not available - no frames retrieved",
+                    "timestamp": time.time()
                 }
 
             try:
                 # Use Neynar's search frames API
-                response = await self.farcaster_observer.api_client._make_request(
+                response = await context.farcaster_observer.api_client._make_request(
                     "GET",
                     "/farcaster/frame/search",
                     params={
@@ -428,9 +408,11 @@ class SearchFramesTool(Tool):
                 
                 return {
                     "status": "success",
+                    "message": f"Found {len(frames)} frames for query: {query}",
                     "frames": frames,
                     "query": query,
-                    "count": len(frames)
+                    "count": len(frames),
+                    "timestamp": time.time()
                 }
                 
             except Exception as api_error:
@@ -438,53 +420,62 @@ class SearchFramesTool(Tool):
                 return {
                     "status": "failure",
                     "error": f"Frame search failed: {api_error}",
-                    "query": query
+                    "query": query,
+                    "timestamp": time.time()
                 }
 
         except Exception as e:
             logger.error(f"Error searching frames: {e}", exc_info=True)
             return {
                 "status": "failure",
-                "error": str(e)
+                "error": str(e),
+                "timestamp": time.time()
             }
 
 
-class GetFrameCatalogTool(Tool):
+class GetFrameCatalogTool(ToolInterface):
     """Get the curated catalog of featured Farcaster frames."""
 
-    def __init__(self, farcaster_observer=None):
-        super().__init__(
-            name="get_frame_catalog",
-            description="Get a curated list of featured Farcaster frames/mini apps",
-            parameters={
-                "limit": {
-                    "type": "integer",
-                    "description": "Maximum number of frames to return",
-                    "default": 20,
-                    "minimum": 1,
-                    "maximum": 100
-                }
-            },
-            required_parameters=[]
-        )
-        self.farcaster_observer = farcaster_observer
+    @property
+    def name(self) -> str:
+        return "get_frame_catalog"
 
-    async def execute(self, **kwargs) -> Dict[str, Any]:
+    @property
+    def description(self) -> str:
+        return """Get a curated list of featured Farcaster frames/mini apps.
+        
+        Use this tool when:
+        - Browsing popular and featured frames
+        - Discovering trending frame applications
+        - Getting inspiration from successful frame implementations
+        - Finding high-quality frames for users to interact with
+        
+        Returns a curated selection of featured frames from the ecosystem."""
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "limit": "integer (optional - maximum number of frames to return, default: 20, max: 100)"
+        }
+
+    async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
         """Get featured frames from Neynar's catalog."""
         try:
-            limit = kwargs.get("limit", 20)
+            limit = params.get("limit", 20)
 
-            if not self.farcaster_observer or not self.farcaster_observer.api_client:
+            if not context.farcaster_observer or not context.farcaster_observer.api_client:
                 logger.warning("Farcaster API client not available for frame catalog")
                 return {
                     "status": "success",
+                    "message": "Frame catalog retrieved (no API client available)",
                     "frames": [],
-                    "note": "API client not available - no catalog retrieved"
+                    "note": "API client not available - no catalog retrieved",
+                    "timestamp": time.time()
                 }
 
             try:
                 # Use Neynar's frame catalog API
-                response = await self.farcaster_observer.api_client._make_request(
+                response = await context.farcaster_observer.api_client._make_request(
                     "GET",
                     "/farcaster/frame/catalog",
                     params={"limit": limit}
@@ -497,21 +488,25 @@ class GetFrameCatalogTool(Tool):
                 
                 return {
                     "status": "success",
+                    "message": f"Retrieved {len(frames)} featured frames from catalog",
                     "frames": frames,
                     "count": len(frames),
-                    "catalog_type": "featured"
+                    "catalog_type": "featured",
+                    "timestamp": time.time()
                 }
                 
             except Exception as api_error:
                 logger.error(f"Failed to get frame catalog via Neynar API: {api_error}")
                 return {
                     "status": "failure",
-                    "error": f"Frame catalog fetch failed: {api_error}"
+                    "error": f"Frame catalog fetch failed: {api_error}",
+                    "timestamp": time.time()
                 }
 
         except Exception as e:
             logger.error(f"Error getting frame catalog: {e}", exc_info=True)
             return {
                 "status": "failure",
-                "error": str(e)
+                "error": str(e),
+                "timestamp": time.time()
             }
