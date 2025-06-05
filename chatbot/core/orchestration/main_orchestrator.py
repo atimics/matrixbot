@@ -118,7 +118,7 @@ class MainOrchestrator:
         )
         from ...tools.matrix_tools import (
             AcceptMatrixInviteTool,
-            GetMatrixInvitesTool,
+            IgnoreMatrixInviteTool,
             JoinMatrixRoomTool,
             LeaveMatrixRoomTool,
             ReactToMatrixMessageTool,
@@ -154,7 +154,7 @@ class MainOrchestrator:
         self.tool_registry.register_tool(JoinMatrixRoomTool())
         self.tool_registry.register_tool(LeaveMatrixRoomTool())
         self.tool_registry.register_tool(AcceptMatrixInviteTool())
-        self.tool_registry.register_tool(GetMatrixInvitesTool())
+        self.tool_registry.register_tool(IgnoreMatrixInviteTool())
         
         # Farcaster tools
         self.tool_registry.register_tool(SendFarcasterPostTool())

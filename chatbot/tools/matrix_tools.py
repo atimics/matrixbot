@@ -507,12 +507,12 @@ class AcceptMatrixInviteTool(ToolInterface):
 
     @property
     def description(self) -> str:
-        return "Accept a pending Matrix room invitation. Use this when you have been invited to a room and want to join it."
+        return "Accept a pending Matrix room invitation and join the room. Use this when you want to join a room you've been invited to. You can see pending invites in the world state."
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
-            "room_id": "string - The room ID of the invitation to accept",
+            "room_id": "string - The room ID of the invitation to accept (e.g., !xmpqAkRnpDKKtcUWrC:chat.ratimics.com)",
         }
 
     async def execute(
@@ -569,28 +569,31 @@ class AcceptMatrixInviteTool(ToolInterface):
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
 
-class GetMatrixInvitesTool(ToolInterface):
+class IgnoreMatrixInviteTool(ToolInterface):
     """
-    Tool for retrieving pending Matrix room invitations.
+    Tool for ignoring/declining Matrix room invitations.
     """
 
     @property
     def name(self) -> str:
-        return "get_matrix_invites"
+        return "ignore_matrix_invite"
 
     @property
     def description(self) -> str:
-        return "Get a list of pending Matrix room invitations. Use this to see which rooms you've been invited to."
+        return "Ignore or decline a pending Matrix room invitation. Use this when you don't want to join a room you've been invited to."
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
-        return {}
+        return {
+            "room_id": "string - The room ID of the invitation to ignore/decline",
+            "reason": "string (optional) - Optional reason for declining the invite"
+        }
 
     async def execute(
         self, params: Dict[str, Any], context: ActionContext
     ) -> Dict[str, Any]:
         """
-        Execute the Matrix invites retrieval action.
+        Execute the Matrix invite ignoring action.
         """
         logger.info(f"Executing tool '{self.name}' with params: {params}")
 
@@ -600,27 +603,40 @@ class GetMatrixInvitesTool(ToolInterface):
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
+        # Extract and validate parameters
+        room_id = params.get("room_id")
+        reason = params.get("reason", "No reason provided")
+
+        if not room_id:
+            error_msg = "Missing required parameter: room_id"
+            logger.error(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
         try:
-            # Use the observer's get_invites method
-            result = await context.matrix_observer.get_invites()
-            logger.info(f"Matrix observer get_invites returned: {result}")
-
-            if result.get("success"):
-                invites = result.get("invites", [])
-                success_msg = (
-                    f"Retrieved {len(invites)} pending Matrix room invitations"
-                )
-                logger.info(success_msg)
-
-                return {
-                    "status": "success",
-                    "message": success_msg,
-                    "invites": invites,
-                    "invite_count": len(invites),
-                    "timestamp": time.time(),
-                }
+            # Simply remove the invite from world state without accepting
+            if hasattr(context, 'world_state_manager') and context.world_state_manager:
+                removed = context.world_state_manager.remove_pending_matrix_invite(room_id)
+                if removed:
+                    success_msg = f"Successfully ignored Matrix room invitation for {room_id}"
+                    logger.info(f"{success_msg}. Reason: {reason}")
+                    
+                    return {
+                        "status": "success",
+                        "message": success_msg,
+                        "room_id": room_id,
+                        "reason": reason,
+                        "timestamp": time.time(),
+                    }
+                else:
+                    error_msg = f"No pending invitation found for room {room_id}"
+                    logger.warning(error_msg)
+                    return {
+                        "status": "failure", 
+                        "error": error_msg,
+                        "timestamp": time.time(),
+                    }
             else:
-                error_msg = f"Failed to retrieve Matrix room invitations: {result.get('error', 'unknown error')}"
+                error_msg = "World state manager not available"
                 logger.error(error_msg)
                 return {
                     "status": "failure",

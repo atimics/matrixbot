@@ -9,7 +9,7 @@ from chatbot.tools.matrix_tools import (
     JoinMatrixRoomTool,
     LeaveMatrixRoomTool,
     AcceptMatrixInviteTool,
-    GetMatrixInvitesTool
+    IgnoreMatrixInviteTool
 )
 from chatbot.tools.base import ActionContext
 from chatbot.integrations.matrix.observer import MatrixObserver
@@ -262,68 +262,43 @@ async def test_accept_matrix_invite_tool_missing_params():
     assert "Missing required parameter" in result["error"]
 
 @pytest.mark.asyncio
-async def test_get_matrix_invites_tool_success():
-    """Test successful invite retrieval."""
-    dummy_obs = type("DummyObs", (), {})()
-    dummy_obs.get_invites = AsyncMock(return_value={
-        "success": True,
-        "invites": [
-            {
-                "room_id": "!room123:server.com",
-                "room_name": "General Chat",
-                "inviter": "@alice:server.com",
-                "invite_time": "2024-01-20T15:30:00Z"
-            },
-            {
-                "room_id": "!room456:server.com", 
-                "room_name": "Project Discussion",
-                "inviter": "@bob:server.com",
-                "invite_time": "2024-01-20T16:00:00Z"
-            }
-        ]
-    })
+async def test_ignore_matrix_invite_tool_success():
+    """Test successful invite ignoring."""
+    dummy_world_state = type("DummyWorldState", (), {})()
+    dummy_world_state.remove_pending_matrix_invite = Mock(return_value=True)
+    
+    context = ActionContext(matrix_observer=type("DummyObs", (), {})(), world_state_manager=dummy_world_state)
+    tool = IgnoreMatrixInviteTool()
 
-    context = ActionContext(matrix_observer=dummy_obs)
-    tool = GetMatrixInvitesTool()
-
-    result = await tool.execute({}, context)
+    params = {"room_id": "!room123:server.com", "reason": "Not interested"}
+    result = await tool.execute(params, context)
 
     assert result["status"] == "success"
-    assert len(result["invites"]) == 2
-    assert result["invites"][0]["room_id"] == "!room123:server.com"
-    assert result["invites"][0]["inviter"] == "@alice:server.com"
-    assert result["invites"][1]["room_name"] == "Project Discussion"
-    dummy_obs.get_invites.assert_awaited_once()
+    assert result["room_id"] == "!room123:server.com"
+    assert result["reason"] == "Not interested"
+    assert "Successfully ignored" in result["message"]
+    dummy_world_state.remove_pending_matrix_invite.assert_called_once_with("!room123:server.com")
 
 @pytest.mark.asyncio
-async def test_get_matrix_invites_tool_no_invites():
-    """Test invite retrieval when no invites are pending."""
-    dummy_obs = type("DummyObs", (), {})()
-    dummy_obs.get_invites = AsyncMock(return_value={
-        "success": True,
-        "invites": []
-    })
+async def test_ignore_matrix_invite_tool_no_invite():
+    """Test ignoring invite when no invite exists."""
+    dummy_world_state = type("DummyWorldState", (), {})()
+    dummy_world_state.remove_pending_matrix_invite = Mock(return_value=False)
+    
+    context = ActionContext(matrix_observer=type("DummyObs", (), {})(), world_state_manager=dummy_world_state)
+    tool = IgnoreMatrixInviteTool()
 
-    context = ActionContext(matrix_observer=dummy_obs)
-    tool = GetMatrixInvitesTool()
+    params = {"room_id": "!room123:server.com"}
+    result = await tool.execute(params, context)
 
-    result = await tool.execute({}, context)
-
-    assert result["status"] == "success"
-    assert result["invites"] == []
-    assert "Retrieved 0 pending" in result["message"]
+    assert result["status"] == "failure"
+    assert "No pending invitation found" in result["error"]
 
 @pytest.mark.asyncio
-async def test_get_matrix_invites_tool_failure():
-    """Test invite retrieval failure."""
-    dummy_obs = type("DummyObs", (), {})()
-    dummy_obs.get_invites = AsyncMock(return_value={
-        "success": False,
-        "error": "Unable to retrieve invites"
-    })
-
-    context = ActionContext(matrix_observer=dummy_obs)
-    tool = GetMatrixInvitesTool()
+async def test_ignore_matrix_invite_tool_missing_params():
+    """Test invite ignoring with missing parameters."""
+    context = ActionContext(matrix_observer=type("DummyObs", (), {})())
+    tool = IgnoreMatrixInviteTool()
 
     result = await tool.execute({}, context)
 

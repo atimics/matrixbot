@@ -44,14 +44,8 @@ class WorldStateManager:
             last = self.state.generated_media_library[-1]
             return last.get("url")
         return None
-    @property
-    def world_state(self):
-        """Compatibility property for tests expecting .world_state instead of .state."""
-        return self.state
-    @property
-    def world_state(self):
-        """Compatibility property for tests expecting 'world_state' instead of 'state'."""
-        return self.state
+
+class WorldStateManager:
     """
     Manages the world state and provides updates.
     
@@ -70,6 +64,11 @@ class WorldStateManager:
             "total_cycles": 0,
         }
         logger.info("WorldStateManager: Initialized empty world state")
+
+    @property
+    def world_state(self):
+        """Compatibility property for tests expecting 'world_state' instead of 'state'."""
+        return self.state
 
     def add_channel(
         self, channel_or_id, channel_type: str = None, name: str = None, status: str = "active"

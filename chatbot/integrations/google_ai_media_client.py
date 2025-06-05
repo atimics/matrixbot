@@ -245,7 +245,6 @@ class GoogleAIMediaClient:
         num_videos: int = 1,
         person_generation: str = "allow_adult",
         duration_seconds: float = 5.0,
-        fps: int = 24,
     ) -> List[bytes]:
         """
         Generate videos using Google's Veo model (via google-genai SDK).
@@ -271,9 +270,9 @@ class GoogleAIMediaClient:
             person_generation=sdk_person_generation,
             aspect_ratio=aspect_ratio,
             duration_seconds=duration_seconds,
-            fps=fps,
         )
 
+        operation_name = "unknown_veo_operation"  # Initialize before operation to avoid reference errors
         try:
             logger.info(f"GoogleAIMediaClient: Starting Veo video generation for prompt: '{prompt}' with model {self.default_veo_video_model}")
             
@@ -284,11 +283,45 @@ class GoogleAIMediaClient:
                 config=video_gen_config,
             )
             
+            # Debug logging to understand the operation object
+            logger.debug(f"GoogleAIMediaClient: Operation type: {type(operation)}, attributes: {dir(operation)}")
+            if hasattr(operation, '__dict__'):
+                logger.debug(f"GoogleAIMediaClient: Operation dict: {operation.__dict__}")
+            
             operation_name = str(operation.name) if hasattr(operation, 'name') else "unknown_veo_operation"
             logger.info(f"GoogleAIMediaClient: Veo video generation operation started: {operation_name}. Waiting for completion...")
 
+            # Use polling pattern as shown in Google AI documentation
             max_wait_seconds = 600  # 10 minutes timeout for the operation to complete
-            op_result_payload = await asyncio.wait_for(operation.result(), timeout=max_wait_seconds)
+            start_time = time.time()
+            poll_interval = 20  # Poll every 20 seconds as shown in documentation
+            
+            # Check if operation has a done attribute/method
+            if not hasattr(operation, 'done'):
+                logger.error(f"GoogleAIMediaClient: Operation {operation_name} does not have 'done' attribute. Available attributes: {dir(operation)}")
+                return []
+            
+            while not (hasattr(operation, 'done') and (operation.done() if callable(operation.done) else operation.done)):
+                if time.time() - start_time > max_wait_seconds:
+                    logger.error(f"GoogleAIMediaClient: Operation {operation_name} timed out after {max_wait_seconds} seconds")
+                    return []
+                
+                logger.debug(f"GoogleAIMediaClient: Operation {operation_name} still running, waiting {poll_interval} seconds...")
+                await asyncio.sleep(poll_interval)
+                
+                # Refresh operation status
+                try:
+                    operation = await self.client.aio.operations.get(operation)
+                except Exception as e:
+                    logger.error(f"GoogleAIMediaClient: Failed to get operation status for {operation_name}: {e}")
+                    return []
+            
+            # Operation is complete, get the result
+            if hasattr(operation, 'response') and operation.response:
+                op_result_payload = operation.response
+            else:
+                logger.error(f"GoogleAIMediaClient: Operation {operation_name} completed but has no response")
+                return []
             
             # operation.result() raises an exception if the operation failed.
             # If we reach here, the operation was successful.
@@ -333,7 +366,7 @@ class GoogleAIMediaClient:
             logger.error(f"GoogleAIMediaClient: Veo video generation timed out after {max_wait_seconds}s for operation {operation_name}")
             # Log final status if possible
             try:
-                if not operation.done(): # Check if operation itself also thinks it's not done
+                if 'operation' in locals() and not operation.done(): # Check if operation exists and is not done
                     logger.info(f"Attempting to get latest status for timed-out operation {operation_name}")
                     updated_op = await self.client.aio.operations.get(name=operation_name)
                     if updated_op.error:
@@ -346,9 +379,11 @@ class GoogleAIMediaClient:
             return []
         except genai.errors.APIError as e: # Errors from operation.result() or initial call
             logger.error(f"GoogleAIMediaClient: Veo video generation failed for operation {operation_name} with APIError: {e}")
+            logger.error(f"GoogleAIMediaClient: APIError details - message: {getattr(e, 'message', 'N/A')}, code: {getattr(e, 'code', 'N/A')}")
             return []
         except Exception as e:
             logger.exception(f"GoogleAIMediaClient: Unexpected error during Veo video generation (operation {operation_name}): {e}")
+            logger.error(f"GoogleAIMediaClient: Error type: {type(e)}, args: {e.args}")
             return []
 
 async def main():
@@ -406,7 +441,7 @@ async def main():
     print("\n--- Testing Veo Video Generation ---")
     video_prompt = "A humorous animation of a robot trying to bake a cake and failing spectacularly."
     generated_videos = await client.generate_video_veo(
-        prompt=video_prompt, aspect_ratio="16:9", num_videos=1, duration_seconds=4, fps=24
+        prompt=video_prompt, aspect_ratio="16:9", num_videos=1, duration_seconds=4
     )
     if generated_videos:
         for i, video_bytes in enumerate(generated_videos):

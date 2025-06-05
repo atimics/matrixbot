@@ -6,7 +6,7 @@ from .base import ActionContext, ToolInterface
 from .core_tools import WaitTool
 from .describe_image_tool import DescribeImageTool
 from .farcaster_tools import SendFarcasterPostTool, SendFarcasterReplyTool, DeleteFarcasterPostTool, DeleteFarcasterReactionTool
-from .matrix_tools import SendMatrixMessageTool, SendMatrixReplyTool
+from .matrix_tools import SendMatrixMessageTool, SendMatrixReplyTool, AcceptMatrixInviteTool, IgnoreMatrixInviteTool
 from .registry import ToolRegistry
 
 __all__ = [
@@ -17,6 +17,8 @@ __all__ = [
     "DescribeImageTool",
     "SendMatrixReplyTool",
     "SendMatrixMessageTool",
+    "AcceptMatrixInviteTool",
+    "IgnoreMatrixInviteTool",
     "SendFarcasterPostTool",
     "SendFarcasterReplyTool",
     "DeleteFarcasterPostTool",
