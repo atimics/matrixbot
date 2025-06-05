@@ -1154,65 +1154,6 @@ class CreatePullRequestTool(ToolInterface):  # Phase 3
         except Exception as e:
             return {"status": "failure", "message": f"Error creating PR: {str(e)}"}
 
-    async def _find_workspace_path(self, target_repo_url: str, context: ActionContext) -> Optional[Path]:
-        """Find the local workspace path for a target repository."""
-        if hasattr(context, 'world_state_manager') and context.world_state_manager:
-            ws_data = await context.world_state_manager.get_state()
-            if target_repo_url in ws_data.target_repositories:
-                repo_context = ws_data.target_repositories[target_repo_url]
-                if repo_context.setup_complete:
-                    return Path(repo_context.local_clone_path)
-        return None
-
-    async def _get_repo_context(self, target_repo_url: str, context: ActionContext):
-        """Get repository context from world state."""
-        if hasattr(context, 'world_state_manager') and context.world_state_manager:
-            ws_data = await context.world_state_manager.get_state()
-            return ws_data.target_repositories.get(target_repo_url)
-        return None
-
-    async def _push_to_fork(self, workspace_path: Path, repo_context) -> bool:
-        """Push changes to the fork repository."""
-        # In a real implementation, this would:
-        # 1. Set up fork as remote if not exists
-        # 2. Push current branch to fork
-        # 3. Handle authentication
-        
-        # For now, simulate success
-        return True
-
-    async def _create_github_pr(
-        self, target_repo_url: str, repo_context, title: str, 
-        description: str, target_branch: str, draft: bool
-    ) -> str:
-        """Create a GitHub pull request."""
-        # In a real implementation, this would use GitHub API to:
-        # 1. Create the pull request
-        # 2. Set appropriate labels (e.g., "ACE-generated")
-        # 3. Assign reviewers if configured
-        
-        # Simulate PR creation with a mock URL
-        repo_name = target_repo_url.split('/')[-1]
-        pr_number = f"{asyncio.get_event_loop().time():.0f}"[-4:]  # Use last 4 digits of timestamp
-        return f"https://github.com/mock-user/{repo_name}/pull/{pr_number}"
-
-    async def _update_pr_info(self, context: ActionContext, target_repo_url: str, pr_url: str):
-        """Update world state with PR information."""
-        ws_data = await context.world_state_manager.get_state()
-        
-        # Find and update any related development tasks
-        for task_id, task in ws_data.development_tasks.items():
-            if task.target_repository == target_repo_url and task.status in ["implemented", "proposal_ready"]:
-                task.associated_pr_url = pr_url
-                task.status = "pr_created"
-        
-        # Update repository context
-        if target_repo_url in ws_data.target_repositories:
-            repo_context = ws_data.target_repositories[target_repo_url]
-            if not hasattr(repo_context, 'associated_prs'):
-                repo_context.associated_prs = []
-            repo_context.associated_prs.append(pr_url)
-
 
 class ACEOrchestratorTool(ToolInterface):  # Phase 3
     """
