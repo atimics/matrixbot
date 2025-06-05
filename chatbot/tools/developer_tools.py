@@ -955,7 +955,7 @@ class ImplementCodeChangesTool(ToolInterface):  # Phase 2
                 "workspace_path": str(workspace_path),
                 "branch_name": branch_name,
                 "changes_applied": len(applied_changes),
-                "changes_details": applied_changes,
+                "changes_summary": [c['description'] for c in applied_changes],
                 "commit_created": commit_success,
                 "next_steps": "Review changes and create PR with CreatePullRequestTool"
             }
