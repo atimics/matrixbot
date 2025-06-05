@@ -517,16 +517,247 @@
 
                 <!-- World State Tab -->
                 <div v-if="activeTab === 'worldstate'">
-                    <h3 style="margin-bottom: 20px;">World State Explorer</h3>
-                    <div v-if="loading" class="loading">Loading world state...</div>
-                    <div v-else>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <h3>🤖 AI World State Explorer</h3>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <div style="display: flex; background: #f7fafc; border-radius: 6px; padding: 2px;">
+                                <button :class="['tab', {active: worldStateView === 'ai-payload'}]" 
+                                        @click="worldStateView = 'ai-payload'"
+                                        style="margin: 0; border-radius: 4px; padding: 8px 12px; font-size: 0.9rem;">
+                                    🤖 AI Payload
+                                </button>
+                                <button :class="['tab', {active: worldStateView === 'channels'}]" 
+                                        @click="worldStateView = 'channels'"
+                                        style="margin: 0; border-radius: 4px; padding: 8px 12px; font-size: 0.9rem;">
+                                    💬 Simple Channels
+                                </button>
+                            </div>
+                            <button class="button" @click="worldStateView === 'ai-payload' ? loadAIWorldState() : loadWorldState()" :disabled="loading">
+                                {{ loading ? 'Refreshing...' : '🔄 Refresh' }}
+                            </button>
+                        </div>
+                    </div>
+                    <div v-if="loading" class="loading">Loading AI world state...</div>
+                    
+                    <!-- AI Payload View -->
+                    <div v-else-if="worldStateView === 'ai-payload' && aiWorldState.ai_world_state">
+                        
+                        <!-- AI Payload Overview -->
+                        <div class="card" style="margin-bottom: 20px;">
+                            <h4>🤖 AI System Overview</h4>
+                            <div class="dashboard-grid" style="margin-top: 15px;">
+                                <div class="metric">
+                                    <span class="metric-label">Primary Channel</span>
+                                    <span class="metric-value">{{ aiWorldState.ai_world_state.current_processing_channel_id || 'None' }}</span>
+                                </div>
+                                <div class="metric">
+                                    <span class="metric-label">Total Channels</span>
+                                    <span class="metric-value">{{ aiWorldState.ai_world_state.payload_stats?.total_channels || 0 }}</span>
+                                </div>
+                                <div class="metric">
+                                    <span class="metric-label">Included Messages</span>
+                                    <span class="metric-value">{{ aiWorldState.ai_world_state.payload_stats?.included_messages || 0 }}</span>
+                                </div>
+                                <div class="metric">
+                                    <span class="metric-label">Pending Invites</span>
+                                    <span class="metric-value">{{ aiWorldState.ai_world_state.payload_stats?.pending_invites_count || 0 }}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Channels Detail -->
+                        <div class="card" style="margin-bottom: 20px;">
+                            <h4>💬 Channels ({{ Object.keys(aiWorldState.ai_world_state.channels || {}).length }})</h4>
+                            <div v-for="(channel, id) in aiWorldState.ai_world_state.channels" :key="id" 
+                                 style="margin: 15px 0; padding: 20px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #667eea;">
+                                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px;">
+                                    <div>
+                                        <strong style="font-size: 1.1rem; color: #2d3748;">{{ channel.name }}</strong>
+                                        <span style="background: #e2e8f0; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; margin-left: 10px;">
+                                            {{ channel.type }}
+                                        </span>
+                                    </div>
+                                    <span :style="{
+                                        background: channel.priority === 'primary' ? '#48bb78' : '#ed8936',
+                                        color: 'white',
+                                        padding: '4px 8px',
+                                        borderRadius: '4px',
+                                        fontSize: '0.8rem'
+                                    }">
+                                        {{ channel.priority || 'secondary' }}
+                                    </span>
+                                </div>
+                                
+                                <div style="margin: 10px 0; color: #4a5568;">
+                                    <strong>Topic:</strong> {{ channel.topic || 'No topic' }}
+                                </div>
+
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 10px 0;">
+                                    <div class="metric" style="padding: 8px; background: white; border-radius: 4px;">
+                                        <span class="metric-label" style="font-size: 0.8rem;">Members</span>
+                                        <span class="metric-value" style="font-size: 0.9rem;">{{ channel.member_count || 0 }}</span>
+                                    </div>
+                                    <div class="metric" style="padding: 8px; background: white; border-radius: 4px;">
+                                        <span class="metric-label" style="font-size: 0.8rem;">Messages</span>
+                                        <span class="metric-value" style="font-size: 0.9rem;">{{ channel.recent_messages?.length || 0 }}</span>
+                                    </div>
+                                    <div class="metric" style="padding: 8px; background: white; border-radius: 4px;">
+                                        <span class="metric-label" style="font-size: 0.8rem;">Active Users</span>
+                                        <span class="metric-value" style="font-size: 0.9rem;">{{ channel.activity_summary?.active_users?.length || 0 }}</span>
+                                    </div>
+                                    <div class="metric" style="padding: 8px; background: white; border-radius: 4px;">
+                                        <span class="metric-label" style="font-size: 0.8rem;">Last Activity</span>
+                                        <span class="metric-value" style="font-size: 0.9rem;">{{ formatTimestamp(channel.activity_summary?.last_activity) }}</span>
+                                    </div>
+                                </div>
+
+                                <div v-if="channel.activity_summary?.summary" style="margin-top: 10px; padding: 10px; background: #e6fffa; border-radius: 4px; border-left: 3px solid #38b2ac;">
+                                    <strong style="color: #2d3748;">Activity Summary:</strong><br>
+                                    <span style="color: #4a5568;">{{ channel.activity_summary.summary }}</span>
+                                </div>
+
+                                <!-- Recent Messages Preview -->
+                                <div v-if="channel.recent_messages && channel.recent_messages.length > 0" style="margin-top: 15px;">
+                                    <strong style="color: #2d3748;">Recent Messages:</strong>
+                                    <div v-for="msg in channel.recent_messages.slice(-3)" :key="msg.id" 
+                                         style="margin: 8px 0; padding: 8px; background: white; border-radius: 4px; border-left: 2px solid #cbd5e0;">
+                                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                                            <strong style="color: #4a5568; font-size: 0.9rem;">{{ msg.sender }}</strong>
+                                            <span style="color: #a0aec0; font-size: 0.8rem;">{{ formatTimestamp(msg.timestamp) }}</span>
+                                        </div>
+                                        <div style="color: #2d3748; font-size: 0.9rem;">{{ msg.content }}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- System Status & Activity -->
+                        <div class="dashboard-grid" style="margin-bottom: 20px;">
+                            <div class="card">
+                                <h4>🔧 System Status</h4>
+                                <div class="metric">
+                                    <span class="metric-label">Matrix Connected</span>
+                                    <span class="metric-value" :style="{color: aiWorldState.ai_world_state.system_status?.matrix_connected ? '#48bb78' : '#e53e3e'}">
+                                        {{ aiWorldState.ai_world_state.system_status?.matrix_connected ? 'Yes' : 'No' }}
+                                    </span>
+                                </div>
+                                <div class="metric">
+                                    <span class="metric-label">Farcaster Connected</span>
+                                    <span class="metric-value" :style="{color: aiWorldState.ai_world_state.system_status?.farcaster_connected ? '#48bb78' : '#e53e3e'}">
+                                        {{ aiWorldState.ai_world_state.system_status?.farcaster_connected ? 'Yes' : 'No' }}
+                                    </span>
+                                </div>
+                                <div class="metric">
+                                    <span class="metric-label">Observation Cycles</span>
+                                    <span class="metric-value">{{ aiWorldState.ai_world_state.system_status?.total_cycles || 0 }}</span>
+                                </div>
+                                <div class="metric">
+                                    <span class="metric-label">Last Cycle</span>
+                                    <span class="metric-value">{{ aiWorldState.ai_world_state.system_status?.last_observation_cycle || 0 }}</span>
+                                </div>
+                            </div>
+
+                            <div class="card">
+                                <h4>🎯 Actions & Memory</h4>
+                                <div class="metric">
+                                    <span class="metric-label">Action History</span>
+                                    <span class="metric-value">{{ aiWorldState.ai_world_state.action_history?.length || 0 }}</span>
+                                </div>
+                                <div class="metric">
+                                    <span class="metric-label">Research Topics</span>
+                                    <span class="metric-value">{{ aiWorldState.ai_world_state.research_knowledge?.topic_count || 0 }}</span>
+                                </div>
+                                <div class="metric">
+                                    <span class="metric-label">Media Library</span>
+                                    <span class="metric-value">{{ aiWorldState.ai_world_state.generated_media_library?.length || 0 }}</span>
+                                </div>
+                                <div class="metric">
+                                    <span class="metric-label">Recent Media Actions</span>
+                                    <span class="metric-value">{{ aiWorldState.ai_world_state.recent_media_actions?.summary?.total_recent_media_actions || 0 }}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Ecosystem Token Info -->
+                        <div class="card" v-if="aiWorldState.ai_world_state.ecosystem_token_info" style="margin-bottom: 20px;">
+                            <h4>🪙 Ecosystem Token ($RATi)</h4>
+                            <div class="dashboard-grid">
+                                <div class="metric">
+                                    <span class="metric-label">Price (USD)</span>
+                                    <span class="metric-value">${{ aiWorldState.ai_world_state.ecosystem_token_info.token_metadata?.price_usd?.toFixed(6) || '0' }}</span>
+                                </div>
+                                <div class="metric">
+                                    <span class="metric-label">24h Change</span>
+                                    <span class="metric-value" :style="{color: (aiWorldState.ai_world_state.ecosystem_token_info.token_metadata?.price_change_24h || 0) >= 0 ? '#48bb78' : '#e53e3e'}">
+                                        {{ (aiWorldState.ai_world_state.ecosystem_token_info.token_metadata?.price_change_24h || 0).toFixed(2) }}%
+                                    </span>
+                                </div>
+                                <div class="metric">
+                                    <span class="metric-label">24h Volume</span>
+                                    <span class="metric-value">${{ aiWorldState.ai_world_state.ecosystem_token_info.token_metadata?.volume_24h?.toFixed(2) || '0' }}</span>
+                                </div>
+                                <div class="metric">
+                                    <span class="metric-label">Monitored Holders</span>
+                                    <span class="metric-value">{{ aiWorldState.ai_world_state.ecosystem_token_info.monitored_holders_activity?.length || 0 }}</span>
+                                </div>
+                            </div>
+                            <div style="margin-top: 10px; padding: 10px; background: #f0fff4; border-radius: 4px;">
+                                <strong>Contract:</strong> {{ aiWorldState.ai_world_state.ecosystem_token_info.contract_address }}
+                            </div>
+                        </div>
+
+                        <!-- Pending Invites -->
+                        <div class="card" v-if="aiWorldState.ai_world_state.pending_matrix_invites && aiWorldState.ai_world_state.pending_matrix_invites.length > 0">
+                            <h4>📩 Pending Matrix Invites</h4>
+                            <div v-for="invite in aiWorldState.ai_world_state.pending_matrix_invites" :key="invite.event_id"
+                                 style="margin: 10px 0; padding: 15px; background: #fff7ed; border-radius: 6px; border-left: 4px solid #ed8936;">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <div>
+                                        <strong>{{ invite.room_name }}</strong>
+                                        <div style="color: #666; font-size: 0.9rem; margin-top: 4px;">
+                                            From: {{ invite.inviter }} • {{ formatTimestamp(invite.timestamp) }}
+                                        </div>
+                                    </div>
+                                    <span style="background: #ed8936; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem;">
+                                        Pending
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Metadata -->
+                        <div class="card" style="margin-top: 20px;">
+                            <h4>📊 Payload Metadata</h4>
+                            <div class="dashboard-grid">
+                                <div class="metric">
+                                    <span class="metric-label">Payload Type</span>
+                                    <span class="metric-value">{{ aiWorldState.metadata?.payload_type || 'unknown' }}</span>
+                                </div>
+                                <div class="metric">
+                                    <span class="metric-label">Optimization</span>
+                                    <span class="metric-value">{{ aiWorldState.metadata?.optimization_enabled ? 'Enabled' : 'Disabled' }}</span>
+                                </div>
+                                <div class="metric">
+                                    <span class="metric-label">Timestamp</span>
+                                    <span class="metric-value">{{ formatTimestamp(aiWorldState.metadata?.timestamp) }}</span>
+                                </div>
+                                <div class="metric">
+                                    <span class="metric-label">Current Time</span>
+                                    <span class="metric-value">{{ formatTimestamp(aiWorldState.ai_world_state?.current_time) }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Simple Channels View -->
+                    <div v-else-if="worldStateView === 'channels'">
                         <div class="card">
                             <h4>Channels ({{ Object.keys(worldState.channels || {}).length }})</h4>
                             <div v-for="(channel, id) in worldState.channels" :key="id" style="margin: 15px 0; padding: 15px; background: #f8f9fa; border-radius: 6px;">
-                                <strong>{{ channel.name }}</strong> ({{ channel.platform }})
+                                <strong>{{ channel.name }}</strong> ({{ channel.type }})
                                 <div style="margin-top: 8px; color: #666;">
                                     {{ channel.message_count }} messages • 
-                                    Last activity: {{ channel.recent_messages?.[channel.recent_messages?.length - 1]?.timestamp || 'Never' }}
+                                    Last activity: {{ formatTimestamp(channel.recent_messages?.[channel.recent_messages?.length - 1]?.timestamp) }}
                                 </div>
                             </div>
                         </div>
@@ -598,6 +829,7 @@
                     tools: [],
                     config: {},
                     worldState: {},
+                    worldStateView: 'ai-payload', // 'ai-payload' or 'channels'
                     integrations: {},
                     logs: [],
                     wsConnected: false,
@@ -610,11 +842,15 @@
                 this.loadTools();
                 this.loadConfig();
                 this.loadWorldState();
+                this.loadAIWorldState();
                 this.loadIntegrations();
                 
                 // Auto-refresh system status every 30 seconds
                 setInterval(() => {
                     this.loadSystemStatus();
+                    if (this.activeTab === 'worldstate') {
+                        this.loadAIWorldState();
+                    }
                 }, 30000);
             },
             methods: {
@@ -662,6 +898,19 @@
                     } catch (error) {
                         console.error('Error loading world state:', error);
                         this.showMessage('Error loading world state', 'error');
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+
+                async loadAIWorldState() {
+                    this.loading = true;
+                    try {
+                        const response = await axios.get(`${this.apiBase}/worldstate/ai-payload`);
+                        this.aiWorldState = response.data;
+                    } catch (error) {
+                        console.error('Error loading AI world state:', error);
+                        this.showMessage('Error loading AI world state', 'error');
                     } finally {
                         this.loading = false;
                     }
@@ -755,7 +1004,34 @@
                 },
 
                 formatTimestamp(timestamp) {
-                    return new Date(timestamp).toLocaleTimeString();
+                    if (!timestamp) return 'Never';
+                    
+                    // Handle Unix timestamp (number) or ISO string
+                    let date;
+                    if (typeof timestamp === 'number') {
+                        // Convert Unix timestamp to milliseconds if needed
+                        date = new Date(timestamp > 1e10 ? timestamp : timestamp * 1000);
+                    } else if (typeof timestamp === 'string') {
+                        date = new Date(timestamp);
+                    } else {
+                        return 'Invalid';
+                    }
+                    
+                    // Check if date is valid
+                    if (isNaN(date.getTime())) return 'Invalid';
+                    
+                    const now = new Date();
+                    const diff = now - date;
+                    const minutes = Math.floor(diff / 60000);
+                    const hours = Math.floor(diff / 3600000);
+                    const days = Math.floor(diff / 86400000);
+                    
+                    if (minutes < 1) return 'Just now';
+                    if (minutes < 60) return `${minutes}m ago`;
+                    if (hours < 24) return `${hours}h ago`;
+                    if (days < 7) return `${days}d ago`;
+                    
+                    return date.toLocaleDateString();
                 },
 
                 showMessage(text, type = 'success') {
