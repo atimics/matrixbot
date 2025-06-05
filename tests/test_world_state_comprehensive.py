@@ -333,7 +333,7 @@ class TestWorldStateManager:
         # Add action history for a reply
         action_data = {
             "action_type": "send_farcaster_reply", 
-            "parameters": {"parent_cast_hash": "test_cast"}, # Changed "cast_hash" to "parent_cast_hash"
+            "parameters": {"reply_to_hash": "test_cast"}, # Changed "parent_cast_hash" to "reply_to_hash"
             "result": "success",
             "timestamp": time.time()
         }

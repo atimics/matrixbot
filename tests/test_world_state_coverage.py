@@ -86,7 +86,7 @@ class TestWorldStateCoverage:
         # Add action history
         action = ActionHistory(
             action_type="send_farcaster_reply",
-            parameters={"parent_cast_hash": "test_cast"},
+            parameters={"reply_to_hash": "test_cast"},
             result="success",
             timestamp=time.time()
         )
