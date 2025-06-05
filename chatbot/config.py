@@ -120,6 +120,10 @@ class AppConfig(BaseSettings):
     AI_SUMMARY_MODEL: str = "openai/gpt-4o-mini"  # Model for generating node summaries
     ENABLE_TWO_PHASE_AI_PROCESS: bool = False  # Enable separate exploration/action phases
     MAX_EXPLORATION_ROUNDS: int = 3  # Max rounds in exploration phase if two-phase enabled
+    
+    # GitHub ACE (Autonomous Code Evolution) Integration
+    GITHUB_TOKEN: Optional[str] = None
+    GITHUB_USERNAME: Optional[str] = None
 
 
 # Global settings instance

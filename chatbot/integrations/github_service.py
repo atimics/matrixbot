@@ -4,6 +4,10 @@ GitHub API client for repository inspection and PR status (read-only).
 import os
 import httpx
 from typing import Any, Dict, List, Optional
+import asyncio
+import time
+
+from ..config import settings
 
 
 class GitHubService:
@@ -14,20 +18,17 @@ class GitHubService:
     def __init__(
         self,
         token: Optional[str] = None,
-        main_repo: str = "",
-        fork_owner: Optional[str] = None,
+        main_repo: str = ""
     ):
         """
         Initialize a GitHubService instance.
 
         Args:
-            token: GitHub Personal Access Token (env GITHUB_TOKEN if None)
             main_repo: Repository full name (e.g., "owner/repo")
-            fork_owner: Username that owns the fork (unused for read-only)
         """
-        self.token = token or os.getenv("GITHUB_TOKEN")
+        self.token = settings.GITHUB_TOKEN
         self.main_repo = main_repo
-        self.fork_owner = fork_owner
+        self.fork_owner = settings.GITHUB_USERNAME
         self._client = httpx.AsyncClient(
             base_url="https://api.github.com/",
             headers={"Authorization": f"token {self.token}"} if self.token else {},
