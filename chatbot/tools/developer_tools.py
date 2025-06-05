@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional
 from pathlib import Path
 
 from ..integrations.github_service import GitHubService
+from ..config import settings
 from ..utils.git_utils import LocalGitRepository
 from .base import ToolInterface, ActionContext
 
@@ -306,7 +307,13 @@ class SetupDevelopmentWorkspaceTool(ToolInterface):
         
         if not target_repo_url or not task_id:
             return {"status": "failure", "message": "target_repo_url and task_id are required"}
-        
+
+        if not settings.GITHUB_TOKEN or not settings.GITHUB_USERNAME:
+            return {
+                "status": "failure",
+                "message": "GITHUB_TOKEN and GITHUB_USERNAME must be configured.",
+            }
+
         try:
             # Extract repo owner/name from URL
             if target_repo_url.endswith('.git'):
