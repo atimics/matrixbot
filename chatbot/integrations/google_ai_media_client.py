@@ -136,9 +136,6 @@ class GoogleAIMediaClient:
                         logger.warning(f"GoogleAIMediaClient: Gemini generation candidate finished with reason: {candidate.finish_reason} ({candidate.finish_message or ''})")
             return None
 
-        except genai.errors.BlockedPromptError as e:
-            logger.error(f"GoogleAIMediaClient: Gemini image generation blocked: {e}")
-            return None
         except genai.errors.APIError as e: # Catch specific API errors from the SDK
             logger.error(f"GoogleAIMediaClient: Gemini image generation failed with APIError: {e}")
             return None

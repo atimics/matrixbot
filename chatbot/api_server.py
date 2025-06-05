@@ -128,24 +128,34 @@ class ChatbotAPIServer:
         async def get_system_status():
             """Get overall system status and metrics."""
             try:
+                logger.info("Starting get_system_status")
+                
                 # Get processing hub status
-                processing_status = await self.orchestrator.processing_hub.get_processing_status()
+                logger.info("Getting processing status")
+                processing_status = self.orchestrator.processing_hub.get_processing_status()
+                logger.info(f"Got processing status: {type(processing_status)}")
                 
                 # Get basic metrics
+                logger.info("Getting world state metrics")
                 world_state_metrics = {
                     "channels_count": len(self.orchestrator.world_state.state.channels),
-                    "total_messages": sum(len(ch.messages) for ch in self.orchestrator.world_state.state.channels.values()),
-                    "action_history_count": len(self.orchestrator.world_state.state.action_history.actions),
+                    "total_messages": sum(len(ch.recent_messages) for ch in self.orchestrator.world_state.state.channels.values()),
+                    "action_history_count": len(self.orchestrator.world_state.state.action_history),
                     "pending_invites": len(self.orchestrator.world_state.get_pending_matrix_invites()),
                     "generated_media_count": len(self.orchestrator.world_state.state.generated_media_library),
-                    "research_entries": len(self.orchestrator.world_state.state.research_database.entries)
+                    "research_entries": len(self.orchestrator.world_state.state.research_database)
                 }
+                logger.info(f"Got world state metrics: {type(world_state_metrics)}")
                 
                 # Get tool stats
+                logger.info("Getting tool stats")
                 tool_stats = self.orchestrator.tool_registry.get_tool_stats()
+                logger.info(f"Got tool stats: {type(tool_stats)}")
                 
                 # Rate limiter status
-                rate_limit_status = self.orchestrator.rate_limiter.get_status()
+                logger.info("Getting rate limit status")
+                rate_limit_status = self.orchestrator.rate_limiter.get_rate_limit_status(datetime.now().timestamp())
+                logger.info(f"Got rate limit status: {type(rate_limit_status)}")
                 
                 return {
                     "system_running": True,  # If API is responding, system is running
@@ -221,8 +231,8 @@ class ChatbotAPIServer:
                     
                     # Tool cooldowns
                     "IMAGE_GENERATION_COOLDOWN_SECONDS": settings.IMAGE_GENERATION_COOLDOWN_SECONDS,
-                    "RESEARCH_COOLDOWN_SECONDS": settings.RESEARCH_COOLDOWN_SECONDS,
-                    "REPLY_COOLDOWN_SECONDS": settings.REPLY_COOLDOWN_SECONDS,
+                    "VIDEO_GENERATION_COOLDOWN_SECONDS": settings.VIDEO_GENERATION_COOLDOWN_SECONDS,
+                    "STORE_MEMORY_COOLDOWN_SECONDS": settings.STORE_MEMORY_COOLDOWN_SECONDS,
                     
                     # Integration settings
                     "MATRIX_HOMESERVER": settings.MATRIX_HOMESERVER,
@@ -230,7 +240,6 @@ class ChatbotAPIServer:
                     
                     # File paths
                     "CHATBOT_DB_PATH": settings.CHATBOT_DB_PATH,
-                    "CONTEXT_STORAGE_PATH": settings.CONTEXT_STORAGE_PATH,
                     
                     # Processing config from orchestrator
                     "enable_node_based_processing": self.orchestrator.config.processing_config.enable_node_based_processing,
@@ -241,7 +250,7 @@ class ChatbotAPIServer:
                     "mutable_keys": [
                         "LOG_LEVEL", "OBSERVATION_INTERVAL", "MAX_CYCLES_PER_HOUR",
                         "AI_MODEL", "WEB_SEARCH_MODEL", "AI_SUMMARY_MODEL", "OPENROUTER_MULTIMODAL_MODEL",
-                        "IMAGE_GENERATION_COOLDOWN_SECONDS", "RESEARCH_COOLDOWN_SECONDS", "REPLY_COOLDOWN_SECONDS"
+                        "IMAGE_GENERATION_COOLDOWN_SECONDS", "VIDEO_GENERATION_COOLDOWN_SECONDS", "STORE_MEMORY_COOLDOWN_SECONDS"
                     ],
                     "timestamp": datetime.now().isoformat()
                 }
@@ -273,7 +282,7 @@ class ChatbotAPIServer:
                     "message": f"Configuration {update.key} updated to {update.value}",
                     "restart_required": update.key in [
                         "MATRIX_HOMESERVER", "FARCASTER_BOT_FID", 
-                        "CHATBOT_DB_PATH", "CONTEXT_STORAGE_PATH"
+                        "CHATBOT_DB_PATH"
                     ]
                 }
             except Exception as e:
@@ -411,23 +420,24 @@ class ChatbotAPIServer:
         @self.app.get("/api/worldstate/channels")
         async def get_channels():
             """Get detailed channel information."""
+            print("DEBUG: get_channels called")  # DEBUG line
             try:
                 channels = {}
                 for channel_id, channel in self.orchestrator.world_state.state.channels.items():
                     channels[channel_id] = {
                         "id": channel.id,
                         "name": channel.name,
-                        "platform": channel.platform,
-                        "message_count": len(channel.messages),
+                        "platform": channel.type,
+                        "message_count": len(channel.recent_messages),
                         "recent_messages": [
                             {
                                 "id": msg.id,
                                 "content": msg.content[:100] + "..." if len(msg.content) > 100 else msg.content,
-                                "author": msg.author,
-                                "timestamp": msg.timestamp.isoformat() if msg.timestamp else None,
-                                "platform": msg.platform
+                                "author": msg.sender,
+                                "timestamp": msg.timestamp,
+                                "platform": msg.channel_type
                             }
-                            for msg in channel.messages[-5:]  # Last 5 messages
+                            for msg in channel.recent_messages[-5:]  # Last 5 messages
                         ]
                     }
                 

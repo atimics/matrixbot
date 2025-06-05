@@ -81,7 +81,7 @@ async def startup_event():
     from chatbot.core.orchestration import OrchestratorConfig, ProcessingConfig
     config = OrchestratorConfig(
         db_path="control_panel.db",
-        processing_config=ProcessingConfig(enable_node_based_processing=False)
+        processing_config=ProcessingConfig(enable_node_based_processing=True)
     )
     orchestrator = MainOrchestrator(config)
     logger.info("Control panel started")

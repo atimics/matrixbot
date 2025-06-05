@@ -22,7 +22,7 @@ async def test_api_server():
     config = OrchestratorConfig(
         db_path="test_chatbot.db",
         processing_config=ProcessingConfig(
-            enable_node_based_processing=False,
+            enable_node_based_processing=True,
             observation_interval=60,
             max_cycles_per_hour=30
         )
