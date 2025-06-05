@@ -586,7 +586,7 @@ class NeynarAPIClient:
             Dictionary containing cast details including author information
         """
         try:
-            params = {"hash": cast_hash, "type": "hash"}
+            params = {"type": "hash", "identifier": cast_hash}
             response = await self._make_request("GET", "/farcaster/cast", params=params)
             return response.json()
         except Exception as e:

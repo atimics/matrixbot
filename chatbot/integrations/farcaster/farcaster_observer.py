@@ -159,8 +159,10 @@ class FarcasterObserver:
         channels: Optional[List[str]] = None,
         include_notifications: bool = False,
         include_home_feed: bool = False,
+        include_for_you_feed: bool = False,
         include_world_state_data: bool = False,
         world_state_trending_limit: int = 5,
+        for_you_limit: int = 10,
     ) -> List[Message]:
         if not self.api_client:
             logger.warning("Cannot observe feeds: API client not initialized.")
@@ -179,6 +181,9 @@ class FarcasterObserver:
             if include_home_feed:
                 home_messages = await self._observe_home_feed()
                 new_messages.extend(home_messages)
+            if include_for_you_feed:
+                for_you_messages = await self._observe_for_you_feed(limit=for_you_limit)
+                new_messages.extend(for_you_messages)
             if include_notifications and self.bot_fid:
                 notification_messages = await self._observe_notifications()
                 new_messages.extend(notification_messages)
@@ -842,3 +847,22 @@ class FarcasterObserver:
         except Exception as e:
             logger.error(f"Error in manual world state collection: {e}", exc_info=True)
             return {"error": str(e), "success": False}
+
+    async def _observe_for_you_feed(self, limit: int = 10) -> List[Message]:
+        """Observe personalized 'For You' feed for proactive content discovery."""
+        if not self.api_client or not self.bot_fid:
+            return []
+        logger.debug("Observing 'For You' feed for proactive discovery.")
+        try:
+            data = await self.api_client.get_for_you_feed(fid=self.bot_fid, limit=limit)
+            return await convert_api_casts_to_messages(
+                data.get("casts", []),
+                channel_id_prefix="farcaster:for_you",
+                cast_type_metadata="for_you_feed",
+                bot_fid=self.bot_fid,
+                last_check_time_for_filtering=self.last_check_time,
+                last_seen_hashes=self.last_seen_hashes,
+            )
+        except Exception as e:
+            logger.error(f"Error observing 'For You' feed: {e}", exc_info=True)
+            return []
