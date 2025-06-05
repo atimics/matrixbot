@@ -90,3 +90,55 @@ class GitHubService:
             "title": pr.get("title"),
             "url": pr.get("html_url"),
         }
+
+    async def check_fork_exists(self) -> Optional[str]:
+        """Check if a fork of the main repo exists for the bot user."""
+        if not self.fork_owner:
+            return None
+        fork_full_name = f"{self.fork_owner}/{self.main_repo.split('/')[1]}"
+        try:
+            response = await self._client.get(f"repos/{fork_full_name}")
+            if response.status_code == 200:
+                return response.json().get("clone_url")
+            return None
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return None
+            raise
+
+    async def create_fork(self) -> Optional[Dict[str, Any]]:
+        """Create a fork of the main repo under the bot's account."""
+        url = f"repos/{self.main_repo}/forks"
+        response = await self._client.post(url)
+        if response.status_code == 202:  # Accepted
+            # Forking can take time, so we need to poll until it's ready
+            fork_full_name = f"{self.fork_owner}/{self.main_repo.split('/')[1]}"
+            for _ in range(10):  # Poll for 10 times with 3 seconds interval
+                await asyncio.sleep(3)
+                fork_url = await self.check_fork_exists()
+                if fork_url:
+                    return {"clone_url": fork_url, "full_name": fork_full_name}
+            raise RuntimeError("Fork creation timed out.")
+        response.raise_for_status()
+        return response.json()
+
+    async def create_pull_request(
+        self, title: str, body: str, head_branch: str, base_branch: str, is_draft: bool = True
+    ) -> Optional[Dict[str, Any]]:
+        """Create a pull request."""
+        if not self.fork_owner:
+            raise ValueError(
+                "GITHUB_USERNAME must be set to create a pull request from a fork."
+            )
+        head = f"{self.fork_owner}:{head_branch}"
+        payload = {
+            "title": title,
+            "body": body,
+            "head": head,
+            "base": base_branch,
+            "draft": is_draft,
+        }
+        url = f"repos/{self.main_repo}/pulls"
+        response = await self._client.post(url, json=payload)
+        response.raise_for_status()
+        return response.json()

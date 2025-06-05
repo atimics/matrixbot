@@ -26,7 +26,20 @@ class LocalGitRepository:
             name = name.with_suffix('')
         self.repo_path = self.local_base_path / name
 
-    async def clone_or_pull(self, branch: str = 'develop') -> bool:
+    async def _run_command(self, *args, check=True):
+        """Helper to run a git command."""
+        cmd = ['git', '-C', str(self.repo_path)] + list(args)
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await proc.communicate()
+        if check and proc.returncode != 0:
+            raise RuntimeError(f"Git command failed: {' '.join(cmd)}\nStderr: {stderr.decode()}")
+        return stdout.decode()
+
+    async def clone_or_pull(self, branch: str = "develop") -> bool:
         """
         Clone the repo at the given branch if it doesn't exist locally.
         Otherwise, fetch and reset to origin/<branch>.
