@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from chatbot.core.world_state import WorldStateManager
 from chatbot.core.context import ContextManager
+from chatbot.core.history_recorder import HistoryRecorder
 from chatbot.tools.base import ActionContext
 from chatbot.config import AppConfig
 
@@ -55,6 +56,22 @@ async def context_manager(temp_dir: Path) -> AsyncGenerator[ContextManager, None
         yield context_mgr
     finally:
         await context_mgr.cleanup()
+    
+@pytest.fixture
+async def history_recorder(temp_dir: Path) -> AsyncGenerator[HistoryRecorder, None]:
+    """Provide a HistoryRecorder with temporary database for testing."""
+    db_path = temp_dir / "test_history.db"
+    recorder = HistoryRecorder(str(db_path))
+    # Redirect storage to temp directory to avoid clutter
+    recorder.storage_path = temp_dir / "context_storage"
+    recorder.storage_path.mkdir(parents=True, exist_ok=True)
+    await recorder.initialize()
+    try:
+        yield recorder
+    finally:
+        # Cleanup generated storage files
+        import shutil
+        shutil.rmtree(recorder.storage_path, ignore_errors=True)
 
 
 @pytest.fixture
