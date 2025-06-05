@@ -420,7 +420,6 @@ class ChatbotAPIServer:
         @self.app.get("/api/worldstate/channels")
         async def get_channels():
             """Get detailed channel information."""
-            print("DEBUG: get_channels called")  # DEBUG line
             try:
                 channels = {}
                 for channel_id, channel in self.orchestrator.world_state.state.channels.items():
@@ -448,6 +447,44 @@ class ChatbotAPIServer:
                 }
             except Exception as e:
                 logger.error(f"Error getting channels: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @self.app.get("/api/worldstate/ai-payload")
+        async def get_ai_world_state_payload():
+            """Get the actual world state payload as used by the AI system."""
+            try:
+                # Get the payload builder from the orchestrator
+                payload_builder = self.orchestrator.payload_builder
+                world_state_data = self.orchestrator.world_state.state
+                
+                # Get the current primary channel (if any)
+                primary_channel_id = getattr(self.orchestrator, 'current_primary_channel_id', None)
+                
+                # Build the actual AI payload
+                ai_payload = payload_builder.build_full_payload(
+                    world_state_data=world_state_data,
+                    primary_channel_id=primary_channel_id,
+                    config={
+                        "optimize_for_size": False,  # Get full detail for API
+                        "include_detailed_user_info": True,
+                        "max_messages_per_channel": 10,
+                        "max_action_history": 10,
+                        "max_thread_messages": 10,
+                        "max_other_channels": 10
+                    }
+                )
+                
+                return {
+                    "ai_world_state": ai_payload,
+                    "metadata": {
+                        "primary_channel_id": primary_channel_id,
+                        "payload_type": "full",
+                        "optimization_enabled": False,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                }
+            except Exception as e:
+                logger.error(f"Error getting AI world state payload: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
         
         @self.app.post("/api/worldstate/node/action")
@@ -631,6 +668,44 @@ class ChatbotAPIServer:
                     return FileResponse(index_path)
                 else:
                     raise HTTPException(status_code=404, detail="File not found")
+        
+        @self.app.get("/api/worldstate/ai-payload")
+        async def get_ai_world_state_payload():
+            """Get the actual world state payload as used by the AI system."""
+            try:
+                # Get the payload builder from the orchestrator
+                payload_builder = self.orchestrator.payload_builder
+                world_state_data = self.orchestrator.world_state.state
+                
+                # Get the current primary channel (if any)
+                primary_channel_id = getattr(self.orchestrator, 'current_primary_channel_id', None)
+                
+                # Build the actual AI payload
+                ai_payload = payload_builder.build_full_payload(
+                    world_state_data=world_state_data,
+                    primary_channel_id=primary_channel_id,
+                    config={
+                        "optimize_for_size": False,  # Get full detail for API
+                        "include_detailed_user_info": True,
+                        "max_messages_per_channel": 10,
+                        "max_action_history": 10,
+                        "max_thread_messages": 10,
+                        "max_other_channels": 10
+                    }
+                )
+                
+                return {
+                    "ai_world_state": ai_payload,
+                    "metadata": {
+                        "primary_channel_id": primary_channel_id,
+                        "payload_type": "full",
+                        "optimization_enabled": False,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                }
+            except Exception as e:
+                logger.error(f"Error getting AI world state payload: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
 
 
 def create_api_server(orchestrator: MainOrchestrator) -> FastAPI:
