@@ -56,9 +56,9 @@ class ContextManager:
         self.contexts: Dict[str, ConversationContext] = {}
         self.state_changes: List[StateChangeBlock] = []
 
-        # Initialize storage directory
+        # Initialize storage directory (ensure parent directories exist)
         self.storage_path = Path("context_storage")
-        self.storage_path.mkdir(exist_ok=True)
+        self.storage_path.mkdir(parents=True, exist_ok=True)
 
         logger.info("ContextManager: Initialized with permanent state storage")
 
@@ -343,6 +343,8 @@ Base your decisions on the current world state and user messages."""
     async def _store_state_change_file(self, state_change: StateChangeBlock):
         """Store state change as JSON file for training"""
         try:
+            # Ensure storage directory exists before writing file
+            self.storage_path.mkdir(parents=True, exist_ok=True)
             filename = (
                 f"state_change_{state_change.timestamp}_{state_change.source}.json"
             )
