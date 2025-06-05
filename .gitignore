@@ -164,3 +164,22 @@ matrix_token.json
 <coroutine*
 state_change_
 context_storage/state_change_*
+
+# Debug and demo files (cleaned up)
+debug_*.py
+demo_*.py
+test_*.py  # Only in root, not in tests/ directory
+
+# Backup files
+*.backup
+*.bak
+*~
+
+# Temporary runtime directories
+debug_matrix_store/
+test_ace_workspace/
+test_git_debug/
+
+# Additional temporary files
+coverage.xml
+dummy.db
