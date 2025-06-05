@@ -37,6 +37,7 @@ class EcosystemTokenService:
         self.neynar_api_client = neynar_api_client
         self.world_state_manager = world_state_manager
         self.token_contract = settings.ECOSYSTEM_TOKEN_CONTRACT_ADDRESS
+        self.token_network = settings.ECOSYSTEM_TOKEN_NETWORK
         self.num_top_holders = settings.NUM_TOP_HOLDERS_TO_TRACK
         self.cast_history_length = settings.HOLDER_CAST_HISTORY_LENGTH
         self.update_interval = settings.TOP_HOLDERS_UPDATE_INTERVAL_MINUTES * 60
@@ -49,24 +50,66 @@ class EcosystemTokenService:
 
     async def _fetch_and_rank_holders(self) -> List[Dict]:
         """
-        Fetches token holders and ranks them.
-        This method attempts to fetch real token holders but falls back to simulation for testing.
+        Fetches relevant Farcaster token holders using Neynar's fungible owner endpoint.
+        This method uses the confirmed API endpoint for getting Farcaster users who own specific tokens.
         """
-        if not self.token_contract:
+        if not self.token_contract or not self.token_network:
+            logger.warning("Token contract address or network not configured")
             return []
 
         try:
-            # Attempt to fetch real holder data
-            holders_response = await self.neynar_api_client.get_token_holders(
-                self.token_contract, limit=self.num_top_holders * 2  # Fetch extra in case some don't have FIDs
+            logger.info(f"Fetching relevant Farcaster token owners for {self.token_contract} on {self.token_network}")
+            
+            # Use the proper Neynar API endpoint for relevant fungible owners
+            owners_response = await self.neynar_api_client.get_relevant_fungible_owners(
+                contract_address=self.token_contract,
+                network=self.token_network,
+                viewer_fid=None  # Get global top holders rather than personalized
             )
             
-            if holders_response.get("holders"):
-                logger.info(f"Fetched {len(holders_response['holders'])} holders for token {self.token_contract}")
-                return holders_response["holders"][:self.num_top_holders]
+            if owners_response and "top_relevant_fungible_owners_hydrated" in owners_response:
+                # Extract user profiles from the hydrated owners
+                owners_list = owners_response["top_relevant_fungible_owners_hydrated"]
+                
+                # Convert to the format expected by the rest of the service
+                holders_data = []
+                for owner_profile in owners_list:
+                    holders_data.append({
+                        "fid": owner_profile.get("fid"),
+                        "username": owner_profile.get("username"),
+                        "display_name": owner_profile.get("display_name"),
+                        "pfp_url": owner_profile.get("pfp_url"),
+                        "follower_count": owner_profile.get("follower_count"),
+                        "following_count": owner_profile.get("following_count"),
+                        "power_badge": owner_profile.get("power_badge", False),
+                        "verified_addresses": owner_profile.get("verified_addresses", {}),
+                        "custody_address": owner_profile.get("custody_address"),
+                        # Note: Individual token balances are not provided by this endpoint
+                        # The API returns relevant owners but not their specific holding amounts
+                    })
+                
+                logger.info(f"Successfully fetched {len(holders_data)} relevant Farcaster token owners for {self.token_contract}")
+                return holders_data[:self.num_top_holders]  # Limit to configured number
+                
+            elif owners_response and "all_relevant_fungible_owners_dehydrated" in owners_response:
+                # Fallback to dehydrated owners if hydrated ones aren't available
+                dehydrated_owners = owners_response["all_relevant_fungible_owners_dehydrated"]
+                logger.info(f"Using dehydrated owner data, found {len(dehydrated_owners)} owners")
+                
+                holders_data = []
+                for owner_profile in dehydrated_owners:
+                    holders_data.append({
+                        "fid": owner_profile.get("fid"),
+                        "username": owner_profile.get("username"),
+                        "display_name": owner_profile.get("display_name"),
+                        # Dehydrated profiles have limited data
+                    })
+                
+                return holders_data[:self.num_top_holders]
+                
             else:
-                # Check if this is a test contract or if the API returned guidance
-                if self.token_contract == "0xTESTCONTRACT":  # Example for simulation
+                # Check if this is a test contract for simulation
+                if self.token_contract == "0xTESTCONTRACT":
                     logger.info("Using simulated holder data for 0xTESTCONTRACT")
                     simulated_fids = [i for i in range(1, 25)]  # Simulate some FIDs
                     return [
@@ -74,19 +117,18 @@ class EcosystemTokenService:
                         for fid in simulated_fids[:self.num_top_holders]
                     ]
                 else:
-                    logger.warning(f"No holder data returned for token {self.token_contract}. "
-                                  f"Response: {holders_response.get('note', 'Unknown error')}")
+                    logger.warning(f"No relevant Farcaster owners found for token {self.token_contract} on {self.token_network}")
                     return []
                     
         except Exception as e:
-            logger.error(f"Error fetching token holders for {self.token_contract}: {e}", exc_info=True)
+            logger.error(f"Error fetching relevant token owners for {self.token_contract} on {self.token_network}: {e}", exc_info=True)
             return []
 
     async def update_top_token_holders_in_world_state(self):
         """Update the world state with current top token holders and their activity."""
         logger.info("Updating top token holders...")
-        if not self.token_contract:
-            logger.warning("ECOSYSTEM_TOKEN_CONTRACT_ADDRESS not set. Skipping holder update.")
+        if not self.token_contract or not self.token_network:
+            logger.warning("ECOSYSTEM_TOKEN_CONTRACT_ADDRESS or ECOSYSTEM_TOKEN_NETWORK not set. Skipping holder update.")
             self.world_state_manager.state.monitored_token_holders.clear()  # Clear if contract removed
             return
 

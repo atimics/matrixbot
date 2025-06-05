@@ -552,5 +552,24 @@ class NeynarAPIClient:
             )
             return None
 
+    async def get_relevant_token_owners(
+        self,
+        contract_address: str,
+        network: str,
+        viewer_fid: Optional[int] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Alias for get_relevant_fungible_owners for backward compatibility.
+        
+        Args:
+            contract_address: The contract address of the fungible token
+            network: Network of the fungible asset ('ethereum', 'optimism', 'base', 'arbitrum', 'solana')
+            viewer_fid: Optional FID to personalize results based on social graph
+            
+        Returns:
+            Dictionary containing relevant owners data or None if error/no data
+        """
+        return await self.get_relevant_fungible_owners(contract_address, network, viewer_fid)
+
     async def close(self):
         await self._client.aclose()

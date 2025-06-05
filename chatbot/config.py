@@ -46,6 +46,7 @@ class AppConfig(BaseSettings):
 
     # Ecosystem Token Tracking
     ECOSYSTEM_TOKEN_CONTRACT_ADDRESS: Optional[str] = "Ci6Y1UX8bY4jxn6YiogJmdCxFEu2jmZhCcG65PStpump"  # Contract address of the token
+    ECOSYSTEM_TOKEN_NETWORK: str = "solana"  # Network of the token (ethereum, optimism, base, arbitrum, solana)
     NUM_TOP_HOLDERS_TO_TRACK: int = 10  # Number of top holders to monitor
     TOP_HOLDERS_UPDATE_INTERVAL_MINUTES: int = 60  # How often to refresh the top holders list
     HOLDER_CAST_HISTORY_LENGTH: int = 5  # Number of recent casts to store per holder
