@@ -92,25 +92,42 @@ class NeynarAPIClient:
             limit_hdr = response.headers.get("x-ratelimit-limit")
             remaining_hdr = response.headers.get("x-ratelimit-remaining")
             reset_hdr = response.headers.get("x-ratelimit-reset") # This is often a Unix timestamp
+            retry_after_hdr = response.headers.get("x-ratelimit-retry-after")
 
             # Alternative header names some APIs might use
             if not limit_hdr: limit_hdr = response.headers.get("ratelimit-limit")
             if not remaining_hdr: remaining_hdr = response.headers.get("ratelimit-remaining")
             if not reset_hdr: reset_hdr = response.headers.get("ratelimit-reset")
+            if not retry_after_hdr: retry_after_hdr = response.headers.get("retry-after")
 
             updated = False
             if limit_hdr:
                 self.rate_limit_info["limit"] = int(limit_hdr)
                 updated = True
             if remaining_hdr:
-                self.rate_limit_info["remaining"] = int(remaining_hdr)
+                remaining = int(remaining_hdr)
+                self.rate_limit_info["remaining"] = remaining
                 updated = True
+                
+                # Warn when approaching rate limits
+                if remaining < 10:
+                    logger.warning(f"Farcaster API rate limit approaching: {remaining} requests remaining")
+                elif remaining < 50:
+                    logger.info(f"Farcaster API rate limit status: {remaining} requests remaining")
+                    
             if reset_hdr:
                 try:
                     self.rate_limit_info["reset"] = int(reset_hdr) # Assume it's a Unix timestamp
                     updated = True
                 except ValueError:
                     logger.warning(f"Could not parse rate limit reset header value: {reset_hdr}")
+                    
+            if retry_after_hdr:
+                try:
+                    self.rate_limit_info["retry_after"] = int(retry_after_hdr)
+                    updated = True
+                except ValueError:
+                    logger.warning(f"Could not parse retry-after header value: {retry_after_hdr}")
 
             if updated:
                 import time

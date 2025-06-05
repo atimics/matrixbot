@@ -397,20 +397,30 @@ class FarcasterObserver:
             wsm_last_updated = wsm_farcaster_limits.get('last_updated', 0)
 
             if client_rate_info["last_updated_client"] > wsm_last_updated:
-                # Neynar usually gives 'reset' as a timestamp.
-                # 'retry_after' is typically given on 429 errors.
-                # We'll map what Neynar gives to what WSM expects.
+                # Map Neynar rate limit data to WorldState format
                 new_wsm_limits = {
                     "limit": client_rate_info.get("limit"),
                     "remaining": client_rate_info.get("remaining"),
                     "reset_time": client_rate_info.get("reset"), # Assuming 'reset' is a Unix timestamp
                     "last_updated": client_rate_info["last_updated_client"]
                 }
+                
+                # Add retry_after if available (typically from 429 responses)
+                if "retry_after" in client_rate_info:
+                    new_wsm_limits["retry_after"] = client_rate_info["retry_after"]
+                
                 # Remove None values before updating WSM
                 new_wsm_limits = {k: v for k, v in new_wsm_limits.items() if v is not None}
 
                 self.world_state_manager.state.rate_limits['farcaster_api'] = new_wsm_limits
                 logger.debug(f"FarcasterObserver: Synced Farcaster API rate limits to WorldState: {new_wsm_limits}")
+                
+                # Log warning if rate limits are low
+                remaining = new_wsm_limits.get("remaining", 0)
+                if remaining is not None and remaining < 10:
+                    logger.warning(f"Farcaster API rate limit critical: {remaining} requests remaining!")
+                elif remaining is not None and remaining < 50:
+                    logger.info(f"Farcaster API rate limit status: {remaining} requests remaining")
 
     # --- Direct Action Methods ---
 
@@ -669,34 +679,6 @@ class FarcasterObserver:
                 f"Error getting cast details for hash '{cast_hash}': {e}", exc_info=True
             )
             return {"success": False, "cast": None, "error": str(e)}
-
-    def _update_rate_limits(self, response) -> None:
-        """Update rate limit information from API response headers."""
-        if not self.world_state_manager:
-            return
-
-        headers = getattr(response, "headers", {})
-        if not headers:
-            return
-
-        # Extract rate limit info from headers
-        rate_limit_info = {}
-
-        if "x-ratelimit-limit" in headers:
-            rate_limit_info["limit"] = int(headers["x-ratelimit-limit"])
-        if "x-ratelimit-remaining" in headers:
-            rate_limit_info["remaining"] = int(headers["x-ratelimit-remaining"])
-        if "x-ratelimit-reset" in headers:
-            rate_limit_info["reset_time"] = int(headers["x-ratelimit-reset"])
-        if "x-ratelimit-retry-after" in headers:
-            rate_limit_info["retry_after"] = int(headers["x-ratelimit-retry-after"])
-
-        if rate_limit_info:
-            rate_limit_info["last_updated"] = time.time()
-            self.world_state_manager.state.rate_limits[
-                "farcaster_api"
-            ] = rate_limit_info
-            logger.debug(f"Updated Farcaster API rate limits: {rate_limit_info}")
 
     def get_rate_limit_status(self) -> Dict[str, Any]:
         """Get current rate limit status."""
