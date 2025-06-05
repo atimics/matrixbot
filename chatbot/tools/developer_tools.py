@@ -314,12 +314,6 @@ class SetupDevelopmentWorkspaceTool(ToolInterface):
                 "message": "GITHUB_TOKEN and GITHUB_USERNAME must be configured.",
             }
 
-        if not settings.GITHUB_TOKEN or not settings.GITHUB_USERNAME:
-            return {
-                "status": "failure",
-                "message": "GITHUB_TOKEN and GITHUB_USERNAME must be configured.",
-            }
-
         try:
             # Extract repo owner/name from URL
             if target_repo_url.endswith('.git'):
