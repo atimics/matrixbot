@@ -108,15 +108,23 @@ class SendFarcasterPostTool(ToolInterface):
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
         # Extract and validate parameters
-        content = params.get("content")
+        content = params.get("content", "")
         channel = params.get("channel")  # Optional
         image_s3_url = params.get("image_s3_url")  # Optional
         video_s3_url = params.get("video_s3_url")  # Optional
 
-        if not content:
-            error_msg = "Missing required parameter 'content' for Farcaster post"
+        # Allow empty content only if we have media to attach
+        if not content and not image_s3_url and not video_s3_url:
+            error_msg = "Missing required parameter 'content' for Farcaster post (content required when no media is attached)"
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+        
+        # Generate minimal content for media-only posts
+        if not content and (image_s3_url or video_s3_url):
+            if image_s3_url:
+                content = "🖼️"  # Simple emoji for image posts
+            elif video_s3_url:
+                content = "🎬"  # Simple emoji for video posts
 
         # Strip markdown formatting for Farcaster
         content = strip_markdown(content)

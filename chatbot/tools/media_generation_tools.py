@@ -189,8 +189,10 @@ class GenerateImageTool(ToolInterface):
                 from chatbot.tools.farcaster_tools import SendFarcasterPostTool
                 
                 farcaster_tool = SendFarcasterPostTool()
+                # Generate a meaningful caption for the image post
+                image_caption = f"Generated: {prompt[:200]}{'...' if len(prompt) > 200 else ''}"
                 farcaster_params = {
-                    "content": "",  # Empty content for image-only posts
+                    "content": image_caption,  # Meaningful content describing the generated image
                     "image_s3_url": s3_url
                 }
                 # Optionally, add channel if available in params
