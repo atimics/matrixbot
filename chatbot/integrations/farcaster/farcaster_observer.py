@@ -210,6 +210,10 @@ class FarcasterObserver:
             unique_messages_dict = {msg.id: msg for msg in new_messages}
             new_messages = list(unique_messages_dict.values())
             self.last_check_time = current_time
+            
+            # Sync rate limits after API calls
+            self._sync_rate_limits_to_world_state()
+            
             logger.info(f"Observed {len(new_messages)} new Farcaster messages.")
             return new_messages
         except Exception as e:
@@ -381,6 +385,33 @@ class FarcasterObserver:
 
         return world_state_data
 
+    def _sync_rate_limits_to_world_state(self):
+        """Sync rate limit information from API client to WorldStateManager."""
+        if not self.world_state_manager or not self.api_client:
+            return
+
+        client_rate_info = getattr(self.api_client, 'rate_limit_info', None)
+        if client_rate_info and client_rate_info.get("last_updated_client", 0) > 0:
+            # Check if client info is newer than WSM info
+            wsm_farcaster_limits = self.world_state_manager.state.rate_limits.get('farcaster_api', {})
+            wsm_last_updated = wsm_farcaster_limits.get('last_updated', 0)
+
+            if client_rate_info["last_updated_client"] > wsm_last_updated:
+                # Neynar usually gives 'reset' as a timestamp.
+                # 'retry_after' is typically given on 429 errors.
+                # We'll map what Neynar gives to what WSM expects.
+                new_wsm_limits = {
+                    "limit": client_rate_info.get("limit"),
+                    "remaining": client_rate_info.get("remaining"),
+                    "reset_time": client_rate_info.get("reset"), # Assuming 'reset' is a Unix timestamp
+                    "last_updated": client_rate_info["last_updated_client"]
+                }
+                # Remove None values before updating WSM
+                new_wsm_limits = {k: v for k, v in new_wsm_limits.items() if v is not None}
+
+                self.world_state_manager.state.rate_limits['farcaster_api'] = new_wsm_limits
+                logger.debug(f"FarcasterObserver: Synced Farcaster API rate limits to WorldState: {new_wsm_limits}")
+
     # --- Direct Action Methods ---
 
     async def post_cast(
@@ -394,11 +425,25 @@ class FarcasterObserver:
         """Post a cast directly (not scheduled)."""
         if not self.api_client:
             return {"success": False, "error": "API client not initialized"}
-        logger.info(f"🎯 FarcasterObserver.post_cast action_id={action_id}")
-        embeds = [{"url": url} for url in embed_urls] if embed_urls else None
-        return await self.api_client.publish_cast(
-            content, self.signer_uuid, channel, parent=reply_to, embeds=embeds
+        logger.info(f"🎯 FarcasterObserver.post_cast action_id={action_id}, embeds: {embed_urls}")
+        
+        # Correctly form embeds list for Neynar API
+        embeds_payload: Optional[List[Dict[str,str]]] = None
+        if embed_urls:
+            embeds_payload = [{"url": url_str} for url_str in embed_urls]
+
+        result = await self.api_client.publish_cast(
+            text=content, # Changed from content to text for Neynar API
+            signer_uuid=self.signer_uuid,
+            channel_id=channel, # Changed from channel to channel_id
+            parent=reply_to,
+            embeds=embeds_payload # Pass the correctly formatted embeds
         )
+        
+        # Sync rate limits after API call
+        self._sync_rate_limits_to_world_state()
+        
+        return result
 
     async def reply_to_cast(
         self,

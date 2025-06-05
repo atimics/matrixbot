@@ -298,6 +298,10 @@ class WorldStateManager:
         """Convert world state to dictionary for AI processing"""
         return self.state.to_dict()
 
+    async def get_state(self) -> WorldStateData:
+        """Get the current world state (async version for compatibility)"""
+        return self.state
+
     def get_state_data(self) -> WorldStateData:
         """Get the raw WorldStateData object"""
         return self.state
