@@ -351,9 +351,8 @@ class SetupDevelopmentWorkspaceTool(ToolInterface):
             
             # Store in world state if manager is available
             if hasattr(context, 'world_state_manager') and context.world_state_manager:
-                ws_data = await context.world_state_manager.get_state()
+                ws_data = context.world_state_manager.world_state
                 ws_data.add_target_repository(target_repo_url, repo_context)
-                await context.world_state_manager.update_state(ws_data)
             
             return {
                 "status": "success",
@@ -852,7 +851,6 @@ class AnalyzeAndProposeChangeTool(ToolInterface):  # Phase 2
         )
         
         ws_data.development_tasks[task_id] = task
-        await context.world_state_manager.update_state(ws_data)
 
 
 class ImplementCodeChangesTool(ToolInterface):  # Phase 2
@@ -1056,7 +1054,6 @@ class ImplementCodeChangesTool(ToolInterface):  # Phase 2
                 "changes_applied": changes,
                 "implemented_at": asyncio.get_event_loop().time()
             }
-            await context.world_state_manager.update_state(ws_data)
 
 
 class CreatePullRequestTool(ToolInterface):  # Phase 3
