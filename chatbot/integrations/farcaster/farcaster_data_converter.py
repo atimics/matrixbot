@@ -190,6 +190,7 @@ async def _create_message_from_cast_data(
             sender_bio=author.get("profile", {}).get("bio", {}).get("text"),
             sender_follower_count=author.get("follower_count"),
             sender_following_count=author.get("following_count"),
+            neynar_user_score=author.get("experimental", {}).get("neynar_user_score", 0),
             image_urls=image_urls_list if image_urls_list else None,
             validated_urls=validated_urls_list if validated_urls_list else None,
             metadata=metadata_dict,

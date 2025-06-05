@@ -612,9 +612,22 @@ class QuoteFarcasterPostTool(ToolInterface):
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
         try:
+            # First, get the details of the cast to be quoted to retrieve the author's FID
+            cast_details_result = await context.farcaster_observer.get_cast_details(quoted_cast_hash)
+            if not cast_details_result.get("cast"):
+                error_msg = f"Could not retrieve details for cast to be quoted: {quoted_cast_hash}"
+                logger.error(error_msg)
+                return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+            quoted_cast_author_fid = cast_details_result["cast"]["author"]["fid"]
+            if not quoted_cast_author_fid:
+                error_msg = f"Could not find author FID for cast {quoted_cast_hash}"
+                logger.error(error_msg)
+                return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
             # Use the observer's quote_cast method
             result = await context.farcaster_observer.quote_cast(
-                content, quoted_cast_hash, channel
+                content, quoted_cast_hash, quoted_cast_author_fid, channel
             )
             logger.info(f"Farcaster observer quote_cast returned: {result}")
 

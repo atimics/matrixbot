@@ -374,6 +374,7 @@ class NeynarAPIClient:
         self,
         content: str,
         quoted_cast_hash: str,
+        quoted_cast_author_fid: int,
         channel: Optional[str] = None,
         embed_urls: Optional[List[str]] = None,
         signer_uuid: Optional[str] = None,
@@ -383,8 +384,8 @@ class NeynarAPIClient:
         if not uuid:
             raise ValueError("signer_uuid is required to quote a cast.")
 
-        # Create embeds with the quoted cast URL and any additional URLs
-        embeds = [{"url": f"https://warpcast.com/~/casts/{quoted_cast_hash}"}]
+        # Create embeds with the quoted cast using the protocol-correct cast_id object
+        embeds = [{"cast_id": {"hash": quoted_cast_hash, "fid": quoted_cast_author_fid}}]
         if embed_urls:
             embeds.extend([{"url": url} for url in embed_urls])
 
@@ -573,3 +574,21 @@ class NeynarAPIClient:
 
     async def close(self):
         await self._client.aclose()
+
+    async def get_cast_details(self, cast_hash: str) -> Dict[str, Any]:
+        """
+        Get detailed information about a specific cast by its hash.
+        
+        Args:
+            cast_hash: The hash identifier of the cast
+            
+        Returns:
+            Dictionary containing cast details including author information
+        """
+        try:
+            params = {"hash": cast_hash, "type": "hash"}
+            response = await self._make_request("GET", "/farcaster/cast", params=params)
+            return response.json()
+        except Exception as e:
+            logger.error(f"Error fetching cast details for {cast_hash}: {e}")
+            return {"error": str(e)}

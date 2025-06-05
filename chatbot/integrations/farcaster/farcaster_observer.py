@@ -477,6 +477,7 @@ class FarcasterObserver:
         self,
         content: str,
         quoted_cast_hash: str,
+        quoted_cast_author_fid: int,
         channel: Optional[str] = None,
         embed_urls: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
@@ -484,7 +485,7 @@ class FarcasterObserver:
         if not self.api_client:
             return {"success": False, "error": "API client not initialized"}
         return await self.api_client.quote_cast(
-            content, quoted_cast_hash, channel, embed_urls
+            content, quoted_cast_hash, quoted_cast_author_fid, channel, embed_urls
         )
 
     async def follow_user(self, fid: int) -> Dict[str, Any]:
@@ -651,34 +652,10 @@ class FarcasterObserver:
             return {"success": False, "cast": None, "error": str(e)}
 
     async def get_cast_details(self, cast_hash: str) -> Dict[str, Any]:
-        """Get cast details by hash."""
+        """Get detailed information about a specific cast."""
         if not self.api_client:
-            return {
-                "success": False,
-                "cast": None,
-                "error": "API client not initialized",
-            }
-
-        try:
-            data = await self.api_client.get_cast_by_hash(cast_hash)
-            if not data.get("cast"):
-                return {"success": False, "cast": None, "error": "Cast not found"}
-
-            message = await convert_single_api_cast_to_message(
-                data["cast"],
-                channel_id_if_unknown="farcaster:cast_details",
-                cast_type_metadata="cast_detail",
-            )
-            return {
-                "success": True,
-                "cast": asdict(message) if message else None,
-                "error": None,
-            }
-        except Exception as e:
-            logger.error(
-                f"Error getting cast details for hash '{cast_hash}': {e}", exc_info=True
-            )
-            return {"success": False, "cast": None, "error": str(e)}
+            return {"success": False, "error": "API client not initialized"}
+        return await self.api_client.get_cast_details(cast_hash)
 
     def get_rate_limit_status(self) -> Dict[str, Any]:
         """Get current rate limit status."""

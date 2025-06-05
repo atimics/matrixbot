@@ -49,6 +49,9 @@ class Message:
         sender_follower_count: Number of followers (social influence metric)
         sender_following_count: Number of accounts the user follows
 
+    Neynar-specific Attributes:
+        neynar_user_score: Optional reputation score indicating user quality (0.0 to 1.0)
+
     Platform Metadata:
         metadata: Dictionary containing additional platform-specific data such as:
                  - power_badge: Whether user has verification/power badge
@@ -78,6 +81,9 @@ class Message:
     sender_bio: Optional[str] = None  # User bio/description
     sender_follower_count: Optional[int] = None  # Number of followers
     sender_following_count: Optional[int] = None  # Number of following
+
+    # Neynar-specific user quality signals
+    neynar_user_score: Optional[float] = None  # Neynar user reputation score (0.0 to 1.0)
 
     # Platform-specific metadata
     metadata: Dict[str, Any] = field(
@@ -127,6 +133,7 @@ class Message:
             "reply_to": self.reply_to,
             "sender_fid": self.sender_fid,
             "sender_follower_count": self.sender_follower_count,
+            "neynar_user_score": self.neynar_user_score,
             "image_urls": self.image_urls if self.image_urls else [],
             "metadata": {
                 "power_badge": self.metadata.get("power_badge", False)
