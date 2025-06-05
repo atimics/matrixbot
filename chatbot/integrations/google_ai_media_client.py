@@ -105,6 +105,7 @@ class GoogleAIMediaClient:
         generation_config_obj = types.GenerateContentConfig(
             temperature=temperature,
             safety_settings=self.gemini_safety_settings,
+            response_modalities=["IMAGE", "TEXT"],
         )
 
         try:
@@ -114,10 +115,12 @@ class GoogleAIMediaClient:
                 config=generation_config_obj,
             )
 
-            for part in response.parts:
-                if hasattr(part, "inline_data") and part.inline_data and \
-                   hasattr(part.inline_data, "data") and part.inline_data.data:
-                    return part.inline_data.data
+            # Check if response has candidates with content
+            if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
+                for part in response.candidates[0].content.parts:
+                    if hasattr(part, "inline_data") and part.inline_data and \
+                       hasattr(part.inline_data, "data") and part.inline_data.data:
+                        return part.inline_data.data
             
             warning_message = "GoogleAIMediaClient: No image data found in Gemini response."
             if response.text: # `.text` concatenates text from all parts
@@ -189,6 +192,7 @@ class GoogleAIMediaClient:
         generation_config_obj = types.GenerateContentConfig(
             temperature=0.7, 
             safety_settings=self.gemini_safety_settings,
+            response_modalities=["IMAGE", "TEXT"],
         )
 
         try:
@@ -198,10 +202,12 @@ class GoogleAIMediaClient:
                 config=generation_config_obj
             )
             
-            for part in response.parts:
-                if hasattr(part, "inline_data") and part.inline_data and \
-                   hasattr(part.inline_data, "data") and part.inline_data.data:
-                    return part.inline_data.data
+            # Check if response has candidates with content
+            if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
+                for part in response.candidates[0].content.parts:
+                    if hasattr(part, "inline_data") and part.inline_data and \
+                       hasattr(part.inline_data, "data") and part.inline_data.data:
+                        return part.inline_data.data
 
             warning_message = "GoogleAIMediaClient: No composed image data found in Gemini response."
             if response.text:
