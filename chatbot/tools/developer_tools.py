@@ -323,52 +323,57 @@ class SetupDevelopmentWorkspaceTool(ToolInterface):
                 return {"status": "failure", "message": "Invalid GitHub repository URL format"}
             
             repo_owner, repo_name = repo_parts
-            main_repo = f"{repo_owner}/{repo_name}"
+            main_repo_full_name = f"{repo_owner}/{repo_name}"
             
             # Set up GitHub service
-            gh = GitHubService(main_repo=main_repo)
+            gh = GitHubService(main_repo=main_repo_full_name)
             
-            # Create workspace directory 
-            workspace_path = Path(workspace_base) / repo_name
-            workspace_path.parent.mkdir(parents=True, exist_ok=True)  # Only create parent directory
-            
-            # Set up local git repository
-            clone_url = f"https://github.com/{main_repo}.git"
-            lg = LocalGitRepository(clone_url, str(workspace_path.parent))
-            
-            # Clone or pull latest
+            # 1. Check for/create a fork
+            fork_clone_url = await gh.check_fork_exists()
+            if not fork_clone_url:
+                fork_info = await gh.create_fork()
+                if not fork_info:
+                    return {"status": "failure", "message": "Failed to create fork."}
+                fork_clone_url = fork_info["clone_url"]
+
+            # 2. Clone or pull the main repo locally
+            workspace_path = Path(workspace_base)
+            lg = LocalGitRepository(
+                f"https://github.com/{main_repo_full_name}.git", str(workspace_path)
+            )
             clone_success = await lg.clone_or_pull(branch=base_branch)
             if not clone_success:
-                return {"status": "failure", "message": f"Failed to clone/pull repository {main_repo}"}
+                return {"status": "failure", "message": f"Failed to clone/pull repository {main_repo_full_name}"}
+
+            # 3. Add fork as a remote with authentication
+            fork_auth_url = fork_clone_url.replace('https://', f'https://{settings.GITHUB_USERNAME}:{settings.GITHUB_TOKEN}@')
+            await lg.add_remote("fork", fork_auth_url)
+
+            # 4. Create and checkout a feature branch
+            feature_branch_name = f"ace-task-{task_id[:8]}-{task_description.lower().replace(' ', '-')[:20]}"
+            await lg.create_branch(feature_branch_name, base_branch=f"origin/{base_branch}")
             
-            # Create feature branch for this task
-            feature_branch = f"ace-task-{task_id[:8]}-{task_description.lower().replace(' ', '-')[:20]}"
-            current_branch = await lg.get_current_branch()
-            
-            # Update world state with target repository context
+            # 5. Update world state
             from ..core.world_state.structures import TargetRepositoryContext
             repo_context = TargetRepositoryContext(
                 url=target_repo_url,
-                fork_url=None,  # Will be set when we implement forking
+                fork_url=fork_clone_url,
                 local_clone_path=str(lg.repo_path),
-                current_branch=current_branch,
+                current_branch=feature_branch_name,
                 active_task_id=task_id,
                 setup_complete=True
             )
             
-            # Store in world state if manager is available
             if hasattr(context, 'world_state_manager') and context.world_state_manager:
-                ws_data = context.world_state_manager.world_state
+                ws_data = context.world_state_manager.get_state_data()
                 ws_data.add_target_repository(target_repo_url, repo_context)
             
             return {
                 "status": "success",
-                "message": f"Development workspace set up for {main_repo}",
+                "message": f"Development workspace set up for {main_repo_full_name}",
                 "workspace_path": str(lg.repo_path),
-                "current_branch": current_branch,
-                "feature_branch": feature_branch,
+                "feature_branch": feature_branch_name,
                 "base_branch": base_branch,
-                "target_repo": main_repo
             }
             
         except Exception as e:
