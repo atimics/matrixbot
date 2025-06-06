@@ -15,7 +15,7 @@ import json
 import logging
 import time
 from dataclasses import asdict
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING
 
 from .structures import WorldStateData, Channel
 
@@ -74,20 +74,19 @@ class PayloadBuilder:
         Returns:
             Dictionary optimized for AI consumption
         """
-        # Set default config values with optimization focus
-        if config is None:
-            config = {}
+        # Set default config values, falling back to global settings
+        from chatbot.config import settings
+        if config is None: config = {}
         
-        # Reduced default limits for payload optimization
-        max_messages_per_channel = config.get("max_messages_per_channel", 8)  # Reduced from 10
-        max_action_history = config.get("max_action_history", 4)  # Reduced from 5
-        max_thread_messages = config.get("max_thread_messages", 4)  # Reduced from 5
-        max_other_channels = config.get("max_other_channels", 2)  # Reduced from 3
-        message_snippet_length = config.get("message_snippet_length", 60)  # Reduced from 75
-        include_detailed_user_info = config.get("include_detailed_user_info", False)  # Changed default to False
-        bot_fid = config.get("bot_fid")
-        bot_username = config.get("bot_username")
-        optimize_for_size = config.get("optimize_for_size", True)  # New optimization flag
+        max_messages_per_channel = config.get("max_messages_per_channel", settings.AI_CONVERSATION_HISTORY_LENGTH)
+        max_action_history = config.get("max_action_history", settings.AI_ACTION_HISTORY_LENGTH)
+        max_thread_messages = config.get("max_thread_messages", settings.AI_THREAD_HISTORY_LENGTH)
+        max_other_channels = config.get("max_other_channels", settings.AI_OTHER_CHANNELS_SUMMARY_COUNT)
+        message_snippet_length = config.get("message_snippet_length", settings.AI_OTHER_CHANNELS_MESSAGE_SNIPPET_LENGTH)
+        include_detailed_user_info = config.get("include_detailed_user_info", settings.AI_INCLUDE_DETAILED_USER_INFO)
+        optimize_for_size = config.get("optimize_for_size", True)
+        bot_fid = settings.FARCASTER_BOT_FID
+        bot_username = settings.FARCASTER_BOT_USERNAME
 
         # Sort channels with improved cross-platform balance
         # First, identify active integrations (platforms with recent activity)
@@ -965,3 +964,42 @@ class PayloadBuilder:
         except Exception as e:
             logger.error(f"Error getting data for node path {node_path}: {e}")
             return None
+
+    def _build_thread_context(
+        self,
+        world_state_data: WorldStateData,
+        primary_channel_id: Optional[str],
+        max_messages: int,
+        optimize: bool,
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """Build a focused thread context for the primary channel."""
+        if not primary_channel_id:
+            return {}
+
+        thread_context: Dict[str, List[Dict[str, Any]]] = {}
+        primary_channel = world_state_data.channels.get(primary_channel_id)
+
+        if not primary_channel or not primary_channel.recent_messages:
+            return {}
+
+        # Gather all unique thread IDs from the primary channel's recent messages
+        thread_ids_in_channel: Set[str] = set()
+        for msg in primary_channel.recent_messages:
+            thread_id = msg.reply_to or msg.id
+            if thread_id:
+                thread_ids_in_channel.add(thread_id)
+
+        # Build the context for each relevant thread
+        for thread_id in thread_ids_in_channel:
+            if thread_id in world_state_data.threads:
+                # Sort messages chronologically and take the last N
+                thread_messages = sorted(
+                    world_state_data.threads[thread_id], key=lambda m: m.timestamp
+                )[-max_messages:]
+
+                if optimize:
+                    thread_context[thread_id] = [m.to_ai_summary_dict() for m in thread_messages]
+                else:
+                    thread_context[thread_id] = [asdict(m) for m in thread_messages]
+        
+        return thread_context
