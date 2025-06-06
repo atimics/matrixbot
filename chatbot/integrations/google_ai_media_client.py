@@ -339,16 +339,38 @@ class GoogleAIMediaClient:
                             logger.info(f"GoogleAIMediaClient: Veo video generated, URI: {video_detail.uri}. Attempting download.")
                             async with httpx.AsyncClient(timeout=300.0) as http_client:
                                 try:
-                                    download_url = video_detail.uri
-                                    # Minimal heuristic for adding API key, GCS URIs (gs://) or fully pre-signed URLs won't need this.
-                                    # This might be unnecessary if SDK returns directly downloadable URIs.
-                                    if "generativelanguage.googleapis.com" in download_url and "key=" not in download_url:
-                                         download_url = f"{download_url}{'&' if '?' in download_url else '?'}key={self.api_key}"
+                                    initial_download_url = video_detail.uri
+                                    # Add API key for the initial request to the Google AI API
+                                    if "generativelanguage.googleapis.com" in initial_download_url and "key=" not in initial_download_url:
+                                        initial_download_url = f"{initial_download_url}{'&' if '?' in initial_download_url else '?'}key={self.api_key}"
+                                    
+                                    # Make the initial request but DO NOT follow redirects automatically
+                                    initial_response = await http_client.get(initial_download_url, headers=self.browser_headers, follow_redirects=False)
 
-                                    dl_response = await http_client.get(download_url, headers=self.browser_headers)
-                                    dl_response.raise_for_status()
-                                    video_bytes_list.append(dl_response.content)
-                                    logger.info(f"GoogleAIMediaClient: Downloaded Veo video from {download_url} ({len(dl_response.content)} bytes).")
+                                    if initial_response.status_code == 302:
+                                        # This is the expected case: handle the redirect manually
+                                        redirect_url = initial_response.headers.get('Location')
+                                        if not redirect_url:
+                                            logger.error("GoogleAIMediaClient: Received 302 redirect but no Location header was found.")
+                                            continue
+
+                                        logger.info(f"GoogleAIMediaClient: Redirected to {redirect_url[:80]}...")
+                                        
+                                        # Make a new, clean request to the pre-signed URL with NO auth headers
+                                        final_response = await http_client.get(redirect_url)
+                                        final_response.raise_for_status() # Check for errors on the final download
+                                        video_bytes_list.append(final_response.content)
+                                        logger.info(f"GoogleAIMediaClient: Downloaded Veo video from redirected URL ({len(final_response.content)} bytes).")
+
+                                    elif initial_response.status_code == 200:
+                                        # In the unlikely case it returns data directly
+                                        logger.info("GoogleAIMediaClient: Downloaded Veo video directly without redirect.")
+                                        video_bytes_list.append(initial_response.content)
+
+                                    else:
+                                        # Handle other unexpected status codes
+                                        initial_response.raise_for_status()
+
                                 except httpx.HTTPStatusError as e_dl_http:
                                     logger.error(f"GoogleAIMediaClient: Failed to download Veo video from {video_detail.uri}. Status: {e_dl_http.response.status_code}, Response: {e_dl_http.response.text}")
                                 except Exception as e_dl:
