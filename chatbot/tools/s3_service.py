@@ -289,41 +289,52 @@ class S3Service:
 
     def generate_embeddable_url(
         self, 
-        image_url: str, 
+        media_url: str, 
         title: Optional[str] = None, 
-        description: Optional[str] = None
+        description: Optional[str] = None,
+        media_type: Optional[str] = None
     ) -> str:
         """
         Generate an embeddable page URL for use with Farcaster and other platforms
         that support OG tag previews. This creates a shareable URL that will display
-        proper OG meta tags for the image.
+        proper OG meta tags for the media.
 
         Args:
-            image_url: The S3/CloudFront URL of the image
+            media_url: The S3/CloudFront URL of the media (image or video)
             title: Optional title for the page
             description: Optional description for the page
+            media_type: Optional media type ('image' or 'video'), auto-detected if not provided
 
         Returns:
             Embeddable page URL that will show proper OG tags
         """
         try:
             if not self.cloudfront_domain:
-                logger.warning("CLOUDFRONT_DOMAIN not set, returning image URL directly")
-                return image_url
+                logger.warning("CLOUDFRONT_DOMAIN not set, returning media URL directly")
+                return media_url
+
+            # Auto-detect media type if not provided
+            if not media_type:
+                if any(ext in media_url.lower() for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']):
+                    media_type = 'image'
+                elif any(ext in media_url.lower() for ext in ['.mp4', '.webm', '.mov', '.avi']):
+                    media_type = 'video'
+                else:
+                    media_type = 'image'  # Default fallback
 
             # Create a simple page URL that will serve OG tags
-            # This assumes there's a frontend service that can serve OG tags for images
+            # This assumes there's a frontend service that can serve OG tags for media
             base_url = f"https://{self.cloudfront_domain}"
             
-            # Extract the image path from the S3 URL
-            if image_url.startswith(base_url):
-                image_path = image_url.replace(base_url, "").lstrip("/")
+            # Extract the media path from the S3 URL
+            if media_url.startswith(base_url):
+                media_path = media_url.replace(base_url, "").lstrip("/")
             else:
                 # If it's not our CloudFront URL, use the full URL as a parameter
-                image_path = image_url
+                media_path = media_url
 
             # Create embeddable URL (this would need a corresponding frontend route)
-            embeddable_url = f"{base_url}/embed/image/{image_path}"
+            embeddable_url = f"{base_url}/embed/{media_type}/{media_path}"
             
             # Add query parameters if provided
             params = []
@@ -335,13 +346,13 @@ class S3Service:
             if params:
                 embeddable_url += "?" + "&".join(params)
 
-            logger.info(f"Generated embeddable URL: {embeddable_url}")
+            logger.info(f"Generated embeddable URL for {media_type}: {embeddable_url}")
             return embeddable_url
 
         except Exception as e:
-            logger.error(f"Error generating embeddable URL for {image_url}: {e}")
-            # Fallback to original image URL
-            return image_url
+            logger.error(f"Error generating embeddable URL for {media_url}: {e}")
+            # Fallback to original media URL
+            return media_url
 
     def _url_encode(self, text: str) -> str:
         """Simple URL encoding for query parameters."""
