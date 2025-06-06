@@ -260,148 +260,66 @@ class PayloadBuilder:
                 asdict(action) for action in world_state_data.action_history[-max_action_history:]
             ]
 
-        # Optimized threads processing - only include if relevant and not empty
-        threads_payload = {}
-        if primary_channel_id and not optimize_for_size:
-            # Only include threads when size optimization is disabled
-            for thread_id, msgs in list(world_state_data.threads.items())[:3]:  # Limit to 3 threads max
-                # Include thread if any message belongs to primary channel
-                relevant_thread = any(
-                    msg.channel_id == primary_channel_id for msg in msgs
-                )
-
-                if relevant_thread and msgs:
-                    # Compact thread messages
-                    all_thread_msgs = msgs[-max_thread_messages:]
-                    if optimize_for_size:
-                        thread_msgs_for_payload = []
-                        for msg in all_thread_msgs:
-                            # Check if the bot has already replied to this message
-                            has_replied = world_state_data.has_replied_to_cast(msg.id)
-                            
-                            msg_dict = {
-                                "id": msg.id,
-                                "sender": msg.sender_username or msg.sender,
-                                "content": msg.content[:message_snippet_length] + "..." 
-                                         if len(msg.content) > message_snippet_length else msg.content,
-                                "timestamp": msg.timestamp,
-                                "already_replied": has_replied  # Add the flag
-                            }
-                            thread_msgs_for_payload.append(msg_dict)
-                    else:
-                        thread_msgs_for_payload = []
-                        for msg in all_thread_msgs:
-                            # Check if the bot has already replied to this message
-                            has_replied = world_state_data.has_replied_to_cast(msg.id)
-                            
-                            msg_dict = msg.to_ai_summary_dict() if not include_detailed_user_info else asdict(msg)
-                            msg_dict['already_replied'] = has_replied  # Add the flag
-                            thread_msgs_for_payload.append(msg_dict)
-                    threads_payload[thread_id] = thread_msgs_for_payload
-
-        # Build optimized final payload based on configuration
+        # Optimized action history with conditional detail
         if optimize_for_size:
-            # Compact payload structure with essential information only
-            payload = {
-                "current_channel": primary_channel_id,
-                "channels": channels_payload,
-                "actions": action_history_payload,
-                "system": {
-                    "timestamp": time.time(),
-                    "rate_limits": world_state_data.rate_limits or {}
-                },
-                "stats": {
-                    "channels": len(channels_payload),
-                    "messages": sum(
-                        len(ch.get("recent_messages", []))
-                        for ch in channels_payload.values()
-                        if "recent_messages" in ch
-                    ),
-                    "bot_fid": bot_fid
-                },
-                "ecosystem_token_info": {
-                    "contract_address": world_state_data.ecosystem_token_contract,
-                    "token_metadata": asdict(world_state_data.token_metadata) if world_state_data.token_metadata else None,
-                    "monitored_holders_activity": [
-                        {
-                            "fid": holder.fid,
-                            "username": holder.username,
-                            "display_name": holder.display_name,
-                            "recent_casts": [msg.to_ai_summary_dict() for msg in holder.recent_casts],
-                            "token_holder_data": asdict(holder.token_holder_data) if holder.token_holder_data else None,
-                            "social_influence_score": holder.social_influence_score,
-                            "last_activity_timestamp": holder.last_activity_timestamp
-                        }
-                        for holder in world_state_data.monitored_token_holders.values()
-                    ] if world_state_data.monitored_token_holders else []
-                },
-                "research_knowledge": {
-                    "available_topics": list(world_state_data.research_database.keys()),
-                    "topic_count": len(world_state_data.research_database),
-                    "note": "Use query_research tool to access detailed research information"
+            action_history_payload = [
+                {
+                    "tool": action.tool_name,
+                    "timestamp": action.timestamp,
+                    "params": str(action.parameters)[:50] + "..." 
+                            if len(str(action.parameters)) > 50 else action.parameters
                 }
-            }
-            
-            # Only include threads and other data if they're not empty
-            if threads_payload:
-                payload["threads"] = threads_payload
-            if world_state_data.pending_matrix_invites:
-                payload["pending_invites"] = len(world_state_data.pending_matrix_invites)
-            
-            # Minimal recent media info
-            recent_media = world_state_data.get_recent_media_actions()
-            if recent_media.get("recent_media_actions"):
-                payload["recent_media_count"] = len(recent_media["recent_media_actions"])
+                for action in world_state_data.action_history[-max_action_history:]
+            ]
         else:
-            # Full payload structure
-            payload = {
-                "current_processing_channel_id": primary_channel_id,
-                "channels": channels_payload,
-                "action_history": action_history_payload,
-                "system_status": {**world_state_data.system_status, "rate_limits": world_state_data.rate_limits},
-                "threads": threads_payload,
-                "pending_matrix_invites": world_state_data.pending_matrix_invites,
-                "recent_media_actions": world_state_data.get_recent_media_actions(),
-                "generated_media_library": world_state_data.generated_media_library[-10:],  # Reduced from 20
-                "current_time": time.time(),
-                "payload_stats": {
-                    "primary_channel": primary_channel_id,
-                    "detailed_channels": detailed_count
-                    + (1 if primary_channel_id in channels_payload else 0),
-                    "summary_channels": len(sorted_channels)
-                    - detailed_count
-                    - (1 if primary_channel_id in channels_payload else 0),
-                    "total_channels": len(sorted_channels),
-                    "included_messages": sum(
-                        len(ch.get("recent_messages", []))
-                        for ch in channels_payload.values()
-                        if "recent_messages" in ch
-                    ),
-                    "bot_identity": {"fid": bot_fid, "username": bot_username},
-                    "pending_invites_count": len(world_state_data.pending_matrix_invites),
-                },
+            action_history_payload = [
+                asdict(action) for action in world_state_data.action_history[-max_action_history:]
+            ]
+
+        # Final payload structure
+        payload = {
+            "current_processing_channel_id": primary_channel_id,
+            "channels": channels_payload,
+            "action_history": action_history_payload,
+            "system_status": {**world_state_data.system_status, "rate_limits": world_state_data.rate_limits},
+            "pending_matrix_invites": [
+                {
+                    "room_id": invite.get("room_id"),
+                    "inviter": invite.get("inviter"),
+                    "room_name": invite.get("room_name"),
+                }
+                for invite in world_state_data.pending_matrix_invites
+            ]
+        }
+
+        # Add thread context
+        if primary_channel_id:
+            payload["thread_context"] = self._build_thread_context(
+                world_state_data, primary_channel_id, max_thread_messages, optimize_for_size
+            )
+
+        # Conditionally add other large fields based on optimization flag
+        if not optimize_for_size:
+            payload.update({
+                "generated_media_library": [asdict(m) for m in world_state_data.generated_media_library[-10:]],
                 "ecosystem_token_info": {
                     "contract_address": world_state_data.ecosystem_token_contract,
                     "token_metadata": asdict(world_state_data.token_metadata) if world_state_data.token_metadata else None,
-                    "monitored_holders_activity": [
-                        {
-                            "fid": holder.fid,
-                            "username": holder.username,
-                            "display_name": holder.display_name,
-                            "recent_casts": [msg.to_ai_summary_dict() for msg in holder.recent_casts],
-                            "token_holder_data": asdict(holder.token_holder_data) if holder.token_holder_data else None,
-                            "social_influence_score": holder.social_influence_score,
-                            "last_activity_timestamp": holder.last_activity_timestamp
-                        }
-                        for holder in world_state_data.monitored_token_holders.values()
-                    ] if world_state_data.monitored_token_holders else []
+                    "monitored_holders_activity": [asdict(h) for h in world_state_data.monitored_token_holders.values()]
                 },
                 "research_knowledge": {
                     "available_topics": list(world_state_data.research_database.keys()),
                     "topic_count": len(world_state_data.research_database),
                     "note": "Use query_research tool to access detailed research information"
-                }
-            }
+                },
+            })
+
+        payload["payload_stats"] = {
+            "primary_channel": primary_channel_id,
+            "detailed_channels": detailed_count,
+            "summary_channels": len(sorted_channels) - detailed_count,
+            "bot_identity": {"fid": bot_fid, "username": bot_username},
+        }
         
         return payload
 
