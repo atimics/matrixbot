@@ -76,13 +76,13 @@ class TestMediaActionTracking:
         # Mock the context and world state manager
         mock_context = Mock()
         mock_world_state_manager = Mock()
-        mock_s3_service = Mock()
+        mock_arweave_service = Mock()
         
         mock_context.world_state_manager = mock_world_state_manager
-        mock_context.s3_service = mock_s3_service
+        mock_context.arweave_service = mock_arweave_service
         
-        # Mock successful S3 upload
-        mock_s3_service.upload_image_data = AsyncMock(return_value="http://s3.example.com/test.jpg")
+        # Mock successful Arweave upload
+        mock_arweave_service.upload_image_data = AsyncMock(return_value="https://arweave.net/test123")
         
         # Mock settings
         with patch('chatbot.tools.media_generation_tools.settings') as mock_settings:

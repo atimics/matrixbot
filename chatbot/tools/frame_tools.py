@@ -536,9 +536,9 @@ class CreateMintFrameTool(ToolInterface):
         return {
             "type": "object",
             "properties": {
-                "image_s3_url": {
+                "image_arweave_url": {
                     "type": "string",
-                    "description": "The S3 URL of the image to be minted as an NFT"
+                    "description": "The Arweave URL of the image to be minted as an NFT"
                 },
                 "title": {
                     "type": "string", 
@@ -565,23 +565,23 @@ class CreateMintFrameTool(ToolInterface):
                     "default": 1
                 }
             },
-            "required": ["image_s3_url", "title", "description"]
+            "required": ["image_arweave_url", "title", "description"]
         }
 
     async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
         """Execute the mint frame creation."""
         try:
-            image_s3_url = params.get("image_s3_url")
+            image_arweave_url = params.get("image_arweave_url")
             title = params.get("title")
             description = params.get("description")
             channel_id = params.get("channel_id", "art")
             claim_type = params.get("claim_type", "public")
             max_mints = params.get("max_mints", 1)
 
-            if not image_s3_url or not title or not description:
+            if not image_arweave_url or not title or not description:
                 return {
                     "status": "error",
-                    "message": "Missing required parameters: image_s3_url, title, or description"
+                    "message": "Missing required parameters: image_arweave_url, title, or description"
                 }
 
             # Get services from context
@@ -616,7 +616,7 @@ class CreateMintFrameTool(ToolInterface):
             ]
             
             metadata_uri = await base_nft_service.upload_metadata(
-                image_url=image_s3_url,
+                image_url=image_arweave_url,
                 title=title,
                 description=description,
                 attributes=attributes
@@ -640,7 +640,7 @@ class CreateMintFrameTool(ToolInterface):
             frame_metadata = {
                 "frame_id": frame_id,
                 "metadata_uri": metadata_uri,
-                "image_url": image_s3_url,
+                "image_url": image_arweave_url,
                 "title": title,
                 "description": description,
                 "claim_type": claim_type,
@@ -669,14 +669,14 @@ class CreateMintFrameTool(ToolInterface):
                     text=cast_text,
                     frame_url=frame_url,
                     channel_id=channel_id,
-                    image_url=image_s3_url
+                    image_url=image_arweave_url
                 )
             else:
                 # Fallback: post regular cast with frame URL
                 cast_result = await farcaster_observer.post_cast(
                     text=f"{cast_text}\n\nFrame: {frame_url}",
                     channel_id=channel_id,
-                    image_url=image_s3_url
+                    image_url=image_arweave_url
                 )
 
             if cast_result.get("status") == "success":
@@ -729,9 +729,9 @@ class CreateAirdropClaimFrameTool(ToolInterface):
         return {
             "type": "object", 
             "properties": {
-                "image_s3_url": {
+                "image_arweave_url": {
                     "type": "string",
-                    "description": "The S3 URL of the image to be airdropped as an NFT"
+                    "description": "The Arweave URL of the image to be airdropped as an NFT"
                 },
                 "title": {
                     "type": "string",
@@ -755,7 +755,7 @@ class CreateAirdropClaimFrameTool(ToolInterface):
                     "description": "Custom announcement text (optional)"
                 }
             },
-            "required": ["image_s3_url", "title", "description"]
+            "required": ["image_arweave_url", "title", "description"]
         }
 
     async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
@@ -764,7 +764,7 @@ class CreateAirdropClaimFrameTool(ToolInterface):
             # This is essentially a gated version of create_mint_frame
             # We'll delegate to CreateMintFrameTool with claim_type="gated"
             mint_params = {
-                "image_s3_url": params.get("image_s3_url"),
+                "image_arweave_url": params.get("image_arweave_url"),
                 "title": params.get("title"),
                 "description": params.get("description"), 
                 "channel_id": params.get("channel_id", "general"),

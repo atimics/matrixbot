@@ -1022,8 +1022,8 @@ class TraditionalProcessor:
                     result = await tool.execute(action_params, self.action_context)
                     logger.info(f"Executed coordinated video generation: {result}")
                     
-                    if isinstance(result, dict) and result.get("status") == "success" and result.get("s3_video_url"):
-                        generated_video_url = result["s3_video_url"]
+                    if isinstance(result, dict) and result.get("status") == "success" and result.get("arweave_video_url"):
+                        generated_video_url = result["arweave_video_url"]
                         logger.info(f"Generated video URL for Matrix coordination: {generated_video_url}")
 
                     if self.context_manager:

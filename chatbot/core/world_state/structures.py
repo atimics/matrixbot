@@ -94,9 +94,9 @@ class Message:
     image_urls: Optional[List[str]] = field(default_factory=list)
 
     # v0.0.3: Media attachments and archival tracking
-    s3_media_attachments: Optional[List[Dict[str, str]]] = field(
+    arweave_media_attachments: Optional[List[Dict[str, str]]] = field(
         default_factory=list
-    )  # [{"type": "image", "s3_url": "..."}, ...]
+    )  # [{"type": "image", "arweave_url": "..."}, ...]
     archived_media_tx_ids: Optional[List[str]] = field(
         default_factory=list
     )  # List of Arweave TXIDs if media archived

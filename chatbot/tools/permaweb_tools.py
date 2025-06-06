@@ -39,13 +39,13 @@ class StorePermanentMemoryTool(ToolInterface):
                     "type": "string",
                     "description": "The textual content of the memory (optional).",
                 },
-                "media_s3_url": {
+                "media_arweave_url": {
                     "type": "string",
-                    "description": "The S3 URL of an image or video to archive (optional).",
+                    "description": "The Arweave URL of an image or video to archive (optional).",
                 },
                 "media_content_type": {
                     "type": "string",
-                    "description": "Required if media_s3_url is provided (e.g., 'image/png', 'video/mp4').",
+                    "description": "Required if media_arweave_url is provided (e.g., 'image/png', 'video/mp4').",
                 },
                 "tags": {
                     "type": "object",
@@ -55,7 +55,7 @@ class StorePermanentMemoryTool(ToolInterface):
             },
             "anyOf": [
                 {"required": ["memory_text"]},
-                {"required": ["media_s3_url", "media_content_type"]},
+                {"required": ["media_arweave_url", "media_content_type"]},
             ],
         }
 

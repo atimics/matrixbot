@@ -213,7 +213,7 @@ Example coordinated actions:
   }
 ]
 ```
-The system will automatically include the image_s3_url in the Farcaster post without you needing to specify it.
+The system will automatically include the image_arweave_url in the Farcaster post without you needing to specify it.
 
 GENERATED MEDIA LIBRARY:
 You have access to a `generated_media_library` in the world state containing your previously generated images and videos.

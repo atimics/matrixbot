@@ -138,8 +138,8 @@ class TestImageCoordination:
         # Check that the call included the image URL
         call_args = farcaster_tool.execute.call_args[0]
         params = call_args[0]
-        assert "image_s3_url" in params
-        assert params["image_s3_url"] == "https://d7xbminy5txaa.cloudfront.net/images/test_generated_image.jpg"
+        assert "image_arweave_url" in params
+        assert params["image_arweave_url"] == "https://arweave.net/test_generated_image_id"
         assert params["text"] == "Check out this sunset!"
 
     @pytest.mark.asyncio
@@ -208,7 +208,7 @@ class TestImageCoordination:
         
         call_args = farcaster_tool.execute.call_args[0]
         params = call_args[0]
-        assert "image_s3_url" not in params
+        assert "image_arweave_url" not in params
         assert params["text"] == "Just a text post"
 
         # Verify image generation was not called
@@ -252,7 +252,7 @@ class TestImageCoordination:
         
         call_args = farcaster_tool.execute.call_args[0]
         params = call_args[0]
-        assert "image_s3_url" not in params
+        assert "image_arweave_url" not in params
         assert params["text"] == "Should post without image"
 
     @pytest.mark.asyncio
@@ -286,8 +286,8 @@ class TestImageCoordination:
         
         call_args = farcaster_tool.execute.call_args[0]
         params = call_args[0]
-        assert "image_s3_url" in params
-        assert params["image_s3_url"] == "https://d7xbminy5txaa.cloudfront.net/images/test_generated_image.jpg"
+        assert "image_arweave_url" in params
+        assert params["image_arweave_url"] == "https://arweave.net/test_generated_image_id"
 
 
 if __name__ == "__main__":

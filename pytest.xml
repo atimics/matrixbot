@@ -1,43 +1,917 @@
-<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="2" failures="0" skipped="0" tests="2" time="0.615" timestamp="2025-06-06T05:41:07.126527+00:00" hostname="71d96ef5359b"><testcase classname="" name="tests.test_matrix_s3_integration" time="0.000"><error message="collection failure">ImportError while importing test module '/workspaces/python3-poetry-pyenv/tests/test_matrix_s3_integration.py'.
-Hint: make sure your test modules/packages have valid Python names.
-Traceback:
-.venv/lib/python3.10/site-packages/_pytest/python.py:497: in importtestmodule
-    mod = import_path(
-.venv/lib/python3.10/site-packages/_pytest/pathlib.py:587: in import_path
-    importlib.import_module(module_name)
-/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/importlib/__init__.py:126: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-&lt;frozen importlib._bootstrap&gt;:1050: in _gcd_import
-    ???
-&lt;frozen importlib._bootstrap&gt;:1027: in _find_and_load
-    ???
-&lt;frozen importlib._bootstrap&gt;:1006: in _find_and_load_unlocked
-    ???
-&lt;frozen importlib._bootstrap&gt;:688: in _load_unlocked
-    ???
-.venv/lib/python3.10/site-packages/_pytest/assertion/rewrite.py:186: in exec_module
-    exec(co, module.__dict__)
-tests/test_matrix_s3_integration.py:13: in &lt;module&gt;
-    from chatbot.tools.s3_service import s3_service
-E   ModuleNotFoundError: No module named 'chatbot.tools.s3_service'</error></testcase><testcase classname="" name="tests.test_s3_service" time="0.000"><error message="collection failure">ImportError while importing test module '/workspaces/python3-poetry-pyenv/tests/test_s3_service.py'.
-Hint: make sure your test modules/packages have valid Python names.
-Traceback:
-.venv/lib/python3.10/site-packages/_pytest/python.py:497: in importtestmodule
-    mod = import_path(
-.venv/lib/python3.10/site-packages/_pytest/pathlib.py:587: in import_path
-    importlib.import_module(module_name)
-/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/importlib/__init__.py:126: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-&lt;frozen importlib._bootstrap&gt;:1050: in _gcd_import
-    ???
-&lt;frozen importlib._bootstrap&gt;:1027: in _find_and_load
-    ???
-&lt;frozen importlib._bootstrap&gt;:1006: in _find_and_load_unlocked
-    ???
-&lt;frozen importlib._bootstrap&gt;:688: in _load_unlocked
-    ???
-.venv/lib/python3.10/site-packages/_pytest/assertion/rewrite.py:186: in exec_module
-    exec(co, module.__dict__)
-tests/test_s3_service.py:10: in &lt;module&gt;
-    from chatbot.tools.s3_service import S3Service, s3_service
-E   ModuleNotFoundError: No module named 'chatbot.tools.s3_service'</error></testcase></testsuite></testsuites>
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="116" skipped="0" tests="353" time="3.093" timestamp="2025-06-06T11:59:13.765638+00:00" hostname="71d96ef5359b"><testcase classname="tests.test_ai_blindness_fix.TestAIBlindnessFix" name="test_matrix_reply_recorded_in_world_state" time="0.034" /><testcase classname="tests.test_ai_blindness_fix.TestAIBlindnessFix" name="test_matrix_reply_recorded_in_context" time="0.002" /><testcase classname="tests.test_ai_blindness_fix.TestAIBlindnessFix" name="test_matrix_message_recorded_in_both_stores" time="0.002" /><testcase classname="tests.test_ai_blindness_fix.TestAIBlindnessFix" name="test_failed_action_not_recorded_as_bot_message" time="0.002" /><testcase classname="tests.test_ai_engine.TestAIDecisionEngine" name="test_initialization_with_config" time="0.000" /><testcase classname="tests.test_ai_engine.TestAIDecisionEngine" name="test_initialization_without_api_key" time="0.000" /><testcase classname="tests.test_ai_engine.TestAIDecisionEngine" name="test_make_decision_successful_response" time="0.002" /><testcase classname="tests.test_ai_engine.TestAIDecisionEngine" name="test_make_decision_invalid_json_response" time="0.002" /><testcase classname="tests.test_ai_engine.TestAIDecisionEngine" name="test_make_decision_http_error" time="0.002" /><testcase classname="tests.test_ai_engine.TestAIDecisionEngine" name="test_make_decision_network_exception" time="0.001" /><testcase classname="tests.test_ai_engine.TestAIDecisionEngine" name="test_make_decision_no_choices_in_response" time="0.002" /><testcase classname="tests.test_ai_engine.TestAIDecisionEngine" name="test_cleanup" time="0.000" /><testcase classname="tests.test_arweave_service.TestArweaveService" name="test_initialization_with_client" time="0.000" /><testcase classname="tests.test_arweave_service.TestArweaveService" name="test_initialization_without_client" time="0.000" /><testcase classname="tests.test_arweave_service.TestArweaveService" name="test_initialization_with_env_vars" time="0.000" /><testcase classname="tests.test_arweave_service.TestArweaveService" name="test_is_arweave_url" time="0.000" /><testcase classname="tests.test_arweave_service.TestArweaveService" name="test_upload_image_data_success" time="0.001" /><testcase classname="tests.test_arweave_service.TestArweaveService" name="test_upload_image_data_no_client" time="0.000" /><testcase classname="tests.test_arweave_service.TestArweaveService" name="test_upload_image_data_upload_failure" time="0.001" /><testcase classname="tests.test_arweave_service.TestArweaveService" name="test_ensure_arweave_url_already_arweave" time="0.000" /><testcase classname="tests.test_arweave_service.TestArweaveService" name="test_ensure_arweave_url_download_and_upload" time="0.002" /><testcase classname="tests.test_arweave_service.TestArweaveService" name="test_download_file_data_success" time="0.001" /><testcase classname="tests.test_arweave_service.TestArweaveServiceSingleton" name="test_singleton_exists" time="0.000" /><testcase classname="tests.test_context_extended.TestContextManagerExtended" name="test_basic_message_flow" time="0.012" /><testcase classname="tests.test_context_extended.TestContextManagerExtended" name="test_context_retrieval" time="0.009" /><testcase classname="tests.test_context_extended.TestContextManagerExtended" name="test_state_change_tracking" time="0.010" /><testcase classname="tests.test_context_extended.TestContextManagerExtended" name="test_clear_context" time="0.009" /><testcase classname="tests.test_context_extended.TestContextManagerExtended" name="test_multiple_users_separate_contexts" time="0.011" /><testcase classname="tests.test_context_extended.TestContextManagerExtended" name="test_context_limit_enforcement" time="0.019" /><testcase classname="tests.test_context_extended.TestContextManagerExtended" name="test_get_context_empty_user" time="0.009" /><testcase classname="tests.test_context_extended.TestContextManagerExtended" name="test_database_persistence" time="0.009" /><testcase classname="tests.test_context_extended.TestContextManagerExtended" name="test_summarize_for_ai_basic" time="0.010" /><testcase classname="tests.test_core.TestWorldState" name="test_initialization" time="0.000" /><testcase classname="tests.test_core.TestWorldState" name="test_add_channel" time="0.000" /><testcase classname="tests.test_core.TestWorldState" name="test_add_message" time="0.000" /><testcase classname="tests.test_core.TestHistoryRecorder" name="test_initialization" time="0.000" /><testcase classname="tests.test_core.TestHistoryRecorder" name="test_add_user_message" time="0.107" /><testcase classname="tests.test_core.TestAIEngine" name="test_initialization" time="0.000" /><testcase classname="tests.test_core.TestAIEngine" name="test_make_decision_with_mock" time="0.041" /><testcase classname="tests.test_core.TestOrchestrator" name="test_initialization" time="0.000" /><testcase classname="tests.test_core.TestOrchestrator" name="test_config_defaults" time="0.000" /><testcase classname="tests.test_core.TestOrchestrator" name="test_start_stop_without_observers" time="0.001" /><testcase classname="tests.test_cross_platform_awareness.TestNodeManagerSystemEvents" name="test_auto_collapse_logs_event" time="0.000" /><testcase classname="tests.test_cross_platform_awareness.TestNodeManagerSystemEvents" name="test_auto_collapse_with_expansion_logs_both_events" time="0.000" /><testcase classname="tests.test_cross_platform_awareness.TestNodeManagerSystemEvents" name="test_collapse_node_logs_event" time="0.000" /><testcase classname="tests.test_cross_platform_awareness.TestNodeManagerSystemEvents" name="test_expand_node_logs_event" time="0.000" /><testcase classname="tests.test_cross_platform_awareness.TestNodeManagerSystemEvents" name="test_get_system_events_clears_queue" time="0.000" /><testcase classname="tests.test_cross_platform_awareness.TestNodeManagerSystemEvents" name="test_log_system_event" time="0.000" /><testcase classname="tests.test_cross_platform_awareness.TestNodeManagerSystemEvents" name="test_pin_node_logs_event" time="0.000" /><testcase classname="tests.test_cross_platform_awareness.TestNodeManagerSystemEvents" name="test_system_event_creation" time="0.000" /><testcase classname="tests.test_cross_platform_awareness.TestNodeManagerSystemEvents" name="test_system_event_to_dict" time="0.000" /><testcase classname="tests.test_cross_platform_awareness.TestNodeManagerSystemEvents" name="test_system_events_queue_limit" time="0.000" /><testcase classname="tests.test_cross_platform_awareness.TestNodeManagerSystemEvents" name="test_unpin_node_logs_event" time="0.000" /><testcase classname="tests.test_cross_platform_awareness.TestNodeManagerCriticalPinning" name="test_default_pinned_nodes_initialization" time="0.000" /><testcase classname="tests.test_cross_platform_awareness.TestNodeManagerCriticalPinning" name="test_empty_default_pinned_nodes" time="0.000" /><testcase classname="tests.test_cross_platform_awareness.TestNodeManagerCriticalPinning" name="test_mixed_pinned_and_unpinned_nodes" time="0.000" /><testcase classname="tests.test_cross_platform_awareness.TestNodeManagerCriticalPinning" name="test_none_default_pinned_nodes" time="0.000" /><testcase classname="tests.test_cross_platform_awareness.TestNodeManagerCriticalPinning" name="test_pinned_nodes_prevent_auto_collapse" time="0.000" /><testcase classname="tests.test_cross_platform_awareness.TestMainOrchestratorCriticalPinning" name="test_configure_critical_pinning_both_platforms" time="0.001" /><testcase classname="tests.test_cross_platform_awareness.TestMainOrchestratorCriticalPinning" name="test_configure_critical_pinning_farcaster_only" time="0.001" /><testcase classname="tests.test_cross_platform_awareness.TestMainOrchestratorCriticalPinning" name="test_configure_critical_pinning_matrix_only" time="0.001" /><testcase classname="tests.test_cross_platform_awareness.TestMainOrchestratorCriticalPinning" name="test_configure_critical_pinning_no_observers" time="0.000" /><testcase classname="tests.test_cross_platform_awareness.TestMainOrchestratorCriticalPinning" name="test_configure_critical_pinning_no_payload_builder_node_manager" time="0.001" /><testcase classname="tests.test_cross_platform_awareness.TestPayloadBuilderCrossPlatform" name="test_compact_user_data_generation" time="0.000" /><testcase classname="tests.test_cross_platform_awareness.TestPayloadBuilderCrossPlatform" name="test_cross_platform_sorting_both_platforms" time="0.000" /><testcase classname="tests.test_cross_platform_awareness.TestPayloadBuilderCrossPlatform" name="test_empty_state_payload" time="0.000" /><testcase classname="tests.test_cross_platform_awareness.TestPayloadBuilderCrossPlatform" name="test_farcaster_feed_node_paths" time="0.000" /><testcase classname="tests.test_cross_platform_awareness.TestPayloadBuilderCrossPlatform" name="test_platform_detection_farcaster_only" time="0.000" /><testcase classname="tests.test_cross_platform_awareness.TestPayloadBuilderCrossPlatform" name="test_platform_detection_matrix_only" time="0.000" /><testcase classname="tests.test_cross_platform_awareness.TestAIDecisionEngineEnhancement" name="test_base_system_prompt_includes_cross_platform_instructions" time="0.001" /><testcase classname="tests.test_cross_platform_awareness.TestAIDecisionEngineEnhancement" name="test_base_system_prompt_includes_farcaster_guidance" time="0.000" /><testcase classname="tests.test_cross_platform_awareness.TestAIDecisionEngineEnhancement" name="test_base_system_prompt_includes_node_documentation" time="0.001" /><testcase classname="tests.test_cross_platform_awareness.TestNodeInteractionToolsIntegration" name="test_collapse_node_tool" time="0.000" /><testcase classname="tests.test_cross_platform_awareness.TestNodeInteractionToolsIntegration" name="test_expand_node_tool" time="0.000" /><testcase classname="tests.test_cross_platform_awareness.TestNodeInteractionToolsIntegration" name="test_pin_node_tool" time="0.000" /><testcase classname="tests.test_cross_platform_awareness.TestNodeInteractionToolsIntegration" name="test_unpin_node_tool" time="0.000" /><testcase classname="tests.test_cross_platform_awareness.TestCrossPlatformIntegration" name="test_cross_platform_critical_pinning_workflow" time="0.000" /><testcase classname="tests.test_cross_platform_awareness.TestCrossPlatformIntegration" name="test_end_to_end_cross_platform_awareness" time="0.000" /><testcase classname="tests.test_cross_platform_awareness.TestCrossPlatformIntegration" name="test_platform_balance_with_limited_expansion" time="0.000" /><testcase classname="tests.test_cross_platform_awareness.TestCrossPlatformIntegration" name="test_system_event_transparency" time="0.000" /><testcase classname="tests.test_exceptions.TestChatbotBaseException" name="test_inheritance" time="0.000" /><testcase classname="tests.test_exceptions.TestChatbotBaseException" name="test_custom_message" time="0.000" /><testcase classname="tests.test_exceptions.TestActionExecutionError" name="test_basic_creation" time="0.000" /><testcase classname="tests.test_exceptions.TestActionExecutionError" name="test_with_custom_message" time="0.000" /><testcase classname="tests.test_exceptions.TestActionExecutionError" name="test_inheritance" time="0.000" /><testcase classname="tests.test_exceptions.TestActionExecutionError" name="test_empty_params" time="0.000" /><testcase classname="tests.test_exceptions.TestActionExecutionError" name="test_complex_params" time="0.000" /><testcase classname="tests.test_exceptions.TestMatrixIntegrationError" name="test_creation" time="0.000" /><testcase classname="tests.test_exceptions.TestMatrixIntegrationError" name="test_inheritance_chain" time="0.000" /><testcase classname="tests.test_exceptions.TestAIResponseError" name="test_creation" time="0.000" /><testcase classname="tests.test_exceptions.TestAIResponseError" name="test_json_parsing_scenario" time="0.000" /><testcase classname="tests.test_exceptions.TestConfigurationError" name="test_creation" time="0.000" /><testcase classname="tests.test_exceptions.TestConfigurationError" name="test_missing_env_var_scenario" time="0.000" /><testcase classname="tests.test_exceptions.TestFarcasterIntegrationError" name="test_creation" time="0.000" /><testcase classname="tests.test_exceptions.TestFarcasterIntegrationError" name="test_api_error_scenario" time="0.000" /><testcase classname="tests.test_exceptions.TestExceptionUsagePatterns" name="test_exception_chaining" time="0.000" /><testcase classname="tests.test_exceptions.TestExceptionUsagePatterns" name="test_exception_with_cause" time="0.000" /><testcase classname="tests.test_exceptions.TestExceptionUsagePatterns" name="test_reraise_pattern" time="0.000" /><testcase classname="tests.test_exceptions.TestExceptionUsagePatterns" name="test_multiple_exception_types" time="0.000" /><testcase classname="tests.test_exceptions.TestExceptionUsagePatterns" name="test_exception_in_async_context" time="0.000" /><testcase classname="tests.test_exceptions.TestExceptionUsagePatterns" name="test_exception_serialization" time="0.000" /><testcase classname="tests.test_farcaster_observer_extended" name="test_update_rate_limits_and_status" time="0.022"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_farcaster_observer_extended" name="test_get_rate_limit_status_stale" time="0.021"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_farcaster_observer_extended" name="test_reply_to_cast_calls_post_cast" time="0.021"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_farcaster_observer_extended" name="test_observe_home_feed_without_fid" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_farcaster_observer_extended" name="test_format_user_mention_and_context" time="0.021"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_farcaster_observer_extended" name="test_quote_and_like_methods" time="0.024"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_farcaster_observer_extended" name="test_follow_unfollow_and_dm_methods" time="0.021"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_farcaster_tools_follow_dm" name="test_follow_farcaster_user_tool_success" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_farcaster_tools_follow_dm" name="test_follow_farcaster_user_tool_missing_param" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_farcaster_tools_follow_dm" name="test_unfollow_farcaster_user_tool_success" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_farcaster_tools_follow_dm" name="test_unfollow_farcaster_user_tool_missing_param" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_farcaster_tools_follow_dm" name="test_send_farcaster_dm_tool_deprecated" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_farcaster_tools_follow_dm" name="test_send_farcaster_dm_tool_missing_params_deprecated" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_feedback_loop_prevention.TestFeedbackLoopPrevention" name="test_first_reply_succeeds" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_feedback_loop_prevention.TestFeedbackLoopPrevention" name="test_duplicate_reply_prevented_by_action_history" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_feedback_loop_prevention.TestFeedbackLoopPrevention" name="test_duplicate_reply_prevented_by_message_history" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_feedback_loop_prevention.TestFeedbackLoopPrevention" name="test_new_message_allows_reply" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_feedback_loop_prevention.TestFeedbackLoopPrevention" name="test_failed_reply_allows_retry" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_feedback_loop_prevention.TestFeedbackLoopPrevention" name="test_has_bot_replied_to_matrix_event_method" time="0.001" /><testcase classname="tests.test_feedback_loop_prevention.TestFeedbackLoopPrevention" name="test_has_bot_replied_checks_message_history" time="0.001" /><testcase classname="tests.test_history_recorder_enhanced.TestStateChangeBlock" name="test_creation" time="0.000" /><testcase classname="tests.test_history_recorder_enhanced.TestStateChangeBlock" name="test_optional_fields" time="0.000" /><testcase classname="tests.test_history_recorder_enhanced.TestStateChangeBlock" name="test_serialization" time="0.000" /><testcase classname="tests.test_history_recorder_enhanced.TestHistoryRecorderInitialization" name="test_init_with_memory_db" time="0.000" /><testcase classname="tests.test_history_recorder_enhanced.TestHistoryRecorderInitialization" name="test_init_with_file_db" time="0.000" /><testcase classname="tests.test_history_recorder_enhanced.TestHistoryRecorderInitialization" name="test_initialize_creates_tables" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_history_recorder_enhanced.TestHistoryRecorderInitialization" name="test_initialize_idempotent" time="0.002"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_history_recorder_enhanced.TestHistoryRecorderUserInput" name="test_record_user_input_basic" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_history_recorder_enhanced.TestHistoryRecorderUserInput" name="test_record_user_input_no_channel" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_history_recorder_enhanced.TestHistoryRecorderUserInput" name="test_record_multiple_user_inputs" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_history_recorder_enhanced.TestHistoryRecorderBotActions" name="test_record_bot_decision" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_history_recorder_enhanced.TestHistoryRecorderBotActions" name="test_record_tool_execution" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_history_recorder_enhanced.TestHistoryRecorderPersistence" name="test_persist_to_database" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_history_recorder_enhanced.TestHistoryRecorderPersistence" name="test_export_training_data" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_history_recorder_enhanced.TestHistoryRecorderPersistence" name="test_export_training_data_with_filters" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_history_recorder_enhanced.TestHistoryRecorderLimits" name="test_memory_limit_enforcement" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_history_recorder_enhanced.TestHistoryRecorderLimits" name="test_cleanup_old_records" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_history_recorder_enhanced.TestHistoryRecorderErrorHandling" name="test_invalid_message_format" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_history_recorder_enhanced.TestHistoryRecorderErrorHandling" name="test_database_connection_failure" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_history_recorder_enhanced.TestHistoryRecorderErrorHandling" name="test_concurrent_access" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_history_recorder_enhanced.TestHistoryRecorderIntegration" name="test_with_world_state_integration" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_history_recorder_enhanced.TestHistoryRecorderIntegration" name="test_full_conversation_flow" time="0.002"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_history_recorder_simple.TestStateChangeBlock" name="test_creation" time="0.000" /><testcase classname="tests.test_history_recorder_simple.TestHistoryRecorderBasic" name="test_initialization" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_history_recorder_simple.TestHistoryRecorderBasic" name="test_record_user_input" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_history_recorder_simple.TestHistoryRecorderBasic" name="test_record_decision" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_history_recorder_simple.TestHistoryRecorderBasic" name="test_record_action" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_history_recorder_simple.TestHistoryRecorderBasic" name="test_get_recent_state_changes" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_history_recorder_simple.TestHistoryRecorderBasic" name="test_get_statistics" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_history_recorder_simple.TestHistoryRecorderBasic" name="test_cleanup_old_records" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_image_coordination.TestImageCoordination" name="test_farcaster_image_coordination" time="0.003"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_image_coordination.TestImageCoordination" name="test_matrix_image_coordination" time="0.003"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_image_coordination.TestImageCoordination" name="test_no_coordination_when_no_image_generation" time="0.003"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_image_coordination.TestImageCoordination" name="test_coordination_with_failed_image_generation" time="0.003"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_image_coordination.TestImageCoordination" name="test_dict_format_coordination" time="0.003"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_integration.TestIntegration" name="test_basic_workflow" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_integration.TestIntegration" name="test_world_state_updates" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_integration.TestIntegration" name="test_context_management" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_integration.TestIntegration" name="test_orchestrator_without_observers" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_integration.TestIntegration" name="test_state_change_detection" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_integration.TestIntegration" name="test_training_data_export" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_matrix_arweave_integration.TestMatrixArweaveIntegration" name="test_image_message_processing_with_arweave" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_matrix_arweave_integration.TestMatrixArweaveIntegration" name="test_image_message_processing_no_arweave_service" time="0.002"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_matrix_arweave_integration.TestMatrixArweaveIntegration" name="test_image_message_processing_upload_failure" time="0.002"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_matrix_arweave_integration.TestMatrixArweaveIntegration" name="test_image_message_processing_download_failure" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_matrix_markdown.TestMarkdownFormatting" name="test_basic_formatting" time="0.000" /><testcase classname="tests.test_matrix_markdown.TestMarkdownFormatting" name="test_code_blocks" time="0.016"><failure message="assert 'def hello():' in '&lt;p&gt;Here\'s some code:&lt;/p&gt;\n&lt;div class=&quot;codehilite&quot;&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;code&gt;&lt;span class=&quot;k&quot;&gt;def&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;hello&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt;\n    &lt;span class=&quot;nb&quot;&gt;print&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&amp;quot;Hello, World!&amp;quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;\n&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;'">tests/test_matrix_markdown.py:33: in test_code_blocks
+    assert "def hello():" in result["html"]
+E   assert 'def hello():' in '&lt;p&gt;Here\'s some code:&lt;/p&gt;\n&lt;div class="codehilite"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;code&gt;&lt;span class="k"&gt;def&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="nf"&gt;hello&lt;/span&gt;&lt;span class="p"&gt;():&lt;/span&gt;\n    &lt;span class="nb"&gt;print&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;Hello, World!&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;\n&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;'</failure></testcase><testcase classname="tests.test_matrix_markdown.TestMarkdownFormatting" name="test_inline_code" time="0.000" /><testcase classname="tests.test_matrix_markdown.TestMarkdownFormatting" name="test_links" time="0.000" /><testcase classname="tests.test_matrix_markdown.TestMarkdownFormatting" name="test_headers" time="0.000" /><testcase classname="tests.test_matrix_markdown.TestMarkdownFormatting" name="test_lists" time="0.000" /><testcase classname="tests.test_matrix_markdown.TestMarkdownFormatting" name="test_numbered_lists" time="0.000" /><testcase classname="tests.test_matrix_markdown.TestMarkdownFormatting" name="test_mixed_formatting" time="0.001"><failure message="assert 'def process_data():' in '&lt;h1&gt;AI Response&lt;/h1&gt;\n&lt;p&gt;Here\'s what I found:&lt;/p&gt;\n&lt;ul&gt;\n&lt;li&gt;&lt;strong&gt;Important&lt;/strong&gt;: This is critical&lt;/li&gt;\n&lt;li&gt;&lt;em&gt;Note&lt;/em&gt;: Check the &lt;code&gt;config.json&lt;/code&gt; file&lt;/li&gt;\n&lt;li&gt;See &lt;a href=&quot;https://example.com&quot;&gt;documentation&lt;/a&gt; for details&lt;/li&gt;\n&lt;/ul&gt;\n&lt;div class=&quot;codehilite&quot;&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;code&gt;&lt;span class=&quot;c1&quot;&gt;# Example code&lt;/span&gt;\n&lt;span class=&quot;k&quot;&gt;def&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;process_data&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt;\n    &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&amp;quot;status&amp;quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s2&quot;&gt;&amp;quot;success&amp;quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;\n&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;\n\n&lt;p&gt;Thanks!&lt;/p&gt;'">tests/test_matrix_markdown.py:130: in test_mixed_formatting
+    assert "def process_data():" in result["html"]
+E   assert 'def process_data():' in '&lt;h1&gt;AI Response&lt;/h1&gt;\n&lt;p&gt;Here\'s what I found:&lt;/p&gt;\n&lt;ul&gt;\n&lt;li&gt;&lt;strong&gt;Important&lt;/strong&gt;: This is critical&lt;/li&gt;\n&lt;li&gt;&lt;em&gt;Note&lt;/em&gt;: Check the &lt;code&gt;config.json&lt;/code&gt; file&lt;/li&gt;\n&lt;li&gt;See &lt;a href="https://example.com"&gt;documentation&lt;/a&gt; for details&lt;/li&gt;\n&lt;/ul&gt;\n&lt;div class="codehilite"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;code&gt;&lt;span class="c1"&gt;# Example code&lt;/span&gt;\n&lt;span class="k"&gt;def&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="nf"&gt;process_data&lt;/span&gt;&lt;span class="p"&gt;():&lt;/span&gt;\n    &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;status&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="s2"&gt;&amp;quot;success&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;}&lt;/span&gt;\n&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;\n\n&lt;p&gt;Thanks!&lt;/p&gt;'</failure></testcase><testcase classname="tests.test_matrix_markdown.TestMatrixMarkdownFormatter" name="test_formatter_instance" time="0.000" /><testcase classname="tests.test_matrix_markdown.TestMatrixMarkdownFormatter" name="test_plain_text_cleaning" time="0.000" /><testcase classname="tests.test_matrix_tools_and_observer" name="test_send_matrix_reply_tool_success" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_matrix_tools_and_observer" name="test_send_matrix_reply_tool_missing_params" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_matrix_tools_and_observer" name="test_send_matrix_message_tool_success" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_matrix_tools_and_observer" name="test_send_matrix_message_tool_missing_params" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_matrix_tools_and_observer" name="test_join_matrix_room_tool_success" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_matrix_tools_and_observer" name="test_join_matrix_room_tool_by_alias" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_matrix_tools_and_observer" name="test_join_matrix_room_tool_failure" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_matrix_tools_and_observer" name="test_join_matrix_room_tool_missing_params" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_matrix_tools_and_observer" name="test_leave_matrix_room_tool_success" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_matrix_tools_and_observer" name="test_leave_matrix_room_tool_with_reason" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_matrix_tools_and_observer" name="test_leave_matrix_room_tool_failure" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_matrix_tools_and_observer" name="test_leave_matrix_room_tool_missing_params" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_matrix_tools_and_observer" name="test_accept_matrix_invite_tool_success" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_matrix_tools_and_observer" name="test_accept_matrix_invite_tool_failure" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_matrix_tools_and_observer" name="test_accept_matrix_invite_tool_missing_params" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_matrix_tools_and_observer" name="test_ignore_matrix_invite_tool_success" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_matrix_tools_and_observer" name="test_ignore_matrix_invite_tool_no_invite" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_matrix_tools_and_observer" name="test_ignore_matrix_invite_tool_missing_params" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_matrix_tools_and_observer" name="test_matrix_observer_user_and_room_details_empty" time="0.000" /><testcase classname="tests.test_matrix_tools_and_observer" name="test_matrix_observer_room_and_user_details" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_matrix_tools_and_observer" name="test_matrix_observer_join_room_success" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_matrix_tools_and_observer" name="test_matrix_observer_join_room_failure" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_matrix_tools_and_observer" name="test_matrix_observer_leave_room_success" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_matrix_tools_and_observer" name="test_matrix_observer_accept_invite_success" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_matrix_tools_and_observer" name="test_matrix_observer_get_invites_success" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_matrix_tools_and_observer" name="test_matrix_observer_get_invites_no_client" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_media_action_tracking.TestMediaActionTracking" name="test_world_state_recent_media_actions" time="0.000" /><testcase classname="tests.test_media_action_tracking.TestMediaActionTracking" name="test_to_dict_for_ai_includes_media_actions" time="0.000" /><testcase classname="tests.test_media_action_tracking.TestMediaActionTracking" name="test_generate_image_tool_records_action" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_media_action_tracking.TestMediaActionTracking" name="test_describe_image_tool_records_action" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_media_action_tracking.TestMediaActionTracking" name="test_describe_image_tool_handles_inaccessible_image" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_neynar_rate_limiting.TestNeynarRateLimiting" name="test_update_rate_limits_basic" time="0.022" /><testcase classname="tests.test_neynar_rate_limiting.TestNeynarRateLimiting" name="test_update_rate_limits_with_retry_after" time="0.021" /><testcase classname="tests.test_neynar_rate_limiting.TestNeynarRateLimiting" name="test_update_rate_limits_with_standard_retry_after" time="0.022" /><testcase classname="tests.test_neynar_rate_limiting.TestNeynarRateLimiting" name="test_rate_limit_warning_low_remaining" time="0.022" /><testcase classname="tests.test_neynar_rate_limiting.TestNeynarRateLimiting" name="test_rate_limit_info_moderate_remaining" time="0.021" /><testcase classname="tests.test_neynar_rate_limiting.TestNeynarRateLimiting" name="test_rate_limit_no_warning_high_remaining" time="0.022" /><testcase classname="tests.test_neynar_rate_limiting.TestNeynarRateLimiting" name="test_rate_limit_invalid_headers" time="0.021" /><testcase classname="tests.test_neynar_rate_limiting.TestNeynarRateLimiting" name="test_rate_limit_missing_headers" time="0.021" /><testcase classname="tests.test_neynar_rate_limiting.TestNeynarRateLimiting" name="test_rate_limit_timestamp_update" time="0.021" /><testcase classname="tests.test_orchestrator_extended.TestOrchestratorExtended" name="test_initialization_with_config" time="0.000" /><testcase classname="tests.test_orchestrator_extended.TestOrchestratorExtended" name="test_observer_management" time="0.001" /><testcase classname="tests.test_orchestrator_extended.TestOrchestratorExtended" name="test_start_stop_without_observers" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_orchestrator_extended.TestOrchestratorExtended" name="test_message_processing" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_orchestrator_extended.TestOrchestratorExtended" name="test_channel_processing_with_mocked_ai" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_orchestrator_extended.TestOrchestratorExtended" name="test_action_execution_with_mocked_action" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_orchestrator_extended.TestOrchestratorExtended" name="test_error_handling_in_channel_processing" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_orchestrator_extended.TestOrchestratorExtended" name="test_context_integration" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_orchestrator_extended.TestOrchestratorExtended" name="test_action_execution_recording" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_orchestrator_extended.TestOrchestratorExtended" name="test_system_status_updates" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_orchestrator_extended.TestOrchestratorExtended" name="test_config_defaults" time="0.000" /><testcase classname="tests.test_orchestrator_extended.TestOrchestratorExtended" name="test_context_management" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_payload_builder_enhanced.TestPayloadBuilderInitialization" name="test_basic_initialization" time="0.000" /><testcase classname="tests.test_payload_builder_enhanced.TestPayloadBuilderInitialization" name="test_with_node_manager" time="0.000" /><testcase classname="tests.test_payload_builder_enhanced.TestPayloadBuilderFullPayload" name="test_build_full_payload_basic" time="0.000" /><testcase classname="tests.test_payload_builder_enhanced.TestPayloadBuilderFullPayload" name="test_build_full_payload_with_primary_channel" time="0.000" /><testcase classname="tests.test_payload_builder_enhanced.TestPayloadBuilderFullPayload" name="test_build_full_payload_with_config" time="0.000" /><testcase classname="tests.test_payload_builder_enhanced.TestPayloadBuilderFullPayload" name="test_build_full_payload_empty_state" time="0.000" /><testcase classname="tests.test_payload_builder_enhanced.TestPayloadBuilderNodeBasedPayload" name="test_build_node_based_payload_basic" time="0.000" /><testcase classname="tests.test_payload_builder_enhanced.TestPayloadBuilderNodeBasedPayload" name="test_build_node_based_payload_without_node_manager" time="0.001" /><testcase classname="tests.test_payload_builder_enhanced.TestPayloadBuilderNodeBasedPayload" name="test_build_node_based_payload_with_expansion_limit" time="0.000" /><testcase classname="tests.test_payload_builder_enhanced.TestPayloadBuilderSizeEstimation" name="test_estimate_payload_size_basic" time="0.000" /><testcase classname="tests.test_payload_builder_enhanced.TestPayloadBuilderSizeEstimation" name="test_estimate_payload_size_empty" time="0.000" /><testcase classname="tests.test_payload_builder_enhanced.TestPayloadBuilderOptimization" name="test_build_optimized_payload" time="0.000" /><testcase classname="tests.test_payload_builder_enhanced.TestPayloadBuilderOptimization" name="test_payload_compression" time="0.000" /><testcase classname="tests.test_payload_builder_enhanced.TestPayloadBuilderCrossPlatform" name="test_platform_detection" time="0.000" /><testcase classname="tests.test_payload_builder_enhanced.TestPayloadBuilderCrossPlatform" name="test_channel_prioritization" time="0.000" /><testcase classname="tests.test_payload_builder_enhanced.TestPayloadBuilderNodeIntegration" name="test_node_expansion_payload" time="0.001" /><testcase classname="tests.test_payload_builder_enhanced.TestPayloadBuilderNodeIntegration" name="test_node_collapse_payload" time="0.001" /><testcase classname="tests.test_payload_builder_enhanced.TestPayloadBuilderEdgeCases" name="test_none_input_handling" time="0.000" /><testcase classname="tests.test_payload_builder_enhanced.TestPayloadBuilderEdgeCases" name="test_malformed_data_handling" time="0.000" /><testcase classname="tests.test_payload_builder_enhanced.TestPayloadBuilderEdgeCases" name="test_large_data_handling" time="0.001" /><testcase classname="tests.test_payload_builder_enhanced.TestPayloadBuilderEdgeCases" name="test_memory_constraints" time="0.000" /><testcase classname="tests.test_payload_builder_enhanced.TestPayloadBuilderSerialization" name="test_json_serialization" time="0.000" /><testcase classname="tests.test_payload_builder_enhanced.TestPayloadBuilderSerialization" name="test_payload_structure_consistency" time="0.000" /><testcase classname="tests.test_payload_builder_enhanced.TestPayloadBuilderPerformance" name="test_payload_generation_performance" time="0.001" /><testcase classname="tests.test_payload_builder_simple.TestPayloadBuilderSimple" name="test_initialization" time="0.001" /><testcase classname="tests.test_payload_builder_simple.TestPayloadBuilderSimple" name="test_initialization_with_node_manager" time="0.000" /><testcase classname="tests.test_payload_builder_simple.TestPayloadBuilderSimple" name="test_build_full_payload_basic" time="0.000" /><testcase classname="tests.test_payload_builder_simple.TestPayloadBuilderSimple" name="test_build_full_payload_empty_state" time="0.000" /><testcase classname="tests.test_payload_builder_simple.TestPayloadBuilderSimple" name="test_estimate_payload_size_empty" time="0.000" /><testcase classname="tests.test_payload_builder_simple.TestPayloadBuilderSimple" name="test_none_input_handling" time="0.000" /><testcase classname="tests.test_payload_builder_simple.TestPayloadBuilderSimple" name="test_platform_detection" time="0.000" /><testcase classname="tests.test_phase_1_2_content_discovery.TestGetUserTimelineTool" name="test_tool_properties" time="0.000" /><testcase classname="tests.test_phase_1_2_content_discovery.TestGetUserTimelineTool" name="test_execute_success_with_username" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_phase_1_2_content_discovery.TestGetUserTimelineTool" name="test_execute_success_with_fid" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_phase_1_2_content_discovery.TestGetUserTimelineTool" name="test_execute_missing_user_identifier" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_phase_1_2_content_discovery.TestGetUserTimelineTool" name="test_execute_no_farcaster_observer" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_phase_1_2_content_discovery.TestGetUserTimelineTool" name="test_execute_observer_error" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_phase_1_2_content_discovery.TestSearchCastsTool" name="test_tool_properties" time="0.000" /><testcase classname="tests.test_phase_1_2_content_discovery.TestSearchCastsTool" name="test_execute_success_with_channel" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_phase_1_2_content_discovery.TestSearchCastsTool" name="test_execute_success_without_channel" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_phase_1_2_content_discovery.TestSearchCastsTool" name="test_execute_missing_query" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_phase_1_2_content_discovery.TestGetTrendingCastsTool" name="test_tool_properties" time="0.000" /><testcase classname="tests.test_phase_1_2_content_discovery.TestGetTrendingCastsTool" name="test_execute_success_with_channel" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_phase_1_2_content_discovery.TestGetTrendingCastsTool" name="test_execute_success_global_trending" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_phase_1_2_content_discovery.TestGetCastByUrlTool" name="test_tool_properties" time="0.000" /><testcase classname="tests.test_phase_1_2_content_discovery.TestGetCastByUrlTool" name="test_execute_success" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_phase_1_2_content_discovery.TestGetCastByUrlTool" name="test_execute_invalid_url" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_phase_1_2_content_discovery.TestGetCastByUrlTool" name="test_execute_missing_url" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_phase_1_2_content_discovery.TestGetCastByUrlTool" name="test_execute_cast_not_found" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_phase_1_2_content_discovery" name="test_integration_content_discovery_workflow" time="0.001"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_robust_json_parsing.TestRobustJSONParsing" name="test_pure_json_parsing" time="0.000" /><testcase classname="tests.test_robust_json_parsing.TestRobustJSONParsing" name="test_markdown_wrapped_json" time="0.000" /><testcase classname="tests.test_robust_json_parsing.TestRobustJSONParsing" name="test_json_with_explanatory_text" time="0.000" /><testcase classname="tests.test_robust_json_parsing.TestRobustJSONParsing" name="test_json_mixed_in_text_without_markdown" time="0.000" /><testcase classname="tests.test_robust_json_parsing.TestRobustJSONParsing" name="test_multiple_json_objects_picks_largest" time="0.000" /><testcase classname="tests.test_robust_json_parsing.TestRobustJSONParsing" name="test_invalid_json_raises_error" time="0.000" /><testcase classname="tests.test_robust_json_parsing.TestRobustJSONParsing" name="test_malformed_json_in_text" time="0.000" /><testcase classname="tests.test_robust_json_parsing.TestRobustJSONParsing" name="test_missing_opening_brace_fix" time="0.000" /><testcase classname="tests.test_tool_system.TestToolRegistry" name="test_initialization" time="0.000" /><testcase classname="tests.test_tool_system.TestToolRegistry" name="test_register_tool" time="0.000" /><testcase classname="tests.test_tool_system.TestToolRegistry" name="test_get_nonexistent_tool" time="0.000" /><testcase classname="tests.test_tool_system.TestToolRegistry" name="test_generate_tool_descriptions" time="0.000" /><testcase classname="tests.test_tool_system.TestActionContext" name="test_initialization" time="0.000" /><testcase classname="tests.test_tool_system.TestCoreTools" name="test_wait_tool" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_tool_system.TestMatrixTools" name="test_send_matrix_reply_tool" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_tool_system.TestMatrixTools" name="test_send_matrix_message_tool" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_tool_system.TestFarcasterTools" name="test_send_farcaster_post_tool" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_tool_system.TestFarcasterTools" name="test_send_farcaster_reply_tool" time="0.000"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:440: in runtest
+    super().runtest()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:903: in inner
+    _loop = _get_event_loop_no_warn()
+.venv/lib/python3.10/site-packages/pytest_asyncio/plugin.py:860: in _get_event_loop_no_warn
+    return asyncio.get_event_loop()
+/home/vscode/.pyenv/versions/3.10.17/lib/python3.10/asyncio/events.py:656: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase><testcase classname="tests.test_world_state_comprehensive.TestWorldStateComprehensive" name="test_world_state_deduplication" time="0.000" /><testcase classname="tests.test_world_state_comprehensive.TestWorldStateComprehensive" name="test_world_state_thread_management" time="0.000" /><testcase classname="tests.test_world_state_comprehensive.TestWorldStateComprehensive" name="test_world_state_rate_limits" time="0.000" /><testcase classname="tests.test_world_state_comprehensive.TestWorldStateComprehensive" name="test_world_state_pending_invites" time="0.000" /><testcase classname="tests.test_world_state_comprehensive.TestWorldStateComprehensive" name="test_world_state_bot_media_tracking" time="0.000" /><testcase classname="tests.test_world_state_comprehensive.TestWorldStateComprehensive" name="test_world_state_cleanup_old_messages" time="0.000" /><testcase classname="tests.test_world_state_comprehensive.TestWorldStateComprehensive" name="test_world_state_action_history_limits" time="0.000" /><testcase classname="tests.test_world_state_comprehensive.TestWorldStateComprehensive" name="test_world_state_get_recent_activity" time="0.000" /><testcase classname="tests.test_world_state_comprehensive.TestWorldStateComprehensive" name="test_world_state_to_json" time="0.000" /><testcase classname="tests.test_world_state_comprehensive.TestWorldStateComprehensive" name="test_world_state_to_dict_for_ai_with_filters" time="0.000" /><testcase classname="tests.test_world_state_comprehensive.TestWorldStateManager" name="test_world_state_manager_initialization" time="0.000" /><testcase classname="tests.test_world_state_comprehensive.TestWorldStateManager" name="test_world_state_manager_add_channel" time="0.000" /><testcase classname="tests.test_world_state_comprehensive.TestWorldStateManager" name="test_world_state_manager_add_message" time="0.000" /><testcase classname="tests.test_world_state_comprehensive.TestWorldStateManager" name="test_world_state_manager_observation_data" time="0.000" /><testcase classname="tests.test_world_state_comprehensive.TestWorldStateManager" name="test_world_state_manager_has_replied_to_cast" time="0.000" /><testcase classname="tests.test_world_state_comprehensive.TestWorldStateManager" name="test_world_state_manager_serialization" time="0.000" /><testcase classname="tests.test_world_state_comprehensive.TestActionHistory" name="test_action_history_creation" time="0.000" /><testcase classname="tests.test_world_state_comprehensive.TestActionHistory" name="test_action_history_serialization" time="0.000" /><testcase classname="tests.test_world_state_comprehensive.TestMessage" name="test_message_creation" time="0.000" /><testcase classname="tests.test_world_state_comprehensive.TestMessage" name="test_message_with_images" time="0.000" /><testcase classname="tests.test_world_state_comprehensive.TestMessage" name="test_message_reply" time="0.000" /><testcase classname="tests.test_world_state_comprehensive.TestMessage" name="test_message_serialization" time="0.000" /><testcase classname="tests.test_world_state_comprehensive.TestChannel" name="test_channel_creation" time="0.000" /><testcase classname="tests.test_world_state_comprehensive.TestChannel" name="test_channel_update_timestamp" time="0.000" /><testcase classname="tests.test_world_state_comprehensive.TestChannel" name="test_channel_serialization" time="0.000" /><testcase classname="tests.test_world_state_coverage.TestWorldStateCoverage" name="test_world_state_initialization" time="0.000" /><testcase classname="tests.test_world_state_coverage.TestWorldStateCoverage" name="test_world_state_add_message_basic" time="0.000" /><testcase classname="tests.test_world_state_coverage.TestWorldStateCoverage" name="test_world_state_get_recent_messages" time="0.000" /><testcase classname="tests.test_world_state_coverage.TestWorldStateCoverage" name="test_world_state_has_replied_logic" time="0.000" /><testcase classname="tests.test_world_state_coverage.TestWorldStateCoverage" name="test_world_state_to_dict" time="0.000" /><testcase classname="tests.test_world_state_coverage.TestWorldStateCoverage" name="test_world_state_to_dict_for_ai" time="0.000" /><testcase classname="tests.test_world_state_coverage.TestWorldStateCoverage" name="test_world_state_to_dict_for_ai_with_limit" time="0.000" /><testcase classname="tests.test_world_state_coverage.TestWorldStateCoverage" name="test_world_state_add_action" time="0.000" /><testcase classname="tests.test_world_state_coverage.TestWorldStateCoverage" name="test_world_state_add_action_with_limit" time="0.000" /><testcase classname="tests.test_world_state_coverage.TestWorldStateCoverage" name="test_world_state_get_all_messages" time="0.000" /><testcase classname="tests.test_world_state_coverage.TestWorldStateCoverage" name="test_world_state_get_observation_data" time="0.000" /><testcase classname="tests.test_world_state_coverage.TestWorldStateCoverage" name="test_world_state_manager_initialization" time="0.000" /><testcase classname="tests.test_world_state_coverage.TestWorldStateCoverage" name="test_world_state_manager_add_channel" time="0.000" /><testcase classname="tests.test_world_state_coverage.TestWorldStateCoverage" name="test_world_state_manager_add_message" time="0.000" /><testcase classname="tests.test_world_state_coverage.TestWorldStateCoverage" name="test_message_dataclass_creation" time="0.000" /><testcase classname="tests.test_world_state_coverage.TestWorldStateCoverage" name="test_message_with_images" time="0.000" /><testcase classname="tests.test_world_state_coverage.TestWorldStateCoverage" name="test_message_with_metadata" time="0.000" /><testcase classname="tests.test_world_state_coverage.TestWorldStateCoverage" name="test_message_reply_functionality" time="0.000" /><testcase classname="tests.test_world_state_coverage.TestWorldStateCoverage" name="test_channel_dataclass_creation" time="0.000" /><testcase classname="tests.test_world_state_coverage.TestWorldStateCoverage" name="test_channel_with_matrix_metadata" time="0.000" /><testcase classname="tests.test_world_state_coverage.TestWorldStateCoverage" name="test_action_history_dataclass" time="0.000" /><testcase classname="tests.test_world_state_coverage.TestWorldStateCoverage" name="test_world_state_json_serialization" time="0.000" /><testcase classname="tests.test_world_state_coverage.TestWorldStateCoverage" name="test_world_state_manager_serialization" time="0.000" /><testcase classname="tests.test_world_state_extended.TestWorldStateExtended" name="test_add_multiple_channels" time="0.000" /><testcase classname="tests.test_world_state_extended.TestWorldStateExtended" name="test_message_ordering_and_limits" time="0.003" /><testcase classname="tests.test_world_state_extended.TestWorldStateExtended" name="test_action_history_tracking" time="0.002" /><testcase classname="tests.test_world_state_extended.TestWorldStateExtended" name="test_system_status_updates" time="0.000" /><testcase classname="tests.test_world_state_extended.TestWorldStateExtended" name="test_get_observation_data" time="0.000" /><testcase classname="tests.test_world_state_extended.TestWorldStateExtended" name="test_get_all_messages" time="0.000" /><testcase classname="tests.test_world_state_extended.TestWorldStateExtended" name="test_world_state_json_serialization" time="0.000" /><testcase classname="tests.test_world_state_extended.TestWorldStateExtended" name="test_auto_channel_creation" time="0.000" /><testcase classname="tests.test_world_state_extended.TestWorldStateExtended" name="test_timestamp_updates" time="0.011" /></testsuite></testsuites>

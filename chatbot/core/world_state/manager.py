@@ -489,19 +489,19 @@ class WorldStateManager:
     # v0.0.3: Bot Media Tracking Methods for Permaweb Archival
 
     def record_bot_media_post(
-        self, cast_hash: str, s3_url: str, media_type: str, channel_id: str
+        self, cast_hash: str, arweave_url: str, media_type: str, channel_id: str
     ):
         """
         Record that the bot posted media to Farcaster for engagement tracking.
 
         Args:
             cast_hash: Farcaster cast hash
-            s3_url: S3 URL of the media
+            arweave_url: Arweave URL of the media
             media_type: 'image' or 'video'
             channel_id: Farcaster channel where posted
         """
         self.state.bot_media_on_farcaster[cast_hash] = {
-            "s3_url": s3_url,
+            "arweave_url": arweave_url,
             "media_type": media_type,
             "likes": 0,
             "arweave_tx_id": None,
