@@ -938,8 +938,17 @@ class SendMatrixVideoTool(ToolInterface):
         try:
             # Download the video data from the URL
             import httpx
+            
+            # Define browser-like headers to bypass WAF rules
+            browser_headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+                "Accept": "*/*",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Connection": "keep-alive",
+            }
+            
             async with httpx.AsyncClient() as client:
-                response = await client.get(video_url)
+                response = await client.get(video_url, headers=browser_headers)
                 response.raise_for_status()
                 video_data = response.content
 
