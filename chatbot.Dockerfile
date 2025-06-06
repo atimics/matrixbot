@@ -24,8 +24,14 @@ RUN pip install poetry
 # Configure poetry: don't create a virtual environment
 RUN poetry config virtualenvs.create false
 
-# Install dependencies
-RUN poetry sync --without dev
+# Export dependencies to requirements.txt
+# Ensure --without dev is used here to exclude development packages
+RUN poetry export --without dev --format requirements.txt --output requirements.txt
+
+# Install dependencies using pip from the exported requirements.txt
+# --no-cache-dir is a good practice for Docker images to keep them small
+# --prefer-binary can speed up installations for packages with binary distributions
+RUN pip install --no-cache-dir --prefer-binary -r requirements.txt
 
 # Copy the rest of the application's code into the container
 COPY . .
