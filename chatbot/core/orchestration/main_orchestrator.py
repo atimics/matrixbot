@@ -91,10 +91,16 @@ class MainOrchestrator:
         
         # Create action context for tool execution
         from ...tools.base import ActionContext
+        from ...tools.arweave_service import ArweaveService
+        
+        # Initialize arweave service with our client
+        arweave_service_instance = ArweaveService(arweave_client=self.arweave_client)
+        
         self.action_context = ActionContext(
             world_state_manager=self.world_state,
             context_manager=self.context_manager,
-            arweave_client=self.arweave_client
+            arweave_client=self.arweave_client,
+            arweave_service=arweave_service_instance
         )
         
         # External observers

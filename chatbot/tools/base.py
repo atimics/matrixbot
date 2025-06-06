@@ -18,6 +18,7 @@ class ActionContext:
         world_state_manager=None,
         context_manager=None,
         arweave_client=None,
+        arweave_service=None,
         base_nft_service=None,
         eligibility_service=None,
     ):
@@ -26,6 +27,7 @@ class ActionContext:
         self.world_state_manager = world_state_manager
         self.context_manager = context_manager
         self.arweave_client = arweave_client
+        self.arweave_service = arweave_service
         self.base_nft_service = base_nft_service
         self.eligibility_service = eligibility_service
 

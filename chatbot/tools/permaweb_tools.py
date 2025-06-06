@@ -62,21 +62,21 @@ class StorePermanentMemoryTool(ToolInterface):
     async def execute(self, params: Dict[str, Any], context) -> Dict[str, Any]:
         """Execute the permanent memory storage tool."""
         memory_text = params.get("memory_text")
-        media_s3_url = params.get("media_s3_url")
+        media_arweave_url = params.get("media_arweave_url")
         media_content_type = params.get("media_content_type")
         custom_tags = params.get("tags", {})
 
         # Validate inputs
-        if not memory_text and not media_s3_url:
+        if not memory_text and not media_arweave_url:
             return {
                 "status": "error",
-                "message": "Either memory_text or media_s3_url must be provided",
+                "message": "Either memory_text or media_arweave_url must be provided",
             }
 
-        if media_s3_url and not media_content_type:
+        if media_arweave_url and not media_content_type:
             return {
                 "status": "error",
-                "message": "media_content_type is required when media_s3_url is provided",
+                "message": "media_content_type is required when media_arweave_url is provided",
             }
 
         # Check cooldowns and rate limits
@@ -105,27 +105,27 @@ class StorePermanentMemoryTool(ToolInterface):
             data = None
             content_type = None
 
-            if media_s3_url and not memory_text:
+            if media_arweave_url and not memory_text:
                 # Upload media only
-                if hasattr(context, "s3_service"):
+                if hasattr(context, "arweave_service"):
                     try:
-                        data = await context.s3_service.download_file_data(media_s3_url)
+                        data = await context.arweave_service.download_file_data(media_arweave_url)
                         content_type = media_content_type
                         logger.info(
-                            f"Downloaded media from S3 for Arweave upload: {media_s3_url}"
+                            f"Downloaded media from Arweave for re-upload: {media_arweave_url}"
                         )
                     except Exception as e:
                         return {
                             "status": "error",
-                            "message": f"Failed to download media from S3: {str(e)}",
+                            "message": f"Failed to download media from Arweave: {str(e)}",
                         }
                 else:
                     return {
                         "status": "error",
-                        "message": "S3 service not available for media download",
+                        "message": "Arweave service not available for media download",
                     }
 
-            elif memory_text and not media_s3_url:
+            elif memory_text and not media_arweave_url:
                 # Upload text only
                 data = memory_text.encode("utf-8")
                 content_type = "text/plain"
@@ -134,7 +134,7 @@ class StorePermanentMemoryTool(ToolInterface):
                 # Upload both text and media reference as JSON
                 memory_data = {
                     "text": memory_text,
-                    "media_s3_url": media_s3_url,
+                    "media_arweave_url": media_arweave_url,
                     "media_content_type": media_content_type,
                     "timestamp": time.time(),
                 }

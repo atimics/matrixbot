@@ -276,12 +276,12 @@ class GenerateImageTool(ToolInterface):
             context.world_state_manager.add_action_result(
                 action_type="generate_image",
                 parameters={"prompt": prompt, "aspect_ratio": aspect_ratio},
-                result=s3_url
+                result=arweave_url
             )
 
             # Record in generated media library
             context.world_state_manager.record_generated_media(
-                media_url=s3_url,
+                media_url=arweave_url,
                 media_type="image",
                 prompt=prompt,
                 service_used=service_used,
@@ -297,7 +297,7 @@ class GenerateImageTool(ToolInterface):
                 image_caption = f"Generated: {prompt[:200]}{'...' if len(prompt) > 200 else ''}"
                 farcaster_params = {
                     "content": image_caption,  # Meaningful content describing the generated image
-                    "image_s3_url": s3_url
+                    "image_arweave_url": arweave_url
                 }
                 # Optionally, add channel if available in params
                 if "channel" in params:
@@ -312,13 +312,13 @@ class GenerateImageTool(ToolInterface):
             result = {
                 "status": "success",
                 "message": f"Generated image using {service_used} for prompt: {prompt[:50]}...",
-                "image_url": s3_url,
-                "s3_image_url": s3_url,
+                "image_url": arweave_url,
+                "arweave_image_url": arweave_url,
                 "prompt_used": prompt,
                 "service_used": service_used,
                 "aspect_ratio": aspect_ratio,
                 "farcaster_post_result": farcaster_result,
-                "next_actions_suggestion": f"Use 'send_matrix_image' or 'send_farcaster_post' with image_s3_url parameter to share this image: {s3_url}"
+                "next_actions_suggestion": f"Use 'send_matrix_image' or 'send_farcaster_post' with image_arweave_url parameter to share this image: {arweave_url}"
             }
             return result
 
