@@ -15,12 +15,12 @@ from typing import Any, Dict, Optional
 from ...config import settings
 from ...core.ai_engine import AIDecisionEngine
 from ...core.context import ContextManager
+from ...integrations.arweave_uploader_client import ArweaveUploaderClient
 from ...integrations.farcaster import FarcasterObserver
 from ...integrations.matrix.observer import MatrixObserver
 from ...integrations.base_nft_service import BaseNFTService
 from ...integrations.eligibility_service import UserEligibilityService
 from ...tools.registry import ToolRegistry
-from ...tools.s3_service import s3_service
 from ..world_state.manager import WorldStateManager
 from ..world_state.payload_builder import PayloadBuilder
 from .processing_hub import ProcessingHub, ProcessingConfig
@@ -79,12 +79,22 @@ class MainOrchestrator:
             model=self.config.ai_model
         )
         
+        # Initialize Arweave client
+        self.arweave_client = None
+        if settings.ARWEAVE_UPLOADER_API_ENDPOINT and settings.ARWEAVE_UPLOADER_API_KEY:
+            self.arweave_client = ArweaveUploaderClient(
+                api_endpoint=settings.ARWEAVE_UPLOADER_API_ENDPOINT,
+                api_key=settings.ARWEAVE_UPLOADER_API_KEY,
+                gateway_url=settings.ARWEAVE_GATEWAY_URL,
+            )
+            logger.info("Arweave client initialized.")
+        
         # Create action context for tool execution
         from ...tools.base import ActionContext
         self.action_context = ActionContext(
             world_state_manager=self.world_state,
             context_manager=self.context_manager,
-            s3_service=s3_service
+            arweave_client=self.arweave_client
         )
         
         # External observers
@@ -335,7 +345,7 @@ class MainOrchestrator:
         # Initialize Matrix observer if credentials available
         if settings.MATRIX_USER_ID and settings.MATRIX_PASSWORD:
             try:
-                self.matrix_observer = MatrixObserver(self.world_state)
+                self.matrix_observer = MatrixObserver(self.world_state, self.arweave_client)
                 room_id = settings.MATRIX_ROOM_ID
                 self.matrix_observer.add_channel(room_id, "Robot Laboratory")
                 await self.matrix_observer.start()
@@ -768,7 +778,7 @@ class TraditionalProcessor:
         """Coordinate image generation with Farcaster posting."""
         current_time = time.time()
         coordinated_actions = []
-        generated_image_url = None
+        generated_embed_url = None
         
         # First, execute image generation
         image_action_idx = action_map["generate_image"]
@@ -793,10 +803,10 @@ class TraditionalProcessor:
                     
                     logger.info(f"Executed coordinated image generation: {result}")
                     
-                    # Extract image URL from result
-                    if isinstance(result, dict) and result.get("success") and result.get("image_url"):
-                        generated_image_url = result["image_url"]
-                        logger.info(f"Generated image URL for coordination: {generated_image_url}")
+                    # Extract embed URL from result
+                    if isinstance(result, dict) and result.get("status") == "success" and result.get("embed_page_url"):
+                        generated_embed_url = result["embed_page_url"]
+                        logger.info(f"Generated image embed page URL for coordination: {generated_embed_url}")
                     
                     # Record in context
                     if self.context_manager:
@@ -809,7 +819,7 @@ class TraditionalProcessor:
         except Exception as e:
             logger.error(f"Error in coordinated image generation: {e}")
         
-        # Now process other actions, modifying Farcaster post if we have an image URL
+        # Now process other actions, modifying Farcaster post if we have an embed URL
         for i, action in enumerate(actions):
             if i == image_action_idx:
                 # Skip the image action since we already executed it
@@ -819,10 +829,10 @@ class TraditionalProcessor:
             action_name = action.action_type
             action_params = action.parameters.copy()  # Make a copy to avoid modifying original
 
-            if action_name == "send_farcaster_post" and generated_image_url:
-                # Add the generated image URL to the Farcaster post
-                action_params["image_s3_url"] = generated_image_url
-                logger.info(f"Enhanced Farcaster post with generated image: {generated_image_url}")
+            if action_name == "send_farcaster_post" and generated_embed_url:
+                # Add the generated embed URL to the Farcaster post
+                action_params["embed_url"] = generated_embed_url
+                logger.info(f"Enhanced Farcaster post with generated image embed page: {generated_embed_url}")
                 
                 # Create modified action
                 from ..ai_engine import ActionPlan
@@ -929,7 +939,7 @@ class TraditionalProcessor:
         """Coordinate video generation with Farcaster posting."""
         current_time = time.time()
         coordinated_actions = []
-        generated_video_url = None
+        generated_embed_url = None
         
         video_action_idx = action_map["generate_video"]
         video_action = actions[video_action_idx]
@@ -946,9 +956,9 @@ class TraditionalProcessor:
                     result = await tool.execute(action_params, self.action_context)
                     logger.info(f"Executed coordinated video generation: {result}")
                     
-                    if isinstance(result, dict) and result.get("status") == "success" and result.get("s3_video_url"):
-                        generated_video_url = result["s3_video_url"]
-                        logger.info(f"Generated video URL for coordination: {generated_video_url}")
+                    if isinstance(result, dict) and result.get("status") == "success" and result.get("embed_page_url"):
+                        generated_embed_url = result["embed_page_url"]
+                        logger.info(f"Generated video embed page URL for coordination: {generated_embed_url}")
 
                     if self.context_manager:
                         channel_id = action_params.get('channel_id', 'default')
@@ -967,9 +977,9 @@ class TraditionalProcessor:
             action_name = action.action_type
             action_params = action.parameters.copy()
 
-            if action_name == "send_farcaster_post" and generated_video_url:
-                action_params["video_s3_url"] = generated_video_url
-                logger.info(f"Enhanced Farcaster post with generated video: {generated_video_url}")
+            if action_name == "send_farcaster_post" and generated_embed_url:
+                action_params["embed_url"] = generated_embed_url
+                logger.info(f"Enhanced Farcaster post with generated video embed page: {generated_embed_url}")
                 
                 from ..ai_engine import ActionPlan
                 modified_action = ActionPlan(

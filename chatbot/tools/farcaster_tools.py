@@ -66,7 +66,8 @@ class SendFarcasterPostTool(ToolInterface):
 
     @property
     def description(self) -> str:
-        return "Send a new post (cast) to Farcaster. Use this when you want to share something with the Farcaster community."
+        return ("Send a new post (cast) to Farcaster. "
+                "Use the 'embed_url' parameter to attach media or frames.")
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
@@ -81,13 +82,9 @@ class SendFarcasterPostTool(ToolInterface):
                     "type": "string",
                     "description": "The channel to post in (if not provided, posts to user's timeline)"
                 },
-                "image_s3_url": {
+                "embed_url": {
                     "type": "string",
-                    "description": "S3 URL of an image to attach to the post"
-                },
-                "video_s3_url": {
-                    "type": "string",
-                    "description": "S3 URL of a video to attach to the post"
+                    "description": "A URL to embed in the cast, such as an Arweave URL for an image/video page or a frame URL."
                 }
             },
             "required": ["content"]
@@ -110,21 +107,17 @@ class SendFarcasterPostTool(ToolInterface):
         # Extract and validate parameters
         content = params.get("content", "")
         channel = params.get("channel")  # Optional
-        image_s3_url = params.get("image_s3_url")  # Optional
-        video_s3_url = params.get("video_s3_url")  # Optional
+        embed_url = params.get("embed_url")  # Optional
 
-        # Allow empty content only if we have media to attach
-        if not content and not image_s3_url and not video_s3_url:
-            error_msg = "Missing required parameter 'content' for Farcaster post (content required when no media is attached)"
+        # Allow empty content only if we have embed to attach
+        if not content and not embed_url:
+            error_msg = "Missing required parameter 'content' for Farcaster post (content required when no embed is attached)"
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
         
-        # Generate minimal content for media-only posts
-        if not content and (image_s3_url or video_s3_url):
-            if image_s3_url:
-                content = "🖼️"  # Simple emoji for image posts
-            elif video_s3_url:
-                content = "🎬"  # Simple emoji for video posts
+        # Generate minimal content for embed-only posts
+        if not content and embed_url:
+            content = "�"  # Simple emoji for embed posts
 
         # Strip markdown formatting for Farcaster
         content = strip_markdown(content)
@@ -135,32 +128,11 @@ class SendFarcasterPostTool(ToolInterface):
             content = content[:MAX_FARCASTER_CONTENT_LENGTH - 3] + "..."
             logger.warning(f"Farcaster content truncated to {MAX_FARCASTER_CONTENT_LENGTH} chars.")
 
-        # Prepare embeds for media attachments
+        # Prepare embeds
         embeds = []
-        media_type = None
-        media_s3_url = None
-
-        if image_s3_url:
-            # Use embeddable URL for better previews
-            if context.s3_service:
-                embed_url = context.s3_service.generate_embeddable_url(image_s3_url, title=content, media_type="image")
-            else:
-                embed_url = image_s3_url
+        if embed_url:
             embeds.append({"url": embed_url})
-            media_type = "image"
-            media_s3_url = image_s3_url
-            logger.info(f"Adding image embed to Farcaster post: {embed_url}")
-
-        if video_s3_url:
-            # Use embeddable URL for better previews
-            if context.s3_service:
-                embed_url = context.s3_service.generate_embeddable_url(video_s3_url, title=content, media_type="video")
-            else:
-                embed_url = video_s3_url
-            embeds.append({"url": embed_url})
-            media_type = "video"
-            media_s3_url = video_s3_url
-            logger.info(f"Adding video embed to Farcaster post: {embed_url}")
+            logger.info(f"Adding embed to Farcaster post: {embed_url}")
 
         # Prevent duplicate posts with identical content
         if (
@@ -215,16 +187,12 @@ class SendFarcasterPostTool(ToolInterface):
         # Immediate execution fallback
         try:
             # Prepare embed URLs for the observer
-            embed_urls = []
-            if image_s3_url:
-                embed_urls.append(image_s3_url)
-            if video_s3_url:
-                embed_urls.append(video_s3_url)
+            final_embed_urls = [e['url'] for e in embeds if 'url' in e]
 
             result = await context.farcaster_observer.post_cast(
                 content=content,
                 channel=channel,
-                embed_urls=embed_urls if embed_urls else None
+                embed_urls=final_embed_urls if final_embed_urls else None
             )
             logger.info(f"Farcaster observer post_cast returned: {result}")
 
@@ -238,13 +206,14 @@ class SendFarcasterPostTool(ToolInterface):
                             "content": content,
                             "channel": channel,
                             "cast_hash": cast_hash,
+                            "embed_url": embed_url,
                         },
                         result="success",
                     )
                 else:
                     context.world_state_manager.add_action_result(
                         action_type=self.name,
-                        parameters={"content": content, "channel": channel},
+                        parameters={"content": content, "channel": channel, "embed_url": embed_url},
                         result=f"failure: {result.get('error', 'unknown')}",
                     )
 

@@ -28,7 +28,6 @@ from nio import (
 
 from ...config import settings
 from ...core.world_state import Channel, Message, WorldStateManager
-from ...tools.s3_service import s3_service
 
 logger = logging.getLogger(__name__)
 load_dotenv()
@@ -37,8 +36,9 @@ load_dotenv()
 class MatrixObserver:
     """Observes Matrix channels and reports to world state"""
 
-    def __init__(self, world_state_manager: WorldStateManager):
+    def __init__(self, world_state_manager: WorldStateManager, arweave_client=None):
         self.world_state = world_state_manager
+        self.arweave_client = arweave_client
         self.homeserver = settings.MATRIX_HOMESERVER
         self.user_id = settings.MATRIX_USER_ID
         self.password = settings.MATRIX_PASSWORD
@@ -182,7 +182,7 @@ class MatrixObserver:
                         download_response = await self.client.download(mxc_uri)
 
                         if hasattr(download_response, "body") and download_response.body:
-                            # Upload Matrix image data directly to S3 for public access
+                            # Upload Matrix image data directly to Arweave for permanent access
                             original_filename = getattr(event, "body", "matrix_image.jpg")
 
                             # Use the content-type from download response if available
@@ -190,27 +190,20 @@ class MatrixObserver:
                                 download_response, "content_type", "image/jpeg"
                             )
 
-                            s3_url = await s3_service.upload_image_data(
-                                download_response.body, original_filename
-                            )
-
-                            if s3_url:
-                                image_urls_list.append(s3_url)
-                                logger.info(
-                                    f"MatrixObserver: Uploaded Matrix image to S3: {s3_url}"
+                            if self.arweave_client:
+                                arweave_tx_id = await self.arweave_client.upload_data(
+                                    download_response.body, content_type, tags=[{"name": "source", "value": "matrix"}]
                                 )
-                            else:
-                                # Fallback to MXC URI if S3 upload fails (AI won't be able to access it, but it's better than nothing)
-                                http_url = await self.client.mxc_to_http(mxc_uri)
-                                if http_url:
-                                    image_urls_list.append(http_url)
-                                    logger.warning(
-                                        f"MatrixObserver: S3 upload failed, using Matrix URL: {http_url}"
+                                if arweave_tx_id:
+                                    arweave_url = self.arweave_client.get_arweave_url(arweave_tx_id)
+                                    image_urls_list.append(arweave_url)
+                                    logger.info(
+                                        f"MatrixObserver: Uploaded Matrix image to Arweave: {arweave_url}"
                                     )
                                 else:
-                                    logger.warning(
-                                        f"MatrixObserver: Both S3 upload and MXC conversion failed for {mxc_uri}"
-                                    )
+                                    logger.warning("Failed to upload Matrix media to Arweave, no URL available.")
+                            else:
+                                logger.warning("Arweave client not configured, cannot upload Matrix media.")
                         else:
                             # Enhanced error logging
                             error_type = type(download_response).__name__

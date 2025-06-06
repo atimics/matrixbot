@@ -2,7 +2,7 @@
 Media Generation Tools
 
 This module provides tools for generating images and videos using AI services
-like Replicate and Google AI (Gemini/Veo).
+like Replicate and Google AI (Gemini/Veo) and storing them permanently on Arweave.
 """
 
 import asyncio
@@ -19,8 +19,35 @@ from chatbot.tools.base import ToolInterface
 logger = logging.getLogger(__name__)
 
 
+def _create_embed_html(title: str, description: str, media_url: str, media_type: str = 'image') -> str:
+    """Creates the HTML for a Farcaster embed page."""
+    # Use the media_url itself as the thumbnail for simplicity
+    thumbnail_url = media_url
+    
+    if media_type == 'video':
+        return f"""<!DOCTYPE html><html><head><title>{title}</title>
+<meta property="og:title" content="{title}" />
+<meta property="og:description" content="{description}" />
+<meta property="og:image" content="{thumbnail_url}" />
+<meta property="og:video" content="{media_url}" />
+<meta property="og:video:type" content="video/mp4" />
+<meta property="fc:frame" content="vNext" />
+<meta property="fc:frame:image" content="{thumbnail_url}" />
+<meta property="fc:frame:video" content="{media_url}" />
+<meta property="fc:frame:video:type" content="video/mp4" />
+</head><body><h1>{title}</h1><p>{description}</p><video controls src="{media_url}"></video></body></html>"""
+    else:  # image
+        return f"""<!DOCTYPE html><html><head><title>{title}</title>
+<meta property="og:title" content="{title}" />
+<meta property="og:description" content="{description}" />
+<meta property="og:image" content="{media_url}" />
+<meta property="fc:frame" content="vNext" />
+<meta property="fc:frame:image" content="{media_url}" />
+</head><body><h1>{title}</h1><p>{description}</p><img src="{media_url}" alt="{title}"/></body></html>"""
+
+
 class GenerateImageTool(ToolInterface):
-    """Tool for generating images from text prompts using AI services."""
+    """Tool for generating images from text prompts and storing them on Arweave."""
 
     @property
     def name(self) -> str:
@@ -29,9 +56,9 @@ class GenerateImageTool(ToolInterface):
     @property
     def description(self) -> str:
         return (
-            "Generates an image from a text prompt. Returns an S3 URL of the generated image. "
-            "After generating an image, use 'send_matrix_image' to share it in Matrix channels "
-            "or 'send_farcaster_post' with image_s3_url parameter to share it on Farcaster with proper image embedding."
+            "Generates an image from a text prompt and stores it on Arweave. "
+            "Returns an Arweave URL for an embeddable HTML page. "
+            "To share, use 'send_farcaster_post' with the `embed_url` parameter pointing to the returned 'embed_page_url'."
         )
 
     @property
@@ -53,12 +80,15 @@ class GenerateImageTool(ToolInterface):
         }
 
     async def execute(self, params: Dict[str, Any], context) -> Dict[str, Any]:
-        """Execute the image generation tool and always post to Farcaster."""
+        """Execute the image generation tool."""
         prompt = params.get("prompt", "")
         aspect_ratio = params.get("aspect_ratio", "1:1")
 
         if not prompt.strip():
             return {"status": "error", "message": "Prompt cannot be empty"}
+
+        if not context.arweave_client:
+            return {"status": "error", "message": "Arweave client is not configured."}
 
         # Check cooldowns and rate limits
         cooldown_check = self._check_cooldowns_and_limits(context, "image")
@@ -66,10 +96,84 @@ class GenerateImageTool(ToolInterface):
             return cooldown_check
 
         try:
-            # Try Google Gemini first, fallback to Replicate
+            # 1. Generate image data
             image_data = None
             service_used = None
-            s3_url = None
+
+            # Try Google Gemini first
+            if settings.GOOGLE_API_KEY:
+                try:
+                    google_client = GoogleAIMediaClient(
+                        api_key=settings.GOOGLE_API_KEY,
+                        default_gemini_image_model=settings.GOOGLE_GEMINI_IMAGE_MODEL,
+                    )
+                    image_data = await google_client.generate_image_gemini(prompt, aspect_ratio)
+                    if image_data:
+                        service_used = "google_gemini"
+                        logger.info(f"Generated image using Google Gemini: {prompt[:50]}...")
+                except Exception as e:
+                    logger.warning(f"Google Gemini image generation failed: {e}")
+
+            # Fallback to Replicate if Gemini failed
+            if not image_data and settings.REPLICATE_API_TOKEN:
+                try:
+                    replicate_client = ReplicateClient(api_token=settings.REPLICATE_API_TOKEN)
+                    image_data = await replicate_client.generate_image(
+                        prompt=prompt,
+                        model=settings.REPLICATE_IMAGE_MODEL,
+                        lora_weights_url=settings.REPLICATE_LORA_WEIGHTS_URL,
+                        lora_scale=settings.REPLICATE_LORA_SCALE,
+                        aspect_ratio=aspect_ratio,
+                    )
+                    if image_data:
+                        service_used = "replicate"
+                        logger.info(f"Generated image using Replicate: {prompt[:50]}...")
+                except Exception as e:
+                    logger.warning(f"Replicate image generation failed: {e}")
+
+            if not image_data:
+                return {"status": "error", "message": "Failed to generate image data from any service."}
+
+            # 2. Upload image to Arweave
+            tags = [{"name": "Content-Type", "value": "image/png"}, {"name": "Creator", "value": "Chatbot"}]
+            image_tx_id = await context.arweave_client.upload_data(image_data, "image/png", tags)
+            if not image_tx_id:
+                return {"status": "error", "message": "Failed to upload image to Arweave."}
+            image_arweave_url = context.arweave_client.get_arweave_url(image_tx_id)
+
+            # 3. Create and upload HTML embed page to Arweave
+            html_content = _create_embed_html(
+                title=prompt[:100] + ("..." if len(prompt) > 100 else ""),
+                description="AI-generated image by Chatbot.",
+                media_url=image_arweave_url,
+                media_type='image'
+            )
+            html_tags = [{"name": "Content-Type", "value": "text/html"}, {"name": "Creator", "value": "Chatbot"}]
+            html_tx_id = await context.arweave_client.upload_data(html_content.encode('utf-8'), "text/html", html_tags)
+            if not html_tx_id:
+                return {"status": "error", "message": "Failed to upload embed page to Arweave."}
+            embed_page_url = context.arweave_client.get_arweave_url(html_tx_id)
+
+            # Record in world state
+            context.world_state_manager.record_generated_media(
+                media_url=image_arweave_url, media_type="image", prompt=prompt,
+                service_used=service_used, aspect_ratio=aspect_ratio,
+                metadata={"embed_page_url": embed_page_url, "html_tx_id": html_tx_id}
+            )
+
+            return {
+                "status": "success",
+                "message": "Image generated and embed page stored on Arweave.",
+                "embed_page_url": embed_page_url,
+                "image_url": image_arweave_url,
+                "image_tx_id": image_tx_id,
+                "html_tx_id": html_tx_id,
+                "prompt_used": prompt,
+            }
+
+        except Exception as e:
+            logger.error(f"Image generation failed: {e}")
+            return {"status": "error", "message": f"Image generation failed: {str(e)}"}
 
             if settings.GOOGLE_API_KEY:
                 try:
@@ -230,7 +334,7 @@ class GenerateImageTool(ToolInterface):
 
 
 class GenerateVideoTool(ToolInterface):
-    """Tool for generating videos from text prompts using Google Veo."""
+    """Tool for generating videos and storing them on Arweave."""
 
     @property
     def name(self) -> str:
@@ -239,8 +343,8 @@ class GenerateVideoTool(ToolInterface):
     @property
     def description(self) -> str:
         return (
-            "Generates a short video clip from a text prompt, optionally using an input image as a reference. "
-            "The result is an S3 URL of the video."
+            "Generates a short video clip from a text prompt. "
+            "The result is an Arweave URL of an HTML page suitable for Farcaster embeds."
         )
 
     @property
@@ -252,13 +356,13 @@ class GenerateVideoTool(ToolInterface):
                     "type": "string",
                     "description": "Detailed description for the video generation.",
                 },
-                "input_s3_image_url": {
+                "input_arweave_image_tx_id": {
                     "type": "string",
-                    "description": "S3 URL of an image to use as a starting point/reference (optional).",
+                    "description": "Arweave TX ID of an image to use as a starting point (optional).",
                 },
                 "aspect_ratio": {
                     "type": "string",
-                    "description": "Desired aspect ratio, e.g., '16:9'. Defaults to '16:9'.",
+                    "description": "e.g., '16:9'. Defaults to '16:9'.",
                     "default": "16:9",
                 },
             },
@@ -268,11 +372,14 @@ class GenerateVideoTool(ToolInterface):
     async def execute(self, params: Dict[str, Any], context) -> Dict[str, Any]:
         """Execute the video generation tool."""
         prompt = params.get("prompt", "")
-        input_s3_image_url = params.get("input_s3_image_url")
+        input_arweave_image_tx_id = params.get("input_arweave_image_tx_id")
         aspect_ratio = params.get("aspect_ratio", "16:9")
 
         if not prompt.strip():
             return {"status": "error", "message": "Prompt cannot be empty"}
+
+        if not context.arweave_client:
+            return {"status": "error", "message": "Arweave client is not configured."}
 
         # Check cooldowns and rate limits
         cooldown_check = self._check_cooldowns_and_limits(context, "video")
@@ -294,77 +401,72 @@ class GenerateVideoTool(ToolInterface):
             # Handle input image if provided
             input_image_bytes = None
             input_mime_type = None
-
-            if input_s3_image_url and hasattr(context, "s3_service"):
+            if input_arweave_image_tx_id:
                 try:
-                    # Download image from S3
-                    input_image_bytes = await context.s3_service.download_file_data(
-                        input_s3_image_url
-                    )
-                    input_mime_type = "image/png"  # Assume PNG for now
-                    logger.info(f"Downloaded input image from S3: {input_s3_image_url}")
+                    # Download image from Arweave
+                    input_arweave_url = context.arweave_client.get_arweave_url(input_arweave_image_tx_id)
+                    import httpx
+                    async with httpx.AsyncClient() as client:
+                        response = await client.get(input_arweave_url)
+                        response.raise_for_status()
+                        input_image_bytes = response.content
+                        input_mime_type = response.headers.get('content-type', 'image/jpeg')
+                        logger.info(f"Downloaded input image from Arweave: {input_arweave_url}")
                 except Exception as e:
-                    logger.warning(f"Failed to download input image: {e}")
+                    logger.warning(f"Failed to download input image from Arweave: {e}")
 
-            # Generate video
+            # Generate video using Google Veo
             video_list = await google_client.generate_video_veo(
                 prompt=prompt,
+                aspect_ratio=aspect_ratio,
                 input_image_bytes=input_image_bytes,
                 input_mime_type=input_mime_type,
-                aspect_ratio=aspect_ratio,
             )
 
-            if video_list and len(video_list) > 0:
-                video_data = video_list[0]  # Use first video
+            if not video_list:
+                return {"status": "error", "message": "Failed to generate video."}
 
-                # Upload to S3
-                if hasattr(context, "s3_service"):
-                    timestamp = int(time.time())
-                    filename = f"generated_video_{timestamp}.mp4"
+            video_data = video_list[0]  # Take the first video
 
-                    s3_url = await context.s3_service.upload_image_data(
-                        video_data, filename
-                    )
+            # 2. Upload video to Arweave
+            video_tags = [{"name": "Content-Type", "value": "video/mp4"}, {"name": "Creator", "value": "Chatbot"}]
+            video_tx_id = await context.arweave_client.upload_data(video_data, "video/mp4", video_tags)
+            if not video_tx_id:
+                return {"status": "error", "message": "Failed to upload video to Arweave."}
+            video_arweave_url = context.arweave_client.get_arweave_url(video_tx_id)
 
-                    if s3_url:
-                        result = {
-                            "status": "success",
-                            "s3_video_url": s3_url,
-                            "prompt_used": prompt,
-                            "input_image_used": input_s3_image_url,
-                            "aspect_ratio": aspect_ratio,
-                        }
+            # 3. Create and upload HTML embed page
+            html_content = _create_embed_html(
+                title=prompt[:100] + ("..." if len(prompt) > 100 else ""),
+                description="AI-generated video by Chatbot.",
+                media_url=video_arweave_url,
+                media_type='video'
+            )
+            html_tags = [{"name": "Content-Type", "value": "text/html"}, {"name": "Creator", "value": "Chatbot"}]
+            html_tx_id = await context.arweave_client.upload_data(html_content.encode('utf-8'), "text/html", html_tags)
+            if not html_tx_id:
+                return {"status": "error", "message": "Failed to upload video embed page to Arweave."}
+            embed_page_url = context.arweave_client.get_arweave_url(html_tx_id)
 
-                        # Record this action result in world state for AI visibility
-                        context.world_state_manager.add_action_result(
-                            action_type="generate_video",
-                            parameters={
-                                "prompt": prompt, 
-                                "aspect_ratio": aspect_ratio,
-                                "input_s3_image_url": input_s3_image_url
-                            },
-                            result=f"Generated video using Google Veo, uploaded to S3: {s3_url}"
-                        )
+            # Record in world state
+            context.world_state_manager.record_generated_media(
+                media_url=video_arweave_url, media_type="video", prompt=prompt,
+                service_used="google_veo", aspect_ratio=aspect_ratio,
+                metadata={"embed_page_url": embed_page_url, "html_tx_id": html_tx_id}
+            )
 
-                        # Record in generated media library
-                        context.world_state_manager.record_generated_media(
-                            media_url=s3_url,
-                            media_type="video",
-                            prompt=prompt,
-                            service_used="google_veo",
-                            aspect_ratio=aspect_ratio,
-                            metadata={
-                                "input_image_url": input_s3_image_url,
-                                "timestamp": timestamp
-                            }
-                        )
-
-                        return result
-
-            return {"status": "error", "message": "Failed to generate video"}
+            return {
+                "status": "success",
+                "message": "Video generated and embed page stored on Arweave.",
+                "embed_page_url": embed_page_url,
+                "video_url": video_arweave_url,
+                "video_tx_id": video_tx_id,
+                "html_tx_id": html_tx_id,
+                "prompt_used": prompt,
+            }
 
         except Exception as e:
-            logger.error(f"Video generation tool error: {e}")
+            logger.error(f"Video generation failed: {e}")
             return {"status": "error", "message": f"Video generation failed: {str(e)}"}
 
     def _check_cooldowns_and_limits(self, context, tool_type: str) -> Dict[str, Any]:
