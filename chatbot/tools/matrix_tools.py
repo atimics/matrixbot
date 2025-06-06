@@ -898,3 +898,117 @@ class SendMatrixImageTool(ToolInterface):
                 )
 
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+
+class SendMatrixVideoTool(ToolInterface):
+    """
+    Tool for sending video files to Matrix channels.
+    """
+
+    @property
+    def name(self) -> str:
+        return "send_matrix_video"
+
+    @property
+    def description(self) -> str:
+        return "Uploads a video from a URL and sends it to a Matrix room. Use this for sharing generated videos."
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "channel_id": "string (Matrix room ID) - The room where the video should be sent",
+            "video_url": "string - The public URL of the video to send",
+            "caption": "string (optional) - Optional text caption for the video",
+            "filename": "string (optional) - Optional filename for the video",
+        }
+
+    async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
+        logger.info(f"Executing tool '{self.name}' with params: {params}")
+        if not context.matrix_observer:
+            return {"status": "failure", "error": "Matrix integration not configured."}
+
+        room_id = params.get("channel_id")
+        video_url = params.get("video_url")
+        caption = params.get("caption")
+        filename = params.get("filename", "video.mp4")
+
+        if not room_id or not video_url:
+            return {"status": "failure", "error": "Missing required parameters: channel_id and video_url"}
+
+        try:
+            # Download the video data from the URL
+            import httpx
+            async with httpx.AsyncClient() as client:
+                response = await client.get(video_url)
+                response.raise_for_status()
+                video_data = response.content
+
+            # Upload the video to Matrix media repository
+            from nio import UploadResponse, UploadError
+            upload_response = await context.matrix_observer.client.upload(
+                data_provider=lambda _, __: video_data,
+                content_type="video/mp4",
+                filename=filename,
+                filesize=len(video_data)
+            )
+
+            if isinstance(upload_response, UploadError):
+                raise Exception(f"Failed to upload video to Matrix: {upload_response.message}")
+            if not isinstance(upload_response, UploadResponse):
+                raise Exception(f"Unexpected upload response type: {type(upload_response)}")
+
+            # Send the video message
+            content = {
+                "body": caption or filename,
+                "msgtype": "m.video",
+                "url": upload_response.content_uri,
+                "info": {
+                    "mimetype": "video/mp4",
+                    "size": len(video_data),
+                    # Future enhancement: Add duration, thumbnail_url, w, h
+                }
+            }
+            send_response = await context.matrix_observer.client.room_send(
+                room_id=room_id,
+                message_type="m.room.message",
+                content=content
+            )
+            
+            from nio import RoomSendResponse, RoomSendError
+            if isinstance(send_response, RoomSendResponse):
+                # Record this action success in world state
+                if context.world_state_manager:
+                    context.world_state_manager.add_action_result(
+                        action_type=self.name,
+                        parameters={
+                            "room_id": room_id,
+                            "video_url": video_url,
+                            "caption": caption,
+                        },
+                        result="success",
+                    )
+
+                return {
+                    "status": "success", 
+                    "event_id": send_response.event_id,
+                    "message": f"Successfully sent video to Matrix room {room_id}",
+                    "timestamp": time.time()
+                }
+            else:
+                raise Exception(f"Failed to send video message: {send_response}")
+
+        except Exception as e:
+            logger.error(f"Error sending Matrix video: {e}", exc_info=True)
+            
+            # Record this action failure in world state
+            if context.world_state_manager:
+                context.world_state_manager.add_action_result(
+                    action_type=self.name,
+                    parameters={
+                        "room_id": room_id,
+                        "video_url": video_url,
+                    },
+                    result=f"failure: {str(e)}",
+                )
+            
+            return {"status": "failure", "error": str(e), "timestamp": time.time()}
