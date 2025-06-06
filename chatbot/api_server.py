@@ -570,13 +570,17 @@ class ChatbotAPIServer:
                 # Matrix integration
                 matrix_status = {
                     "connected": False,
+                    "last_sync_time": None,
                     "monitored_rooms": [],
                     "pending_invites": 0
                 }
                 if hasattr(self.orchestrator, 'matrix_observer') and self.orchestrator.matrix_observer:
-                    matrix_status["connected"] = getattr(self.orchestrator.matrix_observer.client, 'logged_in', False)
-                    matrix_status["monitored_rooms"] = getattr(self.orchestrator.matrix_observer, 'channels_to_monitor', [])
+                    client = self.orchestrator.matrix_observer.client
+                    matrix_status["connected"] = client is not None and getattr(client, 'logged_in', False)
+                    matrix_status["monitored_rooms"] = self.orchestrator.matrix_observer.channels_to_monitor
                     matrix_status["pending_invites"] = len(self.orchestrator.world_state.get_pending_matrix_invites())
+                    if client:
+                        matrix_status["last_sync_time"] = getattr(client, "last_sync", None)
                 
                 integrations["matrix"] = matrix_status
                 
@@ -584,15 +588,23 @@ class ChatbotAPIServer:
                 farcaster_status = {
                     "connected": False,
                     "bot_fid": settings.FARCASTER_BOT_FID,
+                    "rate_limit_remaining": None,
+                    "rate_limit_resets": None,
                     "post_queue_size": 0,
                     "reply_queue_size": 0
                 }
                 if hasattr(self.orchestrator, 'farcaster_observer') and self.orchestrator.farcaster_observer:
-                    farcaster_status["connected"] = True  # If observer exists, assume connected
-                    if hasattr(self.orchestrator.farcaster_observer, 'scheduler'):
-                        scheduler = self.orchestrator.farcaster_observer.scheduler
+                    fc_observer = self.orchestrator.farcaster_observer
+                    farcaster_status["connected"] = fc_observer.api_client is not None
+                    if fc_observer.scheduler:
+                        scheduler = fc_observer.scheduler
                         farcaster_status["post_queue_size"] = getattr(scheduler.post_queue, 'qsize', lambda: 0)()
                         farcaster_status["reply_queue_size"] = getattr(scheduler.reply_queue, 'qsize', lambda: 0)()
+                    if fc_observer.api_client and fc_observer.api_client.rate_limit_info:
+                        rate_info = fc_observer.api_client.rate_limit_info
+                        farcaster_status["rate_limit_remaining"] = rate_info.get("remaining")
+                        if rate_info.get("reset"):
+                            farcaster_status["rate_limit_resets"] = datetime.fromtimestamp(rate_info.get("reset")).isoformat()
                 
                 integrations["farcaster"] = farcaster_status
                 
@@ -600,15 +612,33 @@ class ChatbotAPIServer:
                 token_status = {
                     "active": False,
                     "monitored_holders": 0,
+                    "last_holder_update": None,
                     "contract_address": None
                 }
-                if self.orchestrator.world_state.state.monitored_token_holders:
-                    token_status["active"] = True
-                    token_status["monitored_holders"] = len(self.orchestrator.world_state.state.monitored_token_holders)
-                if self.orchestrator.world_state.state.token_metadata:
-                    token_status["contract_address"] = getattr(self.orchestrator.world_state.state.token_metadata, 'contract_address', None)
+                if hasattr(self.orchestrator.farcaster_observer, 'ecosystem_token_service'):
+                    token_service = self.orchestrator.farcaster_observer.ecosystem_token_service
+                    if token_service and token_service._running:
+                        token_status["active"] = True
+                        token_status["monitored_holders"] = len(self.orchestrator.world_state.state.monitored_token_holders)
+                        token_status["contract_address"] = token_service.token_contract
+                        if token_service.last_metadata_update > 0:
+                            token_status["last_holder_update"] = datetime.fromtimestamp(token_service.last_metadata_update).isoformat()
                 
                 integrations["ecosystem_token"] = token_status
+                
+                # Eligibility Service
+                eligibility_status = {
+                    "active": False,
+                    "eligible_users_checked": 0,
+                }
+                if hasattr(self.orchestrator, 'eligibility_service') and self.orchestrator.eligibility_service:
+                    eligibility_service = self.orchestrator.eligibility_service
+                    if eligibility_service._running:
+                        eligibility_status["active"] = True
+                        summary = eligibility_service.get_eligibility_summary()
+                        eligibility_status["eligible_users_checked"] = summary.get("eligible_users", 0)
+                
+                integrations["eligibility_service"] = eligibility_status
                 
                 return {
                     "integrations": integrations,

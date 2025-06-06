@@ -94,6 +94,7 @@ When the world state is large, it will be presented in a node-based format:
 Key node paths to be aware of:
 - "farcaster.feeds.home": Farcaster home timeline activity  
 - "farcaster.feeds.notifications": Farcaster mentions and replies to your content
+- "farcaster.feeds.holders": A feed of recent casts from all monitored ecosystem token holders
 - "channels.matrix.{room_id}": Individual Matrix room content
 - "channels.farcaster.{channel_id}": Individual Farcaster channel content
 - "users.farcaster.{fid}": Individual user profile information
