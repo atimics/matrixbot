@@ -185,7 +185,13 @@ class PayloadBuilder:
                 if not is_primary and not is_key_farcaster:
                     detailed_count += 1
             else:
-                channels_payload[ch_id] = ch_data.get_activity_summary()
+                # Include a summary payload for channels without recent messages, retaining essential identifiers
+                summary = ch_data.get_activity_summary()
+                # Ensure type, id, and name are always present for cross-platform awareness
+                summary["id"] = ch_data.id
+                summary["type"] = ch_data.type
+                summary["name"] = ch_data.name
+                channels_payload[ch_id] = summary
 
         action_history_payload = self._build_action_history_payload(world_state_data, max_action_history, optimize_for_size)
         thread_context_payload = self._build_thread_context(world_state_data, primary_channel_id, max_thread_messages, optimize_for_size)

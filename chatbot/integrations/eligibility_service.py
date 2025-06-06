@@ -11,8 +11,8 @@ import logging
 import time
 from typing import Dict, List, Optional, Any
 
-import aiohttp
-from solders.pubkey import Pubkey
+import httpx
+import base58
 
 from chatbot.config import settings
 from chatbot.integrations.farcaster.neynar_api_client import NeynarAPIClient
@@ -211,10 +211,13 @@ class UserEligibilityService:
             
     def _is_solana_address(self, address: str) -> bool:
         """Check if an address is a valid Solana address."""
+        # A simple heuristic for Solana address validation
+        if not (32 <= len(address) <= 44):
+            return False
         try:
-            Pubkey.from_string(address)
+            base58.b58decode(address)
             return True
-        except Exception:
+        except ValueError:
             return False
             
     def _is_evm_address(self, address: str) -> bool:
@@ -243,18 +246,16 @@ class UserEligibilityService:
                 ]
             }
             
-            async with aiohttp.ClientSession() as session:
+            async with httpx.AsyncClient() as session:
                 async with session.post(rpc_url, json=payload) as response:
-                    if response.status == 200:
-                        data = await response.json()
+                    if response.status_code == 200:
+                        data = response.json()
                         result = data.get('result', {})
                         value = result.get('value', [])
                         
                         total_balance = 0.0
                         for account in value:
-                            account_info = account.get('account', {})
-                            parsed_info = account_info.get('data', {}).get('parsed', {})
-                            token_amount = parsed_info.get('info', {}).get('tokenAmount', {})
+                            token_amount = account.get('account', {}).get('data', {}).get('parsed', {}).get('info', {}).get('tokenAmount', {})
                             ui_amount = token_amount.get('uiAmount', 0.0)
                             
                             if ui_amount:
@@ -263,7 +264,7 @@ class UserEligibilityService:
                         return total_balance
                         
         except Exception as e:
-            logger.error(f"Error getting Solana token balance for {wallet_address}: {e}")
+            logger.error(f"Error getting Solana token balance for {wallet_address}: {e}", exc_info=True)
             
         return 0.0
         
