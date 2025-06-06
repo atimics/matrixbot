@@ -46,6 +46,60 @@ class PayloadBuilder:
         self.world_state_manager = world_state_manager
         self.node_manager = node_manager
 
+    def _build_action_history_payload(self, world_state_data: WorldStateData, max_history: int, optimize: bool) -> List[Dict[str, Any]]:
+        """Builds a consistent action history payload."""
+        history = world_state_data.action_history[-max_history:]
+        if optimize:
+            return [
+                {
+                    "action_type": action.action_type,
+                    "result": (action.result[:100] + "..." if action.result and len(action.result) > 100 else action.result),
+                    "timestamp": action.timestamp,
+                }
+                for action in history
+            ]
+        else:
+            return [asdict(action) for action in history]
+
+    def _build_thread_context(
+        self,
+        world_state_data: WorldStateData,
+        primary_channel_id: Optional[str],
+        max_messages: int,
+        optimize: bool,
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """Build a focused thread context for the primary channel."""
+        if not primary_channel_id:
+            return {}
+
+        thread_context: Dict[str, List[Dict[str, Any]]] = {}
+        primary_channel = world_state_data.channels.get(primary_channel_id)
+
+        if not primary_channel or not primary_channel.recent_messages:
+            return {}
+
+        # Gather all unique thread IDs from the primary channel's recent messages
+        thread_ids_in_channel: Set[str] = set()
+        for msg in primary_channel.recent_messages:
+            thread_id = msg.reply_to or msg.id
+            if thread_id:
+                thread_ids_in_channel.add(thread_id)
+
+        # Build the context for each relevant thread
+        for thread_id in thread_ids_in_channel:
+            if thread_id in world_state_data.threads:
+                # Sort messages chronologically and take the last N
+                thread_messages = sorted(
+                    world_state_data.threads[thread_id], key=lambda m: m.timestamp
+                )[-max_messages:]
+
+                if optimize:
+                    thread_context[thread_id] = [m.to_ai_summary_dict() for m in thread_messages]
+                else:
+                    thread_context[thread_id] = [asdict(m) for m in thread_messages]
+        
+        return thread_context
+
     def build_full_payload(
         self,
         world_state_data: WorldStateData,
@@ -89,29 +143,18 @@ class PayloadBuilder:
         bot_username = settings.FARCASTER_BOT_USERNAME
 
         # Sort channels with improved cross-platform balance
-        # First, identify active integrations (platforms with recent activity)
         active_integrations = set()
         current_time = time.time()
         recent_threshold = current_time - (30 * 60)  # 30 minutes
-        
         for ch_id, ch_data in world_state_data.channels.items():
             if ch_data.recent_messages and ch_data.recent_messages[-1].timestamp > recent_threshold:
                 active_integrations.add(ch_data.type)
         
-        # Sort channels with dynamic prioritization
         def sort_key(channel_item):
             ch_id, ch_data = channel_item
             last_activity = ch_data.recent_messages[-1].timestamp if ch_data.recent_messages else 0
-            
-            # Primary channel always gets top priority
-            if ch_id == primary_channel_id:
-                return (0, -last_activity)
-            
-            # Key Farcaster feeds get high priority
-            if ch_data.type == "farcaster" and ("home" in ch_id or "notification" in ch_id):
-                return (1, -last_activity)
-            
-            # For other channels, slightly boost less represented platforms
+            if ch_id == primary_channel_id: return (0, -last_activity)
+            if ch_data.type == "farcaster" and ("home" in ch_id or "notification" in ch_id): return (1, -last_activity)
             platform_boost = 2 if ch_data.type == "farcaster" else 3
             return (platform_boost, -last_activity)
         
@@ -119,186 +162,49 @@ class PayloadBuilder:
 
         channels_payload = {}
         detailed_count = 0
-        platforms_with_detailed = set()
-
         for ch_id, ch_data in sorted_channels:
-            # Include all messages including bot's own for AI context
-            # The AI needs to see its own recent messages to maintain conversational flow
-            # and understand the current state of conversations
-            all_messages = ch_data.recent_messages
-
-            # Decide if this channel gets detailed treatment
             is_primary = ch_id == primary_channel_id
-            # Always include key Farcaster channels for minimum visibility
-            is_key_farcaster = ch_data.type == "farcaster" and (
-                "home" in ch_id or "notification" in ch_id or "reply" in ch_id
-            )
-            
-            # Enhanced logic: ensure at least one detailed channel per active platform
-            platform_needs_representation = (
-                ch_data.type in active_integrations and 
-                ch_data.type not in platforms_with_detailed and
-                detailed_count < max_other_channels
-            )
-            
-            include_detailed = (
-                is_primary or 
-                is_key_farcaster or 
-                platform_needs_representation or
-                detailed_count < max_other_channels
-            )
+            is_key_farcaster = ch_data.type == "farcaster" and ("home" in ch_id or "notification" in ch_id or "reply" in ch_id)
+            include_detailed = is_primary or is_key_farcaster or (detailed_count < max_other_channels)
 
-            if include_detailed and all_messages:
-                platforms_with_detailed.add(ch_data.type)
-                # Optimized message processing with conditional detail levels
-                truncated_messages = all_messages[-max_messages_per_channel:]
+            if include_detailed and ch_data.recent_messages:
+                truncated_messages = ch_data.recent_messages[-max_messages_per_channel:]
+                messages_for_payload = []
+                for msg in truncated_messages:
+                    has_replied = world_state_data.has_replied_to_cast(msg.id)
+                    msg_dict = msg.to_ai_summary_dict() if optimize_for_size else asdict(msg)
+                    msg_dict['already_replied'] = has_replied
+                    messages_for_payload.append(msg_dict)
                 
-                if optimize_for_size:
-                    # Compact format for size optimization
-                    messages_for_payload = []
-                    for msg in truncated_messages:
-                        # Check if the bot has already replied to this message
-                        has_replied = world_state_data.has_replied_to_cast(msg.id)
-                        
-                        msg_dict = {
-                            "id": msg.id,
-                            "sender": msg.sender_username or msg.sender,
-                            "content": msg.content[:message_snippet_length] + "..." 
-                                     if len(msg.content) > message_snippet_length else msg.content,
-                            "timestamp": msg.timestamp,
-                            "fid": msg.sender_fid,
-                            "reply_to": msg.reply_to,
-                            "has_images": bool(msg.image_urls),
-                            "power_badge": msg.metadata.get("power_badge", False) if msg.metadata else False,
-                            "already_replied": has_replied  # Add the flag
-                        }
-                        messages_for_payload.append(msg_dict)
-                else:
-                    # Full detail when size optimization is disabled
-                    messages_for_payload = []
-                    for msg in truncated_messages:
-                        # Check if the bot has already replied to this message
-                        has_replied = world_state_data.has_replied_to_cast(msg.id)
-                        
-                        msg_dict = msg.to_ai_summary_dict() if not include_detailed_user_info else asdict(msg)
-                        msg_dict['already_replied'] = has_replied  # Add the flag
-                        messages_for_payload.append(msg_dict)
-
-                # Optimized timestamp range calculation
-                timestamp_range = {
-                    "start": truncated_messages[0].timestamp,
-                    "end": truncated_messages[-1].timestamp,
-                    "span_hours": round(
-                        (truncated_messages[-1].timestamp - truncated_messages[0].timestamp) / 3600, 1
-                    ),
-                    "message_count": len(truncated_messages)
-                } if truncated_messages else None
-
-                if optimize_for_size:
-                    # Compact channel payload
-                    channels_payload[ch_id] = {
-                        "id": ch_data.id,
-                        "type": ch_data.type,
-                        "name": ch_data.name[:30] + "..." if len(ch_data.name) > 30 else ch_data.name,
-                        "recent_messages": messages_for_payload,
-                        "last_activity": timestamp_range["end"] if timestamp_range else ch_data.last_checked,
-                        "msg_count": len(messages_for_payload),
-                        "priority": "detailed" if is_primary else "secondary"
-                    }
-                else:
-                    # Full channel payload
-                    channels_payload[ch_id] = {
-                        "id": ch_data.id,
-                        "type": ch_data.type,
-                        "name": ch_data.name,
-                        "recent_messages": messages_for_payload,
-                        "last_checked": ch_data.last_checked,
-                        "topic": ch_data.topic[:100] if ch_data.topic else None,
-                        "member_count": ch_data.member_count,
-                        "activity_summary": ch_data.get_activity_summary(),
-                        "priority": "detailed" if is_primary else "secondary",
-                        "message_timestamp_range": timestamp_range,
-                    }
-                # Only count towards detailed limit if it's not primary or key Farcaster
+                channels_payload[ch_id] = {
+                    "id": ch_data.id,
+                    "type": ch_data.type,
+                    "name": ch_data.name,
+                    "recent_messages": messages_for_payload
+                }
                 if not is_primary and not is_key_farcaster:
                     detailed_count += 1
             else:
-                # Optimized summary for less active channels
-                activity = ch_data.get_activity_summary()
-                if optimize_for_size:
-                    channels_payload[ch_id] = {
-                        "id": ch_data.id,
-                        "type": ch_data.type,
-                        "name": ch_data.name[:20] + "..." if len(ch_data.name) > 20 else ch_data.name,
-                        "last_activity": activity.get("last_activity", 0),
-                        "msg_count": activity.get("message_count", 0),
-                        "priority": "summary"
-                    }
-                else:
-                    channels_payload[ch_id] = {
-                        "id": ch_data.id,
-                        "type": ch_data.type,
-                        "name": ch_data.name,
-                        "activity_summary": activity,
-                        "priority": "summary_only",
-                    }
+                channels_payload[ch_id] = ch_data.get_activity_summary()
 
-        # Optimized action history with conditional detail
-        if optimize_for_size:
-            action_history_payload = [
-                {
-                    "type": action.action_type,
-                    "result": action.result,
-                    "timestamp": action.timestamp,
-                    "params": str(action.parameters)[:50] + "..." 
-                           if len(str(action.parameters)) > 50 else action.parameters
-                }
-                for action in world_state_data.action_history[-max_action_history:]
-            ]
-        else:
-            action_history_payload = [
-                asdict(action) for action in world_state_data.action_history[-max_action_history:]
-            ]
+        action_history_payload = self._build_action_history_payload(world_state_data, max_action_history, optimize_for_size)
+        thread_context_payload = self._build_thread_context(world_state_data, primary_channel_id, max_thread_messages, optimize_for_size)
 
-        # Optimized action history with conditional detail
-        if optimize_for_size:
-            action_history_payload = [
-                {
-                    "tool": action.tool_name,
-                    "timestamp": action.timestamp,
-                    "params": str(action.parameters)[:50] + "..." 
-                            if len(str(action.parameters)) > 50 else action.parameters
-                }
-                for action in world_state_data.action_history[-max_action_history:]
-            ]
-        else:
-            action_history_payload = [
-                asdict(action) for action in world_state_data.action_history[-max_action_history:]
-            ]
-
-        # Final payload structure
         payload = {
             "current_processing_channel_id": primary_channel_id,
             "channels": channels_payload,
             "action_history": action_history_payload,
+            "thread_context": thread_context_payload,
             "system_status": {**world_state_data.system_status, "rate_limits": world_state_data.rate_limits},
-            "pending_matrix_invites": [
-                {
-                    "room_id": invite.get("room_id"),
-                    "inviter": invite.get("inviter"),
-                    "room_name": invite.get("room_name"),
-                }
-                for invite in world_state_data.pending_matrix_invites
-            ]
+            "pending_matrix_invites": world_state_data.pending_matrix_invites,
+            "payload_stats": {
+                "primary_channel": primary_channel_id,
+                "detailed_channels": detailed_count,
+                "summary_channels": len(sorted_channels) - detailed_count,
+                "bot_identity": {"fid": bot_fid, "username": bot_username},
+            }
         }
 
-        # Add thread context
-        if primary_channel_id:
-            payload["thread_context"] = self._build_thread_context(
-                world_state_data, primary_channel_id, max_thread_messages, optimize_for_size
-            )
-
-        # Conditionally add other large fields based on optimization flag
         if not optimize_for_size:
             payload.update({
                 "generated_media_library": [asdict(m) for m in world_state_data.generated_media_library[-10:]],
@@ -314,13 +220,6 @@ class PayloadBuilder:
                 },
             })
 
-        payload["payload_stats"] = {
-            "primary_channel": primary_channel_id,
-            "detailed_channels": detailed_count,
-            "summary_channels": len(sorted_channels) - detailed_count,
-            "bot_identity": {"fid": bot_fid, "username": bot_username},
-        }
-        
         return payload
 
     def build_node_based_payload(
@@ -882,42 +781,3 @@ class PayloadBuilder:
         except Exception as e:
             logger.error(f"Error getting data for node path {node_path}: {e}")
             return None
-
-    def _build_thread_context(
-        self,
-        world_state_data: WorldStateData,
-        primary_channel_id: Optional[str],
-        max_messages: int,
-        optimize: bool,
-    ) -> Dict[str, List[Dict[str, Any]]]:
-        """Build a focused thread context for the primary channel."""
-        if not primary_channel_id:
-            return {}
-
-        thread_context: Dict[str, List[Dict[str, Any]]] = {}
-        primary_channel = world_state_data.channels.get(primary_channel_id)
-
-        if not primary_channel or not primary_channel.recent_messages:
-            return {}
-
-        # Gather all unique thread IDs from the primary channel's recent messages
-        thread_ids_in_channel: Set[str] = set()
-        for msg in primary_channel.recent_messages:
-            thread_id = msg.reply_to or msg.id
-            if thread_id:
-                thread_ids_in_channel.add(thread_id)
-
-        # Build the context for each relevant thread
-        for thread_id in thread_ids_in_channel:
-            if thread_id in world_state_data.threads:
-                # Sort messages chronologically and take the last N
-                thread_messages = sorted(
-                    world_state_data.threads[thread_id], key=lambda m: m.timestamp
-                )[-max_messages:]
-
-                if optimize:
-                    thread_context[thread_id] = [m.to_ai_summary_dict() for m in thread_messages]
-                else:
-                    thread_context[thread_id] = [asdict(m) for m in thread_messages]
-        
-        return thread_context

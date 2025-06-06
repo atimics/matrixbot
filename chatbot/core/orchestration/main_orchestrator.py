@@ -622,15 +622,9 @@ class TraditionalProcessor:
         
         for action in coordinated_actions:
             try:
-                # Handle both ActionPlan objects and dict formats
-                if hasattr(action, 'action_type'):
-                    # ActionPlan object
-                    action_name = action.action_type
-                    action_params = action.parameters
-                else:
-                    # Dict format (legacy support)
-                    action_name = action.get("tool") or action.get("action_type")
-                    action_params = action.get("parameters", {})
+                # Standardized to always handle ActionPlan objects
+                action_name = action.action_type
+                action_params = action.parameters
                 
                 if not action_name:
                     continue
@@ -746,10 +740,6 @@ class TraditionalProcessor:
         for i, action in enumerate(actions):
             if hasattr(action, 'action_type'):
                 action_name = action.action_type
-            else:
-                action_name = action.get("tool") or action.get("action_type")
-            
-            if action_name:
                 action_names.append(action_name)
                 action_map[action_name] = i
         
@@ -785,11 +775,7 @@ class TraditionalProcessor:
         image_action = actions[image_action_idx]
         
         try:
-            # Get action parameters
-            if hasattr(image_action, 'action_type'):
-                action_params = image_action.parameters
-            else:
-                action_params = image_action.get("parameters", {})
+            action_params = image_action.parameters
             
             # Check rate limits for image generation
             can_execute, reason = self.rate_limiter.can_execute_action("generate_image", current_time)
@@ -830,32 +816,22 @@ class TraditionalProcessor:
                 continue
             
             # Check if this is the Farcaster post action
-            if hasattr(action, 'action_type'):
-                action_name = action.action_type
-                action_params = action.parameters.copy()  # Make a copy to avoid modifying original
-            else:
-                action_name = action.get("tool") or action.get("action_type")
-                action_params = action.get("parameters", {}).copy()
-            
+            action_name = action.action_type
+            action_params = action.parameters.copy()  # Make a copy to avoid modifying original
+
             if action_name == "send_farcaster_post" and generated_image_url:
                 # Add the generated image URL to the Farcaster post
                 action_params["image_s3_url"] = generated_image_url
                 logger.info(f"Enhanced Farcaster post with generated image: {generated_image_url}")
                 
                 # Create modified action
-                if hasattr(action, 'action_type'):
-                    # Create new ActionPlan with modified parameters
-                    from ..ai_engine import ActionPlan
-                    modified_action = ActionPlan(
-                        action_type=action.action_type,
-                        parameters=action_params,
-                        reasoning=action.reasoning,
-                        priority=action.priority
-                    )
-                else:
-                    # Create modified dict
-                    modified_action = action.copy()
-                    modified_action["parameters"] = action_params
+                from ..ai_engine import ActionPlan
+                modified_action = ActionPlan(
+                    action_type=action.action_type,
+                    parameters=action_params,
+                    reasoning=action.reasoning,
+                    priority=action.priority
+                )
                 
                 coordinated_actions.append(modified_action)
             else:
@@ -880,11 +856,7 @@ class TraditionalProcessor:
         image_action = actions[image_action_idx]
         
         try:
-            # Get action parameters
-            if hasattr(image_action, 'action_type'):
-                action_params = image_action.parameters
-            else:
-                action_params = image_action.get("parameters", {})
+            action_params = image_action.parameters
             
             # Check rate limits for image generation
             can_execute, reason = self.rate_limiter.can_execute_action("generate_image", current_time)
