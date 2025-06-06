@@ -194,9 +194,9 @@ class EcosystemTokenService:
                 # The converter needs to be available or its logic inlined here
                 from chatbot.integrations.farcaster.farcaster_data_converter import convert_api_casts_to_messages
                 messages = await convert_api_casts_to_messages(
-                    api_casts=casts_data["casts"],
-                    channel_id_prefix=f"farcaster:holder_{fid}",  # Special channel prefix
-                    cast_type_metadata="holder_cast"
+                    api_casts=casts_data.get("casts", []),
+                    channel_id_prefix="farcaster:holders",  # Aggregated holders feed
+                    cast_type_metadata="holder_cast",
                 )
                 messages.sort(key=lambda m: m.timestamp, reverse=True)  # Newest first
                 holder_state.recent_casts = messages[:self.cast_history_length]

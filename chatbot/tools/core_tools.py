@@ -22,13 +22,11 @@ class WaitTool(ToolInterface):
 
     @property
     def description(self) -> str:
-        return "Do nothing and wait for a specified duration (default 1 second). Use when no immediate action is needed or when you want to observe the current state."
+        return "Do nothing and wait until the next world update or observation cycle. Use this when no immediate action is needed or to see if new information becomes available."
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
-        return {
-            "duration": "float (optional, default: 1.0) - Duration to wait in seconds"
-        }
+        return {}
 
     async def execute(
         self, params: Dict[str, Any], context: ActionContext
