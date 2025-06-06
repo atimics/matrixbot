@@ -141,16 +141,26 @@ class SendFarcasterPostTool(ToolInterface):
         media_s3_url = None
 
         if image_s3_url:
-            embeds.append({"url": image_s3_url})
+            # Use embeddable URL for better previews
+            if context.s3_service:
+                embed_url = context.s3_service.generate_embeddable_url(image_s3_url, title=content, media_type="image")
+            else:
+                embed_url = image_s3_url
+            embeds.append({"url": embed_url})
             media_type = "image"
             media_s3_url = image_s3_url
-            logger.info(f"Adding image embed to Farcaster post: {image_s3_url}")
+            logger.info(f"Adding image embed to Farcaster post: {embed_url}")
 
         if video_s3_url:
-            embeds.append({"url": video_s3_url})
+            # Use embeddable URL for better previews
+            if context.s3_service:
+                embed_url = context.s3_service.generate_embeddable_url(video_s3_url, title=content, media_type="video")
+            else:
+                embed_url = video_s3_url
+            embeds.append({"url": embed_url})
             media_type = "video"
             media_s3_url = video_s3_url
-            logger.info(f"Adding video embed to Farcaster post: {video_s3_url}")
+            logger.info(f"Adding video embed to Farcaster post: {embed_url}")
 
         # Prevent duplicate posts with identical content
         if (

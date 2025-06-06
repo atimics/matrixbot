@@ -140,6 +140,7 @@ class MainOrchestrator:
             SendMatrixImageTool,
             SendMatrixMessageTool,
             SendMatrixReplyTool,
+            SendMatrixVideoTool,
         )
         from ...tools.media_generation_tools import GenerateImageTool, GenerateVideoTool
         from ...tools.permaweb_tools import StorePermanentMemoryTool
@@ -165,6 +166,7 @@ class MainOrchestrator:
         self.tool_registry.register_tool(SendMatrixMessageTool())
         self.tool_registry.register_tool(SendMatrixReplyTool())
         self.tool_registry.register_tool(SendMatrixImageTool())
+        self.tool_registry.register_tool(SendMatrixVideoTool())
         self.tool_registry.register_tool(ReactToMatrixMessageTool())
         self.tool_registry.register_tool(JoinMatrixRoomTool())
         self.tool_registry.register_tool(LeaveMatrixRoomTool())

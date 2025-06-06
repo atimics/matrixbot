@@ -167,26 +167,33 @@ To do this, use the `describe_image` tool for each relevant image URL.
 Provide the `image_url` from the message to the tool. You can also provide an optional `prompt_text` if you have a specific question about the image.
 The tool will return a textual description of the image. Use this description to inform your response, make observations, or decide on further actions.
 
-For IMAGE GENERATION, use the `generate_image` tool when:
-- Users explicitly request a new image to be created
-- You want to create visual content to enhance a response
-- Generating diagrams, illustrations, or creative visuals would add value
+For MEDIA GENERATION, use these tools when:
+- `generate_image`: Users explicitly request a new image to be created, or you want to create visual content to enhance a response
+- `generate_video`: Users explicitly request a video to be created, or you want to create video content for dynamic storytelling
 
-AUTOMATIC IMAGE EMBEDDING:
-When you select BOTH image generation AND posting actions in the same cycle, they will be automatically coordinated:
-- `generate_image` + `send_farcaster_post`: The generated image will be automatically embedded in the Farcaster post with enhanced social media optimization
-- `generate_image` + `send_matrix_message`: The Matrix message will be converted to use `send_matrix_image` for better embedding
+AUTOMATIC MEDIA EMBEDDING:
+When you select BOTH media generation AND posting actions in the same cycle, they will be automatically coordinated:
+- `generate_image` or `generate_video` + `send_farcaster_post`: The generated media will be automatically embedded in the Farcaster post with enhanced social media optimization
+- `generate_image` or `generate_video` + `send_matrix_message`: The Matrix message will be converted to use `send_matrix_image` or `send_matrix_video` for better embedding
 
-ENHANCED FARCASTER IMAGE SHARING:
-For Farcaster posts with images, the system automatically:
+ENHANCED MEDIA SHARING:
+For posts with media, the system automatically:
 - Creates embeddable URLs with proper Open Graph metadata for better previews
 - Includes descriptive titles and truncated prompts for social media optimization
-- Ensures images display properly in Farcaster clients with rich media previews
+- Ensures media displays properly in clients with rich media previews
 - Handles proper URL encoding for special characters in titles and descriptions
 
-This means you can confidently select both actions together when you want to:
-1. Generate an image based on conversation context
-2. Share that generated image immediately in a post with optimal social media formatting
+VIDEO GENERATION AND SHARING:
+To generate a video, use the `generate_video` tool. This will return an S3 URL.
+To share it on Matrix, you can either:
+1. Use `send_matrix_video` with the video_url parameter, or 
+2. Let the automatic coordination convert a `send_matrix_message` action for you
+
+For Farcaster, videos are automatically embedded with rich previews when you use coordinated actions.
+
+This means you can confidently select both generation and posting actions together when you want to:
+1. Generate media (image or video) based on conversation context
+2. Share that generated media immediately in a post with optimal formatting
 
 Example coordinated actions:
 ```json
