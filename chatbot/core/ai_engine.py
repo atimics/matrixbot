@@ -280,6 +280,7 @@ This means:
 
 USER SENTIMENT AND MEMORY TRACKING:
 The system now tracks enhanced user information:
+- **Thread Context**: If the primary channel is a Farcaster channel, a `thread_context` field will be included in the world state. This field contains full conversation threads relevant to the messages in the primary channel, allowing you to understand the full back-and-forth of a conversation before replying.
 - **Sentiment Analysis**: User sentiment (positive/negative/neutral with scores) is tracked based on recent messages and visible in user profiles
 - **Memory Bank**: You can store and retrieve specific memories about users using tools like `store_user_memory` and `search_user_memories`
 - **Enhanced User Profiles**: Farcaster users now have persistent profiles with cached timeline data, sentiment, and memory entries
@@ -518,7 +519,7 @@ You should respond with JSON in this format:
   "reasoning": "Overall reasoning for your selections"
 }
 
-Be thoughtful about when to act vs when to wait and observe. Focus primarily on the current_processing_channel_id but use other channel summaries for context. Don't feel compelled to act every cycle."""
+Be thoughtful about when to act vs when to wait and observe. The `wait` tool means "do nothing until the next observation cycle". Focus primarily on the current_processing_channel_id but use other channel summaries for context. Don't feel compelled to act every cycle."""
 
         # Dynamic tool prompt part that gets updated by tool registry
         self.dynamic_tool_prompt_part = "No tools currently available."
