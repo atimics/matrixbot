@@ -669,43 +669,248 @@ class ChatbotAPIServer:
                 else:
                     raise HTTPException(status_code=404, detail="File not found")
         
-        @self.app.get("/api/worldstate/ai-payload")
-        async def get_ai_world_state_payload():
-            """Get the actual world state payload as used by the AI system."""
+        # NFT Frame Server Endpoints (v0.0.4)
+        
+        @self.app.get("/frames/mint/{frame_id}")
+        async def serve_mint_frame(frame_id: str, claim_type: str = "public", max_mints: int = 1):
+            """
+            Serve the HTML for an NFT minting Farcaster Frame.
+            
+            Args:
+                frame_id: Unique identifier for the frame
+                claim_type: 'public' or 'gated' minting
+                max_mints: Maximum number of mints allowed
+                
+            Returns:
+                HTML response with Farcaster Frame meta tags
+            """
             try:
-                # Get the payload builder from the orchestrator
-                payload_builder = self.orchestrator.payload_builder
-                world_state_data = self.orchestrator.world_state.state
+                # Get frame metadata from world state
+                world_state = self.orchestrator.world_state_manager.get_state()
+                frame_metadata = getattr(world_state, 'nft_frames', {}).get(frame_id)
                 
-                # Get the current primary channel (if any)
-                primary_channel_id = getattr(self.orchestrator, 'current_primary_channel_id', None)
+                if not frame_metadata:
+                    raise HTTPException(status_code=404, detail="Frame not found")
                 
-                # Build the actual AI payload
-                ai_payload = payload_builder.build_full_payload(
-                    world_state_data=world_state_data,
-                    primary_channel_id=primary_channel_id,
-                    config={
-                        "optimize_for_size": False,  # Get full detail for API
-                        "include_detailed_user_info": True,
-                        "max_messages_per_channel": 10,
-                        "max_action_history": 10,
-                        "max_thread_messages": 10,
-                        "max_other_channels": 10
+                # Build frame HTML with meta tags
+                title = frame_metadata.get('title', 'AI Art NFT')
+                description = frame_metadata.get('description', 'Mint this AI-generated artwork as an NFT')
+                image_url = frame_metadata.get('image_url', '')
+                button_text = "Check Eligibility" if claim_type == "gated" else "Mint NFT"
+                
+                # Construct action URL
+                action_url = f"{settings.FRAMES_BASE_URL or 'https://yourbot.com'}/frames/action/mint/{frame_id}"
+                
+                html_content = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{title}</title>
+    
+    <!-- Farcaster Frame Meta Tags -->
+    <meta property="fc:frame" content="vNext" />
+    <meta property="fc:frame:image" content="{image_url}" />
+    <meta property="fc:frame:image:aspect_ratio" content="1:1" />
+    <meta property="fc:frame:button:1" content="{button_text}" />
+    <meta property="fc:frame:post_url" content="{action_url}" />
+    
+    <!-- Open Graph for social sharing -->
+    <meta property="og:title" content="{title}" />
+    <meta property="og:description" content="{description}" />
+    <meta property="og:image" content="{image_url}" />
+    
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }}
+        .frame-container {{
+            background: rgba(255,255,255,0.1);
+            border-radius: 20px;
+            padding: 30px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+        }}
+        .artwork {{
+            width: 100%;
+            max-width: 400px;
+            border-radius: 15px;
+            margin: 20px 0;
+        }}
+        .mint-info {{
+            background: rgba(0,0,0,0.3);
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }}
+        .status-badge {{
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: bold;
+            margin: 10px 0;
+        }}
+        .gated {{ background: #ff6b6b; }}
+        .public {{ background: #51cf66; }}
+    </style>
+</head>
+<body>
+    <div class="frame-container">
+        <h1>🎨 {title}</h1>
+        <img src="{image_url}" alt="{title}" class="artwork">
+        
+        <div class="mint-info">
+            <p>{description}</p>
+            <div class="status-badge {'gated' if claim_type == 'gated' else 'public'}">
+                {'🔒 Token Holders Only' if claim_type == 'gated' else '🎉 Open Mint'}
+            </div>
+            <p><strong>Max Mints:</strong> {max_mints}</p>
+            <p><strong>Minted:</strong> {frame_metadata.get('mints_count', 0)} / {max_mints}</p>
+        </div>
+        
+        <p>To mint this NFT, use the Farcaster app (Warpcast) and interact with the frame!</p>
+    </div>
+</body>
+</html>"""
+                
+                from fastapi.responses import HTMLResponse
+                return HTMLResponse(content=html_content, status_code=200)
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.error(f"Error serving mint frame {frame_id}: {e}")
+                raise HTTPException(status_code=500, detail="Internal server error")
+        
+        @self.app.post("/frames/action/mint/{frame_id}")
+        async def handle_mint_action(frame_id: str, request: dict):
+            """
+            Handle NFT minting action from Farcaster Frame interaction.
+            
+            Args:
+                frame_id: Unique identifier for the frame
+                request: Farcaster frame action request data
+                
+            Returns:
+                Frame response with transaction or result
+            """
+            try:
+                # Get frame metadata
+                world_state = self.orchestrator.world_state_manager.get_state()
+                frame_metadata = getattr(world_state, 'nft_frames', {}).get(frame_id)
+                
+                if not frame_metadata:
+                    return {"error": "Frame not found"}
+                
+                # Extract user FID from Farcaster request
+                # Note: In a real implementation, you'd validate the signature here
+                user_fid = request.get('untrustedData', {}).get('fid')
+                if not user_fid:
+                    return {"error": "User FID not found"}
+                
+                user_fid = str(user_fid)
+                claim_type = frame_metadata.get('claim_type', 'public')
+                
+                # Check eligibility if gated
+                if claim_type == "gated":
+                    eligibility_service = getattr(self.orchestrator, 'eligibility_service', None)
+                    if eligibility_service:
+                        is_eligible = await eligibility_service.check_user_eligibility_now(user_fid)
+                        if not is_eligible:
+                            # Return frame showing ineligibility
+                            return {
+                                "type": "frame",
+                                "frameData": {
+                                    "image": frame_metadata.get('image_url'),
+                                    "button": {
+                                        "title": "Not Eligible 😔",
+                                        "action": "post",
+                                        "target": f"{settings.FRAMES_BASE_URL}/frames/ineligible"
+                                    },
+                                    "post_url": f"{settings.FRAMES_BASE_URL}/frames/action/mint/{frame_id}"
+                                }
+                            }
+                
+                # Check mint limits
+                max_mints = frame_metadata.get('max_mints', 1)
+                current_mints = frame_metadata.get('mints_count', 0)
+                
+                if current_mints >= max_mints:
+                    return {
+                        "type": "frame", 
+                        "frameData": {
+                            "image": frame_metadata.get('image_url'),
+                            "button": {
+                                "title": "Sold Out! 🚫",
+                                "action": "link",
+                                "target": settings.FRAMES_BASE_URL or "https://yourbot.com"
+                            }
+                        }
                     }
-                )
                 
+                # Get user's verified addresses for minting
+                user_details = world_state.farcaster_users.get(user_fid)
+                if not user_details or not user_details.verified_addresses.get('evm'):
+                    return {"error": "No verified EVM address found for user"}
+                
+                recipient_address = user_details.verified_addresses['evm'][0]
+                metadata_uri = frame_metadata.get('metadata_uri')
+                
+                # Prepare minting transaction
+                base_nft_service = getattr(self.orchestrator, 'base_nft_service', None)
+                if not base_nft_service:
+                    return {"error": "NFT service not available"}
+                
+                # For Frame transactions, we return transaction data for user to sign
+                # In a full implementation, you'd build the transaction calldata here
                 return {
-                    "ai_world_state": ai_payload,
-                    "metadata": {
-                        "primary_channel_id": primary_channel_id,
-                        "payload_type": "full",
-                        "optimization_enabled": False,
-                        "timestamp": datetime.now().isoformat()
+                    "type": "frame",
+                    "frameData": {
+                        "chainId": "eip155:8453",  # Base mainnet
+                        "method": "eth_sendTransaction",
+                        "params": {
+                            "abi": [],  # Your contract ABI
+                            "to": settings.NFT_COLLECTION_ADDRESS_BASE,
+                            "data": "0x...",  # Encoded mint function call
+                            "value": "0"
+                        }
                     }
                 }
+                
             except Exception as e:
-                logger.error(f"Error getting AI world state payload: {e}")
-                raise HTTPException(status_code=500, detail=str(e))
+                logger.error(f"Error handling mint action for frame {frame_id}: {e}")
+                return {"error": "Internal server error"}
+        
+        @self.app.get("/frames/ineligible")
+        async def serve_ineligible_frame():
+            """Serve frame for users who are not eligible for gated drops."""
+            html_content = """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta property="fc:frame" content="vNext" />
+    <meta property="fc:frame:image" content="https://via.placeholder.com/400x400/ff6b6b/white?text=Not+Eligible" />
+    <meta property="fc:frame:button:1" content="Learn More" />
+    <meta property="fc:frame:button:1:action" content="link" />
+    <meta property="fc:frame:button:1:target" content="https://yourbot.com/eligibility" />
+    <title>Not Eligible</title>
+</head>
+<body>
+    <h1>🔒 Not Eligible</h1>
+    <p>You need to hold ecosystem tokens or NFTs to claim this exclusive drop.</p>
+</body>
+</html>"""
+            from fastapi.responses import HTMLResponse
+            return HTMLResponse(content=html_content, status_code=200)
 
 
 def create_api_server(orchestrator: MainOrchestrator) -> FastAPI:

@@ -510,3 +510,280 @@ class GetFrameCatalogTool(ToolInterface):
                 "error": str(e),
                 "timestamp": time.time()
             }
+
+
+class CreateMintFrameTool(ToolInterface):
+    """Create an interactive Farcaster Frame for users to mint NFTs from generated images."""
+
+    @property
+    def name(self) -> str:
+        return "create_mint_frame"
+
+    @property
+    def description(self) -> str:
+        return """Creates an interactive Farcaster Frame for users to mint an NFT of a generated image.
+        
+        Use this tool when:
+        - You want to allow users to mint AI-generated art as NFTs
+        - Creating exclusive drops for community members
+        - Setting up gated NFT claims based on token holdings
+        - Building interactive art collection experiences
+        
+        The frame will be posted to Farcaster and users can interact with it to mint NFTs on the Base blockchain."""
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "image_s3_url": {
+                    "type": "string",
+                    "description": "The S3 URL of the image to be minted as an NFT"
+                },
+                "title": {
+                    "type": "string", 
+                    "description": "The title for the NFT and the Frame"
+                },
+                "description": {
+                    "type": "string",
+                    "description": "A short description of the artwork"
+                },
+                "channel_id": {
+                    "type": "string",
+                    "description": "The Farcaster channel to post the frame in (e.g., 'art')",
+                    "default": "art"
+                },
+                "claim_type": {
+                    "type": "string",
+                    "description": "Type of claim: 'public' (anyone can mint) or 'gated' (requires eligibility check)",
+                    "enum": ["public", "gated"],
+                    "default": "public"
+                },
+                "max_mints": {
+                    "type": "integer",
+                    "description": "Maximum number of mints allowed for this NFT (optional)",
+                    "default": 1
+                }
+            },
+            "required": ["image_s3_url", "title", "description"]
+        }
+
+    async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
+        """Execute the mint frame creation."""
+        try:
+            image_s3_url = params.get("image_s3_url")
+            title = params.get("title")
+            description = params.get("description")
+            channel_id = params.get("channel_id", "art")
+            claim_type = params.get("claim_type", "public")
+            max_mints = params.get("max_mints", 1)
+
+            if not image_s3_url or not title or not description:
+                return {
+                    "status": "error",
+                    "message": "Missing required parameters: image_s3_url, title, or description"
+                }
+
+            # Get services from context
+            base_nft_service = getattr(context, 'base_nft_service', None)
+            farcaster_observer = getattr(context, 'farcaster_observer', None)
+            
+            if not base_nft_service:
+                return {
+                    "status": "error", 
+                    "message": "Base NFT service not available"
+                }
+                
+            if not farcaster_observer:
+                return {
+                    "status": "error",
+                    "message": "Farcaster observer not available"
+                }
+
+            # Check if Base NFT service is configured
+            if not base_nft_service.is_configured():
+                return {
+                    "status": "error",
+                    "message": "Base NFT service is not properly configured. Please check BASE_RPC_URL, NFT_COLLECTION_ADDRESS_BASE, and Arweave settings."
+                }
+
+            # Upload metadata to Arweave/IPFS
+            attributes = [
+                {"trait_type": "Creator", "value": "AI Collective"},
+                {"trait_type": "Generation Method", "value": "AI Generated"},
+                {"trait_type": "Claim Type", "value": claim_type.title()},
+                {"trait_type": "Max Mints", "value": str(max_mints)}
+            ]
+            
+            metadata_uri = await base_nft_service.upload_metadata(
+                image_url=image_s3_url,
+                title=title,
+                description=description,
+                attributes=attributes
+            )
+            
+            if not metadata_uri:
+                return {
+                    "status": "error",
+                    "message": "Failed to upload NFT metadata to Arweave"
+                }
+
+            # Generate unique frame ID
+            frame_id = f"mint_{int(time.time())}_{hash(metadata_uri) % 10000}"
+            
+            # Create frame URL - this would point to your frame server
+            from chatbot.config import settings
+            base_url = settings.FRAMES_BASE_URL or "https://yourbot.com"
+            frame_url = f"{base_url}/frames/mint/{frame_id}?claim_type={claim_type}&max_mints={max_mints}"
+            
+            # Store frame metadata for the server to use
+            frame_metadata = {
+                "frame_id": frame_id,
+                "metadata_uri": metadata_uri,
+                "image_url": image_s3_url,
+                "title": title,
+                "description": description,
+                "claim_type": claim_type,
+                "max_mints": max_mints,
+                "created_at": time.time(),
+                "mints_count": 0
+            }
+            
+            # Store in world state for frame server to access
+            world_state = context.world_state_manager.get_state()
+            if not hasattr(world_state, 'nft_frames'):
+                world_state.nft_frames = {}
+            world_state.nft_frames[frame_id] = frame_metadata
+
+            # Create the cast with embedded frame
+            cast_text = f"🎨 New AI Art Drop: {title}\n\n{description}\n\n"
+            if claim_type == "gated":
+                cast_text += "🔒 Exclusive for token holders and NFT collectors only!\n"
+            else:
+                cast_text += "🎉 Open mint for everyone!\n"
+            cast_text += f"\n👇 Click below to mint this NFT"
+
+            # Post to Farcaster with frame
+            if hasattr(farcaster_observer, 'post_cast_with_frame'):
+                cast_result = await farcaster_observer.post_cast_with_frame(
+                    text=cast_text,
+                    frame_url=frame_url,
+                    channel_id=channel_id,
+                    image_url=image_s3_url
+                )
+            else:
+                # Fallback: post regular cast with frame URL
+                cast_result = await farcaster_observer.post_cast(
+                    text=f"{cast_text}\n\nFrame: {frame_url}",
+                    channel_id=channel_id,
+                    image_url=image_s3_url
+                )
+
+            if cast_result.get("status") == "success":
+                return {
+                    "status": "success",
+                    "message": f"Successfully created and posted NFT mint frame for '{title}'",
+                    "frame_id": frame_id,
+                    "frame_url": frame_url,
+                    "metadata_uri": metadata_uri,
+                    "cast_hash": cast_result.get("cast_hash"),
+                    "cast_url": cast_result.get("cast_url"),
+                    "claim_type": claim_type,
+                    "max_mints": max_mints
+                }
+            else:
+                return {
+                    "status": "error",
+                    "message": f"Failed to post frame to Farcaster: {cast_result.get('message', 'Unknown error')}"
+                }
+
+        except Exception as e:
+            logger.error(f"Error creating mint frame: {e}")
+            return {
+                "status": "error",
+                "message": f"Failed to create mint frame: {str(e)}"
+            }
+
+
+class CreateAirdropClaimFrameTool(ToolInterface):
+    """Create a gated airdrop claim frame that verifies user eligibility before allowing NFT minting."""
+
+    @property
+    def name(self) -> str:
+        return "create_airdrop_claim_frame"
+
+    @property
+    def description(self) -> str:
+        return """Creates a gated NFT airdrop frame that checks user eligibility before allowing claims.
+        
+        Use this tool when:
+        - Rewarding loyal community members with exclusive NFTs
+        - Creating token-gated drops for ecosystem participants
+        - Launching exclusive art collections for verified users
+        - Building cross-chain loyalty programs
+        
+        Users must meet eligibility criteria (token holdings + NFT ownership) to claim."""
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "type": "object", 
+            "properties": {
+                "image_s3_url": {
+                    "type": "string",
+                    "description": "The S3 URL of the image to be airdropped as an NFT"
+                },
+                "title": {
+                    "type": "string",
+                    "description": "The title for the airdrop NFT"
+                },
+                "description": {
+                    "type": "string", 
+                    "description": "Description of the airdrop and why it's special"
+                },
+                "channel_id": {
+                    "type": "string",
+                    "description": "The Farcaster channel to announce the airdrop",
+                    "default": "general"
+                },
+                "claim_deadline": {
+                    "type": "integer",
+                    "description": "Unix timestamp for claim deadline (optional)"
+                },
+                "announcement_text": {
+                    "type": "string",
+                    "description": "Custom announcement text (optional)"
+                }
+            },
+            "required": ["image_s3_url", "title", "description"]
+        }
+
+    async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
+        """Execute the airdrop claim frame creation."""
+        try:
+            # This is essentially a gated version of create_mint_frame
+            # We'll delegate to CreateMintFrameTool with claim_type="gated"
+            mint_params = {
+                "image_s3_url": params.get("image_s3_url"),
+                "title": params.get("title"),
+                "description": params.get("description"), 
+                "channel_id": params.get("channel_id", "general"),
+                "claim_type": "gated",
+                "max_mints": 1  # Airdrops typically have 1 mint per user
+            }
+            
+            mint_tool = CreateMintFrameTool()
+            result = await mint_tool.execute(mint_params, context)
+            
+            if result.get("status") == "success":
+                result["message"] = f"Successfully created airdrop claim frame for '{params.get('title')}'"
+                result["airdrop_type"] = "gated_claim"
+                
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error creating airdrop claim frame: {e}")
+            return {
+                "status": "error",
+                "message": f"Failed to create airdrop claim frame: {str(e)}"
+            }
