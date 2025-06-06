@@ -634,20 +634,47 @@ class TraditionalProcessor:
         current_time = time.time()
         
         # Check for media generation + posting coordination opportunities
-        coordinated_actions = await self._coordinate_media_actions(actions)
+        actions_to_execute, generated_media_results = await self._coordinate_media_actions(actions)
         
-        for action in coordinated_actions:
+        for action_plan in actions_to_execute: # Renamed 'action' to 'action_plan' for clarity
             try:
                 # Support both ActionPlan objects and dict-format actions
-                if isinstance(action, dict):
-                    action_name = action.get("tool") or action.get("action_type")
-                    action_params = action.get("parameters", {})
-                else:
-                    action_name = action.action_type
-                    action_params = action.parameters
+                if isinstance(action_plan, dict):
+                    action_name = action_plan.get("tool") or action_plan.get("action_type")
+                    action_params = action_plan.get("parameters", {})
+                else: # Assumes ActionPlan object
+                    action_name = action_plan.action_type
+                    action_params = action_plan.parameters
                 
                 if not action_name:
+                    logger.warning(f"Skipping action with no name: {action_plan}")
                     continue
+                
+                # If this action is a posting action and there's a recent image, inject its URL
+                if action_name in ["send_farcaster_post", "send_farcaster_reply"] and generated_media_results:
+                    # Prefer arweave URL if available
+                    image_url_to_embed = generated_media_results.get("arweave_image_url") or \
+                                         generated_media_results.get("image_url") # Fallback to image_url
+                    if image_url_to_embed:
+                        action_params["image_arweave_url"] = image_url_to_embed # Farcaster expects image_arweave_url
+                        logger.info(f"Injecting image_arweave_url: {image_url_to_embed} into {action_name}")
+
+                elif action_name in ["send_matrix_image", "send_matrix_reply", "send_matrix_message"] and generated_media_results:
+                    # If it's send_matrix_message and an image was just generated, convert to send_matrix_image
+                    if action_name == "send_matrix_message":
+                        action_name = "send_matrix_image" # Convert action
+                        logger.info("Converting send_matrix_message to send_matrix_image due to recent image generation.")
+                    
+                    image_url_to_embed = generated_media_results.get("image_url") or \
+                                         generated_media_results.get("arweave_image_url") # Matrix tools might use image_url
+                    if image_url_to_embed:
+                        action_params["image_url"] = image_url_to_embed
+                        # If original action was send_matrix_message, its 'message' becomes the caption
+                        if isinstance(action_plan, dict) and action_plan.get("action_type") == "send_matrix_message":
+                            action_params["caption"] = action_plan.get("parameters", {}).get("message", "")
+                        elif not isinstance(action_plan, dict) and action_plan.action_type == "send_matrix_message":
+                             action_params["caption"] = action_plan.parameters.get("message", "")
+                        logger.info(f"Injecting image_url: {image_url_to_embed} into {action_name}")
                 
                 # Check rate limits
                 can_execute, reason = self.rate_limiter.can_execute_action(
@@ -685,6 +712,102 @@ class TraditionalProcessor:
             except Exception as e:
                 logger.error(f"Error executing action {action_name}: {e}")
                 continue
+
+    async def _coordinate_media_actions(self, actions: list) -> tuple[list, Optional[dict]]:
+        """
+        Identifies image generation actions and prepares subsequent posting actions.
+        Returns a potentially modified list of actions and the result of the image generation if performed.
+        """
+        generate_action_plan = None
+        generate_action_index = -1
+        generated_media_result: Optional[dict] = None
+
+        for i, action_plan in enumerate(actions):
+            action_name = action_plan.action_type if hasattr(action_plan, 'action_type') else action_plan.get('action_type')
+            if action_name == "generate_image":
+                generate_action_plan = action_plan
+                generate_action_index = i
+                break
+        
+        remaining_actions = list(actions) # Create a mutable copy
+
+        if generate_action_plan:
+            # Remove the generate_image action from the list to execute it first
+            remaining_actions.pop(generate_action_index)
+            
+            logger.info(f"Executing coordinated generate_image action: {generate_action_plan.parameters}")
+            tool = self.tool_registry.get_tool("generate_image")
+            if tool and self.action_context:
+                current_time = time.time()
+                can_execute, reason = self.rate_limiter.can_execute_action("generate_image", current_time)
+                if can_execute:
+                    self.rate_limiter.record_action("generate_image", current_time)
+                    generated_media_result = await tool.execute(generate_action_plan.parameters, self.action_context)
+                    logger.info(f"generate_image result: {generated_media_result}")
+                    if self.context_manager:
+                        channel_id = generate_action_plan.parameters.get('channel_id', 'default')
+                        await self.context_manager.add_tool_result(
+                            channel_id, 
+                            "generate_image", 
+                            generated_media_result if isinstance(generated_media_result, dict) else {'result': str(generated_media_result)}
+                        )
+                    if not generated_media_result or generated_media_result.get("status") != "success":
+                        logger.warning("Image generation failed or did not return success, proceeding without image.")
+                        generated_media_result = None 
+                    else:
+                        # Image generation was successful, inject URLs into subsequent actions
+                        image_arweave_url = generated_media_result.get("arweave_image_url")
+                        embed_page_url = generated_media_result.get("embed_page_url")
+                        direct_image_url = generated_media_result.get("image_url") # Fallback if arweave_image_url is not present
+
+                        for i, action_plan_item in enumerate(remaining_actions):
+                            action_params = action_plan_item.parameters
+                            action_type = action_plan_item.action_type
+
+                            if action_type == "send_farcaster_post":
+                                if embed_page_url:
+                                    action_params["embed_url"] = embed_page_url
+                                    logger.info(f"Injected embed_url: {embed_page_url} into send_farcaster_post")
+                                elif image_arweave_url: # Fallback to image_arweave_url if no embed_page_url
+                                    action_params["image_arweave_url"] = image_arweave_url
+                                    logger.info(f"Injected image_arweave_url: {image_arweave_url} into send_farcaster_post as fallback")
+                                elif direct_image_url: # Fallback to direct_image_url
+                                    action_params["image_url"] = direct_image_url # Assuming send_farcaster_post can handle direct image_url
+                                    logger.info(f"Injected direct image_url: {direct_image_url} into send_farcaster_post as fallback")
+
+
+                            elif action_type == "send_matrix_message":
+                                # Convert to send_matrix_image
+                                logger.info(f"Converting send_matrix_message to send_matrix_image for action: {action_plan_item}")
+                                remaining_actions[i] = ActionPlan(
+                                    action_type="send_matrix_image",
+                                    parameters={
+                                        "channel_id": action_params.get("channel_id"),
+                                        "image_url": image_arweave_url or direct_image_url, # Prefer Arweave, fallback to direct
+                                        "caption": action_params.get("message", ""),
+                                        "filename": "image.png" # Default filename
+                                    },
+                                    reasoning=f"Converted from send_matrix_message to share generated image: {action_plan_item.reasoning}",
+                                    priority=action_plan_item.priority
+                                )
+                                logger.info(f"Converted action: {remaining_actions[i]}")
+                            
+                            # Potentially add other action_types that might consume image URLs
+                            elif "image_url" in action_params or "image_arweave_url" in action_params:
+                                if image_arweave_url:
+                                    action_params["image_arweave_url"] = image_arweave_url
+                                if direct_image_url and not action_params.get("image_arweave_url"): # If no arweave, use direct
+                                     action_params["image_url"] = direct_image_url
+
+
+                else:
+                    logger.warning(f"Skipping generate_image due to rate limit: {reason}")
+                    generated_media_result = None
+            else:
+                logger.warning("generate_image tool not found or action_context missing for coordination.")
+                generated_media_result = None
+
+        return remaining_actions, generated_media_result
 
     async def _fix_describe_image_params(self, action_params: dict) -> dict:
         """
@@ -746,48 +869,11 @@ class TraditionalProcessor:
         # Return original parameters if no fix was needed or possible
         return action_params
 
-    async def _coordinate_media_actions(self, actions: list) -> list:
-        """
-        Coordinate media generation (image/video) with posting actions to enable auto-embedding.
-        
-        If both media generation and posting actions are present in the same batch,
-        execute media generation first and automatically include the media URL in posts.
-        """
-        # Extract action names and find coordination opportunities
-        action_names = []
-        action_map = {}
-        
-        for i, action in enumerate(actions):
-            if hasattr(action, 'action_type'):
-                action_name = action.action_type
-                action_names.append(action_name)
-                action_map[action_name] = i
-        
-        # Check for image generation + posting coordination
-        if "generate_image" in action_names and "send_farcaster_post" in action_names:
-            logger.info("Detected image generation + Farcaster post coordination opportunity")
-            return await self._coordinate_image_with_farcaster(actions, action_map)
-        
-        if "generate_image" in action_names and "send_matrix_message" in action_names:
-            logger.info("Detected image generation + Matrix message coordination opportunity")
-            return await self._coordinate_image_with_matrix(actions, action_map)
-        
-        # Check for video generation + posting coordination
-        if "generate_video" in action_names and "send_farcaster_post" in action_names:
-            logger.info("Detected video generation + Farcaster post coordination opportunity")
-            return await self._coordinate_video_with_farcaster(actions, action_map)
-        
-        if "generate_video" in action_names and "send_matrix_message" in action_names:
-            logger.info("Detected video generation + Matrix message coordination opportunity")
-            return await self._coordinate_video_with_matrix(actions, action_map)
-        
-        # No coordination needed, return actions as-is
-        return actions
-
     async def _coordinate_image_with_farcaster(self, actions: list, action_map: dict) -> list:
         """Coordinate image generation with Farcaster posting."""
         current_time = time.time()
         coordinated_actions = []
+        generated_image_url = None
         generated_embed_url = None
         
         # First, execute image generation

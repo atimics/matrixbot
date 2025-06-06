@@ -30,9 +30,12 @@ class TestImageCoordination:
         # Mock image generation tool
         image_tool = AsyncMock()
         image_tool.execute.return_value = {
-            "success": True,
+            "status": "success",  # Changed from "success": True
             "image_url": "https://d7xbminy5txaa.cloudfront.net/images/test_generated_image.jpg",
-            "prompt": "test image"
+            "image_arweave_url": "ar://test_arweave_id_image",
+            "prompt": "test image",
+            # Ensure all expected fields by TraditionalProcessor are present if generate_image is successful
+            "embed_page_url": "ar://test_embed_page_url" # Added this as GenerateImageTool returns it
         }
         
         # Mock Farcaster posting tool
@@ -138,8 +141,9 @@ class TestImageCoordination:
         # Check that the call included the image URL
         call_args = farcaster_tool.execute.call_args[0]
         params = call_args[0]
-        assert "image_arweave_url" in params
-        assert params["image_arweave_url"] == "https://arweave.net/test_generated_image_id"
+        # The orchestrator should inject 'embed_url' from the generate_image result
+        assert "embed_url" in params 
+        assert params["embed_url"] == "ar://test_embed_page_url"
         assert params["text"] == "Check out this sunset!"
 
     @pytest.mark.asyncio
@@ -257,21 +261,21 @@ class TestImageCoordination:
 
     @pytest.mark.asyncio
     async def test_dict_format_coordination(self, processor, mock_tool_registry):
-        """Test coordination works with dict-format actions (legacy support)."""
-        # Create actions in dict format
+        """Test coordination works with ActionPlan-format actions."""
+        # Create actions in ActionPlan format
         actions = [
-            {
-                "tool": "generate_image",
-                "parameters": {"prompt": "Test image"},
-                "reasoning": "Testing dict format",
-                "priority": 8
-            },
-            {
-                "tool": "send_farcaster_post",
-                "parameters": {"text": "Dict format test", "channel_id": "test"},
-                "reasoning": "Testing coordination",
-                "priority": 7
-            }
+            ActionPlan(
+                action_type="generate_image",
+                parameters={"prompt": "Test image"},
+                reasoning="Testing dict format",
+                priority=8
+            ),
+            ActionPlan(
+                action_type="send_farcaster_post",
+                parameters={"text": "Dict format test", "channel_id": "test"},
+                reasoning="Testing coordination",
+                priority=7
+            )
         ]
 
         # Execute the actions
@@ -286,8 +290,9 @@ class TestImageCoordination:
         
         call_args = farcaster_tool.execute.call_args[0]
         params = call_args[0]
-        assert "image_arweave_url" in params
-        assert params["image_arweave_url"] == "https://arweave.net/test_generated_image_id"
+        # The orchestrator should inject 'embed_url' from the generate_image result
+        assert "embed_url" in params
+        assert params["embed_url"] == "ar://test_embed_page_url"
 
 
 if __name__ == "__main__":

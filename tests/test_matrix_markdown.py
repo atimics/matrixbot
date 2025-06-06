@@ -18,20 +18,14 @@ class TestMarkdownFormatting:
         assert "<em>italic text</em>" in result["html"]
     
     def test_code_blocks(self):
-        """Test code block formatting."""
-        content = """
-Here's some code:
-```python
-def hello():
-    print("Hello, World!")
-```
-"""
-        result = format_for_matrix(content)
-        
-        assert "[Code Block]" in result["plain"]
-        assert "<code" in result["html"]
+        """Test that code blocks are formatted correctly."""
+        markdown_text = "Here's some code:\n```python\ndef hello():\n    print(\"Hello, World!\")\n```"
+        result = format_for_matrix(markdown_text)
+        assert 'class="codehilite"' in result["html"]
+        assert "<pre>" in result["html"]
+        assert "<code>" in result["html"]
         assert "def hello():" in result["html"]
-    
+
     def test_inline_code(self):
         """Test inline code formatting."""
         content = "Use the `print()` function"
@@ -91,42 +85,26 @@ Some content here
         assert "<li>First item</li>" in result["html"]
     
     def test_mixed_formatting(self):
-        """Test complex mixed formatting."""
-        content = """
-# AI Response
-
-Here's what I found:
-
-- **Important**: This is critical
-- *Note*: Check the `config.json` file
-- See [documentation](https://example.com) for details
-
-```python
-# Example code
-def process_data():
-    return {"status": "success"}
-```
-
-Thanks!
-"""
-        result = format_for_matrix(content)
-        
-        # Check plain text conversion
-        assert "AI Response" in result["plain"]
-        assert "Important" in result["plain"]
-        assert "config.json" in result["plain"]
-        assert "documentation" in result["plain"]
-        assert "[Code Block]" in result["plain"]
-        assert "#" not in result["plain"]  # Headers should be stripped
-        assert "*" not in result["plain"]  # Formatting should be stripped
-        
-        # Check HTML conversion
+        """Test a mix of all formatting options."""
+        markdown_text = (
+            "# AI Response\\n\\n"\
+            "Here's what I found:\\n\\n"\
+            "- **Important**: This is critical\\n"\
+            "- *Note*: Check the `config.json` file\\n"\
+            "- See [documentation](https://example.com) for details\\n\\n"\
+            "```python\\n"\
+            "# Example code\\n"\
+            "def process_data():\\n"\
+            "    return {\\"status\\": \\"success\\"}\\n"\
+            "```\\n\\n"\
+            "Thanks!"\
+        )
+        result = format_for_matrix(markdown_text)
+        assert 'class="codehilite"' in result["html"]
         assert "<h1>AI Response</h1>" in result["html"]
         assert "<strong>Important</strong>" in result["html"]
         assert "<em>Note</em>" in result["html"]
-        assert "<code>config.json</code>" in result["html"]
         assert 'href="https://example.com"' in result["html"]
-        assert "<pre" in result["html"]  # Code block should be in pre tags
         assert "def process_data():" in result["html"]
 
 

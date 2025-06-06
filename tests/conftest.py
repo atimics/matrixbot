@@ -3,28 +3,22 @@ Global test configuration and fixtures.
 """
 
 import asyncio
+import logging  # Add this
 import os
-import tempfile
 import shutil
+import tempfile
 from pathlib import Path
 from typing import AsyncGenerator, Generator
 import pytest
+import pytest_asyncio  # Import this
 from unittest.mock import AsyncMock, MagicMock
 
-from chatbot.core.world_state import WorldStateManager
+from chatbot.config import AppConfig
 from chatbot.core.context import ContextManager
 from chatbot.core.history_recorder import HistoryRecorder
+from chatbot.core.world_state import WorldStateManager
 from chatbot.tools.base import ActionContext
-from chatbot.config import AppConfig
-
-
-@pytest.fixture(scope="session")
-def event_loop():
-    """Create an instance of the default event loop for the test session."""
-    policy = asyncio.get_event_loop_policy()
-    loop = policy.new_event_loop()
-    yield loop
-    loop.close()
+from chatbot.tools.media_generation_tools import GenerateImageTool
 
 
 @pytest.fixture
@@ -48,61 +42,75 @@ async def context_manager(temp_dir: Path) -> AsyncGenerator[ContextManager, None
     """Provide a ContextManager with temporary database."""
     world_state = WorldStateManager()
     db_path = temp_dir / "test_context.db"
-    
+
     context_mgr = ContextManager(world_state, str(db_path))
     await context_mgr.initialize()
-    
+
     try:
         yield context_mgr
     finally:
         await context_mgr.cleanup()
-    
-@pytest.fixture
-async def history_recorder(temp_dir: Path) -> AsyncGenerator[HistoryRecorder, None]:
-    """Provide a HistoryRecorder with temporary database for testing."""
-    db_path = temp_dir / "test_history.db"
-    recorder = HistoryRecorder(str(db_path))
-    # Redirect storage to temp directory to avoid clutter
-    recorder.storage_path = temp_dir / "context_storage"
-    recorder.storage_path.mkdir(parents=True, exist_ok=True)
-    await recorder.initialize()
-    try:
-        yield recorder
-    finally:
-        # Cleanup generated storage files
-        import shutil
-        shutil.rmtree(recorder.storage_path, ignore_errors=True)
+
+
+@pytest_asyncio.fixture  # Changed from @pytest.fixture
+async def history_recorder(tmp_path):
+    """Provides an initialized HistoryRecorder instance for async tests."""
+    logging.info(f"[Fixture history_recorder] STARTING. tmp_path: {tmp_path}")
+    db_path = tmp_path / "test_chat.db"
+    recorder = HistoryRecorder(db_path=str(db_path))
+    logging.info(f"[Fixture history_recorder] HistoryRecorder instance created: {recorder}")
+
+    # Ensure initialize is awaited and check its type
+    init_coro = recorder.initialize()
+    logging.info(f"[Fixture history_recorder] recorder.initialize() called, type of result: {type(init_coro)}")
+    if not asyncio.iscoroutine(init_coro):
+        logging.error("[Fixture history_recorder] recorder.initialize() DID NOT RETURN A COROUTINE. This is unexpected for an async method.")
+        # If it's not a coroutine, it can't be awaited. HistoryRecorder.initialize IS async def.
+    else:
+        logging.info("[Fixture history_recorder] Awaiting recorder.initialize()...")
+        await init_coro
+        logging.info("[Fixture history_recorder] recorder.initialize() awaited.")
+
+    logging.info(f"[Fixture history_recorder] Returning recorder instance: {recorder}, type: {type(recorder)}")
+    if not hasattr(recorder, 'record_action'):
+        logging.error("[Fixture history_recorder] CRITICAL: recorder object does NOT have record_action method before returning.")
+    else:
+        logging.info("[Fixture history_recorder] Recorder object HAS record_action method.")
+    if asyncio.iscoroutine(recorder):
+        logging.error("[Fixture history_recorder] CRITICAL: recorder object IS a coroutine before returning. This is wrong.")
+
+    return recorder
 
 
 @pytest.fixture
 def mock_matrix_observer() -> AsyncMock:
     """Provide a mocked Matrix observer with common return values."""
     observer = AsyncMock()
-    
+
     # Configure common successful responses
     observer.send_message.return_value = {
         "success": True,
         "event_id": "test_event_123",
         "room_id": "!test:matrix.org"
     }
-    
+
     observer.send_reply.return_value = {
         "success": True,
         "event_id": "test_reply_123",
         "reply_to_event_id": "original_event",
         "sent_content": "Test reply"
     }
-    
+
     observer.join_room.return_value = {
         "success": True,
         "room_id": "!test:matrix.org"
     }
-    
+
     observer.leave_room.return_value = {
         "success": True,
         "room_id": "!test:matrix.org"
     }
-    
+
     observer.is_connected = True
     return observer
 
@@ -111,26 +119,26 @@ def mock_matrix_observer() -> AsyncMock:
 def mock_farcaster_observer() -> AsyncMock:
     """Provide a mocked Farcaster observer with common return values."""
     observer = AsyncMock()
-    
+
     # Configure common successful responses
     observer.post_cast.return_value = {
         "success": True,
         "cast_hash": "0xtest123",
         "sent_content": "Test cast"
     }
-    
+
     observer.reply_to_cast.return_value = {
         "success": True,
         "cast_hash": "0xreply123",
         "sent_content": "Test reply"
     }
-    
+
     observer.get_user_timeline.return_value = {
         "success": True,
         "casts": [],
         "error": None
     }
-    
+
     return observer
 
 
@@ -189,6 +197,17 @@ def app_config() -> AppConfig:
     config.db_path = ":memory:"
     config.log_level = "DEBUG"
     return config
+
+
+@pytest.fixture
+def generate_image_tool(mock_action_context: ActionContext) -> GenerateImageTool:
+    """Provide a GenerateImageTool instance with mocked dependencies."""
+    tool = GenerateImageTool()
+    # If the tool has an init or setup method that needs action_context,
+    # it should be called here. For now, we assume it's not strictly needed
+    # for instantiation for this test's purpose or it's handled internally.
+    # If direct injection is needed: tool.action_context = mock_action_context
+    return tool
 
 
 # Test categories for easier test selection

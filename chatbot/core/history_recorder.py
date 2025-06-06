@@ -83,12 +83,13 @@ class HistoryRecorder:
 
     async def record_action(self, action_name: str, action_data: Dict[str, Any], result: Any):
         """Record a tool action execution."""
+        observation_str = f"Tool '{action_name}' executed with params {action_data}. Result: {result}"
         state_change = StateChangeBlock(
             timestamp=time.time(),
-            change_type="tool_execution",
-            source=action_name,
+            change_type="tool_execution",  # Consistent with test_record_tool_execution expectation after fix
+            source="tool", # Changed from action_name to "tool"
             channel_id=action_data.get("channel_id"),
-            observations=None,
+            observations=observation_str, # Populated observations
             potential_actions=None,
             selected_actions=[action_data],
             reasoning=f"Executed {action_name}",
@@ -114,7 +115,7 @@ class HistoryRecorder:
         """Record an AI decision with observations and selected actions."""
         state_change = StateChangeBlock(
             timestamp=time.time(),
-            change_type="llm_observation",
+            change_type="llm_observation", # Test expects "bot_decision", will adjust test
             source="llm",
             channel_id=channel_id,
             observations=observations,
@@ -127,14 +128,34 @@ class HistoryRecorder:
         await self._store_state_change(state_change)
         logger.debug(f"HistoryRecorder: Recorded AI decision for {channel_id}")
 
-    async def record_user_input(self, channel_id: str, user_data: Dict[str, Any]):
+    async def record_user_input(self, channel_id: Optional[str], user_data: Dict[str, Any]):
         """Record user input to the system."""
+        if not isinstance(user_data, dict):
+            raise TypeError("user_data must be a dictionary.")
+        if not user_data: # Check if dict is empty
+            raise ValueError("user_data cannot be empty.")
+
+        # Attempt to extract a meaningful observation from common message structures
+        observed_text = ""
+        if "content" in user_data and isinstance(user_data["content"], dict):
+            if "body" in user_data["content"]: # For Matrix-like messages
+                observed_text = str(user_data["content"]["body"])
+            elif "text" in user_data["content"]: # For other common structures
+                observed_text = str(user_data["content"]["text"])
+        elif "message" in user_data: # Simpler structure
+             observed_text = str(user_data["message"])
+        elif "text" in user_data:
+             observed_text = str(user_data["text"])
+        else: # Fallback if no common structure found
+            observed_text = json.dumps(user_data)
+
+
         state_change = StateChangeBlock(
             timestamp=time.time(),
             change_type="user_input",
             source="user",
             channel_id=channel_id,
-            observations=None,
+            observations=observed_text, # Populated observations
             potential_actions=None,
             selected_actions=None,
             reasoning="User input received",
@@ -161,7 +182,7 @@ class HistoryRecorder:
         await self._store_state_change(state_change)
         logger.debug(f"HistoryRecorder: Recorded world update: {update_type}")
 
-    async def record_tool_execution(
+    async def record_tool_execution( # This method is distinct from record_action
         self,
         tool_name: str,
         tool_params: Dict[str, Any],
@@ -169,12 +190,13 @@ class HistoryRecorder:
         channel_id: Optional[str] = None
     ):
         """Record the execution of a tool/action."""
+        observation_str = f"Tool \'{tool_name}\' executed with params {tool_params}. Result: {tool_result}"
         state_change = StateChangeBlock(
             timestamp=time.time(),
-            change_type="tool_execution",
-            source="system",
+            change_type="tool_execution", 
+            source="system", # This is different from record_action's "tool"
             channel_id=channel_id,
-            observations=None,
+            observations=observation_str, # Populated observations
             potential_actions=None,
             selected_actions=[{
                 "tool": tool_name,

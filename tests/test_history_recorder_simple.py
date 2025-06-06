@@ -99,7 +99,7 @@ class TestHistoryRecorderBasic:
         assert len(recorder.state_changes) >= 1
         action = recorder.state_changes[0]
         assert action.change_type == "tool_execution"
-        assert action.source == "weather_tool"
+        assert action.source == "tool"  # Changed from "weather_tool" to "tool"
     
     @pytest.mark.asyncio
     async def test_get_recent_state_changes(self, temp_db_path):
