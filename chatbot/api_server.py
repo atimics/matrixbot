@@ -215,6 +215,12 @@ class ChatbotAPIServer:
         @self.app.get("/api/config")
         async def get_configuration():
             """Get current system configuration."""
+            # List of required settings that should not be None or empty
+            required_settings = [
+                "OPENROUTER_API_KEY", "MATRIX_HOMESERVER", "MATRIX_USER_ID",
+                "MATRIX_PASSWORD", "NEYNAR_API_KEY", "FARCASTER_BOT_SIGNER_UUID",
+                "GOOGLE_API_KEY", "S3_API_ENDPOINT", "S3_API_KEY", "GITHUB_TOKEN"
+            ]
             try:
                 # Get all settings from the config
                 config_dict = {
@@ -229,29 +235,49 @@ class ChatbotAPIServer:
                     "MAX_CYCLES_PER_HOUR": settings.MAX_CYCLES_PER_HOUR,
                     "LOG_LEVEL": settings.LOG_LEVEL,
                     
+                    # Node-based processing settings
+                    "MAX_EXPANDED_NODES": settings.MAX_EXPANDED_NODES,
+                    "ENABLE_TWO_PHASE_AI_PROCESS": settings.ENABLE_TWO_PHASE_AI_PROCESS,
+                    "MAX_EXPLORATION_ROUNDS": settings.MAX_EXPLORATION_ROUNDS,
+                    
                     # Tool cooldowns
                     "IMAGE_GENERATION_COOLDOWN_SECONDS": settings.IMAGE_GENERATION_COOLDOWN_SECONDS,
                     "VIDEO_GENERATION_COOLDOWN_SECONDS": settings.VIDEO_GENERATION_COOLDOWN_SECONDS,
                     "STORE_MEMORY_COOLDOWN_SECONDS": settings.STORE_MEMORY_COOLDOWN_SECONDS,
                     
                     # Integration settings
-                    "MATRIX_HOMESERVER": settings.MATRIX_HOMESERVER,
+                    "MATRIX_HOMESERVER": settings.MATRIX_HOMESERVER, # Sensitive, but useful for display
                     "FARCASTER_BOT_FID": settings.FARCASTER_BOT_FID,
+                    "ECOSYSTEM_TOKEN_CONTRACT_ADDRESS": settings.ECOSYSTEM_TOKEN_CONTRACT_ADDRESS,
+                    "ECOSYSTEM_TOKEN_NETWORK": settings.ECOSYSTEM_TOKEN_NETWORK,
+                    "NUM_TOP_HOLDERS_TO_TRACK": settings.NUM_TOP_HOLDERS_TO_TRACK,
                     
                     # File paths
                     "CHATBOT_DB_PATH": settings.CHATBOT_DB_PATH,
+
+                    # GitHub ACE Integration
+                    "GITHUB_USERNAME": settings.GITHUB_USERNAME,
                     
                     # Processing config from orchestrator
                     "enable_node_based_processing": self.orchestrator.config.processing_config.enable_node_based_processing,
                 }
+
+                # Identify missing required settings
+                missing_settings = [
+                    key for key in required_settings
+                    if not getattr(settings, key, None)
+                ]
                 
                 return {
                     "config": config_dict,
                     "mutable_keys": [
                         "LOG_LEVEL", "OBSERVATION_INTERVAL", "MAX_CYCLES_PER_HOUR",
                         "AI_MODEL", "WEB_SEARCH_MODEL", "AI_SUMMARY_MODEL", "OPENROUTER_MULTIMODAL_MODEL",
-                        "IMAGE_GENERATION_COOLDOWN_SECONDS", "VIDEO_GENERATION_COOLDOWN_SECONDS", "STORE_MEMORY_COOLDOWN_SECONDS"
+                        "IMAGE_GENERATION_COOLDOWN_SECONDS", "VIDEO_GENERATION_COOLDOWN_SECONDS", "STORE_MEMORY_COOLDOWN_SECONDS",
+                        "ECOSYSTEM_TOKEN_CONTRACT_ADDRESS", "ECOSYSTEM_TOKEN_NETWORK", "NUM_TOP_HOLDERS_TO_TRACK",
+                        "MAX_EXPANDED_NODES", "ENABLE_TWO_PHASE_AI_PROCESS", "MAX_EXPLORATION_ROUNDS"
                     ],
+                    "missing_required_settings": missing_settings,
                     "timestamp": datetime.now().isoformat()
                 }
             except Exception as e:
@@ -261,28 +287,41 @@ class ChatbotAPIServer:
         @self.app.put("/api/config")
         async def update_configuration(update: ConfigUpdate):
             """Update a configuration value."""
+            # Note: This updates the live configuration. For persistence across restarts,
+            # the .env file or a config database would need to be updated, which is
+            # beyond the scope of this implementation for safety reasons.
             try:
-                # Note: This is a simplified implementation
-                # In a real system, you'd want to validate the key and value,
-                # and handle different types of config updates appropriately
                 if not hasattr(settings, update.key):
                     raise HTTPException(status_code=400, detail=f"Unknown config key: {update.key}")
                 
-                # Update the setting (this is basic - in practice you'd want more validation)
+                # Update the global settings object
                 setattr(settings, update.key, update.value)
                 
-                # If it's an AI model setting, update the AI engine
-                if update.key in ["AI_MODEL"]:
+                # Propagate the change to the relevant live component
+                if update.key == "AI_MODEL":
                     self.orchestrator.ai_engine.model = update.value
-                    # Update system prompt with tools to reflect any changes
+                    self.orchestrator.config.ai_model = update.value
                     self.orchestrator.ai_engine.update_system_prompt_with_tools(self.orchestrator.tool_registry)
+                elif update.key == "OBSERVATION_INTERVAL":
+                    self.orchestrator.processing_hub.config.observation_interval = float(update.value)
+                elif update.key == "MAX_CYCLES_PER_HOUR":
+                    self.orchestrator.rate_limiter.config.max_cycles_per_hour = int(update.value)
+                    self.orchestrator.rate_limiter.config.min_cycle_interval = 3600 / int(update.value)
+                elif update.key == "LOG_LEVEL":
+                    logging.getLogger().setLevel(getattr(logging, str(update.value).upper(), "INFO"))
+                elif update.key == "MAX_EXPANDED_NODES":
+                    if hasattr(self.orchestrator.processing_hub, 'node_manager'):
+                        self.orchestrator.processing_hub.node_manager.max_expanded_nodes = int(update.value)
+                
+                # For other mutable keys, they are read directly from `settings` by their respective components,
+                # so just updating the `settings` object is sufficient.
                 
                 return {
                     "success": True,
                     "message": f"Configuration {update.key} updated to {update.value}",
                     "restart_required": update.key in [
-                        "MATRIX_HOMESERVER", "FARCASTER_BOT_FID", 
-                        "CHATBOT_DB_PATH"
+                         "MATRIX_HOMESERVER", "FARCASTER_BOT_FID", "CHATBOT_DB_PATH",
+                         "GITHUB_USERNAME"
                     ]
                 }
             except Exception as e:

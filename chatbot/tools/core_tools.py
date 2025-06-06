@@ -32,32 +32,15 @@ class WaitTool(ToolInterface):
         self, params: Dict[str, Any], context: ActionContext
     ) -> Dict[str, Any]:
         """
-        Execute the wait action.
+        Execute the wait action by doing nothing, allowing the main processing
+        loop to continue to its next natural cycle.
         """
-        duration = params.get("duration", 1.0)
-
-        # Validate and sanitize duration
-        try:
-            duration = float(duration)
-            if duration < 0:
-                duration = 1.0
-                logger.warning(
-                    "Negative duration provided for wait tool. Using default 1.0s."
-                )
-        except (ValueError, TypeError):
-            logger.warning(
-                f"Invalid duration '{params.get('duration')}' for wait tool. Using default 1.0s."
-            )
-            duration = 1.0
-
-        await asyncio.sleep(duration)
-
-        message = f"Waited {duration} seconds and observed the current state."
+        message = "Waited for the next observation cycle."
         logger.info(message)
 
         return {
             "status": "success",
             "message": message,
             "timestamp": time.time(),
-            "duration": duration,
+            "duration": 0,
         }

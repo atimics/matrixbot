@@ -274,7 +274,7 @@ class EcosystemTokenService:
                     from chatbot.integrations.farcaster.farcaster_data_converter import convert_api_casts_to_messages
                     potential_new_messages = await convert_api_casts_to_messages(
                         api_casts=casts_data["casts"],
-                        channel_id_prefix=f"farcaster:holder_{holder.fid}",
+                        channel_id_prefix="farcaster:holders", # Use aggregated feed
                         cast_type_metadata="holder_cast_update"
                     )
 
