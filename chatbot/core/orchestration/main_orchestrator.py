@@ -617,8 +617,8 @@ class TraditionalProcessor:
         """Execute a list of actions with rate limiting and coordination."""
         current_time = time.time()
         
-        # Check for image generation + posting coordination opportunities
-        coordinated_actions = await self._coordinate_image_actions(actions)
+        # Check for media generation + posting coordination opportunities
+        coordinated_actions = await self._coordinate_media_actions(actions)
         
         for action in coordinated_actions:
             try:
@@ -732,12 +732,12 @@ class TraditionalProcessor:
         # Return original parameters if no fix was needed or possible
         return action_params
 
-    async def _coordinate_image_actions(self, actions: list) -> list:
+    async def _coordinate_media_actions(self, actions: list) -> list:
         """
-        Coordinate image generation with posting actions to enable auto-embedding.
+        Coordinate media generation (image/video) with posting actions to enable auto-embedding.
         
-        If both image generation and posting actions are present in the same batch,
-        execute image generation first and automatically include the image URL in posts.
+        If both media generation and posting actions are present in the same batch,
+        execute media generation first and automatically include the media URL in posts.
         """
         # Extract action names and find coordination opportunities
         action_names = []
@@ -753,15 +753,23 @@ class TraditionalProcessor:
                 action_names.append(action_name)
                 action_map[action_name] = i
         
-        # Check for image generation + Farcaster posting coordination
+        # Check for image generation + posting coordination
         if "generate_image" in action_names and "send_farcaster_post" in action_names:
             logger.info("Detected image generation + Farcaster post coordination opportunity")
             return await self._coordinate_image_with_farcaster(actions, action_map)
         
-        # Check for image generation + Matrix posting coordination
         if "generate_image" in action_names and "send_matrix_message" in action_names:
             logger.info("Detected image generation + Matrix message coordination opportunity")
             return await self._coordinate_image_with_matrix(actions, action_map)
+        
+        # Check for video generation + posting coordination
+        if "generate_video" in action_names and "send_farcaster_post" in action_names:
+            logger.info("Detected video generation + Farcaster post coordination opportunity")
+            return await self._coordinate_video_with_farcaster(actions, action_map)
+        
+        if "generate_video" in action_names and "send_matrix_message" in action_names:
+            logger.info("Detected video generation + Matrix message coordination opportunity")
+            return await self._coordinate_video_with_matrix(actions, action_map)
         
         # No coordination needed, return actions as-is
         return actions
