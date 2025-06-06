@@ -185,7 +185,7 @@ For posts with media, the system automatically:
 - Handles proper URL encoding for special characters in titles and descriptions
 
 VIDEO GENERATION AND SHARING:
-To generate a video, use the `generate_video` tool. This will return an S3 URL.
+To generate a video, use the `generate_video` tool. This will return an Arweave URL.
 To share it on Matrix, you can either:
 1. Use `send_matrix_video` with the video_url parameter, or 
 2. Let the automatic coordination convert a `send_matrix_message` action for you
@@ -218,7 +218,7 @@ The system will automatically include the image_arweave_url in the Farcaster pos
 GENERATED MEDIA LIBRARY:
 You have access to a `generated_media_library` in the world state containing your previously generated images and videos.
 Each entry includes:
-- "url": S3 URL of the media
+- "url": Arweave URL of the media
 - "type": "image" or "video" 
 - "prompt": The text prompt used to generate it
 - "service_used": AI service that created it (e.g., "google_gemini", "replicate")
@@ -245,8 +245,8 @@ IMPORTANT IMAGE TOOL USAGE GUIDELINES:
 CRITICAL: When using describe_image tool for images from messages:
 - ALWAYS use the URL from the message's `image_urls` array, NOT the `content` field
 - The `content` field contains the original filename (e.g., "image.png") which is NOT a valid URL
-- The `image_urls` field contains the actual accessible URLs (e.g., S3 or Matrix URLs)
-- Example: If a message shows `content: "photo.jpg"` and `image_urls: ["https://s3.../abc123.jpg"]`, use "https://s3.../abc123.jpg" as the image_url parameter
+- The `image_urls` field contains the actual accessible URLs (e.g., Arweave or Matrix URLs)
+- Example: If a message shows `content: "photo.jpg"` and `image_urls: ["https://arweave.net/abc123"]`, use "https://arweave.net/abc123" as the image_url parameter
 
 Example for understanding: A message has `image_urls: ["http://example.com/photo.jpg"]`.
 {

@@ -203,13 +203,13 @@ Create new Farcaster posts with automatic image embedding and social media optim
                 "type": "string", 
                 "description": "The channel to post in (if not provided, posts to user's timeline)"
             },
-            "image_s3_url": {
+            "image_arweave_url": {
                 "type": "string",
-                "description": "S3 URL of an image to attach to the post"
+                "description": "Arweave URL of an image to attach to the post"
             },
-            "video_s3_url": {
+            "video_arweave_url": {
                 "type": "string", 
-                "description": "S3 URL of a video to attach to the post"
+                "description": "Arweave URL of a video to attach to the post"
             }
         },
         "required": ["content"]
@@ -896,11 +896,11 @@ The system includes comprehensive rate limiting with automatic monitoring:
 
 **Usage:**
 ```python
-from chatbot.tools.s3_service import S3Service
+from chatbot.tools.arweave_service import ArweaveService
 
-s3_service = S3Service()
-embeddable_url = s3_service.generate_embeddable_url(
-    s3_url="https://s3.amazonaws.com/bucket/image.jpg",
+arweave_service = ArweaveService()
+embeddable_url = arweave_service.generate_embeddable_url(
+    arweave_url="https://arweave.net/transaction_id",
     title="AI Generated Image",
     description="A beautiful sunset over mountains"
 )

@@ -26,7 +26,7 @@ class VeoService:
     - Rate limiting with per-minute and per-day limits
     - Browser headers for downloads
     - Robust polling with exponential backoff
-    - S3 integration for video storage
+    - Arweave integration for video storage
     - Enhanced error handling
     """
 
@@ -106,7 +106,7 @@ class VeoService:
             model: Veo model to use (default from config)
 
         Returns:
-            Array of S3 URLs for generated videos
+            Array of Arweave URLs for generated videos
         """
         if not self.check_rate_limit():
             logger.warning("VeoService: Rate limit exceeded")
@@ -212,7 +212,7 @@ class VeoService:
                     logger.warning("VeoService: No videos generated")
                     return []
 
-                # Download each video and upload to S3
+                # Download each video and upload to Arweave
                 arweave_urls = []
                 for i, video_info in enumerate(generated_videos):
                     video_uri = video_info.get("video", {}).get("uri")
@@ -265,7 +265,7 @@ class VeoService:
                                         pass
                             else:
                                 logger.warning(
-                                    "VeoService: No S3 service available, skipping upload"
+                                    "VeoService: No Arweave service available, skipping upload"
                                 )
 
                         else:

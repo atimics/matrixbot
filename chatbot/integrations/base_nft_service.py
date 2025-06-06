@@ -136,7 +136,7 @@ class BaseNFTService:
         Upload NFT metadata to Arweave and return the URI.
         
         Args:
-            image_url: URL to the image (typically S3)
+            image_url: URL to the image (typically Arweave)
             title: NFT title
             description: NFT description
             attributes: Optional list of trait attributes

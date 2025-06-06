@@ -82,7 +82,7 @@ class TestMediaActionTracking:
         mock_context.arweave_service = mock_arweave_service
         
         # Mock successful Arweave upload
-        mock_arweave_service.upload_image_data = AsyncMock(return_value="https://arweave.net/test123")
+        mock_arweave_service.upload_image_data = AsyncMock(return_value="https://arweave.net/test_image_id")
         
         # Mock settings
         with patch('chatbot.tools.media_generation_tools.settings') as mock_settings:

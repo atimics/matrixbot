@@ -38,7 +38,7 @@ async def test_farcaster_empty_content_with_image():
     # Test parameters with empty content but with image URL
     params = {
         "content": "",  # Empty content - this was causing the failure before
-        "image_s3_url": "https://example.com/image.jpg"
+        "image_arweave_url": "https://arweave.net/example_image_id"
     }
     
     # Execute the tool

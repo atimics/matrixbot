@@ -219,7 +219,7 @@ class ChatbotAPIServer:
             required_settings = [
                 "OPENROUTER_API_KEY", "MATRIX_HOMESERVER", "MATRIX_USER_ID",
                 "MATRIX_PASSWORD", "NEYNAR_API_KEY", "FARCASTER_BOT_SIGNER_UUID",
-                "GOOGLE_API_KEY", "S3_API_ENDPOINT", "S3_API_KEY", "GITHUB_TOKEN"
+                "GOOGLE_API_KEY", "ARWEAVE_WALLET_PATH", "ARWEAVE_GATEWAY_URL", "GITHUB_TOKEN"
             ]
             try:
                 # Get all settings from the config

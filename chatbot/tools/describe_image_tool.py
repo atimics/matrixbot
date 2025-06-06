@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 async def ensure_publicly_accessible_image_url(image_url: str, context: ActionContext) -> tuple[str, bool]:
     """
     Ensure the image URL is publicly accessible.
-    For Matrix URLs, download via nio client and upload to S3.
+    For Matrix URLs, download via nio client and upload to Arweave.
     Returns tuple of (url, is_accessible)
     """
     import re
@@ -159,7 +159,7 @@ class DescribeImageTool(ToolInterface):
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
-        # Ensure the image URL is publicly accessible (convert Matrix URLs to S3)
+        # Ensure the image URL is publicly accessible (convert Matrix URLs to Arweave)
         try:
             public_image_url, is_accessible = await ensure_publicly_accessible_image_url(image_url, context)
             

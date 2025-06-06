@@ -26,7 +26,7 @@ class StorePermanentMemoryTool(ToolInterface):
     @property
     def description(self) -> str:
         return (
-            "Stores a textual memory or a reference to generated media (image/video S3 URL) "
+            "Stores a textual memory or a reference to generated media (image/video Arweave URL) "
             "permanently on Arweave. Returns the Arweave transaction ID."
         )
 

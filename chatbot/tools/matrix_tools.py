@@ -792,7 +792,7 @@ class SendMatrixImageTool(ToolInterface):
     def parameters_schema(self) -> Dict[str, Any]:
         return {
             "channel_id": "string (Matrix room ID) - The room where the image should be sent",
-            "image_url": "string - The URL of the image to send (must be publicly accessible, such as S3 URLs from image generation)",
+            "image_url": "string - The URL of the image to send (must be publicly accessible, such as Arweave URLs from image generation)",
             "caption": "string (optional) - Optional text caption or description for the image",
             "filename": "string (optional) - Optional filename for the image (will be auto-detected if not provided)",
         }

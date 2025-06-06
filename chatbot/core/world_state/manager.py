@@ -582,7 +582,7 @@ class WorldStateManager:
         Record AI-generated media in the image library for future reference.
 
         Args:
-            media_url: S3 URL or other URL of the generated media
+            media_url: Arweave URL or other URL of the generated media
             media_type: 'image' or 'video'
             prompt: The text prompt used to generate the media
             service_used: The AI service used (e.g., 'google_gemini', 'replicate')
