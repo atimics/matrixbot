@@ -23,8 +23,10 @@ logger = logging.getLogger(__name__)
 
 def setup_logging() -> None:
     """Set up logging configuration."""
+    # Convert string log level to logging constant
+    log_level = getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO)
     logging.basicConfig(
-        level=getattr(logging, settings.LOG_LEVEL, "INFO"),
+        level=log_level,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[
             logging.StreamHandler(),

@@ -1,41 +1,20 @@
 # Full-Stack Containerized Architecture
-version: '3.8'
 
 services:
   postgres:
     image: postgres:14-alpine
     container_name: chatbot_postgres
     environment:
-      POSTGRES_USER: synapse
-      POSTGRES_PASSWORD: ${SYNAPSE_DB_PASSWORD}
-      POSTGRES_DB: synapse
+      POSTGRES_USER: chatbot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: chatbot
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - chatbot_network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U synapse"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-
-  synapse:
-    image: matrixdotorg/synapse:latest
-    container_name: chatbot_synapse
-    ports:
-      - "8008:8008"
-      - "8448:8448"
-    volumes:
-      - ./synapse-data:/data
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - chatbot_network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8008/health || exit 1"]
+      test: ["CMD-SHELL", "pg_isready -U chatbot"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -53,14 +32,13 @@ services:
       - ./context_storage:/app/context_storage # Persist training data
       - ./matrix_store:/app/matrix_store # Persist matrix session data
     depends_on:
-      synapse:
+      postgres:
         condition: service_healthy
     networks:
       - chatbot_network
     environment:
       # Pass all required secrets and configs from a .env file
       - PYTHONUNBUFFERED=1
-      - MATRIX_HOMESERVER=http://synapse:8008
       - MATRIX_USER_ID=${MATRIX_USER_ID}
       - MATRIX_PASSWORD=${MATRIX_PASSWORD}
       - MATRIX_ROOM_ID=${MATRIX_ROOM_ID}
@@ -108,7 +86,6 @@ services:
 
 volumes:
   postgres_data:
-  synapse_data:
 
 networks:
   chatbot_network:

@@ -21,8 +21,9 @@ COPY pyproject.toml poetry.lock* ./
 # Install a specific, modern version of Poetry
 RUN pip install poetry>=1.2.0
 
-# Configure poetry: don't create a virtual environment
+# Configure poetry: don't create a virtual environment and install in system site-packages
 RUN poetry config virtualenvs.create false
+RUN poetry config virtualenvs.in-project false
 
 # Copy the rest of the application's code into the container
 # This is done before poetry install to ensure files like README.md are available

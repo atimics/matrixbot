@@ -22,16 +22,16 @@ class AppConfig(BaseSettings):
     OBSERVATION_INTERVAL: float = 2.0
     MAX_CYCLES_PER_HOUR: int = 300
     AI_MODEL: str = "openai/gpt-4o-mini"
-    OPENROUTER_API_KEY: str
+    OPENROUTER_API_KEY: Optional[str] = None  # Made optional for demo mode
     LOG_LEVEL: str = "INFO"
     
     # Web Search and Research
     WEB_SEARCH_MODEL: str = "openai/gpt-4o-mini:online"  # OpenRouter online model for web search
 
-    # Matrix
-    MATRIX_HOMESERVER: str
-    MATRIX_USER_ID: str
-    MATRIX_PASSWORD: str
+    # Matrix (Optional since we removed Synapse dependency)
+    MATRIX_HOMESERVER: Optional[str] = None
+    MATRIX_USER_ID: Optional[str] = None
+    MATRIX_PASSWORD: Optional[str] = None
     MATRIX_ROOM_ID: str = (
         "#robot-laboratory:chat.ratimics.com"  # Default initial room to monitor
     )
