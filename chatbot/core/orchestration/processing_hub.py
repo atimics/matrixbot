@@ -245,16 +245,17 @@ class ProcessingHub:
             primary_channel_id = self._get_primary_channel(active_channels)
             
             # Build full payload with optimized configuration for smaller size
+            from ...config import settings
             config = {
                 "optimize_for_size": True,
-                "include_detailed_user_info": False,
-                "max_messages_per_channel": 8,
-                "max_action_history": 4,
-                "max_thread_messages": 4,
-                "max_other_channels": 2,
-                "message_snippet_length": 60,
-                "bot_fid": getattr(self.world_state, 'get_config_value', lambda x: None)("bot_fid"),
-                "bot_username": getattr(self.world_state, 'get_config_value', lambda x: None)("bot_username")
+                "include_detailed_user_info": settings.AI_INCLUDE_DETAILED_USER_INFO,
+                "max_messages_per_channel": settings.AI_CONVERSATION_HISTORY_LENGTH,
+                "max_action_history": settings.AI_ACTION_HISTORY_LENGTH,
+                "max_thread_messages": settings.AI_THREAD_HISTORY_LENGTH,
+                "max_other_channels": settings.AI_OTHER_CHANNELS_SUMMARY_COUNT,
+                "message_snippet_length": settings.AI_OTHER_CHANNELS_MESSAGE_SNIPPET_LENGTH,
+                "bot_fid": settings.FARCASTER_BOT_FID,
+                "bot_username": settings.FARCASTER_BOT_USERNAME,
             }
             
             payload = self.payload_builder.build_full_payload(
