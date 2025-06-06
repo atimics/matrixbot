@@ -962,3 +962,136 @@ class TraditionalProcessor:
                 coordinated_actions.append(action)
         
         return coordinated_actions
+
+    async def _coordinate_video_with_farcaster(self, actions: list, action_map: dict) -> list:
+        """Coordinate video generation with Farcaster posting."""
+        current_time = time.time()
+        coordinated_actions = []
+        generated_video_url = None
+        
+        video_action_idx = action_map["generate_video"]
+        video_action = actions[video_action_idx]
+        
+        try:
+            action_params = getattr(video_action, 'parameters', video_action.get("parameters", {}))
+            
+            can_execute, reason = self.rate_limiter.can_execute_action("generate_video", current_time)
+            
+            if can_execute:
+                tool = self.tool_registry.get_tool("generate_video")
+                if tool:
+                    self.rate_limiter.record_action("generate_video", current_time)
+                    result = await tool.execute(action_params, self.action_context)
+                    logger.info(f"Executed coordinated video generation: {result}")
+                    
+                    if isinstance(result, dict) and result.get("status") == "success" and result.get("s3_video_url"):
+                        generated_video_url = result["s3_video_url"]
+                        logger.info(f"Generated video URL for coordination: {generated_video_url}")
+
+                    if self.context_manager:
+                        channel_id = action_params.get('channel_id', 'default')
+                        result_dict = result if isinstance(result, dict) else {'result': str(result)}
+                        await self.context_manager.add_tool_result(channel_id, "generate_video", result_dict)
+            else:
+                logger.warning(f"Cannot execute video generation for coordination: {reason}")
+        
+        except Exception as e:
+            logger.error(f"Error in coordinated video generation: {e}")
+        
+        for i, action in enumerate(actions):
+            if i == video_action_idx:
+                continue
+            
+            action_name = getattr(action, 'action_type', action.get("tool") or action.get("action_type"))
+            action_params = getattr(action, 'parameters', action.get("parameters", {})).copy()
+
+            if action_name == "send_farcaster_post" and generated_video_url:
+                action_params["video_s3_url"] = generated_video_url
+                logger.info(f"Enhanced Farcaster post with generated video: {generated_video_url}")
+                
+                if hasattr(action, 'action_type'):
+                    from ..ai_engine import ActionPlan
+                    modified_action = ActionPlan(
+                        action_type=action.action_type,
+                        parameters=action_params,
+                        reasoning=action.reasoning,
+                        priority=action.priority
+                    )
+                else:
+                    modified_action = action.copy()
+                    modified_action["parameters"] = action_params
+                
+                coordinated_actions.append(modified_action)
+            else:
+                coordinated_actions.append(action)
+        
+        return coordinated_actions
+
+    async def _coordinate_video_with_matrix(self, actions: list, action_map: dict) -> list:
+        """Coordinate video generation with Matrix messaging."""
+        current_time = time.time()
+        coordinated_actions = []
+        generated_video_url = None
+        
+        video_action_idx = action_map["generate_video"]
+        video_action = actions[video_action_idx]
+        
+        try:
+            action_params = getattr(video_action, 'parameters', video_action.get("parameters", {}))
+            
+            can_execute, reason = self.rate_limiter.can_execute_action("generate_video", current_time)
+            
+            if can_execute:
+                tool = self.tool_registry.get_tool("generate_video")
+                if tool:
+                    self.rate_limiter.record_action("generate_video", current_time)
+                    result = await tool.execute(action_params, self.action_context)
+                    logger.info(f"Executed coordinated video generation: {result}")
+                    
+                    if isinstance(result, dict) and result.get("status") == "success" and result.get("s3_video_url"):
+                        generated_video_url = result["s3_video_url"]
+                        logger.info(f"Generated video URL for Matrix coordination: {generated_video_url}")
+
+                    if self.context_manager:
+                        channel_id = action_params.get('channel_id', 'default')
+                        result_dict = result if isinstance(result, dict) else {'result': str(result)}
+                        await self.context_manager.add_tool_result(channel_id, "generate_video", result_dict)
+            else:
+                logger.warning(f"Cannot execute video generation for coordination: {reason}")
+        
+        except Exception as e:
+            logger.error(f"Error in coordinated video generation: {e}")
+            
+        for i, action in enumerate(actions):
+            if i == video_action_idx:
+                continue
+                
+            action_name = getattr(action, 'action_type', action.get("tool") or action.get("action_type"))
+            action_params = getattr(action, 'parameters', action.get("parameters", {})).copy()
+
+            if action_name == "send_matrix_message" and generated_video_url:
+                action_params["video_url"] = generated_video_url
+                if "message" in action_params:
+                    action_params["caption"] = action_params.pop("message")
+                
+                logger.info(f"Converting Matrix message to Matrix video with URL: {generated_video_url}")
+                
+                if hasattr(action, 'action_type'):
+                    from ..ai_engine import ActionPlan
+                    modified_action = ActionPlan(
+                        action_type="send_matrix_video",
+                        parameters=action_params,
+                        reasoning=f"Converted to video post with generated video: {action.reasoning}",
+                        priority=action.priority
+                    )
+                else:
+                    modified_action = action.copy()
+                    modified_action["tool"] = "send_matrix_video"
+                    modified_action["action_type"] = "send_matrix_video"
+                    modified_action["parameters"] = action_params
+                
+                coordinated_actions.append(modified_action)
+            else:
+                coordinated_actions.append(action)
+        
+        return coordinated_actions
