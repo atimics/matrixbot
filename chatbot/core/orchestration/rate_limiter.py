@@ -16,13 +16,13 @@ class RateLimitConfig:
     """Enhanced rate limiting configuration."""
 
     # Global rate limits
-    max_cycles_per_hour: int = 60  # Changed from 300 to 60 (1 cycle per minute)
-    min_cycle_interval: float = 60.0  # Changed from 12.0 to 60.0 (Minimum seconds between cycles)
+    max_cycles_per_hour: int = 300  # Restored from overly conservative 60 to proper 300
+    min_cycle_interval: float = 12.0  # Restored from 60.0 to proper 12.0 (Minimum seconds between cycles)
 
     # Adaptive rate limiting
     enable_adaptive_limits: bool = True
     burst_window_seconds: int = 300  # 5 minutes
-    max_burst_cycles: int = 5  # Adjusted from 20 to 5 (5 cycles in 5-min burst window)
+    max_burst_cycles: int = 20  # Restored from overly conservative 5 to proper 20 (cycles in burst window)
     cooldown_multiplier: float = 1.5  # How much to slow down after burst
 
     # Action-specific limits (per hour)

@@ -49,16 +49,24 @@ class MatrixObserver:
         # Create store directory for Matrix client data
         self.store_path = Path("matrix_store")
         self.store_path.mkdir(exist_ok=True)
-
-        if not all([self.homeserver, self.user_id, self.password]):
-            raise ValueError(
-                "Matrix configuration missing. Check MATRIX_HOMESERVER, MATRIX_USER_ID, and MATRIX_PASSWORD environment variables."
+        
+        # Check for Matrix configuration - disable if not available
+        self.enabled = all([self.homeserver, self.user_id, self.password])
+        if not self.enabled:
+            logger.warning(
+                "Matrix configuration incomplete. Matrix observer will be disabled. "
+                "Check MATRIX_HOMESERVER, MATRIX_USER_ID, and MATRIX_PASSWORD environment variables."
             )
+            return
 
         logger.info(f"MatrixObserver: Initialized for {self.user_id}@{self.homeserver}")
 
     def add_channel(self, channel_id: str, channel_name: str):
         """Add a channel to monitor"""
+        if not self.enabled:
+            logger.warning("Matrix observer is disabled - cannot add channel")
+            return
+            
         self.channels_to_monitor.append(channel_id)
         self.world_state.add_channel(channel_id, "matrix", channel_name)
         logger.info(
@@ -67,6 +75,10 @@ class MatrixObserver:
 
     async def start(self):
         """Start the Matrix observer"""
+        if not self.enabled:
+            logger.info("MatrixObserver: Disabled due to missing configuration")
+            return
+            
         logger.info("MatrixObserver: Starting Matrix client...")
 
         # Create client with device configuration and store path
