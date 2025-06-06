@@ -18,23 +18,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy poetry files first for better Docker layer caching
 COPY pyproject.toml poetry.lock* ./
 
-# Install poetry
-RUN pip install poetry
+# Install a specific, modern version of Poetry
+RUN pip install poetry>=1.2.0
 
 # Configure poetry: don't create a virtual environment
 RUN poetry config virtualenvs.create false
 
-# Export dependencies to requirements.txt
-# Ensure --without dev is used here to exclude development packages
-RUN poetry export --without dev --format requirements.txt --output requirements.txt
-
-# Install dependencies using pip from the exported requirements.txt
-# --no-cache-dir is a good practice for Docker images to keep them small
-# --prefer-binary can speed up installations for packages with binary distributions
-RUN pip install --no-cache-dir --prefer-binary -r requirements.txt
-
 # Copy the rest of the application's code into the container
+# This is done before poetry install to ensure files like README.md are available
 COPY . .
+
+# Install dependencies using poetry
+# --without dev ensures development packages are excluded
+# --no-interaction, --no-ansi are good for CI/Docker
+RUN poetry install --without dev --no-interaction --no-ansi
 
 # Create necessary directories
 RUN mkdir -p /app/context_storage /app/matrix_store
