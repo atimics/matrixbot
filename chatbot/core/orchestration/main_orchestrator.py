@@ -291,25 +291,35 @@ class MainOrchestrator:
                 settings.NFT_DEV_WALLET_PRIVATE_KEY and 
                 settings.NFT_COLLECTION_ADDRESS_BASE):
                 
-                self.base_nft_service = BaseNFTService(
-                    rpc_url=settings.BASE_RPC_URL,
-                    private_key=settings.NFT_DEV_WALLET_PRIVATE_KEY,
-                    contract_address=settings.NFT_COLLECTION_ADDRESS_BASE
-                )
-                logger.info("Base NFT service initialized")
+                self.base_nft_service = BaseNFTService()
                 
-                # Initialize eligibility service
-                if settings.ECOSYSTEM_TOKEN_CONTRACT_ADDRESS:
-                    self.eligibility_service = UserEligibilityService(
-                        base_nft_service=self.base_nft_service,
-                        world_state_manager=self.world_state
-                    )
-                    await self.eligibility_service.start()
-                    logger.info("User eligibility service started")
+                # Initialize the service
+                if await self.base_nft_service.initialize():
+                    logger.info("Base NFT service initialized successfully")
                     
-                    # Update action context with NFT services
-                    self.action_context.base_nft_service = self.base_nft_service
-                    self.action_context.eligibility_service = self.eligibility_service
+                    # Initialize eligibility service if we have Farcaster observer
+                    if (settings.ECOSYSTEM_TOKEN_CONTRACT_ADDRESS and 
+                        hasattr(self, 'farcaster_observer') and 
+                        self.farcaster_observer and 
+                        hasattr(self.farcaster_observer, 'neynar_api_client')):
+                        
+                        self.eligibility_service = UserEligibilityService(
+                            neynar_api_client=self.farcaster_observer.neynar_api_client,
+                            base_nft_service=self.base_nft_service,
+                            world_state_manager=self.world_state
+                        )
+                        await self.eligibility_service.start()
+                        logger.info("User eligibility service started")
+                        
+                        # Update action context with NFT services
+                        self.action_context.base_nft_service = self.base_nft_service
+                        self.action_context.eligibility_service = self.eligibility_service
+                    else:
+                        logger.info("Eligibility service not started - missing dependencies")
+                        
+                else:
+                    logger.warning("Failed to initialize Base NFT service")
+                    self.base_nft_service = None
                 
             else:
                 logger.info("NFT service configuration incomplete - NFT features disabled")

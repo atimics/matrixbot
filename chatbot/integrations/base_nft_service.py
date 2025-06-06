@@ -14,7 +14,15 @@ from typing import Dict, Any, Optional, List
 
 import aiohttp
 from web3 import Web3
-from web3.middleware import geth_poa_middleware
+try:
+    from web3.middleware import geth_poa_middleware
+except ImportError:
+    # For newer versions of web3.py
+    try:
+        from web3.middleware.geth_poa import geth_poa_middleware
+    except ImportError:
+        # Fallback - no POA middleware needed for Base
+        geth_poa_middleware = None
 from eth_account import Account
 
 from chatbot.config import settings
@@ -95,8 +103,9 @@ class BaseNFTService:
             # Initialize Web3
             self.w3 = Web3(Web3.HTTPProvider(self.rpc_url))
             
-            # Add PoA middleware for Base (if needed)
-            self.w3.middleware_onion.inject(geth_poa_middleware, layer=0)
+            # Add PoA middleware for Base (if available)
+            if geth_poa_middleware:
+                self.w3.middleware_onion.inject(geth_poa_middleware, layer=0)
             
             # Check connection
             if not self.w3.is_connected():
