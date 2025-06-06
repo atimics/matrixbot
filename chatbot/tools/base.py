@@ -18,12 +18,16 @@ class ActionContext:
         world_state_manager=None,
         context_manager=None,
         s3_service=None,
+        base_nft_service=None,
+        eligibility_service=None,
     ):
         self.matrix_observer = matrix_observer
         self.farcaster_observer = farcaster_observer
         self.world_state_manager = world_state_manager
         self.context_manager = context_manager
         self.s3_service = s3_service
+        self.base_nft_service = base_nft_service
+        self.eligibility_service = eligibility_service
 
 
 class ToolInterface(ABC):

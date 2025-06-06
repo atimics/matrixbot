@@ -17,6 +17,8 @@ from ...core.ai_engine import AIDecisionEngine
 from ...core.context import ContextManager
 from ...integrations.farcaster import FarcasterObserver
 from ...integrations.matrix.observer import MatrixObserver
+from ...integrations.base_nft_service import BaseNFTService
+from ...integrations.eligibility_service import UserEligibilityService
 from ...tools.registry import ToolRegistry
 from ...tools.s3_service import s3_service
 from ..world_state.manager import WorldStateManager
@@ -89,6 +91,10 @@ class MainOrchestrator:
         self.matrix_observer: Optional[MatrixObserver] = None
         self.farcaster_observer: Optional[FarcasterObserver] = None
         
+        # NFT and eligibility services
+        self.base_nft_service: Optional[BaseNFTService] = None
+        self.eligibility_service: Optional[UserEligibilityService] = None
+        
         # System state
         self.running = False
         self.cycle_count = 0  # Track processing cycles
@@ -122,6 +128,8 @@ class MainOrchestrator:
             CreateCustomFrameTool,
             SearchFramesTool,
             GetFrameCatalogTool,
+            CreateMintFrameTool,
+            CreateAirdropClaimFrameTool,
         )
         from ...tools.matrix_tools import (
             AcceptMatrixInviteTool,
@@ -186,6 +194,10 @@ class MainOrchestrator:
         self.tool_registry.register_tool(SearchFramesTool())
         self.tool_registry.register_tool(GetFrameCatalogTool())
         
+        # NFT Frame tools
+        self.tool_registry.register_tool(CreateMintFrameTool())
+        self.tool_registry.register_tool(CreateAirdropClaimFrameTool())
+        
         # Media generation tools
         self.tool_registry.register_tool(GenerateImageTool())
         self.tool_registry.register_tool(GenerateVideoTool())
@@ -216,6 +228,9 @@ class MainOrchestrator:
             # Initialize external observers
             await self._initialize_observers()
             
+            # Initialize NFT and blockchain services
+            await self._initialize_nft_services()
+            
             # Set up processing hub with traditional processor
             self._setup_processing_components()
             
@@ -238,6 +253,10 @@ class MainOrchestrator:
 
         # Stop processing hub
         self.processing_hub.stop_processing_loop()
+        
+        # Stop NFT and eligibility services
+        if self.eligibility_service:
+            await self.eligibility_service.stop()
         
         # Stop external observers
         if self.matrix_observer:
@@ -263,6 +282,41 @@ class MainOrchestrator:
         
         # Note: Node processor would be set up here when implementing
         # the JSON Observer integration
+
+    async def _initialize_nft_services(self) -> None:
+        """Initialize NFT and blockchain services if credentials are available."""
+        try:
+            # Initialize Base NFT service
+            if (settings.BASE_RPC_URL and 
+                settings.NFT_DEV_WALLET_PRIVATE_KEY and 
+                settings.NFT_COLLECTION_ADDRESS_BASE):
+                
+                self.base_nft_service = BaseNFTService(
+                    rpc_url=settings.BASE_RPC_URL,
+                    private_key=settings.NFT_DEV_WALLET_PRIVATE_KEY,
+                    contract_address=settings.NFT_COLLECTION_ADDRESS_BASE
+                )
+                logger.info("Base NFT service initialized")
+                
+                # Initialize eligibility service
+                if settings.ECOSYSTEM_TOKEN_CONTRACT_ADDRESS:
+                    self.eligibility_service = UserEligibilityService(
+                        base_nft_service=self.base_nft_service,
+                        world_state_manager=self.world_state
+                    )
+                    await self.eligibility_service.start()
+                    logger.info("User eligibility service started")
+                    
+                    # Update action context with NFT services
+                    self.action_context.base_nft_service = self.base_nft_service
+                    self.action_context.eligibility_service = self.eligibility_service
+                
+            else:
+                logger.info("NFT service configuration incomplete - NFT features disabled")
+                
+        except Exception as e:
+            logger.error(f"Failed to initialize NFT services: {e}")
+            logger.info("Continuing without NFT integration")
 
     async def _initialize_observers(self) -> None:
         """Initialize available observers based on environment configuration."""
