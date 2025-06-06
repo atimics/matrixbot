@@ -53,16 +53,16 @@ async def ensure_publicly_accessible_image_url(image_url: str, context: ActionCo
                 download_response = await context.matrix_observer.client.download(mxc_uri)
                 
                 if download_response and hasattr(download_response, 'body'):
-                    # Upload to S3
-                    if hasattr(context, 's3_service') and context.s3_service:
-                        s3_url = await context.s3_service.upload_image_data(
+                    # Upload to Arweave
+                    if hasattr(context, 'arweave_service') and context.arweave_service:
+                        arweave_url = await context.arweave_service.upload_image_data(
                             download_response.body,
                             f"matrix_media_{media_id}.jpg"
                         )
-                        logger.info(f"Successfully uploaded Matrix media to S3: {s3_url}")
-                        return s3_url, True
+                        logger.info(f"Successfully uploaded Matrix media to Arweave: {arweave_url}")
+                        return arweave_url, True
                     else:
-                        logger.warning("No S3 service available")
+                        logger.warning("No Arweave service available")
                         # Fall back to trying the original URL
                         is_accessible = await _verify_image_accessibility(image_url)
                         return image_url, is_accessible

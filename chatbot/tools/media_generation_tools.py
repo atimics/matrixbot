@@ -207,28 +207,28 @@ class GenerateImageTool(ToolInterface):
                     logger.info(f"Generated image using Replicate: {prompt[:50]}...")
 
                     if image_url:
-                        # ALWAYS require S3 service for uploads - fail if not available
-                        if not hasattr(context, "s3_service"):
-                            logger.error("S3 service not available - image generation requires S3 storage")
+                        # ALWAYS require Arweave service for uploads - fail if not available
+                        if not hasattr(context, "arweave_service"):
+                            logger.error("Arweave service not available - image generation requires Arweave storage")
                             return {
                                 "status": "error",
-                                "message": "Image generation requires S3 storage but S3 service is not available"
+                                "message": "Image generation requires Arweave storage but Arweave service is not available"
                             }
                         try:
-                            s3_url = await context.s3_service.ensure_s3_url(image_url)
-                            if s3_url and context.s3_service.is_s3_url(s3_url):
-                                pass  # s3_url is set
+                            arweave_url = await context.arweave_service.ensure_arweave_url(image_url)
+                            if arweave_url and context.arweave_service.is_arweave_url(arweave_url):
+                                pass  # arweave_url is set
                             else:
-                                logger.error(f"Failed to ensure image is on S3 - received: {s3_url}")
+                                logger.error(f"Failed to ensure image is on Arweave - received: {arweave_url}")
                                 return {
                                     "status": "error",
-                                    "message": "Image generated but failed to upload to S3 - all images must be stored on S3"
+                                    "message": "Image generated but failed to upload to Arweave - all images must be stored on Arweave"
                                 }
-                        except Exception as s3_error:
-                            logger.error(f"Failed to upload Replicate image to S3: {s3_error}")
+                        except Exception as arweave_error:
+                            logger.error(f"Failed to upload Replicate image to Arweave: {arweave_error}")
                             return {
                                 "status": "error", 
-                                "message": f"Image generated but S3 upload failed: {str(s3_error)}"
+                                "message": f"Image generated but Arweave upload failed: {str(arweave_error)}"
                             }
                     else:
                         logger.error("Replicate image generation returned no URL")
@@ -239,34 +239,34 @@ class GenerateImageTool(ToolInterface):
                 except Exception as e:
                     logger.error(f"Replicate image generation failed: {e}")
 
-            # If we have image data from Gemini, upload to S3
+            # If we have image data from Gemini, upload to Arweave
             if image_data:
-                if not hasattr(context, "s3_service"):
-                    logger.error("S3 service not available - image generation requires S3 storage")
+                if not hasattr(context, "arweave_service"):
+                    logger.error("Arweave service not available - image generation requires Arweave storage")
                     return {
                         "status": "error",
-                        "message": "Image generation requires S3 storage but S3 service is not available"
+                        "message": "Image generation requires Arweave storage but Arweave service is not available"
                     }
                 try:
                     timestamp = int(time.time())
                     filename = f"generated_image_{timestamp}.png"
-                    s3_url = await context.s3_service.upload_image_data(
+                    arweave_url = await context.arweave_service.upload_image_data(
                         image_data, filename
                     )
-                    if not s3_url:
-                        logger.error("Failed to upload image data to S3")
+                    if not arweave_url:
+                        logger.error("Failed to upload image data to Arweave")
                         return {
                             "status": "error",
-                            "message": "Image generated but S3 upload failed - all images must be stored on S3"
+                            "message": "Image generated but Arweave upload failed - all images must be stored on Arweave"
                         }
                 except Exception as e:
-                    logger.error(f"Failed to upload image to S3: {e}")
+                    logger.error(f"Failed to upload image to Arweave: {e}")
                     return {
                         "status": "error",
-                        "message": f"Image generated but S3 upload failed: {str(e)}"
+                        "message": f"Image generated but Arweave upload failed: {str(e)}"
                     }
 
-            if not s3_url:
+            if not arweave_url:
                 return {
                     "status": "error",
                     "message": "Failed to generate image with available services (Google Gemini and/or Replicate)",

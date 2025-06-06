@@ -386,6 +386,11 @@ class MatrixObserver:
                 # Bot joined a room (usually handled by join/accept methods, but this catches edge cases)
                 logger.info(f"MatrixObserver: Bot joined room {room_id}")
 
+                # Ensure the channel is registered in the world state
+                if room_id not in self.world_state.state.channels:
+                    room_details = self._extract_room_details(room)
+                    self._register_room(room_id, room_details)
+
                 # Ensure room is in monitoring if not already
                 if room_id not in self.channels_to_monitor:
                     self.channels_to_monitor.append(room_id)

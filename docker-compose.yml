@@ -1,116 +1,115 @@
+# Full-Stack Containerized Architecture
+version: '3.8'
+
 services:
+  postgres:
+    image: postgres:14-alpine
+    container_name: chatbot_postgres
+    environment:
+      POSTGRES_USER: synapse
+      POSTGRES_PASSWORD: ${SYNAPSE_DB_PASSWORD}
+      POSTGRES_DB: synapse
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - chatbot_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U synapse"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  synapse:
+    image: matrixdotorg/synapse:latest
+    container_name: chatbot_synapse
+    ports:
+      - "8008:8008"
+      - "8448:8448"
+    volumes:
+      - ./synapse-data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - chatbot_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8008/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
   chatbot:
     build:
       context: .
-      dockerfile: Dockerfile
-      target: production
-    container_name: ratimics-chatbot
-    restart: unless-stopped
-    
-    # Environment variables (override with .env file)
+      dockerfile: chatbot.Dockerfile
+    container_name: chatbot_backend
+    ports:
+      - "8000:8000" # Expose the API server
+    volumes:
+      - .:/app # Mount current directory for live code changes during development
+      - ./chatbot.db:/app/chatbot.db # Persist the chatbot's own DB
+      - ./context_storage:/app/context_storage # Persist training data
+      - ./matrix_store:/app/matrix_store # Persist matrix session data
+    depends_on:
+      synapse:
+        condition: service_healthy
+    networks:
+      - chatbot_network
     environment:
-      - CHATBOT_ENV=production
-      - CHATBOT_DB_PATH=/app/data/chatbot.db
-      - OBSERVATION_INTERVAL=${OBSERVATION_INTERVAL:-2}
-      - MAX_CYCLES_PER_HOUR=${MAX_CYCLES_PER_HOUR:-300}
-      - AI_MODEL=${AI_MODEL:-openai/gpt-4o-mini}
-      
-      # Matrix configuration
-      - MATRIX_HOMESERVER=${MATRIX_HOMESERVER}
+      # Pass all required secrets and configs from a .env file
+      - PYTHONUNBUFFERED=1
+      - MATRIX_HOMESERVER=http://synapse:8008
       - MATRIX_USER_ID=${MATRIX_USER_ID}
       - MATRIX_PASSWORD=${MATRIX_PASSWORD}
-      - MATRIX_ROOM_ID=${MATRIX_ROOM_ID:-#robot-laboratory:chat.ratimics.com}
-      - MATRIX_DEVICE_ID=${MATRIX_DEVICE_ID}
-      - DEVICE_NAME=${DEVICE_NAME:-ratichat_bot}
-      
-      # OpenRouter API
+      - MATRIX_ROOM_ID=${MATRIX_ROOM_ID}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      
-      # Farcaster (optional)
       - NEYNAR_API_KEY=${NEYNAR_API_KEY}
-    
-    # Volume mounts for persistence
-    volumes:
-      - chatbot_data:/app/data
-      - chatbot_logs:/app/logs
-      - chatbot_matrix_store:/app/matrix_store
-      - chatbot_context:/app/context_storage
-    
-    # Network configuration
-    networks:
-      - chatbot_network
-    
-    # Resource limits
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.5'
-        reservations:
-          memory: 256M
-          cpus: '0.1'
-    
-    # Health check
+      - FARCASTER_BOT_SIGNER_UUID=${FARCASTER_BOT_SIGNER_UUID}
+      - FARCASTER_BOT_FID=${FARCASTER_BOT_FID}
+      - FARCASTER_BOT_USERNAME=${FARCASTER_BOT_USERNAME}
+      - ECOSYSTEM_TOKEN_CONTRACT_ADDRESS=${ECOSYSTEM_TOKEN_CONTRACT_ADDRESS}
+      - ECOSYSTEM_TOKEN_NETWORK=${ECOSYSTEM_TOKEN_NETWORK}
+      - NUM_TOP_HOLDERS_TO_TRACK=${NUM_TOP_HOLDERS_TO_TRACK}
+      - AI_MODEL=${AI_MODEL}
+      - WEB_SEARCH_MODEL=${WEB_SEARCH_MODEL}
+      - LOG_LEVEL=${LOG_LEVEL}
+      - CHATBOT_DB_PATH=/app/chatbot.db
+      - OBSERVATION_INTERVAL=${OBSERVATION_INTERVAL}
+      - MAX_CYCLES_PER_HOUR=${MAX_CYCLES_PER_HOUR}
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import sqlite3; sqlite3.connect('/app/data/chatbot.db').execute('SELECT 1')"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 10s
-    
-    # Logging configuration
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+      retries: 5
 
-  # Optional: Web interface for monitoring
-  web-interface:
+  ui:
     build:
       context: .
-      dockerfile: Dockerfile
-      target: production
-    container_name: ratimics-chatbot-web
-    restart: unless-stopped
-    command: ["python", "control_panel.py"]
-    
-    environment:
-      - CHATBOT_ENV=production
-      - CHATBOT_DB_PATH=/app/data/chatbot.db
-      
-    volumes:
-      - chatbot_data:/app/data:ro
-      - chatbot_logs:/app/logs:ro
-      
+      dockerfile: ui.Dockerfile
+    container_name: chatbot_ui
     ports:
-      - "8000:8000"
-      
-    networks:
-      - chatbot_network
-      
+      - "3000:3000"
+    volumes:
+      - ./ui:/app # Mount for live development
+      - /app/node_modules # Anonymous volume to prevent host node_modules from overwriting container's
+      - /app/.next # Anonymous volume to prevent build artifacts from being overwritten
     depends_on:
       chatbot:
         condition: service_healthy
-    
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-          cpus: '0.2'
+    networks:
+      - chatbot_network
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    restart: unless-stopped
 
-# Named volumes for data persistence
 volumes:
-  chatbot_data:
-    driver: local
-  chatbot_logs:
-    driver: local
-  chatbot_matrix_store:
-    driver: local
-  chatbot_context:
-    driver: local
+  postgres_data:
+  synapse_data:
 
-# Network for service communication
 networks:
   chatbot_network:
     driver: bridge

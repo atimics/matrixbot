@@ -126,7 +126,7 @@ class UpdateProjectPlanTool(ToolInterface):  # Phase 2
         from ..core.world_state.structures import ProjectTask
         
         if action == "list":
-            tasks = context.world_state.project_plan
+            tasks = context.world_state_manager.state.project_plan
             task_summary = []
             for task_id, task in tasks.items():
                 task_summary.append({
@@ -154,7 +154,7 @@ class UpdateProjectPlanTool(ToolInterface):  # Phase 2
                 related_code_files=params.get("related_files", []),
                 source_references=params.get("source_refs", [])
             )
-            context.world_state.add_project_task(task)
+            context.world_state_manager.state.add_project_task(task)
             return {
                 "status": "success",
                 "message": f"Created task '{title}' with ID {task.task_id}",
@@ -163,7 +163,7 @@ class UpdateProjectPlanTool(ToolInterface):  # Phase 2
         
         elif action == "update":
             task_id = params.get("task_id")
-            if not task_id or task_id not in context.world_state.project_plan:
+            if not task_id or task_id not in context.world_state_manager.state.project_plan:
                 return {"status": "failure", "message": "Invalid or missing task_id"}
             
             update_fields = {}
@@ -178,7 +178,7 @@ class UpdateProjectPlanTool(ToolInterface):  # Phase 2
                     else:
                         update_fields[field] = params[field]
             
-            context.world_state.update_project_task(task_id, **update_fields)
+            context.world_state_manager.update_project_task(task_id, **update_fields)
             return {
                 "status": "success",
                 "message": f"Updated task {task_id}",
