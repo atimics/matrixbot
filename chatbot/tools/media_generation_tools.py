@@ -162,18 +162,31 @@ class GenerateImageTool(ToolInterface):
             context.world_state_manager.record_generated_media(
                 media_url=image_arweave_url, media_type="image", prompt=prompt,
                 service_used=service_used, aspect_ratio=aspect_ratio,
-                metadata={"embed_page_url": embed_page_url, "html_tx_id": html_tx_id}
+                metadata={"embed_page_url": embed_page_url}
             )
+            # Notify action tracking
+            if hasattr(context.world_state_manager, 'add_action_result'):
+                try:
+                    await context.world_state_manager.add_action_result(
+                        self.name,
+                        {
+                            "status": result["status"],
+                            "arweave_image_url": image_arweave_url,
+                            "embed_page_url": embed_page_url,
+                            "prompt_used": prompt
+                        }
+                    )
+                except Exception:
+                    pass
 
-            return {
+            result = {
                 "status": "success",
                 "message": "Image generated and embed page stored on Arweave.",
                 "embed_page_url": embed_page_url,
-                "image_url": image_arweave_url,
-                "image_tx_id": image_tx_id,
-                "html_tx_id": html_tx_id,
+                "arweave_image_url": image_arweave_url,
                 "prompt_used": prompt,
             }
+            return result
 
         except Exception as e:
             logger.error(f"Image generation failed: {e}")

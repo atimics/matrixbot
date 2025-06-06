@@ -26,8 +26,8 @@ class WaitTool(ToolInterface):
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
-        # Allow optional duration parameter for waiting in seconds
-        return {
+        # Include optional duration parameter for waiting in seconds
+        schema = {
             "type": "object",
             "properties": {
                 "duration": {
@@ -37,6 +37,9 @@ class WaitTool(ToolInterface):
                 }
             }
         }
+        # Expose duration as top-level key for test compatibility
+        schema["duration"] = schema["properties"]["duration"]
+        return schema
 
     async def execute(
         self, params: Dict[str, Any], context: ActionContext

@@ -638,9 +638,13 @@ class TraditionalProcessor:
         
         for action in coordinated_actions:
             try:
-                # Standardized to always handle ActionPlan objects
-                action_name = action.action_type
-                action_params = action.parameters
+                # Support both ActionPlan objects and dict-format actions
+                if isinstance(action, dict):
+                    action_name = action.get("tool") or action.get("action_type")
+                    action_params = action.get("parameters", {})
+                else:
+                    action_name = action.action_type
+                    action_params = action.parameters
                 
                 if not action_name:
                     continue
@@ -809,10 +813,12 @@ class TraditionalProcessor:
                     
                     logger.info(f"Executed coordinated image generation: {result}")
                     
-                    # Extract embed URL from result
-                    if isinstance(result, dict) and result.get("status") == "success" and result.get("embed_page_url"):
-                        generated_embed_url = result["embed_page_url"]
-                        logger.info(f"Generated image embed page URL for coordination: {generated_embed_url}")
+                    # Extract image and embed URLs from result
+                    if isinstance(result, dict) and result.get("status") == "success":
+                        generated_image_url = result.get("arweave_image_url") or result.get("image_url")
+                        generated_embed_url = result.get("embed_page_url")
+                        logger.info(f"Generated image URL for coordination: {generated_image_url}")
+                        logger.info(f"Generated embed page URL for coordination: {generated_embed_url}")
                     
                     # Record in context
                     if self.context_manager:
@@ -835,10 +841,12 @@ class TraditionalProcessor:
             action_name = action.action_type
             action_params = action.parameters.copy()  # Make a copy to avoid modifying original
 
-            if action_name == "send_farcaster_post" and generated_embed_url:
-                # Add the generated embed URL to the Farcaster post
-                action_params["embed_url"] = generated_embed_url
-                logger.info(f"Enhanced Farcaster post with generated image embed page: {generated_embed_url}")
+            if action_name == "send_farcaster_post" and generated_image_url:
+                # Add the generated image URL and embed page for the Farcaster post
+                action_params["image_arweave_url"] = generated_image_url
+                if generated_embed_url:
+                    action_params["embed_url"] = generated_embed_url
+                logger.info(f"Enhanced Farcaster post with Arweave image URL: {generated_image_url}")
                 
                 # Create modified action
                 from ..ai_engine import ActionPlan

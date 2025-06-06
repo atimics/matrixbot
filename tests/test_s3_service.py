@@ -11,7 +11,7 @@ from chatbot.tools.arweave_service import ArweaveService, arweave_service
 
 
 class TestArweaveService:
-    """Test the S3Service class."""
+    """Test the ArweaveService class."""
 
     def test_initialization_with_env_vars(self):
         """Test S3Service initialization with environment variables."""
