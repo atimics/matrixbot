@@ -897,13 +897,9 @@ class TraditionalProcessor:
                 continue
             
             # Check if this is the Matrix message action and we have an image
-            if hasattr(action, 'action_type'):
-                action_name = action.action_type
-                action_params = action.parameters.copy()
-            else:
-                action_name = action.get("tool") or action.get("action_type")
-                action_params = action.get("parameters", {}).copy()
-            
+            action_name = action.action_type
+            action_params = action.parameters.copy()
+
             if action_name == "send_matrix_message" and generated_image_url:
                 # Convert to send_matrix_image action for better embedding
                 action_params["image_url"] = generated_image_url
@@ -914,19 +910,13 @@ class TraditionalProcessor:
                 logger.info(f"Converting Matrix message to Matrix image with URL: {generated_image_url}")
                 
                 # Create modified action
-                if hasattr(action, 'action_type'):
-                    from ..ai_engine import ActionPlan
-                    modified_action = ActionPlan(
-                        action_type="send_matrix_image",
-                        parameters=action_params,
-                        reasoning=f"Converted to image post with generated image: {action.reasoning}",
-                        priority=action.priority
-                    )
-                else:
-                    modified_action = action.copy()
-                    modified_action["tool"] = "send_matrix_image"
-                    modified_action["action_type"] = "send_matrix_image"
-                    modified_action["parameters"] = action_params
+                from ..ai_engine import ActionPlan
+                modified_action = ActionPlan(
+                    action_type="send_matrix_image",
+                    parameters=action_params,
+                    reasoning=f"Converted to image post with generated image: {action.reasoning}",
+                    priority=action.priority
+                )
                 
                 coordinated_actions.append(modified_action)
             else:
@@ -945,7 +935,7 @@ class TraditionalProcessor:
         video_action = actions[video_action_idx]
         
         try:
-            action_params = getattr(video_action, 'parameters', video_action.get("parameters", {}))
+            action_params = video_action.parameters
             
             can_execute, reason = self.rate_limiter.can_execute_action("generate_video", current_time)
             
@@ -974,24 +964,20 @@ class TraditionalProcessor:
             if i == video_action_idx:
                 continue
             
-            action_name = getattr(action, 'action_type', action.get("tool") or action.get("action_type"))
-            action_params = getattr(action, 'parameters', action.get("parameters", {})).copy()
+            action_name = action.action_type
+            action_params = action.parameters.copy()
 
             if action_name == "send_farcaster_post" and generated_video_url:
                 action_params["video_s3_url"] = generated_video_url
                 logger.info(f"Enhanced Farcaster post with generated video: {generated_video_url}")
                 
-                if hasattr(action, 'action_type'):
-                    from ..ai_engine import ActionPlan
-                    modified_action = ActionPlan(
-                        action_type=action.action_type,
-                        parameters=action_params,
-                        reasoning=action.reasoning,
-                        priority=action.priority
-                    )
-                else:
-                    modified_action = action.copy()
-                    modified_action["parameters"] = action_params
+                from ..ai_engine import ActionPlan
+                modified_action = ActionPlan(
+                    action_type=action.action_type,
+                    parameters=action_params,
+                    reasoning=action.reasoning,
+                    priority=action.priority
+                )
                 
                 coordinated_actions.append(modified_action)
             else:
@@ -1009,7 +995,7 @@ class TraditionalProcessor:
         video_action = actions[video_action_idx]
         
         try:
-            action_params = getattr(video_action, 'parameters', video_action.get("parameters", {}))
+            action_params = video_action.parameters
             
             can_execute, reason = self.rate_limiter.can_execute_action("generate_video", current_time)
             
@@ -1038,8 +1024,8 @@ class TraditionalProcessor:
             if i == video_action_idx:
                 continue
                 
-            action_name = getattr(action, 'action_type', action.get("tool") or action.get("action_type"))
-            action_params = getattr(action, 'parameters', action.get("parameters", {})).copy()
+            action_name = action.action_type
+            action_params = action.parameters.copy()
 
             if action_name == "send_matrix_message" and generated_video_url:
                 action_params["video_url"] = generated_video_url
@@ -1048,19 +1034,13 @@ class TraditionalProcessor:
                 
                 logger.info(f"Converting Matrix message to Matrix video with URL: {generated_video_url}")
                 
-                if hasattr(action, 'action_type'):
-                    from ..ai_engine import ActionPlan
-                    modified_action = ActionPlan(
-                        action_type="send_matrix_video",
-                        parameters=action_params,
-                        reasoning=f"Converted to video post with generated video: {action.reasoning}",
-                        priority=action.priority
-                    )
-                else:
-                    modified_action = action.copy()
-                    modified_action["tool"] = "send_matrix_video"
-                    modified_action["action_type"] = "send_matrix_video"
-                    modified_action["parameters"] = action_params
+                from ..ai_engine import ActionPlan
+                modified_action = ActionPlan(
+                    action_type="send_matrix_video",
+                    parameters=action_params,
+                    reasoning=f"Converted to video post with generated video: {action.reasoning}",
+                    priority=action.priority
+                )
                 
                 coordinated_actions.append(modified_action)
             else:
