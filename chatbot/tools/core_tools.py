@@ -26,7 +26,17 @@ class WaitTool(ToolInterface):
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
-        return {}
+        # Allow optional duration parameter for waiting in seconds
+        return {
+            "type": "object",
+            "properties": {
+                "duration": {
+                    "type": "number",
+                    "description": "Duration to wait in seconds",
+                    "default": 0
+                }
+            }
+        }
 
     async def execute(
         self, params: Dict[str, Any], context: ActionContext

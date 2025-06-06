@@ -87,8 +87,9 @@ class GenerateImageTool(ToolInterface):
         if not prompt.strip():
             return {"status": "error", "message": "Prompt cannot be empty"}
 
-        if not context.arweave_client:
-            return {"status": "error", "message": "Arweave client is not configured."}
+        # Ensure Arweave service is available
+        if not context.arweave_service:
+            return {"status": "error", "message": "Arweave service is not configured."}
 
         # Check cooldowns and rate limits
         cooldown_check = self._check_cooldowns_and_limits(context, "image")
@@ -134,12 +135,13 @@ class GenerateImageTool(ToolInterface):
             if not image_data:
                 return {"status": "error", "message": "Failed to generate image data from any service."}
 
-            # 2. Upload image to Arweave
-            tags = [{"name": "Content-Type", "value": "image/png"}, {"name": "Creator", "value": "Chatbot"}]
-            image_tx_id = await context.arweave_client.upload_data(image_data, "image/png", tags)
-            if not image_tx_id:
+            # 2. Upload image to Arweave using ArweaveService
+            # Filename can be defaulted; content_type is image/png
+            image_arweave_url = await context.arweave_service.upload_image_data(
+                image_data, "image.png", "image/png"
+            )
+            if not image_arweave_url:
                 return {"status": "error", "message": "Failed to upload image to Arweave."}
-            image_arweave_url = context.arweave_client.get_arweave_url(image_tx_id)
 
             # 3. Create and upload HTML embed page to Arweave
             html_content = _create_embed_html(
@@ -148,11 +150,13 @@ class GenerateImageTool(ToolInterface):
                 media_url=image_arweave_url,
                 media_type='image'
             )
-            html_tags = [{"name": "Content-Type", "value": "text/html"}, {"name": "Creator", "value": "Chatbot"}]
-            html_tx_id = await context.arweave_client.upload_data(html_content.encode('utf-8'), "text/html", html_tags)
-            if not html_tx_id:
+            # 3. Create and upload HTML embed page to Arweave
+            embed_content_bytes = html_content.encode('utf-8')
+            embed_page_url = await context.arweave_service.upload_image_data(
+                embed_content_bytes, "embed.html", "text/html"
+            )
+            if not embed_page_url:
                 return {"status": "error", "message": "Failed to upload embed page to Arweave."}
-            embed_page_url = context.arweave_client.get_arweave_url(html_tx_id)
 
             # Record in world state
             context.world_state_manager.record_generated_media(

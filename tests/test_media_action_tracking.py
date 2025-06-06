@@ -84,6 +84,9 @@ class TestMediaActionTracking:
         # Mock successful Arweave upload
         mock_arweave_service.upload_image_data = AsyncMock(return_value="https://arweave.net/test_image_id")
         
+        # Make sure add_action_result is an async mock
+        mock_world_state_manager.add_action_result = AsyncMock()
+        
         # Mock settings
         with patch('chatbot.tools.media_generation_tools.settings') as mock_settings:
             mock_settings.GOOGLE_API_KEY = "test_key"
@@ -91,9 +94,13 @@ class TestMediaActionTracking:
             
             # Mock Google client
             with patch('chatbot.tools.media_generation_tools.GoogleAIMediaClient') as mock_google_class:
-                mock_google_client = AsyncMock()
-                mock_google_client.generate_image_gemini = AsyncMock(return_value=b"fake_image_data")
-                mock_google_class.return_value = mock_google_client
+                mock_google_client_instance = AsyncMock()
+
+                async def fake_generate_image_gemini(prompt): # Parameter name 'prompt' matches usage
+                    return b"fake_image_data"
+
+                mock_google_client_instance.generate_image_gemini = fake_generate_image_gemini
+                mock_google_class.return_value = mock_google_client_instance
                 
                 # Execute the tool
                 result = await tool.execute(
@@ -103,7 +110,7 @@ class TestMediaActionTracking:
                 
                 # Verify the tool was successful
                 assert result["status"] == "success"
-                assert "s3_image_url" in result
+                assert "arweave_image_url" in result
                 
                 # Verify that add_action_result was called
                 mock_world_state_manager.add_action_result.assert_called_once()
