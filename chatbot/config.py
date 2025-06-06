@@ -98,6 +98,23 @@ class AppConfig(BaseSettings):
     ARWEAVE_UPLOADER_API_KEY: Optional[str] = None
     ARWEAVE_GATEWAY_URL: str = "https://arweave.net"
 
+    # NFT & Airdrop Configuration (v0.0.4)
+    NFT_DEV_WALLET_PRIVATE_KEY: Optional[str] = None  # For sponsoring transactions or direct minting
+    BASE_RPC_URL: Optional[str] = None  # e.g., from Alchemy or Infura
+    NFT_COLLECTION_NAME: str = "AI Collective"
+    NFT_COLLECTION_SYMBOL: str = "AIC"
+    NFT_COLLECTION_ADDRESS_BASE: Optional[str] = None  # The address of your NFT contract on Base
+    NFT_METADATA_UPLOAD_SERVICE: str = "arweave"  # or "ipfs"
+    
+    # Frame Server Configuration
+    FRAMES_BASE_URL: Optional[str] = None  # Base URL for serving frames (e.g., https://yourbot.com)
+    FRAMES_WEBHOOK_SECRET: Optional[str] = None  # Secret for validating frame requests
+    
+    # Airdrop Eligibility Criteria
+    AIRDROP_MIN_ECOSYSTEM_TOKEN_BALANCE_SOL: float = 1000.0
+    AIRDROP_MIN_ECOSYSTEM_NFT_COUNT_BASE: int = 1
+    AIRDROP_ELIGIBILITY_CHECK_INTERVAL_HOURS: int = 6  # How often to check eligibility
+
     # Tool Cooldowns & Resource Limits
     IMAGE_GENERATION_COOLDOWN_SECONDS: int = 120  # 2 minutes
     VIDEO_GENERATION_COOLDOWN_SECONDS: int = 600  # 10 minutes
