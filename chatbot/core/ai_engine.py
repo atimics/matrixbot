@@ -607,11 +607,11 @@ Based on this world state, what actions (if any) should you take? Remember you c
                     logger.error(
                         f"AIDecisionEngine: HTTP 413 Payload Too Large error - "
                         f"payload was {payload_size_kb:.2f} KB. Payload optimization is enabled "
-                        f"but payload is still too large. Check for excessive world state data."
+                        f"but payload is still too large. Check for excessive world state data or adjust AI payload settings in config."
                     )
                     return DecisionResult(
                         selected_actions=[],
-                        reasoning=f"Payload too large ({payload_size_kb:.2f} KB) - reduce configuration settings",
+                        reasoning=f"Payload too large ({payload_size_kb:.2f} KB) - reduce AI payload settings in config.",
                         observations=f"HTTP 413 Error: Request payload exceeded server limits",
                         cycle_id=cycle_id,
                     )
