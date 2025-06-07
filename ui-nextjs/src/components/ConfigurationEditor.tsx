@@ -13,7 +13,7 @@ export default function ConfigurationEditor() {
 
   const fetchConfig = async () => {
     try {
-      const response = await apiClient.get('/api/config')
+      const response = await apiClient.get<any>('/api/config')
       setConfig(response.data)
     } catch (error) {
       console.error('Failed to fetch config:', error)

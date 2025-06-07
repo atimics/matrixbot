@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { apiClient } from '@/lib/api'
+import { SetupStep } from '@/types'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 
 interface Message {
@@ -10,15 +11,6 @@ interface Message {
   content: string
   timestamp: Date
   isTyping?: boolean
-}
-
-interface SetupStep {
-  key: string
-  question: string
-  type: 'text' | 'password' | 'select'
-  options?: string[]
-  validation?: string
-  completed?: boolean
 }
 
 interface SetupWizardProps {
@@ -59,7 +51,7 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
       setMessages([welcomeMessage])
 
       // Get first setup step
-      const response = await apiClient.get('/api/setup/start')
+      const response = await apiClient.get<{ step: SetupStep }>('/api/setup/start')
       if (response.data.step) {
         setCurrentStep(response.data.step)
         await typeMessage(response.data.step.question)
@@ -115,7 +107,12 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
     setMessages(prev => [...prev, userMessage])
 
     try {
-      const response = await apiClient.post('/api/setup/submit', {
+      const response = await apiClient.post<{
+        success: boolean;
+        message?: string;
+        next_step?: SetupStep;
+        complete?: boolean;
+      }>('/api/setup/submit', {
         step_key: currentStep.key,
         value: inputValue
       })

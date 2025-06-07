@@ -31,3 +31,21 @@ export interface DashboardProps {
   systemInfo: SystemInfo
   onStatusChange: (info: SystemInfo) => void
 }
+
+// Tool-related types
+export interface Tool {
+  name: string
+  enabled: boolean
+  description: string
+  parameters: Record<string, any>
+  category: string
+  last_used?: string | null
+  success_rate?: number | null
+}
+
+export interface ToolsResponse {
+  tools: Tool[]
+  total_count: number
+  enabled_count: number
+  stats: Record<string, any>
+}

@@ -13,7 +13,7 @@ export default function Home() {
 
   const checkSystemStatus = async () => {
     try {
-      const response = await apiClient.get('/api/status')
+      const response = await apiClient.get<SystemInfo>('/api/status')
       setSystemInfo(response.data)
       setError(null)
     } catch (err: any) {

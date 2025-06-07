@@ -3,13 +3,7 @@
 import { useState, useEffect } from 'react'
 import { apiClient } from '@/lib/api'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
-
-interface Tool {
-  name: string
-  enabled: boolean
-  description: string
-  category: string
-}
+import { Tool, ToolsResponse } from '@/types'
 
 export default function ToolManager() {
   const [tools, setTools] = useState<Tool[]>([])
@@ -22,7 +16,7 @@ export default function ToolManager() {
 
   const fetchTools = async () => {
     try {
-      const response = await apiClient.get('/api/tools')
+      const response = await apiClient.get<ToolsResponse>('/api/tools')
       setTools(response.data.tools || [])
     } catch (error) {
       console.error('Failed to fetch tools:', error)
@@ -37,7 +31,7 @@ export default function ToolManager() {
       const tool = tools.find(t => t.name === toolName)
       if (!tool) return
 
-      await apiClient.post(`/api/tools/${toolName}/toggle`, {
+      await apiClient.put(`/api/tools/${toolName}/status`, {
         enabled: !tool.enabled
       })
 

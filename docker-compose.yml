@@ -33,7 +33,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      arweave_uploader:
+      arweave-service:
         condition: service_healthy
     networks:
       - chatbot_network
