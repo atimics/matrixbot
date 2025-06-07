@@ -31,6 +31,82 @@ from .rate_limiter import RateLimiter, RateLimitConfig
 logger = logging.getLogger(__name__)
 
 
+class TraditionalProcessor:
+    """
+    Traditional AI processing wrapper that processes full payloads.
+    
+    This class acts as a bridge between the processing hub and the AI engine,
+    handling the traditional full-payload processing approach.
+    """
+    
+    def __init__(self, ai_engine, tool_registry, rate_limiter, context_manager, action_context):
+        self.ai_engine = ai_engine
+        self.tool_registry = tool_registry
+        self.rate_limiter = rate_limiter
+        self.context_manager = context_manager
+        self.action_context = action_context
+        
+    async def process_payload(self, payload: Dict[str, Any], active_channels: list) -> None:
+        """
+        Process a payload using the traditional approach.
+        
+        Args:
+            payload: The world state payload to process
+            active_channels: List of active channel IDs
+        """
+        try:
+            # Add available tools to the payload
+            payload["available_tools"] = self.tool_registry.get_tool_descriptions()
+            
+            # Get AI decision
+            decision_result = await self.ai_engine.decide_actions(payload)
+            
+            if not decision_result.selected_actions:
+                logger.debug("No actions selected by AI")
+                return
+                
+            # Execute selected actions
+            for action in decision_result.selected_actions:
+                try:
+                    await self._execute_action(action)
+                except Exception as e:
+                    logger.error(f"Error executing action {action.action_type}: {e}")
+                    
+        except Exception as e:
+            logger.error(f"Error in traditional processing: {e}")
+            raise
+            
+    async def _execute_action(self, action: ActionPlan) -> None:
+        """Execute a single action."""
+        try:
+            # Get the tool from registry
+            tool_func = self.tool_registry.get_tool(action.action_type)
+            if not tool_func:
+                logger.error(f"Tool not found: {action.action_type}")
+                return
+                
+            # Execute the tool with parameters
+            result = await tool_func(**action.parameters)
+            
+            # Log the action
+            self.context_manager.log_action(
+                action_type=action.action_type,
+                parameters=action.parameters,
+                result=str(result) if result else "Success",
+                reasoning=action.reasoning
+            )
+            
+        except Exception as e:
+            logger.error(f"Error executing action {action.action_type}: {e}")
+            # Log the failed action
+            self.context_manager.log_action(
+                action_type=action.action_type,
+                parameters=action.parameters,
+                result=f"Error: {str(e)}",
+                reasoning=action.reasoning
+            )
+
+
 @dataclass
 class OrchestratorConfig:
     """Configuration for the main orchestrator."""
@@ -256,6 +332,9 @@ class MainOrchestrator:
             
             # Initialize external observers (legacy method for backward compatibility)
             await self._initialize_observers()
+            
+            # Register integrations from environment variables
+            await self._register_integrations_from_env()
             
             # Connect all active integrations from database
             await self.integration_manager.connect_all_active()
@@ -636,562 +715,77 @@ class MainOrchestrator:
         """Clear context for a channel."""
         await self.context_manager.clear_context(channel_id)
 
-
-class TraditionalProcessor:
-    """Wrapper for traditional AI processing approach."""
-    
-    def __init__(self, ai_engine, tool_registry, rate_limiter, context_manager, action_context=None):
-        self.ai_engine = ai_engine
-        self.tool_registry = tool_registry
-        self.rate_limiter = rate_limiter
-        self.context_manager = context_manager
-        self.action_context = action_context
-
-    async def process_payload(self, payload: Dict[str, Any], active_channels: list) -> None:
-        """Process a traditional full payload."""
-        try:
-            # Update AI engine with current tool registry
-            self.ai_engine.update_system_prompt_with_tools(self.tool_registry)
+    async def _register_integrations_from_env(self) -> None:
+        """Register integrations from environment variables if they don't exist."""
+        logger.info("Checking for integrations to register from environment variables...")
+        
+        # Check for Farcaster integration
+        if (settings.NEYNAR_API_KEY and 
+            settings.FARCASTER_BOT_FID and 
+            settings.FARCASTER_BOT_SIGNER_UUID):
             
-            # Make AI decision
-            decision = await self.ai_engine.make_decision(
-                world_state=payload,
-                cycle_id="traditional_cycle"
+            # Check if Farcaster integration already exists
+            existing_integrations = await self.integration_manager.list_integrations()
+            farcaster_exists = any(
+                integration.get('integration_type') == 'farcaster' 
+                for integration in existing_integrations
             )
             
-            # Execute actions from decision
-            if decision and decision.selected_actions:
-                await self._execute_actions(decision.selected_actions)
-                
-        except Exception as e:
-            logger.error(f"Error in traditional processing: {e}")
-            raise
-
-    async def _execute_actions(self, actions: list) -> None:
-        """Execute a list of actions with rate limiting and coordination."""
-        current_time = time.time()
-        
-        # Check for media generation + posting coordination opportunities
-        actions_to_execute, generated_media_results = await self._coordinate_media_actions(actions)
-        
-        for action_plan in actions_to_execute: # Renamed 'action' to 'action_plan' for clarity
-            try:
-                # Support both ActionPlan objects and dict-format actions
-                if isinstance(action_plan, dict):
-                    action_name = action_plan.get("tool") or action_plan.get("action_type")
-                    action_params = action_plan.get("parameters", {})
-                else: # Assumes ActionPlan object
-                    action_name = action_plan.action_type
-                    action_params = action_plan.parameters
-                
-                if not action_name:
-                    logger.warning(f"Skipping action with no name: {action_plan}")
-                    continue
-                
-                # If this action is a posting action and there's a recent image, inject its URL
-                if action_name in ["send_farcaster_post", "send_farcaster_reply"] and generated_media_results:
-                    # Prefer arweave URL if available
-                    image_url_to_embed = generated_media_results.get("arweave_image_url") or \
-                                         generated_media_results.get("image_url") # Fallback to image_url
-                    if image_url_to_embed:
-                        action_params["image_arweave_url"] = image_url_to_embed # Farcaster expects image_arweave_url
-                        logger.info(f"Injecting image_arweave_url: {image_url_to_embed} into {action_name}")
-
-                elif action_name in ["send_matrix_image", "send_matrix_reply", "send_matrix_message"] and generated_media_results:
-                    # If it's send_matrix_message and an image was just generated, convert to send_matrix_image
-                    if action_name == "send_matrix_message":
-                        action_name = "send_matrix_image" # Convert action
-                        logger.info("Converting send_matrix_message to send_matrix_image due to recent image generation.")
-                    
-                    image_url_to_embed = generated_media_results.get("image_url") or \
-                                         generated_media_results.get("arweave_image_url") # Matrix tools might use image_url
-                    if image_url_to_embed:
-                        action_params["image_url"] = image_url_to_embed
-                        # If original action was send_matrix_message, its 'message' becomes the caption
-                        if isinstance(action_plan, dict) and action_plan.get("action_type") == "send_matrix_message":
-                            action_params["caption"] = action_plan.get("parameters", {}).get("message", "")
-                        elif not isinstance(action_plan, dict) and action_plan.action_type == "send_matrix_message":
-                             action_params["caption"] = action_plan.parameters.get("message", "")
-                        logger.info(f"Injecting image_url: {image_url_to_embed} into {action_name}")
-                
-                # Check rate limits
-                can_execute, reason = self.rate_limiter.can_execute_action(
-                    action_name, current_time
-                )
-                
-                if not can_execute:
-                    logger.warning(f"Skipping action {action_name}: {reason}")
-                    continue
-                
-                # Get tool and execute
-                tool = self.tool_registry.get_tool(action_name)
-                if tool:
-                    # Record action for rate limiting
-                    self.rate_limiter.record_action(action_name, current_time)
-                    
-                    # Fix describe_image parameters if using invalid URL
-                    if action_name == "describe_image":
-                        action_params = await self._fix_describe_image_params(action_params)
-                    
-                    # Execute action with context
-                    if self.action_context:
-                        result = await tool.execute(action_params, self.action_context)
-                    else:
-                        # Fallback for tools that don't need context
-                        result = await tool.execute(action_params)
-                    logger.info(f"Executed action {action_name}: {result}")
-                    
-                    # Record in context
-                    if self.context_manager:
-                        channel_id = action_params.get('channel_id', 'default')
-                        result_dict = result if isinstance(result, dict) else {'result': str(result)}
-                        await self.context_manager.add_tool_result(channel_id, action_name, result_dict)
-                
-            except Exception as e:
-                logger.error(f"Error executing action {action_name}: {e}")
-                continue
-
-    async def _coordinate_media_actions(self, actions: list) -> tuple[list, Optional[dict]]:
-        """
-        Identifies image generation actions and prepares subsequent posting actions.
-        Returns a potentially modified list of actions and the result of the image generation if performed.
-        """
-        generate_action_plan = None
-        generate_action_index = -1
-        generated_media_result: Optional[dict] = None
-
-        for i, action_plan in enumerate(actions):
-            action_name = action_plan.action_type if hasattr(action_plan, 'action_type') else action_plan.get('action_type')
-            if action_name == "generate_image":
-                generate_action_plan = action_plan
-                generate_action_index = i
-                break
-        
-        remaining_actions = list(actions) # Create a mutable copy
-
-        if generate_action_plan:
-            # Remove the generate_image action from the list to execute it first
-            remaining_actions.pop(generate_action_index)
-            
-            logger.info(f"Executing coordinated generate_image action: {generate_action_plan.parameters}")
-            tool = self.tool_registry.get_tool("generate_image")
-            if tool and self.action_context:
-                current_time = time.time()
-                can_execute, reason = self.rate_limiter.can_execute_action("generate_image", current_time)
-                if can_execute:
-                    self.rate_limiter.record_action("generate_image", current_time)
-                    generated_media_result = await tool.execute(generate_action_plan.parameters, self.action_context)
-                    logger.info(f"generate_image result: {generated_media_result}")
-                    if self.context_manager:
-                        channel_id = generate_action_plan.parameters.get('channel_id', 'default')
-                        await self.context_manager.add_tool_result(
-                            channel_id, 
-                            "generate_image", 
-                            generated_media_result if isinstance(generated_media_result, dict) else {'result': str(generated_media_result)}
-                        )
-                    if not generated_media_result or generated_media_result.get("status") != "success":
-                        logger.warning("Image generation failed or did not return success, proceeding without image.")
-                        generated_media_result = None 
-                    else:
-                        # Image generation was successful, inject URLs into subsequent actions
-                        image_arweave_url = generated_media_result.get("arweave_image_url")
-                        embed_page_url = generated_media_result.get("embed_page_url")
-                        direct_image_url = generated_media_result.get("image_url") # Fallback if arweave_image_url is not present
-
-                        for i, action_plan_item in enumerate(remaining_actions):
-                            action_params = action_plan_item.parameters
-                            action_type = action_plan_item.action_type
-
-                            if action_type == "send_farcaster_post":
-                                if embed_page_url:
-                                    action_params["embed_url"] = embed_page_url
-                                    logger.info(f"Injected embed_url: {embed_page_url} into send_farcaster_post")
-                                elif image_arweave_url: # Fallback to image_arweave_url if no embed_page_url
-                                    action_params["image_arweave_url"] = image_arweave_url
-                                    logger.info(f"Injected image_arweave_url: {image_arweave_url} into send_farcaster_post as fallback")
-                                elif direct_image_url: # Fallback to direct_image_url
-                                    action_params["image_url"] = direct_image_url # Assuming send_farcaster_post can handle direct image_url
-                                    logger.info(f"Injected direct image_url: {direct_image_url} into send_farcaster_post as fallback")
-
-
-                            elif action_type == "send_matrix_message":
-                                # Convert to send_matrix_image
-                                logger.info(f"Converting send_matrix_message to send_matrix_image for action: {action_plan_item}")
-                                remaining_actions[i] = ActionPlan(
-                                    action_type="send_matrix_image",
-                                    parameters={
-                                        "channel_id": action_params.get("channel_id"),
-                                        "image_url": image_arweave_url or direct_image_url, # Prefer Arweave, fallback to direct
-                                        "caption": action_params.get("message", ""),
-                                        "filename": "image.png" # Default filename
-                                    },
-                                    reasoning=f"Converted from send_matrix_message to share generated image: {action_plan_item.reasoning}",
-                                    priority=action_plan_item.priority
-                                )
-                                logger.info(f"Converted action: {remaining_actions[i]}")
-                            
-                            # Potentially add other action_types that might consume image URLs
-                            elif "image_url" in action_params or "image_arweave_url" in action_params:
-                                if image_arweave_url:
-                                    action_params["image_arweave_url"] = image_arweave_url
-                                if direct_image_url and not action_params.get("image_arweave_url"): # If no arweave, use direct
-                                     action_params["image_url"] = direct_image_url
-
-
-                else:
-                    logger.warning(f"Skipping generate_image due to rate limit: {reason}")
-                    generated_media_result = None
+            if not farcaster_exists:
+                logger.info("Registering Farcaster integration from environment variables...")
+                try:
+                    await self.integration_manager.add_integration(
+                        integration_type='farcaster',
+                        display_name='Farcaster Bot',
+                        config={
+                            'username': settings.FARCASTER_BOT_USERNAME or 'farcaster_bot'
+                        },
+                        credentials={
+                            'api_key': settings.NEYNAR_API_KEY,
+                            'bot_fid': settings.FARCASTER_BOT_FID,
+                            'signer_uuid': settings.FARCASTER_BOT_SIGNER_UUID
+                        }
+                    )
+                    logger.info("✓ Farcaster integration registered successfully")
+                except Exception as e:
+                    logger.error(f"Failed to register Farcaster integration: {e}")
             else:
-                logger.warning("generate_image tool not found or action_context missing for coordination.")
-                generated_media_result = None
-
-        return remaining_actions, generated_media_result
-
-    async def _fix_describe_image_params(self, action_params: dict) -> dict:
-        """
-        Fix describe_image parameters to ensure proper image URL is used.
+                logger.info("Farcaster integration already exists, skipping registration")
+        else:
+            logger.debug("Farcaster environment variables not fully configured, skipping auto-registration")
         
-        If the image_url parameter appears to be a filename (e.g., 'image.png'), 
-        attempt to find the actual URL from recent messages with image_urls.
-        """
-        image_url = action_params.get("image_url", "")
-        
-        # Check if the image_url looks like a filename rather than a URL
-        if image_url and not image_url.startswith(("http://", "https://", "mxc://")):
-            logger.info(f"describe_image received filename '{image_url}' instead of URL, attempting to fix")
+        # Check for Matrix integration
+        if (settings.MATRIX_HOMESERVER and 
+            settings.MATRIX_USER_ID and 
+            settings.MATRIX_PASSWORD):
             
-            # Search recent messages for actual image URLs
-            # Get the channel_id if available for more targeted search
-            channel_id = action_params.get("channel_id")
+            # Check if Matrix integration already exists
+            existing_integrations = await self.integration_manager.list_integrations()
+            matrix_exists = any(
+                integration.get('integration_type') == 'matrix' 
+                for integration in existing_integrations
+            )
             
-            # Look through recent messages in the world state
-            if hasattr(self, 'action_context') and hasattr(self.action_context, 'world_state_manager'):
-                world_state = self.action_context.world_state_manager
-                
-                # Search through channels for recent messages with image URLs
-                channels_to_search = [channel_id] if channel_id else list(world_state.state.channels.keys())
-                
-                for ch_id in channels_to_search:
-                    if ch_id in world_state.state.channels:
-                        channel = world_state.state.channels[ch_id]
-                        # Look at recent messages (last 10)
-                        recent_messages = (channel.recent_messages[-10:] \
-                                           if len(channel.recent_messages) > 10 \
-                                           else channel.recent_messages)
-                        
-                        for message in reversed(recent_messages):  # Start with most recent
-                            if message.image_urls:
-                                # Check if this message's content matches the filename
-                                if message.content and image_url in message.content:
-                                    # Use the first image URL from this message
-                                    corrected_url = message.image_urls[0]
-                                    logger.info(f"Fixed describe_image URL: '{image_url}' -> '{corrected_url}'")
-                                    
-                                    # Create corrected parameters
-                                    corrected_params = action_params.copy()
-                                    corrected_params["image_url"] = corrected_url
-                                    return corrected_params
-                                
-                                # Also check if the filename appears to match (basic heuristic)
-                                if any(ext in image_url.lower() for ext in ['.png', '.jpg', '.jpeg', '.gif', '.webp']):
-                                    # If we have a recent image and the URL is clearly a filename, use the most recent image
-                                    corrected_url = message.image_urls[0]
-                                    logger.info(f"Used most recent image URL for describe_image: '{image_url}' -> '{corrected_url}'")
-                                    
-                                    corrected_params = action_params.copy()
-                                    corrected_params["image_url"] = corrected_url
-                                    return corrected_params
-                
-                logger.warning(f"Could not find matching image URL for filename '{image_url}' in recent messages")
-        
-        # Return original parameters if no fix was needed or possible
-        return action_params
-
-    async def _coordinate_image_with_farcaster(self, actions: list, action_map: dict) -> list:
-        """Coordinate image generation with Farcaster posting."""
-        current_time = time.time()
-        coordinated_actions = []
-        generated_image_url = None
-        generated_embed_url = None
-        
-        # First, execute image generation
-        image_action_idx = action_map["generate_image"]
-        image_action = actions[image_action_idx]
-        
-        try:
-            action_params = image_action.parameters
-            
-            # Check rate limits for image generation
-            can_execute, reason = self.rate_limiter.can_execute_action("generate_image", current_time)
-            
-            if can_execute:
-                # Execute image generation
-                tool = self.tool_registry.get_tool("generate_image")
-                if tool:
-                    self.rate_limiter.record_action("generate_image", current_time)
-                    
-                    if self.action_context:
-                        result = await tool.execute(action_params, self.action_context)
-                    else:
-                        result = await tool.execute(action_params)
-                    
-                    logger.info(f"Executed coordinated image generation: {result}")
-                    
-                    # Extract image and embed URLs from result
-                    if isinstance(result, dict) and result.get("status") == "success":
-                        generated_image_url = result.get("arweave_image_url") or result.get("image_url")
-                        generated_embed_url = result.get("embed_page_url")
-                        logger.info(f"Generated image URL for coordination: {generated_image_url}")
-                        logger.info(f"Generated embed page URL for coordination: {generated_embed_url}")
-                    
-                    # Record in context
-                    if self.context_manager:
-                        channel_id = action_params.get('channel_id', 'default')
-                        result_dict = result if isinstance(result, dict) else {'result': str(result)}
-                        await self.context_manager.add_tool_result(channel_id, "generate_image", result_dict)
+            if not matrix_exists:
+                logger.info("Registering Matrix integration from environment variables...")
+                try:
+                    await self.integration_manager.add_integration(
+                        integration_type='matrix',
+                        display_name='Matrix Bot',
+                        config={
+                            'room_id': settings.MATRIX_ROOM_ID,
+                            'device_name': settings.DEVICE_NAME
+                        },
+                        credentials={
+                            'homeserver': settings.MATRIX_HOMESERVER,
+                            'user_id': settings.MATRIX_USER_ID,
+                            'password': settings.MATRIX_PASSWORD
+                        }
+                    )
+                    logger.info("✓ Matrix integration registered successfully")
+                except Exception as e:
+                    logger.error(f"Failed to register Matrix integration: {e}")
             else:
-                logger.warning(f"Cannot execute image generation for coordination: {reason}")
-        
-        except Exception as e:
-            logger.error(f"Error in coordinated image generation: {e}")
-        
-        # Now process other actions, modifying Farcaster post if we have an embed URL
-        for i, action in enumerate(actions):
-            if i == image_action_idx:
-                # Skip the image action since we already executed it
-                continue
-            
-            # Check if this is the Farcaster post action
-            action_name = action.action_type
-            action_params = action.parameters.copy()  # Make a copy to avoid modifying original
-
-            if action_name == "send_farcaster_post" and generated_image_url:
-                # Add the generated image URL and embed page for the Farcaster post
-                action_params["image_arweave_url"] = generated_image_url
-                if generated_embed_url:
-                    action_params["embed_url"] = generated_embed_url
-                logger.info(f"Enhanced Farcaster post with Arweave image URL: {generated_image_url}")
-                
-                # Create modified action
-                from ..ai_engine import ActionPlan
-                modified_action = ActionPlan(
-                    action_type=action.action_type,
-                    parameters=action_params,
-                    reasoning=action.reasoning,
-                    priority=action.priority
-                )
-                
-                coordinated_actions.append(modified_action)
-            else:
-                # Add action as-is
-                coordinated_actions.append(action)
-        
-        return coordinated_actions
-
-    async def _coordinate_image_with_matrix(self, actions: list, action_map: dict) -> list:
-        """
-        Coordinate image generation with Matrix messaging.
-        
-        If both are present, execute image generation first and suggest using
-        send_matrix_image instead of send_matrix_message for better embedding.
-        """
-        current_time = time.time()
-        coordinated_actions = []
-        generated_image_url = None
-        
-        # First, execute image generation
-        image_action_idx = action_map["generate_image"]
-        image_action = actions[image_action_idx]
-        
-        try:
-            action_params = image_action.parameters
-            
-            # Check rate limits for image generation
-            can_execute, reason = self.rate_limiter.can_execute_action("generate_image", current_time)
-            
-            if can_execute:
-                # Execute image generation
-                tool = self.tool_registry.get_tool("generate_image")
-                if tool:
-                    self.rate_limiter.record_action("generate_image", current_time)
-                    
-                    if self.action_context:
-                        result = await tool.execute(action_params, self.action_context)
-                    else:
-                        result = await tool.execute(action_params)
-                    
-                    logger.info(f"Executed coordinated image generation: {result}")
-                    
-                    # Extract image URL from result
-                    if isinstance(result, dict) and result.get("success") and result.get("image_url"):
-                        generated_image_url = result["image_url"]
-                        logger.info(f"Generated image URL for Matrix coordination: {generated_image_url}")
-                    
-                    # Record in context
-                    if self.context_manager:
-                        channel_id = action_params.get('channel_id', 'default')
-                        result_dict = result if isinstance(result, dict) else {'result': str(result)}
-                        await self.context_manager.add_tool_result(channel_id, "generate_image", result_dict)
-            else:
-                logger.warning(f"Cannot execute image generation for coordination: {reason}")
-        
-        except Exception as e:
-            logger.error(f"Error in coordinated image generation: {e}")
-        
-        # Process other actions, potentially converting Matrix message to Matrix image
-        for i, action in enumerate(actions):
-            if i == image_action_idx:
-                # Skip the image action since we already executed it
-                continue
-            
-            # Check if this is the Matrix message action and we have an image
-            action_name = action.action_type
-            action_params = action.parameters.copy()
-
-            if action_name == "send_matrix_message" and generated_image_url:
-                # Convert to send_matrix_image action for better embedding
-                action_params["image_url"] = generated_image_url
-                # Keep the original message as caption/description
-                if "message" in action_params:
-                    action_params["caption"] = action_params.pop("message")
-                
-                logger.info(f"Converting Matrix message to Matrix image with URL: {generated_image_url}")
-                
-                # Create modified action
-                from ..ai_engine import ActionPlan
-                modified_action = ActionPlan(
-                    action_type="send_matrix_image",
-                    parameters=action_params,
-                    reasoning=f"Converted to image post with generated image: {action.reasoning}",
-                    priority=action.priority
-                )
-                
-                coordinated_actions.append(modified_action)
-            else:
-                # Add action as-is
-                coordinated_actions.append(action)
-        
-        return coordinated_actions
-
-    async def _coordinate_video_with_farcaster(self, actions: list, action_map: dict) -> list:
-        """Coordinate video generation with Farcaster posting."""
-        current_time = time.time()
-        coordinated_actions = []
-        generated_embed_url = None
-        
-        video_action_idx = action_map["generate_video"]
-        video_action = actions[video_action_idx]
-        
-        try:
-            action_params = video_action.parameters
-            
-            can_execute, reason = self.rate_limiter.can_execute_action("generate_video", current_time)
-            
-            if can_execute:
-                tool = self.tool_registry.get_tool("generate_video")
-                if tool:
-                    self.rate_limiter.record_action("generate_video", current_time)
-                    result = await tool.execute(action_params, self.action_context)
-                    logger.info(f"Executed coordinated video generation: {result}")
-                    
-                    if isinstance(result, dict) and result.get("status") == "success" and result.get("embed_page_url"):
-                        generated_embed_url = result["embed_page_url"]
-                        logger.info(f"Generated video embed page URL for coordination: {generated_embed_url}")
-
-                    if self.context_manager:
-                        channel_id = action_params.get('channel_id', 'default')
-                        result_dict = result if isinstance(result, dict) else {'result': str(result)}
-                        await self.context_manager.add_tool_result(channel_id, "generate_video", result_dict)
-            else:
-                logger.warning(f"Cannot execute video generation for coordination: {reason}")
-        
-        except Exception as e:
-            logger.error(f"Error in coordinated video generation: {e}")
-        
-        for i, action in enumerate(actions):
-            if i == video_action_idx:
-                continue
-            
-            action_name = action.action_type
-            action_params = action.parameters.copy()
-
-            if action_name == "send_farcaster_post" and generated_embed_url:
-                action_params["embed_url"] = generated_embed_url
-                logger.info(f"Enhanced Farcaster post with generated video embed page: {generated_embed_url}")
-                
-                from ..ai_engine import ActionPlan
-                modified_action = ActionPlan(
-                    action_type=action.action_type,
-                    parameters=action_params,
-                    reasoning=action.reasoning,
-                    priority=action.priority
-                )
-                
-                coordinated_actions.append(modified_action)
-            else:
-                coordinated_actions.append(action)
-        
-        return coordinated_actions
-
-    async def _coordinate_video_with_matrix(self, actions: list, action_map: dict) -> list:
-        """Coordinate video generation with Matrix messaging."""
-        current_time = time.time()
-        coordinated_actions = []
-        generated_video_url = None
-        
-        video_action_idx = action_map["generate_video"]
-        video_action = actions[video_action_idx]
-        
-        try:
-            action_params = video_action.parameters
-            
-            can_execute, reason = self.rate_limiter.can_execute_action("generate_video", current_time)
-            
-            if can_execute:
-                tool = self.tool_registry.get_tool("generate_video")
-                if tool:
-                    self.rate_limiter.record_action("generate_video", current_time)
-                    result = await tool.execute(action_params, self.action_context)
-                    logger.info(f"Executed coordinated video generation: {result}")
-                    
-                    if isinstance(result, dict) and result.get("status") == "success" and result.get("arweave_video_url"):
-                        generated_video_url = result["arweave_video_url"]
-                        logger.info(f"Generated video URL for Matrix coordination: {generated_video_url}")
-
-                    if self.context_manager:
-                        channel_id = action_params.get('channel_id', 'default')
-                        result_dict = result if isinstance(result, dict) else {'result': str(result)}
-                        await self.context_manager.add_tool_result(channel_id, "generate_video", result_dict)
-            else:
-                logger.warning(f"Cannot execute video generation for coordination: {reason}")
-        
-        except Exception as e:
-            logger.error(f"Error in coordinated video generation: {e}")
-            
-        for i, action in enumerate(actions):
-            if i == video_action_idx:
-                continue
-                
-            action_name = action.action_type
-            action_params = action.parameters.copy()
-
-            if action_name == "send_matrix_message" and generated_video_url:
-                action_params["video_url"] = generated_video_url
-                if "message" in action_params:
-                    action_params["caption"] = action_params.pop("message")
-                
-                logger.info(f"Converting Matrix message to Matrix video with URL: {generated_video_url}")
-                
-                from ..ai_engine import ActionPlan
-                modified_action = ActionPlan(
-                    action_type="send_matrix_video",
-                    parameters=action_params,
-                    reasoning=f"Converted to video post with generated video: {action.reasoning}",
-                    priority=action.priority
-                )
-                
-                coordinated_actions.append(modified_action)
-            else:
-                coordinated_actions.append(action)
-        
-        return coordinated_actions
+                logger.info("Matrix integration already exists, skipping registration")
+        else:
+            logger.debug("Matrix environment variables not fully configured, skipping auto-registration")
