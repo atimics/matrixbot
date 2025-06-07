@@ -212,3 +212,14 @@ pytest.xml
 *.pid
 *.seed
 *.pid.lock
+
+# Project-specific additions for consolidated UI
+
+# Runtime configuration files
+data/config.json
+data/chatbot.db
+
+# Deprecated UI components (keeping for reference)
+# control_panel.py  # Deprecated - use ui-nextjs instead
+# setup_server.py   # Deprecated - setup handled in Next.js UI
+# ui/               # Deprecated - use ui-nextjs instead

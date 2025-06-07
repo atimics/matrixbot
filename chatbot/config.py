@@ -5,9 +5,28 @@ This module provides centralized configuration management using Pydantic BaseSet
 to load and validate all configuration from environment variables and .env files.
 """
 
+import json
+import os
+from pathlib import Path
 from typing import Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def load_config_json() -> dict:
+    """Load configuration from config.json file if it exists."""
+    config_path = Path("data/config.json")
+    if config_path.exists():
+        try:
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+                # Remove metadata fields that aren't configuration
+                config.pop("_setup_completed", None)
+                config.pop("_setup_timestamp", None)
+                return config
+        except Exception as e:
+            print(f"Warning: Error reading config.json: {e}")
+    return {}
 
 
 class AppConfig(BaseSettings):
@@ -144,4 +163,17 @@ class AppConfig(BaseSettings):
 
 
 # Global settings instance
-settings = AppConfig()
+def create_settings() -> AppConfig:
+    """Create settings instance with merged configuration from env and config.json."""
+    # Load from config.json first
+    json_config = load_config_json()
+    
+    # Set environment variables from config.json (they will override only if not already set)
+    for key, value in json_config.items():
+        if key not in os.environ:
+            os.environ[key] = str(value)
+    
+    return AppConfig()
+
+
+settings = create_settings()

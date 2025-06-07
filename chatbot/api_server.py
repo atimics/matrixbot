@@ -199,21 +199,10 @@ class SetupManager:
         return {"valid": True, "message": "Valid"}
     
     def _save_configuration(self):
-        """Save the configuration to .env file."""
-        env_path = Path(".env")
-        env_content = []
-        
-        # Read existing .env if it exists
-        if env_path.exists():
-            with open(env_path, 'r') as f:
-                env_content = f.readlines()
-        
-        # Update or add the new values
-        env_dict = {}
-        for line in env_content:
-            if '=' in line and not line.strip().startswith('#'):
-                key, value = line.strip().split('=', 1)
-                env_dict[key] = value
+        """Save the configuration to a config file in the data directory."""
+        # Use data directory for persistence instead of .env (which may be read-only in Docker)
+        config_path = Path("data/config.json")
+        config_path.parent.mkdir(exist_ok=True)
         
         # Map our step keys to environment variable names
         step_to_env = {
@@ -224,18 +213,42 @@ class SetupManager:
             "matrix_room_id": "MATRIX_ROOM_ID"
         }
         
-        # Update with new values
+        # Create config dictionary
+        config = {}
         for step_key, env_key in step_to_env.items():
             if step_key in self.completed_steps:
-                env_dict[env_key] = self.completed_steps[step_key]
+                config[env_key] = self.completed_steps[step_key]
         
-        # Write back to .env
-        with open(env_path, 'w') as f:
-            for key, value in env_dict.items():
-                f.write(f"{key}={value}\n")
+        # Add metadata
+        config["_setup_completed"] = True
+        config["_setup_timestamp"] = datetime.now().isoformat()
+        
+        # Save to JSON file
+        try:
+            with open(config_path, 'w') as f:
+                json.dump(config, f, indent=2)
+            logger.info(f"Configuration saved to {config_path}")
+        except Exception as e:
+            logger.error(f"Failed to save configuration: {e}")
+            raise
     
     def is_setup_required(self) -> bool:
-        """Check if setup is required by looking for essential environment variables."""
+        """Check if setup is required by looking for essential environment variables or config file."""
+        # First check if config file exists and has setup completion flag
+        config_path = Path("data/config.json")
+        if config_path.exists():
+            try:
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                    if config.get("_setup_completed", False):
+                        # Verify essential keys are present
+                        required_keys = ["OPENROUTER_API_KEY", "MATRIX_USER_ID", "MATRIX_PASSWORD"]
+                        if all(config.get(key) for key in required_keys):
+                            return False
+            except Exception as e:
+                logger.warning(f"Error reading config file: {e}")
+        
+        # Fall back to checking environment variables
         required_vars = ["OPENROUTER_API_KEY", "MATRIX_USER_ID", "MATRIX_PASSWORD"]
         for var in required_vars:
             if not os.getenv(var):
@@ -291,6 +304,7 @@ class ChatbotAPIServer:
     
     def __init__(self, orchestrator: MainOrchestrator):
         self.orchestrator = orchestrator
+        self._start_time = datetime.now()  # Track start time for uptime calculation
         self.app = FastAPI(
             title="Chatbot Management API",
             description="REST API for monitoring and controlling the chatbot system",
@@ -340,6 +354,16 @@ class ChatbotAPIServer:
     def _setup_routes(self):
         """Set up all API routes."""
         
+        # ===== HEALTH CHECK =====
+        @self.app.get("/health")
+        async def health_check():
+            """Health check endpoint for container orchestration."""
+            return {
+                "status": "healthy",
+                "timestamp": datetime.now().isoformat(),
+                "service": "chatbot_api"
+            }
+        
         # ===== SYSTEM STATUS & CONTROL =====
         @self.app.get("/api/status")
         async def get_system_status():
@@ -379,7 +403,19 @@ class ChatbotAPIServer:
                 setup_status = self.setup_manager.get_setup_status()
                 logger.info(f"Got setup status: {type(setup_status)}")
                 
+                # Determine system status for UI
+                if setup_status.get("required", False):
+                    system_status = "SETUP_REQUIRED"
+                    setup_message = "Initial setup is required to configure the chatbot"
+                else:
+                    system_status = "OPERATIONAL"
+                    setup_message = "System is ready and operational"
+                
                 return {
+                    "status": system_status,  # Primary status for UI logic
+                    "setup_status": setup_message,
+                    "version": "1.0.0",  # TODO: Get from package/version file
+                    "uptime": (datetime.now() - self._start_time).total_seconds(),
                     "system_running": True,  # If API is responding, system is running
                     "processing": processing_status,
                     "world_state": world_state_metrics,

@@ -19,43 +19,28 @@ services:
       timeout: 10s
       retries: 5
 
-  chatbot:
+  chatbot_backend:
     build:
       context: .
-      dockerfile: chatbot.Dockerfile
+      dockerfile: Dockerfile  # Use main Dockerfile for production-ready build
     container_name: chatbot_backend
     ports:
       - "8000:8000" # Expose the API server
     volumes:
-      - .:/app # Mount current directory for live code changes during development
-      - ./chatbot.db:/app/chatbot.db # Persist the chatbot's own DB
-      - ./context_storage:/app/context_storage # Persist training data
+      - ./data:/app/data # Persist chatbot data (db, context storage, etc.)
       - ./matrix_store:/app/matrix_store # Persist matrix session data
+      - ./.env:/app/.env:ro # Mount .env file for configuration (read-only)
     depends_on:
       postgres:
         condition: service_healthy
     networks:
       - chatbot_network
+    env_file:
+      - .env # Load environment variables from .env file
     environment:
-      # Pass all required secrets and configs from a .env file
+      # Additional runtime environment
       - PYTHONUNBUFFERED=1
-      - MATRIX_USER_ID=${MATRIX_USER_ID}
-      - MATRIX_PASSWORD=${MATRIX_PASSWORD}
-      - MATRIX_ROOM_ID=${MATRIX_ROOM_ID}
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      - NEYNAR_API_KEY=${NEYNAR_API_KEY}
-      - FARCASTER_BOT_SIGNER_UUID=${FARCASTER_BOT_SIGNER_UUID}
-      - FARCASTER_BOT_FID=${FARCASTER_BOT_FID}
-      - FARCASTER_BOT_USERNAME=${FARCASTER_BOT_USERNAME}
-      - ECOSYSTEM_TOKEN_CONTRACT_ADDRESS=${ECOSYSTEM_TOKEN_CONTRACT_ADDRESS}
-      - ECOSYSTEM_TOKEN_NETWORK=${ECOSYSTEM_TOKEN_NETWORK}
-      - NUM_TOP_HOLDERS_TO_TRACK=${NUM_TOP_HOLDERS_TO_TRACK}
-      - AI_MODEL=${AI_MODEL}
-      - WEB_SEARCH_MODEL=${WEB_SEARCH_MODEL}
-      - LOG_LEVEL=${LOG_LEVEL}
-      - CHATBOT_DB_PATH=/app/chatbot.db
-      - OBSERVATION_INTERVAL=${OBSERVATION_INTERVAL}
-      - MAX_CYCLES_PER_HOUR=${MAX_CYCLES_PER_HOUR}
+      - CHATBOT_DB_PATH=/app/data/chatbot.db
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
@@ -63,7 +48,7 @@ services:
       timeout: 10s
       retries: 5
 
-  ui:
+  chatbot_ui:
     build:
       context: ./ui-nextjs # Point to the Next.js app
       dockerfile: Dockerfile
@@ -73,11 +58,12 @@ services:
     networks:
       - chatbot_network
     environment:
-      # The Next.js app needs to know where the backend is.
-      # Since they are on the same Docker network, it can use the service name.
-      - NEXT_PUBLIC_API_URL=http://chatbot:8000
+      # For client-side API calls (from browser)
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      # For server-side API calls (from Next.js server)
+      - INTERNAL_API_URL=http://chatbot_backend:8000
     depends_on:
-      - chatbot
+      - chatbot_backend
     restart: unless-stopped
 
 volumes:
