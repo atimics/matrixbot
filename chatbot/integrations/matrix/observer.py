@@ -37,8 +37,10 @@ load_dotenv()
 class MatrixObserver(Integration):
     """Observes Matrix channels and reports to world state"""
 
-    def __init__(self, world_state_manager: WorldStateManager, arweave_client=None):
-        super().__init__("matrix")
+    def __init__(self, integration_id: str = "matrix", display_name: str = "Matrix Integration", 
+                 config: Dict[str, Any] = None, world_state_manager: WorldStateManager = None, 
+                 arweave_client=None):
+        super().__init__(integration_id, display_name, config or {})
         self.world_state = world_state_manager
         self.arweave_client = arweave_client
         self.homeserver = settings.MATRIX_HOMESERVER

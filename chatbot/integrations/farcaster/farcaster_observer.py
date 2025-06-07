@@ -32,12 +32,15 @@ class FarcasterObserver(Integration):
 
     def __init__(
         self,
+        integration_id: str = "farcaster",
+        display_name: str = "Farcaster Integration",
+        config: Dict[str, Any] = None,
         api_key: Optional[str] = None,
         signer_uuid: Optional[str] = None,
         bot_fid: Optional[str] = None,
         world_state_manager=None,
     ):
-        super().__init__("farcaster")
+        super().__init__(integration_id, display_name, config or {})
         self.api_key = api_key
         self.signer_uuid = signer_uuid
         self.bot_fid = str(bot_fid) if bot_fid else None
@@ -85,6 +88,11 @@ class FarcasterObserver(Integration):
     def enabled(self) -> bool:
         """Check if integration is enabled and properly configured."""
         return self._enabled
+
+    @property
+    def integration_type(self) -> str:
+        """Return the integration type identifier."""
+        return "farcaster"
 
     async def connect(self) -> None:
         """Connect to Farcaster API and start observing."""

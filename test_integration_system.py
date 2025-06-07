@@ -15,8 +15,16 @@ async def test_integration_system():
     """Test the integration system functionality."""
     print("Testing Integration System...")
     
+    # Use a clean test database for each run
+    test_db_path = "test_integration_system.db"
+    
+    # Remove existing test database
+    import os
+    if os.path.exists(test_db_path):
+        os.remove(test_db_path)
+    
     # Initialize history recorder (which handles DB)
-    history_recorder = HistoryRecorder("test_chatbot.db")
+    history_recorder = HistoryRecorder(test_db_path)
     await history_recorder.initialize()
     print("✓ History Recorder initialized")
     
@@ -25,7 +33,7 @@ async def test_integration_system():
     print("✓ World State Manager initialized")
     
     # Initialize integration manager
-    integration_manager = IntegrationManager("test_chatbot.db", world_state_manager=world_state_manager)
+    integration_manager = IntegrationManager(test_db_path, world_state_manager=world_state_manager)
     await integration_manager.initialize()
     print("✓ Integration Manager initialized")
     
@@ -39,11 +47,12 @@ async def test_integration_system():
             "name": "test_matrix",
             "integration_type": "matrix",
             "config": {
-                "homeserver": "https://matrix.org",
-                "user_id": "@test:matrix.org"
+                "test_mode": True  # Prevent actual network connections
             },
             "credentials": {
-                "access_token": "test_token_12345"
+                "homeserver": "https://matrix.org",
+                "user_id": "@test:matrix.org",
+                "password": "test_password"
             }
         }
         
@@ -76,11 +85,12 @@ async def test_integration_system():
             "name": "test_farcaster",
             "integration_type": "farcaster",
             "config": {
-                "api_base_url": "https://api.neynar.com/v2/farcaster",
-                "signer_uuid": "test-signer-uuid"
+                "test_mode": True  # Prevent actual network connections
             },
             "credentials": {
-                "api_key": "test_api_key_12345"
+                "api_key": "test_api_key_12345",
+                "signer_uuid": "test-signer-uuid",
+                "bot_fid": "123456"
             }
         }
         
@@ -111,7 +121,8 @@ async def test_integration_system():
         observers = integration_manager.get_observers()
         print(f"✓ Retrieved {len(observers)} observers")
         for observer in observers:
-            print(f"  - {observer.__class__.__name__}: {observer.status}")
+            status = await observer.get_status()
+            print(f"  - {observer.__class__.__name__}: connected={status.get('is_connected', False)}")
     except Exception as e:
         print(f"✗ Error getting observers: {e}")
         import traceback

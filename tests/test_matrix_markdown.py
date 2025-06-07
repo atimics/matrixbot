@@ -95,7 +95,7 @@ Some content here
             "```python\\n"\
             "# Example code\\n"\
             "def process_data():\\n"\
-            "    return {\\"status\\": \\"success\\"}\\n"\
+            "    return {\\\"status\\\": \\\"success\\\"}\\n"\
             "```\\n\\n"\
             "Thanks!"\
         )

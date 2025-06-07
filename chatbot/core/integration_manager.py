@@ -178,13 +178,22 @@ class IntegrationManager:
         integration_class = self.integration_types[integration_data['integration_type']]
         config = json.loads(integration_data['config'])
         
+        # Load credentials for this integration
+        credentials = await self._load_credentials(integration_id)
+        
         # Create integration with appropriate constructor
         if integration_data['integration_type'] == 'matrix':
-            integration = integration_class(world_state_manager=world_state_manager)
-        elif integration_data['integration_type'] == 'farcaster':
-            # Load credentials first for Farcaster
-            credentials = await self._load_credentials(integration_id)
             integration = integration_class(
+                integration_id=integration_id,
+                display_name=integration_data['display_name'],
+                config=config,
+                world_state_manager=world_state_manager
+            )
+        elif integration_data['integration_type'] == 'farcaster':
+            integration = integration_class(
+                integration_id=integration_id,
+                display_name=integration_data['display_name'],
+                config=config,
                 api_key=credentials.get('api_key'),
                 signer_uuid=credentials.get('signer_uuid'),
                 bot_fid=credentials.get('bot_fid'),
@@ -192,10 +201,13 @@ class IntegrationManager:
             )
         else:
             # Generic constructor for future integrations
-            integration = integration_class()
+            integration = integration_class(
+                integration_id=integration_id,
+                display_name=integration_data['display_name'],
+                config=config
+            )
         
         # Set credentials (this will update existing ones or set new ones)
-        credentials = await self._load_credentials(integration_id)
         if hasattr(integration, 'set_credentials'):
             await integration.set_credentials(credentials)
         

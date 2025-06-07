@@ -214,6 +214,11 @@ class HistoryRecorder:
         await self._store_state_change(state_change)
         logger.debug(f"HistoryRecorder: Recorded tool execution {tool_name}")
 
+    async def record_state_change(self, state_change: StateChangeBlock):
+        """Record a state change block (public interface for external callers)."""
+        await self._store_state_change(state_change)
+        logger.debug(f"HistoryRecorder: Recorded state change: {state_change.change_type}")
+
     async def _store_state_change(self, state_change: StateChangeBlock):
         """Permanently store a state change block."""
         self.state_changes.append(state_change)
