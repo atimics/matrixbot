@@ -5,16 +5,7 @@ import SetupWizard from '@/components/SetupWizard'
 import Dashboard from '@/components/Dashboard'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import { apiClient } from '@/lib/api'
-
-type SystemStatus = 'SETUP_REQUIRED' | 'OPERATIONAL' | 'ERROR' | 'LOADING'
-
-interface SystemInfo {
-  status: SystemStatus
-  setup_status?: string
-  version?: string
-  uptime?: number
-  message?: string
-}
+import { SystemInfo, SystemStatus } from '@/types'
 
 export default function Home() {
   const [systemInfo, setSystemInfo] = useState<SystemInfo>({ status: 'LOADING' })

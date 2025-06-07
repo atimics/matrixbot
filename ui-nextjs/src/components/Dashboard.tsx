@@ -7,19 +7,7 @@ import StatusPanel from '@/components/StatusPanel'
 import ToolManager from '@/components/ToolManager'
 import WorldStateExplorer from '@/components/WorldStateExplorer'
 import ConfigurationEditor from '@/components/ConfigurationEditor'
-
-interface SystemInfo {
-  status: string
-  setup_status?: string
-  version?: string
-  uptime?: number
-  message?: string
-}
-
-interface DashboardProps {
-  systemInfo: SystemInfo
-  onStatusChange: (info: SystemInfo) => void
-}
+import { SystemInfo, DashboardProps } from '@/types'
 
 export default function Dashboard({ systemInfo, onStatusChange }: DashboardProps) {
   const [activeTab, setActiveTab] = useState('overview')

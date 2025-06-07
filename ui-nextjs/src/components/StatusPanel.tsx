@@ -3,21 +3,9 @@
 import { useState, useEffect } from 'react'
 import { apiClient } from '@/lib/api'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
+import { SystemInfo, DashboardProps } from '@/types'
 
-interface SystemInfo {
-  status: string
-  setup_status?: string
-  version?: string
-  uptime?: number
-  message?: string
-}
-
-interface StatusPanelProps {
-  systemInfo: SystemInfo
-  onStatusChange: (info: SystemInfo) => void
-}
-
-export default function StatusPanel({ systemInfo, onStatusChange }: StatusPanelProps) {
+export default function StatusPanel({ systemInfo, onStatusChange }: DashboardProps) {
   const [metrics, setMetrics] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
