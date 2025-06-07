@@ -40,8 +40,8 @@ class MatrixObserver(Integration):
     def __init__(self, integration_id: str = "matrix", display_name: str = "Matrix Integration", 
                  config: Dict[str, Any] = None, world_state_manager: WorldStateManager = None, 
                  arweave_client=None):
-        # Support legacy positional args usage: MatrixObserver(world_state_manager, arweave_client)
-        if world_state_manager is None and hasattr(integration_id, 'state'):
+        # Support legacy positional usage: if first arg is not str, treat as world_state_manager
+        if not isinstance(integration_id, str) and world_state_manager is None:
             # Shift positional parameters
             ws_manager = integration_id
             arw_client = display_name
