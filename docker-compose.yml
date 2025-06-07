@@ -43,7 +43,7 @@ services:
       # Additional runtime environment
       - PYTHONUNBUFFERED=1
       - CHATBOT_DB_PATH=/app/data/chatbot.db
-      - ARWEAVE_INTERNAL_UPLOADER_SERVICE_URL=http://arweave_uploader:8001
+      - ARWEAVE_INTERNAL_UPLOADER_SERVICE_URL=http://arweave-service:8001
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
@@ -51,24 +51,24 @@ services:
       timeout: 10s
       retries: 5
 
-  arweave_uploader:
+  arweave-service:
     build:
-      context: ./arweave_uploader_service
+      context: ./arweave-service
       dockerfile: Dockerfile
-    container_name: arweave_uploader
+    container_name: arweave_service
     environment:
-      - ARWEAVE_WALLET_FILE_PATH=/data/arweave_wallet.json
-      - ARWEAVE_GATEWAY_URL=https://arweave.net
+      - ARWEAVE_WALLET_PATH=/data/arweave_wallet.json
       - PYTHONUNBUFFERED=1
     volumes:
-      - arweave_wallet_data:/data
+      # Mount as read-only for extra security
+      - arweave_wallet_data:/data:ro
     networks:
       - chatbot_network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8001/health || exit 1"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health')\" || exit 1"]
       interval: 30s
-      timeout: 30s
+      timeout: 10s
       retries: 3
 
   chatbot_ui:
