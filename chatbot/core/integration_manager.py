@@ -375,6 +375,33 @@ class IntegrationManager:
             
         return credentials
         
+    async def clean_invalid_credentials(self, integration_id: str) -> None:
+        """Clean up credentials that can't be decrypted (due to key changes)"""
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("""
+                SELECT credential_key, credential_value_encrypted, rowid
+                FROM credentials WHERE integration_id = ?
+            """, (integration_id,))
+            rows = await cursor.fetchall()
+            
+            invalid_rowids = []
+            for row in rows:
+                cred_key, encrypted_value, rowid = row
+                try:
+                    self.cipher.decrypt(encrypted_value).decode()
+                except Exception:
+                    logger.info(f"Marking invalid credential '{cred_key}' for cleanup (integration: {integration_id})")
+                    invalid_rowids.append(rowid)
+            
+            # Remove invalid credentials
+            if invalid_rowids:
+                placeholders = ','.join(['?' for _ in invalid_rowids])
+                await db.execute(f"""
+                    DELETE FROM credentials WHERE rowid IN ({placeholders})
+                """, invalid_rowids)
+                await db.commit()
+                logger.info(f"Cleaned up {len(invalid_rowids)} invalid credentials for integration '{integration_id}'")
+
     def get_available_integration_types(self) -> List[str]:
         """Get list of available integration types"""
         return list(self.integration_types.keys())
