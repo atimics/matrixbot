@@ -365,8 +365,13 @@ class IntegrationManager:
             
         for row in rows:
             cred_key, encrypted_value = row
-            decrypted_value = self.cipher.decrypt(encrypted_value).decode()
-            credentials[cred_key] = decrypted_value
+            try:
+                decrypted_value = self.cipher.decrypt(encrypted_value).decode()
+                credentials[cred_key] = decrypted_value
+            except Exception as e:
+                logger.warning(f"Failed to decrypt credential '{cred_key}' for integration '{integration_id}': {e}")
+                logger.warning(f"This usually happens when the encryption key has changed. Credential will be skipped.")
+                # Skip this credential - it will need to be re-added with the new key
             
         return credentials
         
