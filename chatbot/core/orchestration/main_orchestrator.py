@@ -761,6 +761,18 @@ class MainOrchestrator:
                     await self.integration_manager.clean_invalid_credentials(farcaster_integration['integration_id'])
         else:
             logger.debug("Farcaster environment variables not fully configured, skipping auto-registration")
+            # If environment variables aren't set but integration exists, remove it
+            farcaster_integration = next(
+                (integration for integration in existing_integrations 
+                 if integration.get('integration_type') == 'farcaster'), None
+            )
+            if farcaster_integration:
+                logger.info("Removing Farcaster integration since environment variables are not configured")
+                try:
+                    await self.integration_manager.remove_integration(farcaster_integration['integration_id'])
+                    logger.info("✓ Farcaster integration removed successfully")
+                except Exception as e:
+                    logger.error(f"Failed to remove Farcaster integration: {e}")
         
         # Check for Matrix integration
         if (settings.MATRIX_HOMESERVER and 
@@ -802,3 +814,15 @@ class MainOrchestrator:
                     await self.integration_manager.clean_invalid_credentials(matrix_integration['integration_id'])
         else:
             logger.debug("Matrix environment variables not fully configured, skipping auto-registration")
+            # If environment variables aren't set but integration exists, remove it
+            matrix_integration = next(
+                (integration for integration in existing_integrations 
+                 if integration.get('integration_type') == 'matrix'), None
+            )
+            if matrix_integration:
+                logger.info("Removing Matrix integration since environment variables are not configured")
+                try:
+                    await self.integration_manager.remove_integration(matrix_integration['integration_id'])
+                    logger.info("✓ Matrix integration removed successfully")
+                except Exception as e:
+                    logger.error(f"Failed to remove Matrix integration: {e}")

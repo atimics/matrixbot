@@ -229,7 +229,9 @@ class MatrixObserver(Integration):
         required_keys = ["homeserver", "user_id", "password"]
         missing_keys = [key for key in required_keys if key not in credentials]
         if missing_keys:
-            raise IntegrationError(f"Missing required credentials: {missing_keys}")
+            logger.warning(f"Matrix integration disabled: Missing required credentials: {missing_keys}")
+            self._enabled = False
+            return
             
         self.homeserver = credentials["homeserver"]
         self.user_id = credentials["user_id"]

@@ -196,7 +196,9 @@ class FarcasterObserver(Integration):
         required_keys = ["api_key"]
         missing_keys = [key for key in required_keys if key not in credentials]
         if missing_keys:
-            raise IntegrationError(f"Missing required credentials: {missing_keys}")
+            logger.warning(f"Farcaster integration disabled: Missing required credentials: {missing_keys}")
+            self.enabled = False
+            return
             
         self.api_key = credentials["api_key"]
         self.signer_uuid = credentials.get("signer_uuid")
