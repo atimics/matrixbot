@@ -453,3 +453,79 @@ class HistoryRecorder:
         except Exception as e:
             logger.error(f"HistoryRecorder: Error cleaning up old records: {e}")
             return 0
+
+    async def export_state_changes_for_training(
+        self, output_path: str, format: str = "jsonl"
+    ) -> str:
+        """
+        Export state changes for training or analysis.
+        
+        Args:
+            output_path: Path where to save the exported data
+            format: Export format ('jsonl' or 'json')
+            
+        Returns:
+            Status message about the export
+        """
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                # Get all state changes ordered by timestamp
+                async with db.execute("""
+                    SELECT timestamp, change_type, source, channel_id, 
+                           observations, potential_actions, selected_actions, 
+                           reasoning, raw_content
+                    FROM state_changes 
+                    ORDER BY timestamp ASC
+                """) as cursor:
+                    records = await cursor.fetchall()
+
+            if not records:
+                return "No state changes found to export"
+
+            # Prepare data for export
+            export_data = []
+            for record in records:
+                timestamp, change_type, source, channel_id, observations, potential_actions, selected_actions, reasoning, raw_content = record
+                
+                # Parse JSON fields
+                try:
+                    potential_actions = json.loads(potential_actions) if potential_actions else None
+                    selected_actions = json.loads(selected_actions) if selected_actions else None
+                    raw_content = json.loads(raw_content) if raw_content else {}
+                except json.JSONDecodeError:
+                    logger.warning(f"Failed to parse JSON for record at {timestamp}")
+                    continue
+
+                export_record = {
+                    "timestamp": timestamp,
+                    "change_type": change_type,
+                    "source": source,
+                    "channel_id": channel_id,
+                    "observations": observations,
+                    "potential_actions": potential_actions,
+                    "selected_actions": selected_actions,
+                    "reasoning": reasoning,
+                    "raw_content": raw_content
+                }
+                export_data.append(export_record)
+
+            # Write to file
+            output_file = Path(output_path)
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+
+            if format.lower() == "jsonl":
+                with open(output_file, 'w', encoding='utf-8') as f:
+                    for record in export_data:
+                        f.write(json.dumps(record, ensure_ascii=False) + '\n')
+            else:  # JSON format
+                with open(output_file, 'w', encoding='utf-8') as f:
+                    json.dump(export_data, f, indent=2, ensure_ascii=False)
+
+            message = f"Exported {len(export_data)} state changes to {output_path}"
+            logger.info(f"HistoryRecorder: {message}")
+            return message
+
+        except Exception as e:
+            error_msg = f"Error exporting state changes: {e}"
+            logger.error(f"HistoryRecorder: {error_msg}")
+            return error_msg
