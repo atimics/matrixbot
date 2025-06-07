@@ -41,7 +41,6 @@ class ChatbotAPIServer:
         self._setup_dependency_overrides()
         self._setup_routers()
         self._setup_websocket_routes()
-        self._setup_setup_routes()
         self._setup_static_files()
         self._setup_log_handler()
         
@@ -103,55 +102,6 @@ class ChatbotAPIServer:
             except WebSocketDisconnect:
                 self.log_manager.disconnect(websocket)
                 
-    def _setup_setup_routes(self):
-        """Set up setup/configuration routes."""
-        @self.app.get("/api/setup/status")
-        async def get_setup_status():
-            """Get the current setup status."""
-            try:
-                return self.setup_manager.get_setup_status()
-            except Exception as e:
-                logger.error(f"Error getting setup status: {e}", exc_info=True)
-                raise HTTPException(status_code=500, detail=str(e))
-
-        @self.app.post("/api/setup/step", response_model=StatusResponse)
-        async def submit_setup_step(step_key: str, value: str):
-            """Submit a setup step."""
-            try:
-                result = self.setup_manager.submit_step(step_key, value)
-                
-                if result["success"]:
-                    return StatusResponse(
-                        status="success" if result.get("complete") else "progress",
-                        message=result["message"],
-                        data=result,
-                        timestamp=datetime.now().isoformat()
-                    )
-                else:
-                    return StatusResponse(
-                        status="error",
-                        message=result["message"],
-                        timestamp=datetime.now().isoformat()
-                    )
-                    
-            except Exception as e:
-                logger.error(f"Error submitting setup step: {e}", exc_info=True)
-                raise HTTPException(status_code=500, detail=str(e))
-
-        @self.app.post("/api/setup/reset", response_model=StatusResponse)
-        async def reset_setup():
-            """Reset the setup process."""
-            try:
-                self.setup_manager.reset_setup()
-                return StatusResponse(
-                    status="success",
-                    message="Setup process reset successfully",
-                    timestamp=datetime.now().isoformat()
-                )
-            except Exception as e:
-                logger.error(f"Error resetting setup: {e}", exc_info=True)
-                raise HTTPException(status_code=500, detail=str(e))
-                
     def _setup_static_files(self):
         """Set up static file serving for the UI."""
         # Check if UI directory exists
@@ -181,21 +131,3 @@ def create_api_server(orchestrator: MainOrchestrator) -> FastAPI:
     """Factory function to create the API server."""
     server = ChatbotAPIServer(orchestrator)
     return server.app
-
-
-# Legacy routes that need to be migrated to routers
-# TODO: Move these to appropriate routers
-
-async def _legacy_get_integrations(orchestrator: MainOrchestrator):
-    """Legacy integration status - to be moved to integrations router."""
-    # This is the manually constructed integration status from the original code
-    # Should be refactored to use IntegrationManager consistently
-    pass
-
-async def _legacy_worldstate_routes(orchestrator: MainOrchestrator):
-    """Legacy world state routes - to be moved to worldstate router."""
-    pass
-
-async def _legacy_ai_routes(orchestrator: MainOrchestrator):
-    """Legacy AI routes - to be moved to ai router.""" 
-    pass
