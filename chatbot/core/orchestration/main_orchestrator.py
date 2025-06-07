@@ -56,7 +56,7 @@ class TraditionalProcessor:
         """
         try:
             # Add available tools to the payload
-            payload["available_tools"] = self.tool_registry.get_tool_descriptions()
+            payload["available_tools"] = self.tool_registry.get_tool_descriptions_for_ai()
             
             # Get AI decision
             decision_result = await self.ai_engine.decide_actions(payload)
@@ -819,14 +819,29 @@ class MainOrchestrator:
                 except Exception as e:
                     logger.error(f"Failed to register Matrix integration: {e}")
             else:
-                logger.info("Matrix integration already exists, skipping registration")
-                # Clean up any invalid credentials for existing integration
+                logger.info("Matrix integration already exists, updating credentials from environment...")
+                # Update credentials for existing integration
                 matrix_integration = next(
                     (integration for integration in existing_integrations 
                      if integration.get('integration_type') == 'matrix'), None
                 )
                 if matrix_integration:
-                    await self.integration_manager.clean_invalid_credentials(matrix_integration['integration_id'])
+                    try:
+                        # Clean up any invalid credentials first
+                        await self.integration_manager.clean_invalid_credentials(matrix_integration['integration_id'])
+                        
+                        # Update credentials from environment
+                        await self.integration_manager.update_credentials(
+                            matrix_integration['integration_id'],
+                            {
+                                'homeserver': settings.MATRIX_HOMESERVER,
+                                'user_id': settings.MATRIX_USER_ID,
+                                'password': settings.MATRIX_PASSWORD
+                            }
+                        )
+                        logger.info("✓ Matrix credentials updated from environment variables")
+                    except Exception as e:
+                        logger.error(f"Failed to update Matrix credentials: {e}")
         else:
             logger.debug("Matrix environment variables not fully configured, skipping auto-registration")
             # If environment variables aren't set but integration exists, remove it
