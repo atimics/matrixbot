@@ -16,22 +16,11 @@ import logging
 from chatbot.core.orchestration import MainOrchestrator
 from ..services import SetupManager
 from ..schemas import StatusResponse
+from ..dependencies import get_orchestrator, get_setup_manager
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/setup", tags=["setup"])
-
-
-def get_orchestrator() -> MainOrchestrator:
-    """Dependency injection for orchestrator - will be set by main server."""
-    # This will be overridden in the main server setup
-    raise HTTPException(status_code=500, detail="Orchestrator not configured")
-
-
-def get_setup_manager() -> SetupManager:
-    """Dependency injection for setup manager - will be set by main server."""
-    # This will be overridden in the main server setup
-    raise HTTPException(status_code=500, detail="Setup manager not configured")
 
 
 class SetupSubmission(BaseModel):

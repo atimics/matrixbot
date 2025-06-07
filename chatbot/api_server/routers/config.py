@@ -11,15 +11,14 @@ from fastapi import APIRouter, HTTPException, Depends
 from ..schemas import ConfigUpdate, StatusResponse
 from chatbot.core.orchestration import MainOrchestrator
 from chatbot.config import settings
+from ..dependencies import get_orchestrator
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/config", tags=["configuration"])
 
 
-def get_orchestrator() -> MainOrchestrator:
-    """Dependency injection for orchestrator - will be set by main server."""
-    raise HTTPException(status_code=500, detail="Orchestrator not configured")
+
 
 
 @router.get("")

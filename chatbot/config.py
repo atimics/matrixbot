@@ -112,7 +112,7 @@ class AppConfig(BaseSettings):
     GOOGLE_GEMINI_IMAGE_MODEL: str = "gemini-1.5-flash-latest"
     GOOGLE_VEO_VIDEO_MODEL: str = "models/veo-experimental-v1"
 
-    # Arweave Configuration
+    # Arweave Configuration (Internal Uploader Service)
     ARWEAVE_INTERNAL_UPLOADER_SERVICE_URL: str = "http://arweave-uploader:8001"
     ARWEAVE_GATEWAY_URL: str = "https://arweave.net"
 

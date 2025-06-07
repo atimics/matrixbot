@@ -16,6 +16,7 @@ from datetime import datetime
 import logging
 
 from chatbot.core.orchestration import MainOrchestrator
+from ..dependencies import get_orchestrator
 from chatbot.config import settings
 
 logger = logging.getLogger(__name__)
@@ -23,12 +24,6 @@ logger = logging.getLogger(__name__)
 # Create two routers - one for UI and one for frames
 ui_router = APIRouter(tags=["ui"])
 frames_router = APIRouter(prefix="/frames", tags=["frames"])
-
-
-def get_orchestrator() -> MainOrchestrator:
-    """Dependency injection for orchestrator - will be set by main server."""
-    # This will be overridden in the main server setup
-    raise HTTPException(status_code=500, detail="Orchestrator not configured")
 
 
 class FrameActionRequest(BaseModel):

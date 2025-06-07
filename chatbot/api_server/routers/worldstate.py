@@ -15,17 +15,12 @@ from datetime import datetime
 import logging
 
 from chatbot.core.orchestration import MainOrchestrator
+from ..dependencies import get_orchestrator
 from ..schemas import StatusResponse
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/worldstate", tags=["worldstate"])
-
-
-def get_orchestrator() -> MainOrchestrator:
-    """Dependency injection for orchestrator - will be set by main server."""
-    # This will be overridden in the main server setup
-    raise HTTPException(status_code=500, detail="Orchestrator not configured")
 
 
 class NodeAction(BaseModel):

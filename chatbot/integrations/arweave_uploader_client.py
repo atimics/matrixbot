@@ -18,7 +18,10 @@ class ArweaveUploaderClient:
     """Client for uploading data to Arweave via internal uploader service."""
 
     def __init__(
-        self, uploader_service_url: str, gateway_url: str = "https://arweave.net"
+        self, 
+        uploader_service_url: str, 
+        gateway_url: str = "https://arweave.net",
+        api_key: Optional[str] = None
     ):
         """
         Initialize Arweave uploader client.
@@ -26,9 +29,18 @@ class ArweaveUploaderClient:
         Args:
             uploader_service_url: URL of the internal Arweave uploader service
             gateway_url: Arweave gateway URL for constructing public URLs
+            api_key: Optional API key for authenticating with the uploader service
         """
         self.uploader_service_url = uploader_service_url.rstrip("/")
         self.gateway_url = gateway_url.rstrip("/")
+        self.api_key = api_key
+
+    def _get_headers(self) -> Dict[str, str]:
+        """Get headers for requests including API key if configured."""
+        headers = {}
+        if self.api_key:
+            headers["X-API-Key"] = self.api_key
+        return headers
 
     async def upload_data(
         self,
@@ -61,6 +73,7 @@ class ArweaveUploaderClient:
                     f"{self.uploader_service_url}/upload",
                     files=files,
                     data=form_data,
+                    headers=self._get_headers(),
                 )
 
                 response.raise_for_status()
@@ -113,7 +126,10 @@ class ArweaveUploaderClient:
         """
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(f"{self.uploader_service_url}/status/{tx_id}")
+                response = await client.get(
+                    f"{self.uploader_service_url}/status/{tx_id}",
+                    headers=self._get_headers()
+                )
                 response.raise_for_status()
                 return response.json()
         except Exception as e:
@@ -131,7 +147,10 @@ class ArweaveUploaderClient:
         """
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(f"{self.uploader_service_url}/wallet-info")
+                response = await client.get(
+                    f"{self.uploader_service_url}/wallet-info",
+                    headers=self._get_headers()
+                )
                 response.raise_for_status()
                 result = response.json()
                 return result.get("address")

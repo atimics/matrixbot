@@ -16,16 +16,13 @@ import logging
 
 from chatbot.core.orchestration import MainOrchestrator
 from ..schemas import StatusResponse
+from ..dependencies import get_orchestrator
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 
 
-def get_orchestrator() -> MainOrchestrator:
-    """Dependency injection for orchestrator - will be set by main server."""
-    # This will be overridden in the main server setup
-    raise HTTPException(status_code=500, detail="Orchestrator not configured")
 
 
 class IntegrationConfig(BaseModel):
@@ -182,7 +179,11 @@ async def get_arweave_wallet_info(orchestrator: MainOrchestrator = Depends(get_o
 
         wallet_info = await arweave_client.get_wallet_info()
         if wallet_info:
-            return wallet_info
+            return {
+                "status": "success",
+                "data": wallet_info,
+                "message": "Wallet information retrieved successfully"
+            }
         else:
             raise HTTPException(
                 status_code=503,
@@ -193,4 +194,7 @@ async def get_arweave_wallet_info(orchestrator: MainOrchestrator = Depends(get_o
         raise
     except Exception as e:
         logger.error(f"Error getting Arweave wallet info: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail="Internal server error retrieving wallet information"
+        )

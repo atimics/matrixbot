@@ -10,8 +10,9 @@ from typing import Dict, List, Optional
 
 import uvicorn
 from arweave import Wallet, Transaction
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Depends, Header
 from fastapi.responses import JSONResponse
+from typing import Annotated
 
 # Configure logging
 logging.basicConfig(
@@ -170,6 +171,19 @@ app = FastAPI(
 # Global wallet manager
 wallet_manager: Optional[ArweaveWalletManager] = None
 
+# Optional API key for internal service authentication
+API_KEY = os.getenv("ARWEAVE_UPLOADER_API_KEY")
+
+
+def verify_api_key(x_api_key: Annotated[str | None, Header()] = None):
+    """Verify API key if configured."""
+    if API_KEY and x_api_key != API_KEY:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or missing API key"
+        )
+    return True
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize the wallet manager on startup"""
@@ -190,7 +204,8 @@ async def startup_event():
 async def upload_file(
     file: UploadFile = File(...),
     content_type: str = Form(...),
-    tags: Optional[str] = Form(None)
+    tags: Optional[str] = Form(None),
+    _: bool = Depends(verify_api_key)
 ):
     """Upload a file to Arweave"""
     if not wallet_manager or not wallet_manager.wallet:
@@ -242,7 +257,7 @@ async def upload_file(
         )
 
 @app.get("/wallet-info")
-async def get_wallet_info():
+async def get_wallet_info(_: bool = Depends(verify_api_key)):
     """Get wallet information"""
     if not wallet_manager:
         raise HTTPException(
@@ -284,19 +299,23 @@ async def get_wallet_info():
         )
 
 @app.get("/status/{tx_id}")
-async def get_transaction_status(tx_id: str):
+async def get_transaction_status(tx_id: str, _: bool = Depends(verify_api_key)):
     """Get Arweave transaction status"""
-    if not wallet_manager or not wallet_manager.arweave:
+    if not wallet_manager or not wallet_manager.wallet:
         raise HTTPException(
             status_code=503,
-            detail="Arweave client not initialized"
+            detail="Arweave wallet not initialized"
         )
     
     try:
+        # Use the Arweave Python library to check transaction status
+        from arweave import Arweave
+        arweave = Arweave()
+        
         loop = asyncio.get_event_loop()
         status = await loop.run_in_executor(
             None, 
-            wallet_manager.arweave.transactions.get_status, 
+            arweave.transactions.get_status, 
             tx_id
         )
         
@@ -304,7 +323,8 @@ async def get_transaction_status(tx_id: str):
             "tx_id": tx_id,
             "status_code": status.status_code,
             "confirmed": status.status_code == 200,
-            "data": status.json() if hasattr(status, 'json') else {}
+            "block_height": getattr(status, 'block_height', None),
+            "block_indep_hash": getattr(status, 'block_indep_hash', None)
         })
         
     except Exception as e:
