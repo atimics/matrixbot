@@ -1,9 +1,24 @@
 """
-FastAPI Backend for Chatbot Management UI
+FastAPI Backend for Chatbot Management UI - DEPRECATED
 
-Provides comprehensive REST API endpoints for monitoring and controlling
-the chatbot system, including tool management, configuration, world state,
-and real-time status information.
+⚠️ DEPRECATION NOTICE ⚠️
+
+This monolithic api_server.py file has been DEPRECATED and replaced with a modular 
+architecture. Please use the new modular API server instead:
+
+    from chatbot.api_server import create_api_server, ChatbotAPIServer
+
+The new modular structure is located in:
+- chatbot/api_server/main.py (main server class)
+- chatbot/api_server/routers/ (organized route handlers)
+- chatbot/api_server/services/ (shared services)
+- chatbot/api_server/schemas.py (Pydantic models)
+
+This file is kept for backwards compatibility only and will be removed in a future version.
+
+---
+
+Original monolithic implementation below (DO NOT USE):
 """
 
 import asyncio
