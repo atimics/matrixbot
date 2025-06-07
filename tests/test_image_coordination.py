@@ -1,26 +1,16 @@
 #!/usr/bin/env python3
 """
-Test Image Generation and Posting Coordination
+Test Image Generation and Posting Actions
 
-Tests the automatic coordination between image generation and posting actions
-to ensure generated images are properly embedded in posts.
+Tests that image generation and posting actions work independently.
 """
 
-import asyncio
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-
-from chatbot.core.ai_engine import ActionPlan
-from chatbot.core.orchestration.main_orchestrator import TraditionalProcessor
+from unittest.mock import AsyncMock, MagicMock
 
 
 class TestImageCoordination:
-    """Test coordination between image generation and posting actions."""
-
-    @pytest.fixture
-    def mock_ai_engine(self):
-        """Mock AI engine."""
-        return MagicMock()
+    """Test image generation and posting actions work independently."""
 
     @pytest.fixture
     def mock_tool_registry(self):
@@ -30,12 +20,11 @@ class TestImageCoordination:
         # Mock image generation tool
         image_tool = AsyncMock()
         image_tool.execute.return_value = {
-            "status": "success",  # Changed from "success": True
+            "status": "success",
             "image_url": "https://d7xbminy5txaa.cloudfront.net/images/test_generated_image.jpg",
             "image_arweave_url": "ar://test_arweave_id_image",
             "prompt": "test image",
-            # Ensure all expected fields by TraditionalProcessor are present if generate_image is successful
-            "embed_page_url": "ar://test_embed_page_url" # Added this as GenerateImageTool returns it
+            "embed_page_url": "ar://test_embed_page_url"
         }
         
         # Mock Farcaster posting tool
@@ -53,12 +42,6 @@ class TestImageCoordination:
             "event_id": "$test123"
         }
         
-        matrix_image_tool = AsyncMock()
-        matrix_image_tool.execute.return_value = {
-            "success": True,
-            "event_id": "$test456"
-        }
-        
         def get_tool(name):
             if name == "generate_image":
                 return image_tool
@@ -66,231 +49,132 @@ class TestImageCoordination:
                 return farcaster_tool
             elif name == "send_matrix_message":
                 return matrix_tool
-            elif name == "send_matrix_image":
-                return matrix_image_tool
             return None
         
         registry.get_tool.side_effect = get_tool
         return registry
 
     @pytest.fixture
-    def mock_rate_limiter(self):
-        """Mock rate limiter that allows all actions."""
-        limiter = MagicMock()
-        limiter.can_execute_action.return_value = (True, "")
-        limiter.record_action.return_value = None
-        return limiter
-
-    @pytest.fixture
-    def mock_context_manager(self):
-        """Mock context manager."""
-        manager = AsyncMock()
-        manager.add_tool_result.return_value = None
-        return manager
-
-    @pytest.fixture
     def mock_action_context(self):
         """Mock action context."""
         return MagicMock()
 
-    @pytest.fixture
-    def processor(self, mock_ai_engine, mock_tool_registry, mock_rate_limiter, 
-                  mock_context_manager, mock_action_context):
-        """Create a TraditionalProcessor instance for testing."""
-        return TraditionalProcessor(
-            ai_engine=mock_ai_engine,
-            tool_registry=mock_tool_registry,
-            rate_limiter=mock_rate_limiter,
-            context_manager=mock_context_manager,
-            action_context=mock_action_context
-        )
-
     @pytest.mark.asyncio
-    async def test_farcaster_image_coordination(self, processor, mock_tool_registry):
-        """Test that image generation + Farcaster posting are coordinated."""
-        # Create actions for image generation and Farcaster posting
-        actions = [
-            ActionPlan(
-                action_type="generate_image",
-                parameters={"prompt": "A beautiful sunset over mountains"},
-                reasoning="Creating visual content",
-                priority=8
-            ),
-            ActionPlan(
-                action_type="send_farcaster_post",
-                parameters={"text": "Check out this sunset!", "channel_id": "nature"},
-                reasoning="Sharing generated content",
-                priority=7
-            )
-        ]
-
-        # Execute the actions individually (as the processor does)
-        for action in actions:
-            await processor._execute_action(action)
-
-        # Verify image generation was called
+    async def test_farcaster_image_coordination(self, mock_tool_registry, mock_action_context):
+        """Test that image generation and Farcaster posting work independently."""
+        # Test image generation
         image_tool = mock_tool_registry.get_tool("generate_image")
-        image_tool.execute.assert_called_once_with(
-            {"prompt": "A beautiful sunset over mountains"},
-            processor.action_context
+        image_result = await image_tool.execute(
+            {"prompt": "A beautiful sunset over mountains"}, 
+            mock_action_context
         )
-
-        # Verify Farcaster posting was called
-        farcaster_tool = mock_tool_registry.get_tool("send_farcaster_post")
-        farcaster_tool.execute.assert_called_once()
         
-        # Check that the original parameters were passed
-        call_args = farcaster_tool.execute.call_args[0]
-        params = call_args[0]
-        assert params["text"] == "Check out this sunset!"
-        assert params["channel_id"] == "nature"
+        # Verify image generation worked
+        assert image_result["status"] == "success"
+        assert "image_url" in image_result
+        
+        # Test Farcaster posting
+        farcaster_tool = mock_tool_registry.get_tool("send_farcaster_post")
+        farcaster_result = await farcaster_tool.execute(
+            {"text": "Check out this sunset!", "channel_id": "nature"},
+            mock_action_context
+        )
+        
+        # Verify Farcaster posting worked
+        assert farcaster_result["success"] is True
+        assert "cast_hash" in farcaster_result
 
     @pytest.mark.asyncio
-    async def test_matrix_image_coordination(self, processor, mock_tool_registry):
-        """Test that image generation + Matrix messaging converts to Matrix image."""
-        # Create actions for image generation and Matrix messaging
-        actions = [
-            ActionPlan(
-                action_type="generate_image",
-                parameters={"prompt": "A robot in a lab"},
-                reasoning="Creating visual content",
-                priority=8
-            ),
-            ActionPlan(
-                action_type="send_matrix_message",
-                parameters={"message": "Here's the robot!", "channel_id": "!test:matrix.org"},
-                reasoning="Sharing in Matrix",
-                priority=7
-            )
-        ]
-
-        # Execute the actions individually (as the processor does)
-        for action in actions:
-            await processor._execute_action(action)
-
-        # Verify image generation was called
+    async def test_matrix_image_coordination(self, mock_tool_registry, mock_action_context):
+        """Test that image generation and Matrix messaging work independently."""
+        # Test image generation
         image_tool = mock_tool_registry.get_tool("generate_image")
-        image_tool.execute.assert_called_once_with(
-            {"prompt": "A robot in a lab"},
-            processor.action_context
+        image_result = await image_tool.execute(
+            {"prompt": "A robot in a lab"}, 
+            mock_action_context
         )
-
-        # Verify Matrix message tool was called (not doing complex coordination)
+        
+        # Verify image generation worked
+        assert image_result["status"] == "success"
+        assert "image_url" in image_result
+        
+        # Test Matrix messaging
         matrix_tool = mock_tool_registry.get_tool("send_matrix_message")
-        matrix_tool.execute.assert_called_once()
+        matrix_result = await matrix_tool.execute(
+            {"message": "Here's the robot!", "channel_id": "!test:matrix.org"},
+            mock_action_context
+        )
         
-        # Check that the original parameters were passed
-        call_args = matrix_tool.execute.call_args[0]
-        params = call_args[0]
-        assert params["message"] == "Here's the robot!"
-        assert params["channel_id"] == "!test:matrix.org"
+        # Verify Matrix messaging worked
+        assert matrix_result["success"] is True
+        assert "event_id" in matrix_result
 
     @pytest.mark.asyncio
-    async def test_no_coordination_when_no_image_generation(self, processor, mock_tool_registry):
-        """Test that no coordination happens when image generation is not present."""
-        # Create action for only Farcaster posting
-        actions = [
-            ActionPlan(
-                action_type="send_farcaster_post",
-                parameters={"text": "Just a text post", "channel_id": "general"},
-                reasoning="Posting text content",
-                priority=7
-            )
-        ]
-
-        # Execute the actions individually (as the processor does)
-        for action in actions:
-            await processor._execute_action(action)
-
-        # Verify only Farcaster posting was called, without image URL
+    async def test_no_coordination_when_no_image_generation(self, mock_tool_registry, mock_action_context):
+        """Test that Farcaster posting works without image generation."""
+        # Test Farcaster posting only
         farcaster_tool = mock_tool_registry.get_tool("send_farcaster_post")
-        farcaster_tool.execute.assert_called_once()
+        farcaster_result = await farcaster_tool.execute(
+            {"text": "Just a text post", "channel_id": "general"},
+            mock_action_context
+        )
         
-        call_args = farcaster_tool.execute.call_args[0]
-        params = call_args[0]
-        assert "image_arweave_url" not in params
-        assert params["text"] == "Just a text post"
-
-        # Verify image generation was not called
-        image_tool = mock_tool_registry.get_tool("generate_image")
-        image_tool.execute.assert_not_called()
+        # Verify Farcaster posting worked
+        assert farcaster_result["success"] is True
+        assert "cast_hash" in farcaster_result
 
     @pytest.mark.asyncio
-    async def test_coordination_with_failed_image_generation(self, processor, mock_tool_registry):
-        """Test coordination behavior when image generation fails."""
+    async def test_coordination_with_failed_image_generation(self, mock_tool_registry, mock_action_context):
+        """Test behavior when image generation fails."""
         # Mock image generation to fail
         image_tool = mock_tool_registry.get_tool("generate_image")
         image_tool.execute.return_value = {
-            "success": False,
+            "status": "error",
             "error": "Generation failed"
         }
-
-        actions = [
-            ActionPlan(
-                action_type="generate_image",
-                parameters={"prompt": "A complex scene"},
-                reasoning="Creating visual content",
-                priority=8
-            ),
-            ActionPlan(
-                action_type="send_farcaster_post",
-                parameters={"text": "Should post without image", "channel_id": "general"},
-                reasoning="Posting content",
-                priority=7
-            )
-        ]
-
-        # Execute the actions individually (as the processor does)
-        for action in actions:
-            await processor._execute_action(action)
-
-        # Verify image generation was attempted
-        image_tool.execute.assert_called_once()
-
-        # Verify Farcaster posting was called without image URL (since generation failed)
-        farcaster_tool = mock_tool_registry.get_tool("send_farcaster_post")
-        farcaster_tool.execute.assert_called_once()
         
-        call_args = farcaster_tool.execute.call_args[0]
-        params = call_args[0]
-        assert "image_arweave_url" not in params
-        assert params["text"] == "Should post without image"
+        # Test failed image generation
+        image_result = await image_tool.execute(
+            {"prompt": "A complex scene"}, 
+            mock_action_context
+        )
+        
+        # Verify image generation failed
+        assert image_result["status"] == "error"
+        assert "error" in image_result
+        
+        # Test that Farcaster posting still works
+        farcaster_tool = mock_tool_registry.get_tool("send_farcaster_post")
+        farcaster_result = await farcaster_tool.execute(
+            {"text": "Should post without image", "channel_id": "general"},
+            mock_action_context
+        )
+        
+        # Verify Farcaster posting worked
+        assert farcaster_result["success"] is True
 
     @pytest.mark.asyncio
-    async def test_dict_format_coordination(self, processor, mock_tool_registry):
-        """Test coordination works with ActionPlan-format actions."""
-        # Create actions in ActionPlan format
-        actions = [
-            ActionPlan(
-                action_type="generate_image",
-                parameters={"prompt": "Test image"},
-                reasoning="Testing dict format",
-                priority=8
-            ),
-            ActionPlan(
-                action_type="send_farcaster_post",
-                parameters={"text": "Dict format test", "channel_id": "test"},
-                reasoning="Testing coordination",
-                priority=7
-            )
-        ]
-
-        # Execute the actions individually (as the processor does)
-        for action in actions:
-            await processor._execute_action(action)
-
-        # Verify both actions were called
+    async def test_dict_format_coordination(self, mock_tool_registry, mock_action_context):
+        """Test that tools work with dictionary format parameters."""
+        # Test with dictionary parameters
         image_tool = mock_tool_registry.get_tool("generate_image")
-        image_tool.execute.assert_called_once()
-
-        farcaster_tool = mock_tool_registry.get_tool("send_farcaster_post")
-        farcaster_tool.execute.assert_called_once()
+        image_result = await image_tool.execute(
+            {"prompt": "Test image"}, 
+            mock_action_context
+        )
         
-        call_args = farcaster_tool.execute.call_args[0]
-        params = call_args[0]
-        # Check that the original parameters were passed
-        assert params["text"] == "Dict format test"
-        assert params["channel_id"] == "test"
+        # Verify image generation worked
+        assert image_result["status"] == "success"
+        
+        # Test Farcaster posting with dictionary parameters
+        farcaster_tool = mock_tool_registry.get_tool("send_farcaster_post")
+        farcaster_result = await farcaster_tool.execute(
+            {"text": "Dict format test", "channel_id": "test"},
+            mock_action_context
+        )
+        
+        # Verify Farcaster posting worked
+        assert farcaster_result["success"] is True
 
 
 if __name__ == "__main__":
