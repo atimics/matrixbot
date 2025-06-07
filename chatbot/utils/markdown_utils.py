@@ -17,6 +17,12 @@ class MatrixMarkdownFormatter:
 
     def convert(self, markdown_text: str) -> Dict[str, str]:
         """Convert markdown to both plain text and HTML for Matrix."""
+        # Reset parser state before conversion to handle successive calls
+        try:
+            self.md.reset()
+        except Exception:
+            # reset may not be available in older versions
+            pass
         # Convert to HTML
         html_content = self.md.convert(markdown_text)
 

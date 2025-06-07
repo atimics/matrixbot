@@ -44,6 +44,8 @@ class ContextManager:
         
         # Use HistoryRecorder for state change persistence
         self.history_recorder = HistoryRecorder(db_path)
+        # Track state changes in-memory for easy inspection
+        self.state_changes: List[StateChangeBlock] = []
 
         # Initialize storage directory (ensure parent directories exist)
         self.storage_path = Path("context_storage")
@@ -266,6 +268,9 @@ Base your decisions on the current world state and user messages."""
 
     async def _store_state_change(self, state_change: StateChangeBlock):
         """Permanently store a state change block using HistoryRecorder"""
+        # Record in-memory state changes list
+        self.state_changes.append(state_change)
+        # Persist state change using HistoryRecorder
         await self.history_recorder.record_state_change(state_change)
 
     async def get_conversation_messages(

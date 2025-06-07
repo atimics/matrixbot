@@ -13,11 +13,12 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from ...config import settings
-from ...core.ai_engine import AIDecisionEngine
+from ...core.ai_engine import AIDecisionEngine, ActionPlan
 from ...core.context import ContextManager
 from ...core.integration_manager import IntegrationManager
 from ...integrations.arweave_uploader_client import ArweaveUploaderClient
 from ...integrations.farcaster import FarcasterObserver
+from .node_manager import NodeManager
 from ...integrations.matrix.observer import MatrixObserver
 from ...integrations.base_nft_service import BaseNFTService
 from ...integrations.eligibility_service import UserEligibilityService

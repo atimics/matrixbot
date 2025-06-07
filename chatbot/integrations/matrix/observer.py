@@ -40,7 +40,18 @@ class MatrixObserver(Integration):
     def __init__(self, integration_id: str = "matrix", display_name: str = "Matrix Integration", 
                  config: Dict[str, Any] = None, world_state_manager: WorldStateManager = None, 
                  arweave_client=None):
+        # Support legacy positional args usage: MatrixObserver(world_state_manager, arweave_client)
+        if world_state_manager is None and hasattr(integration_id, 'state'):
+            # Shift positional parameters
+            ws_manager = integration_id
+            arw_client = display_name
+            integration_id = "matrix"
+            display_name = "Matrix Integration"
+            config = config or {}
+            world_state_manager = ws_manager
+            arweave_client = arw_client
         super().__init__(integration_id, display_name, config or {})
+        # Assign world state manager and optional Arweave client
         self.world_state = world_state_manager
         self.arweave_client = arweave_client
         self.homeserver = settings.MATRIX_HOMESERVER
@@ -238,63 +249,8 @@ class MatrixObserver(Integration):
         await self.connect()
 
     async def stop(self):
-        """Legacy stop method - use disconnect() instead."""
+        """Legacy stop method - simply disconnect client."""
         await self.disconnect()
-
-        self.client.add_event_callback(self._on_invite, InviteMemberEvent)
-        self.client.add_event_callback(self._on_membership_change, RoomMemberEvent)
-
-        try:
-            # Try to load saved token
-            if await self._load_token():
-                logger.info("MatrixObserver: Using saved authentication token")
-            else:
-                # Login with password and device configuration
-                logger.info("MatrixObserver: Logging in with password...")
-                response = await self.client.login(
-                    password=self.password, device_name=device_name
-                )
-                if isinstance(response, LoginResponse):
-                    logger.info(
-                        f"MatrixObserver: Login successful as {response.user_id}"
-                    )
-                    logger.info(f"MatrixObserver: Device ID: {response.device_id}")
-                    await self._save_token()
-                else:
-                    logger.error(f"MatrixObserver: Login failed: {response}")
-                    raise Exception(f"Login failed: {response}")
-
-            # Update world state
-            self.world_state.update_system_status({"matrix_connected": True})
-
-            # Join channels we want to monitor
-            for channel_id in self.channels_to_monitor:
-                try:
-                    response = await self.client.join(channel_id)
-                    logger.info(f"MatrixObserver: Joined channel {channel_id}")
-
-                    # If we joined by alias, update our monitoring list with the real room ID
-                    if hasattr(response, "room_id") and response.room_id != channel_id:
-                        logger.info(
-                            f"MatrixObserver: Room alias {channel_id} resolved to {response.room_id}"
-                        )
-                        # Add the real room ID to our world state
-                        self.world_state.add_channel(
-                            response.room_id, "matrix", f"Room {response.room_id}"
-                        )
-
-                except Exception as e:
-                    logger.warning(f"MatrixObserver: Failed to join {channel_id}: {e}")
-
-            # Start syncing in background task
-            logger.info("MatrixObserver: Starting sync...")
-            self.sync_task = asyncio.create_task(self._sync_forever())
-            logger.info("MatrixObserver: Sync task started successfully")
-
-        except Exception as e:
-            logger.error(f"MatrixObserver: Error starting Matrix client: {e}")
-            self.world_state.update_system_status({"matrix_connected": False})
-            raise
 
     async def _on_message(self, room: MatrixRoom, event):
         """Handle incoming Matrix messages and update room details"""

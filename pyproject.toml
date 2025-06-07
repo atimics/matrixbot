@@ -30,6 +30,7 @@ markdown = "^3.6"
 pillow = "^10.3.0"
 base58 = "^2.1.1"
 aiosqlite = "^0.21.0"
+cryptography = "^45.0.3"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.0"
