@@ -398,6 +398,22 @@ class IntegrationManager:
         
         logger.info(f"Updated {len(credentials)} credentials for integration {integration_id}")
         
+        # If the integration is currently active, update its credentials
+        await self.update_active_integration_credentials(integration_id, credentials)
+        
+    async def update_active_integration_credentials(self, integration_id: str, credentials: Dict[str, str]) -> None:
+        """Update credentials for an active integration and notify it to reload"""
+        if integration_id in self.active_integrations:
+            integration = self.active_integrations[integration_id]
+            if hasattr(integration, 'set_credentials'):
+                try:
+                    await integration.set_credentials(credentials)
+                    logger.info(f"Updated credentials for active integration {integration_id}")
+                except Exception as e:
+                    logger.error(f"Failed to update credentials for active integration {integration_id}: {e}")
+            else:
+                logger.warning(f"Active integration {integration_id} does not support credential updates")
+            
     async def clean_invalid_credentials(self, integration_id: str) -> None:
         """Clean up credentials that can't be decrypted (due to key changes)"""
         async with aiosqlite.connect(self.db_path) as db:
