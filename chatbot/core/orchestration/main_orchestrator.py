@@ -15,6 +15,7 @@ from typing import Any, Dict, Optional
 from ...config import settings
 from ...core.ai_engine import AIDecisionEngine
 from ...core.context import ContextManager
+from ...core.integration_manager import IntegrationManager
 from ...integrations.arweave_uploader_client import ArweaveUploaderClient
 from ...integrations.farcaster import FarcasterObserver
 from ...integrations.matrix.observer import MatrixObserver
@@ -63,6 +64,12 @@ class MainOrchestrator:
         self.payload_builder = PayloadBuilder()
         self.rate_limiter = RateLimiter(self.config.rate_limit_config)
         self.context_manager = ContextManager(self.world_state, self.config.db_path)
+        
+        # Integration management
+        self.integration_manager = IntegrationManager(
+            db_path=self.config.db_path,
+            world_state_manager=self.world_state
+        )
         
         # Processing hub
         self.processing_hub = ProcessingHub(
@@ -243,8 +250,14 @@ class MainOrchestrator:
         self.running = True
 
         try:
-            # Initialize external observers
+            # Initialize integration manager
+            await self.integration_manager.initialize()
+            
+            # Initialize external observers (legacy method for backward compatibility)
             await self._initialize_observers()
+            
+            # Connect all active integrations from database
+            await self.integration_manager.connect_all_active()
             
             # Initialize NFT and blockchain services
             await self._initialize_nft_services()
@@ -276,7 +289,10 @@ class MainOrchestrator:
         if self.eligibility_service:
             await self.eligibility_service.stop()
         
-        # Stop external observers
+        # Disconnect all integrations
+        await self.integration_manager.disconnect_all()
+        
+        # Stop external observers (legacy compatibility)
         if self.matrix_observer:
             await self.matrix_observer.stop()
 
@@ -385,8 +401,21 @@ class MainOrchestrator:
                 logger.info("Continuing without Farcaster integration")
         
         # Update action context with initialized observers
-        self.action_context.matrix_observer = self.matrix_observer
-        self.action_context.farcaster_observer = self.farcaster_observer
+        active_integrations = self.integration_manager.get_active_integrations()
+        
+        # Find Matrix and Farcaster integrations
+        matrix_integration = None
+        farcaster_integration = None
+        
+        for integration_id, integration in active_integrations.items():
+            if hasattr(integration, 'name') and integration.name == 'matrix':
+                matrix_integration = integration
+            elif hasattr(integration, 'name') and integration.name == 'farcaster':
+                farcaster_integration = integration
+        
+        # Update action context and maintain legacy properties
+        self.action_context.matrix_observer = matrix_integration or self.matrix_observer
+        self.action_context.farcaster_observer = farcaster_integration or self.farcaster_observer
         
         # Configure critical node pinning based on active integrations
         self._configure_critical_node_pinning()
@@ -550,8 +579,16 @@ class MainOrchestrator:
         try:
             from ...tools.matrix_tools import SendMatrixReplyTool, SendMatrixMessageTool
             
+            # Get matrix observer from integration manager
+            active_integrations = self.integration_manager.get_active_integrations()
+            matrix_integration = None
+            for integration_id, integration in active_integrations.items():
+                if hasattr(integration, 'name') and integration.name == 'matrix':
+                    matrix_integration = integration
+                    break
+            
             # Update action context with required components
-            self.action_context.matrix_observer = self.matrix_observer
+            self.action_context.matrix_observer = matrix_integration or self.matrix_observer
             self.action_context.world_state_manager = self.world_state
             self.action_context.context_manager = self.context_manager
             

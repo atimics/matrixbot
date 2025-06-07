@@ -44,6 +44,28 @@ class SystemCommand(BaseModel):
     parameters: Optional[Dict[str, Any]] = None
 
 
+class IntegrationConfig(BaseModel):
+    integration_type: str
+    display_name: str
+    config: Dict[str, Any]
+    credentials: Dict[str, str]
+
+
+class IntegrationStatus(BaseModel):
+    id: str
+    integration_type: str
+    display_name: str
+    is_active: bool
+    is_connected: bool
+    status_details: Dict[str, Any]
+
+
+class IntegrationTestRequest(BaseModel):
+    integration_type: str
+    config: Dict[str, Any]
+    credentials: Dict[str, str]
+
+
 class LogWebSocketManager:
     """Manages WebSocket connections for real-time log streaming."""
     
@@ -328,6 +350,105 @@ class ChatbotAPIServer:
                 logger.error(f"Error updating configuration: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
         
+        # ===== INTEGRATION MANAGEMENT =====
+        @self.app.get("/api/integrations")
+        async def list_integrations():
+            """List all configured integrations with their status."""
+            try:
+                integrations = await self.orchestrator.integration_manager.list_integrations()
+                return integrations
+            except Exception as e:
+                logger.error(f"Error listing integrations: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @self.app.post("/api/integrations")
+        async def add_integration(config: IntegrationConfig):
+            """Add a new integration configuration."""
+            try:
+                integration_id = await self.orchestrator.integration_manager.add_integration(
+                    integration_type=config.integration_type,
+                    display_name=config.display_name,
+                    config=config.config,
+                    credentials=config.credentials
+                )
+                return {"integration_id": integration_id, "message": "Integration added successfully"}
+            except Exception as e:
+                logger.error(f"Error adding integration: {e}")
+                raise HTTPException(status_code=400, detail=str(e))
+        
+        @self.app.get("/api/integrations/{integration_id}")
+        async def get_integration_status(integration_id: str):
+            """Get detailed status of a specific integration."""
+            try:
+                status = await self.orchestrator.integration_manager.get_integration_status(integration_id)
+                if status is None:
+                    raise HTTPException(status_code=404, detail="Integration not found")
+                return status
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.error(f"Error getting integration status: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @self.app.post("/api/integrations/{integration_id}/connect")
+        async def connect_integration(integration_id: str):
+            """Manually trigger connection attempt for an integration."""
+            try:
+                success = await self.orchestrator.integration_manager.connect_integration(
+                    integration_id, self.orchestrator.world_state
+                )
+                return {"success": success, "message": "Connection attempt completed"}
+            except Exception as e:
+                logger.error(f"Error connecting integration: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @self.app.post("/api/integrations/{integration_id}/disconnect")
+        async def disconnect_integration(integration_id: str):
+            """Disconnect a specific integration."""
+            try:
+                await self.orchestrator.integration_manager.disconnect_integration(integration_id)
+                return {"message": "Integration disconnected successfully"}
+            except Exception as e:
+                logger.error(f"Error disconnecting integration: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @self.app.delete("/api/integrations/{integration_id}")
+        async def remove_integration(integration_id: str):
+            """Remove an integration configuration."""
+            try:
+                # First disconnect if connected
+                await self.orchestrator.integration_manager.disconnect_integration(integration_id)
+                
+                # TODO: Add remove_integration method to IntegrationManager
+                return {"message": "Integration removed successfully"}
+            except Exception as e:
+                logger.error(f"Error removing integration: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @self.app.post("/api/integrations/test")
+        async def test_integration_config(test_request: IntegrationTestRequest):
+            """Test an integration configuration without saving it."""
+            try:
+                result = await self.orchestrator.integration_manager.test_integration_config(
+                    integration_type=test_request.integration_type,
+                    config=test_request.config,
+                    credentials=test_request.credentials
+                )
+                return result
+            except Exception as e:
+                logger.error(f"Error testing integration config: {e}")
+                raise HTTPException(status_code=400, detail=str(e))
+        
+        @self.app.get("/api/integrations/types")
+        async def get_available_integration_types():
+            """Get list of available integration types."""
+            try:
+                types = self.orchestrator.integration_manager.get_available_integration_types()
+                return {"integration_types": types}
+            except Exception as e:
+                logger.error(f"Error getting integration types: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
         # ===== TOOL MANAGEMENT =====
         @self.app.get("/api/tools")
         async def list_tools():

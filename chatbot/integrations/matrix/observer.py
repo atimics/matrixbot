@@ -28,15 +28,17 @@ from nio import (
 
 from ...config import settings
 from ...core.world_state import Channel, Message, WorldStateManager
+from ..base import Integration, IntegrationError, IntegrationConnectionError
 
 logger = logging.getLogger(__name__)
 load_dotenv()
 
 
-class MatrixObserver:
+class MatrixObserver(Integration):
     """Observes Matrix channels and reports to world state"""
 
     def __init__(self, world_state_manager: WorldStateManager, arweave_client=None):
+        super().__init__("matrix")
         self.world_state = world_state_manager
         self.arweave_client = arweave_client
         self.homeserver = settings.MATRIX_HOMESERVER
@@ -51,8 +53,8 @@ class MatrixObserver:
         self.store_path.mkdir(exist_ok=True)
         
         # Check for Matrix configuration - disable if not available
-        self.enabled = all([self.homeserver, self.user_id, self.password])
-        if not self.enabled:
+        self._enabled = all([self.homeserver, self.user_id, self.password])
+        if not self._enabled:
             logger.warning(
                 "Matrix configuration incomplete. Matrix observer will be disabled. "
                 "Check MATRIX_HOMESERVER, MATRIX_USER_ID, and MATRIX_PASSWORD environment variables."
@@ -61,23 +63,20 @@ class MatrixObserver:
 
         logger.info(f"MatrixObserver: Initialized for {self.user_id}@{self.homeserver}")
 
-    def add_channel(self, channel_id: str, channel_name: str):
-        """Add a channel to monitor"""
-        if not self.enabled:
-            logger.warning("Matrix observer is disabled - cannot add channel")
-            return
-            
-        self.channels_to_monitor.append(channel_id)
-        self.world_state.add_channel(channel_id, "matrix", channel_name)
-        logger.info(
-            f"MatrixObserver: Added channel {channel_name} ({channel_id}) to monitoring"
-        )
+    @property
+    def enabled(self) -> bool:
+        """Check if integration is enabled and properly configured."""
+        return self._enabled
 
-    async def start(self):
-        """Start the Matrix observer"""
+    @property
+    def integration_type(self) -> str:
+        """Return the integration type identifier."""
+        return "matrix"
+
+    async def connect(self) -> None:
+        """Connect to Matrix server and start observing."""
         if not self.enabled:
-            logger.info("MatrixObserver: Disabled due to missing configuration")
-            return
+            raise IntegrationConnectionError("Matrix observer is disabled due to missing configuration")
             
         logger.info("MatrixObserver: Starting Matrix client...")
 
@@ -98,6 +97,147 @@ class MatrixObserver:
 
         # Import required Matrix event types
         from nio import InviteMemberEvent, RoomMemberEvent
+
+        self.client.add_event_callback(self._on_invite, InviteMemberEvent)
+        self.client.add_event_callback(self._on_membership_change, RoomMemberEvent)
+
+        try:
+            # Try to load saved token
+            if await self._load_token():
+                logger.info("MatrixObserver: Using saved authentication token")
+            else:
+                # Login with password and device configuration
+                logger.info("MatrixObserver: Logging in with password...")
+                response = await self.client.login(
+                    password=self.password, device_name=device_name
+                )
+                if isinstance(response, LoginResponse):
+                    logger.info(
+                        f"MatrixObserver: Login successful as {response.user_id}"
+                    )
+                    logger.info(f"MatrixObserver: Device ID: {response.device_id}")
+                    await self._save_token()
+                else:
+                    logger.error(f"MatrixObserver: Login failed: {response}")
+                    raise IntegrationConnectionError(f"Login failed: {response}")
+
+            # Update world state
+            self.world_state.update_system_status({"matrix_connected": True})
+
+            # Join channels we want to monitor
+            for channel_id in self.channels_to_monitor:
+                try:
+                    response = await self.client.join(channel_id)
+                    logger.info(f"MatrixObserver: Joined channel {channel_id}")
+
+                    # If we joined by alias, update our monitoring list with the real room ID
+                    if hasattr(response, "room_id") and response.room_id != channel_id:
+                        logger.info(
+                            f"MatrixObserver: Room alias {channel_id} resolved to {response.room_id}"
+                        )
+                        # Add the real room ID to our world state
+                        self.world_state.add_channel(
+                            response.room_id, "matrix", f"Room {response.room_id}"
+                        )
+
+                except Exception as e:
+                    logger.warning(f"MatrixObserver: Failed to join {channel_id}: {e}")
+
+            # Start syncing in background task
+            logger.info("MatrixObserver: Starting sync...")
+            self.sync_task = asyncio.create_task(self._sync_forever())
+            logger.info("MatrixObserver: Sync task started successfully")
+            self._connected = True
+
+        except Exception as e:
+            logger.error(f"MatrixObserver: Error starting Matrix client: {e}")
+            self.world_state.update_system_status({"matrix_connected": False})
+            raise IntegrationConnectionError(f"Failed to connect to Matrix: {e}")
+
+    async def disconnect(self) -> None:
+        """Disconnect from Matrix server."""
+        if not self.enabled:
+            return
+            
+        logger.info("MatrixObserver: Disconnecting from Matrix...")
+        
+        if self.sync_task:
+            self.sync_task.cancel()
+            try:
+                await self.sync_task
+            except asyncio.CancelledError:
+                pass
+            self.sync_task = None
+            
+        if self.client:
+            await self.client.close()
+            self.client = None
+            
+        self.world_state.update_system_status({"matrix_connected": False})
+        self._connected = False
+        logger.info("MatrixObserver: Disconnected from Matrix")
+
+    async def get_status(self) -> Dict[str, Any]:
+        """Get current status of the Matrix integration."""
+        if not self.enabled:
+            return {
+                "connected": False,
+                "enabled": False,
+                "error": "Missing configuration"
+            }
+            
+        return {
+            "connected": self._connected,
+            "enabled": self.enabled,
+            "homeserver": self.homeserver,
+            "user_id": self.user_id,
+            "channels_monitored": len(self.channels_to_monitor),
+            "sync_task_running": self.sync_task is not None and not self.sync_task.done()
+        }
+
+    async def test_connection(self) -> bool:
+        """Test if Matrix connection is working."""
+        if not self.enabled:
+            return False
+            
+        if not self.client:
+            return False
+            
+        try:
+            # Try a simple API call to test connection
+            response = await self.client.whoami()
+            return hasattr(response, 'user_id') and response.user_id == self.user_id
+        except Exception as e:
+            logger.error(f"Matrix connection test failed: {e}")
+            return False
+
+    async def set_credentials(self, credentials: Dict[str, str]) -> None:
+        """Set Matrix credentials."""
+        required_keys = ["homeserver", "user_id", "password"]
+        missing_keys = [key for key in required_keys if key not in credentials]
+        if missing_keys:
+            raise IntegrationError(f"Missing required credentials: {missing_keys}")
+            
+        self.homeserver = credentials["homeserver"]
+        self.user_id = credentials["user_id"]
+        self.password = credentials["password"]
+        
+        # Update enabled status
+        self._enabled = all([self.homeserver, self.user_id, self.password])
+        
+        logger.info(f"Matrix credentials updated for {self.user_id}@{self.homeserver}")
+
+    # Legacy methods for backward compatibility
+    async def start(self):
+        """Legacy start method - use connect() instead."""
+        if not self.enabled:
+            logger.info("MatrixObserver: Disabled due to missing configuration")
+            return
+        await self.connect()
+
+    async def stop(self):
+        """Legacy stop method - use disconnect() instead."""
+        await self.disconnect()
 
         self.client.add_event_callback(self._on_invite, InviteMemberEvent)
         self.client.add_event_callback(self._on_membership_change, RoomMemberEvent)
@@ -1334,3 +1474,15 @@ class MatrixObserver:
             error_msg = f"Exception while sending image: {str(e)}"
             logger.error(f"MatrixObserver: {error_msg}", exc_info=True)
             return {"success": False, "error": error_msg}
+
+    def add_channel(self, channel_id: str, channel_name: str):
+        """Add a channel to monitor"""
+        if not self.enabled:
+            logger.warning("Matrix observer is disabled - cannot add channel")
+            return
+            
+        self.channels_to_monitor.append(channel_id)
+        self.world_state.add_channel(channel_id, "matrix", channel_name)
+        logger.info(
+            f"MatrixObserver: Added channel {channel_name} ({channel_id}) to monitoring"
+        )
