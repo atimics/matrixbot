@@ -758,7 +758,7 @@ class MainOrchestrator:
                      if integration.get('integration_type') == 'farcaster'), None
                 )
                 if farcaster_integration:
-                    await self.integration_manager.clean_invalid_credentials(farcaster_integration['id'])
+                    await self.integration_manager.clean_invalid_credentials(farcaster_integration['integration_id'])
         else:
             logger.debug("Farcaster environment variables not fully configured, skipping auto-registration")
         
@@ -799,6 +799,6 @@ class MainOrchestrator:
                      if integration.get('integration_type') == 'matrix'), None
                 )
                 if matrix_integration:
-                    await self.integration_manager.clean_invalid_credentials(matrix_integration['id'])
+                    await self.integration_manager.clean_invalid_credentials(matrix_integration['integration_id'])
         else:
             logger.debug("Matrix environment variables not fully configured, skipping auto-registration")
