@@ -58,8 +58,11 @@ class TraditionalProcessor:
             # Add available tools to the payload
             payload["available_tools"] = self.tool_registry.get_tool_descriptions_for_ai()
             
+            # Generate a cycle ID for this decision
+            cycle_id = payload.get("cycle_id", f"cycle_{int(time.time() * 1000)}")
+            
             # Get AI decision
-            decision_result = await self.ai_engine.decide_actions(payload)
+            decision_result = await self.ai_engine.make_decision(payload, cycle_id)
             
             if not decision_result.selected_actions:
                 logger.debug("No actions selected by AI")
