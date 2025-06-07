@@ -18,7 +18,7 @@ RUN pip install poetry>=1.2.0
 RUN poetry config virtualenvs.create false
 
 # Install dependencies
-RUN poetry install --no-dev --no-interaction --no-ansi
+RUN poetry install --only=main --no-interaction --no-ansi
 
 # Copy application code
 COPY . .
