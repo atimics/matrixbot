@@ -611,3 +611,26 @@ class NeynarAPIClient:
         }
         response = await self._make_request("GET", "/farcaster/feed", params=params)
         return response.json()
+
+    async def lookup_cast_conversation(self, cast_hash: str) -> Dict[str, Any]:
+        """
+        Gets all casts in a conversation surrounding a given cast.
+        This is used for authoritative duplicate detection - to check if the bot
+        has already replied to a cast by examining the actual thread on Farcaster.
+        
+        API Docs: https://docs.neynar.com/reference/lookup-cast-conversation
+        
+        Args:
+            cast_hash: The hash of the cast to get the conversation for
+            
+        Returns:
+            Dictionary containing the conversation thread with all replies
+        """
+        params = {
+            "type": "hash", 
+            "identifier": cast_hash.strip(),
+            "reply_depth": 5,  # Fetch reasonable depth to check for bot replies
+            "include_chronological_parent_casts": False  # We only need the replies
+        }
+        response = await self._make_request("GET", "/farcaster/cast/conversation", params=params)
+        return response.json()

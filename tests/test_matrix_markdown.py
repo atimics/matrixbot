@@ -86,19 +86,21 @@ Some content here
     
     def test_mixed_formatting(self):
         """Test a mix of all formatting options."""
-        markdown_text = (
-            "# AI Response\\n\\n"\
-            "Here's what I found:\\n\\n"\
-            "- **Important**: This is critical\\n"\
-            "- *Note*: Check the `config.json` file\\n"\
-            "- See [documentation](https://example.com) for details\\n\\n"\
-            "```python\\n"\
-            "# Example code\\n"\
-            "def process_data():\\n"\
-            "    return {\\\"status\\\": \\\"success\\\"}\\n"\
-            "```\\n\\n"\
-            "Thanks!"\
-        )
+        markdown_text = """# AI Response
+
+Here's what I found:
+
+- **Important**: This is critical
+- *Note*: Check the `config.json` file
+- See [documentation](https://example.com) for details
+
+```python
+# Example code
+def process_data():
+    return {"status": "success"}
+```
+
+Thanks!"""
         result = format_for_matrix(markdown_text)
         assert 'class="codehilite"' in result["html"]
         assert "<h1>AI Response</h1>" in result["html"]

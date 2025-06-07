@@ -317,6 +317,55 @@ class SendFarcasterReplyTool(ToolInterface):
             logger.warning(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
+        # --- AUTHORITATIVE DUPLICATE CHECK ---
+        # Check the actual Farcaster thread to see if we've already replied
+        # This is the definitive source of truth and prevents duplicates even if internal state is lost
+        if context.farcaster_observer and context.farcaster_observer.api_client:
+            try:
+                bot_fid = context.farcaster_observer.bot_fid
+                if bot_fid:
+                    logger.debug(f"Performing authoritative duplicate check for cast {reply_to_hash} with bot FID {bot_fid}")
+                    conversation = await context.farcaster_observer.api_client.lookup_cast_conversation(reply_to_hash)
+                    
+                    if conversation and "result" in conversation and "conversation" in conversation["result"]:
+                        # Check both direct replies and nested conversation
+                        all_casts = conversation["result"]["conversation"].get("cast", {}).get("direct_replies", [])
+                        
+                        # Also check if the conversation has a nested structure
+                        if "casts" in conversation["result"]["conversation"]:
+                            all_casts.extend(conversation["result"]["conversation"]["casts"])
+                        
+                        for cast in all_casts:
+                            if cast and "author" in cast and "fid" in cast["author"]:
+                                if str(cast["author"]["fid"]) == str(bot_fid):
+                                    # The bot has already replied to this cast on-chain
+                                    error_msg = f"Authoritative check failed: Bot (FID {bot_fid}) already replied to cast {reply_to_hash}. Aborting to prevent duplicate."
+                                    logger.warning(error_msg)
+                                    
+                                    # Update internal state to correct any drift
+                                    if context.world_state_manager:
+                                        context.world_state_manager.add_action_result(
+                                            action_type=self.name,
+                                            parameters={"content": content, "reply_to_hash": reply_to_hash},
+                                            result="skipped_duplicate_on_chain",
+                                        )
+                                    
+                                    return {
+                                        "status": "skipped", 
+                                        "message": "Duplicate reply already exists in the Farcaster thread",
+                                        "reply_to_hash": reply_to_hash,
+                                        "timestamp": time.time()
+                                    }
+                    
+                    logger.debug(f"Authoritative check passed: No existing reply found for cast {reply_to_hash}")
+                else:
+                    logger.warning("Bot FID not available for authoritative duplicate check, proceeding with caution")
+                    
+            except Exception as e:
+                # Log the error but proceed - we don't want API failures to completely block replies
+                logger.error(f"Failed to perform authoritative duplicate check for cast {reply_to_hash}: {e}. Proceeding with caution.")
+                # Internal check already passed, so we'll proceed
+
         import asyncio
 
         reply_q = getattr(context.farcaster_observer, "reply_queue", None)
