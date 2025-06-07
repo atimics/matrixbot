@@ -104,21 +104,9 @@ class ChatbotAPIServer:
                 
     def _setup_static_files(self):
         """Set up static file serving for the UI."""
-        # Check if UI directory exists
-        import os
-        ui_path = "ui"
-        ui_nextjs_path = "ui-nextjs/dist"
-        
-        if os.path.exists(ui_nextjs_path):
-            # Serve Next.js built assets if available
-            self.app.mount("/", StaticFiles(directory=ui_nextjs_path, html=True), name="ui")
-            logger.info(f"Serving UI from {ui_nextjs_path}")
-        elif os.path.exists(ui_path):
-            # Fallback to basic UI
-            self.app.mount("/", StaticFiles(directory=ui_path, html=True), name="ui")
-            logger.info(f"Serving UI from {ui_path}")
-        else:
-            logger.warning("No UI directory found - UI will not be available")
+        # UI serving is now handled by ui_frames router
+        # This method is kept for backwards compatibility but does nothing
+        pass
         
     def _setup_log_handler(self):
         """Set up log handler to stream logs to WebSocket clients."""
