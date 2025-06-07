@@ -222,7 +222,7 @@ class SummarizeChannelTool(ToolInterface):  # Phase 2
         message_limit = params.get("message_limit", 20)
         focus = params.get("focus", "general")
         
-        messages = context.world_state.get_recent_messages(channel_id, message_limit)
+        messages = context.world_state_manager.get_recent_messages(channel_id, message_limit)
         if not messages:
             return {"status": "failure", "message": f"No messages found in channel {channel_id}"}
         
