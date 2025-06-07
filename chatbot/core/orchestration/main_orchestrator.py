@@ -83,30 +83,38 @@ class TraditionalProcessor:
         """Execute a single action."""
         try:
             # Get the tool from registry
-            tool_func = self.tool_registry.get_tool(action.action_type)
-            if not tool_func:
+            tool = self.tool_registry.get_tool(action.action_type)
+            if not tool:
                 logger.error(f"Tool not found: {action.action_type}")
                 return
                 
-            # Execute the tool with parameters
-            result = await tool_func(**action.parameters)
+            # Execute the tool with parameters and context
+            result = await tool.execute(action.parameters, self.action_context)
             
-            # Log the action
-            self.context_manager.log_action(
-                action_type=action.action_type,
-                parameters=action.parameters,
-                result=str(result) if result else "Success",
-                reasoning=action.reasoning
+            # Log the action result
+            await self.context_manager.add_tool_result(
+                channel_id="system",  # Use system channel for orchestrator actions
+                tool_name=action.action_type,
+                result={
+                    "status": result.get("status", "unknown"),
+                    "message": result.get("message", str(result)),
+                    "reasoning": action.reasoning,
+                    "parameters": action.parameters
+                }
             )
             
         except Exception as e:
             logger.error(f"Error executing action {action.action_type}: {e}")
             # Log the failed action
-            self.context_manager.log_action(
-                action_type=action.action_type,
-                parameters=action.parameters,
-                result=f"Error: {str(e)}",
-                reasoning=action.reasoning
+            await self.context_manager.add_tool_result(
+                channel_id="system",
+                tool_name=action.action_type,
+                result={
+                    "status": "error",
+                    "message": f"Error: {str(e)}",
+                    "reasoning": action.reasoning,
+                    "parameters": action.parameters
+                }
             )
 
 
