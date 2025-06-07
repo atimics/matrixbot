@@ -751,14 +751,29 @@ class MainOrchestrator:
                 except Exception as e:
                     logger.error(f"Failed to register Farcaster integration: {e}")
             else:
-                logger.info("Farcaster integration already exists, skipping registration")
-                # Clean up any invalid credentials for existing integration
+                logger.info("Farcaster integration already exists, updating credentials from environment...")
+                # Update credentials for existing integration
                 farcaster_integration = next(
                     (integration for integration in existing_integrations 
                      if integration.get('integration_type') == 'farcaster'), None
                 )
                 if farcaster_integration:
-                    await self.integration_manager.clean_invalid_credentials(farcaster_integration['integration_id'])
+                    try:
+                        # Clean up any invalid credentials first
+                        await self.integration_manager.clean_invalid_credentials(farcaster_integration['integration_id'])
+                        
+                        # Update credentials from environment
+                        await self.integration_manager.update_credentials(
+                            farcaster_integration['integration_id'],
+                            {
+                                'api_key': settings.NEYNAR_API_KEY,
+                                'bot_fid': settings.FARCASTER_BOT_FID,
+                                'signer_uuid': settings.FARCASTER_BOT_SIGNER_UUID
+                            }
+                        )
+                        logger.info("✓ Farcaster credentials updated from environment variables")
+                    except Exception as e:
+                        logger.error(f"Failed to update Farcaster credentials: {e}")
         else:
             logger.debug("Farcaster environment variables not fully configured, skipping auto-registration")
             # If environment variables aren't set but integration exists, remove it

@@ -8,6 +8,7 @@ Handles loading, connecting, and managing the lifecycle of integrations.
 import asyncio
 import json
 import logging
+import time
 from typing import Any, Dict, List, Optional, Type
 from pathlib import Path
 import uuid
@@ -374,6 +375,28 @@ class IntegrationManager:
                 # Skip this credential - it will need to be re-added with the new key
             
         return credentials
+        
+    async def update_credentials(self, integration_id: str, credentials: Dict[str, str]) -> None:
+        """Update credentials for an existing integration"""
+        async with aiosqlite.connect(self.db_path) as db:
+            # First remove existing credentials for this integration
+            await db.execute("""
+                DELETE FROM credentials WHERE integration_id = ?
+            """, (integration_id,))
+            
+            # Add new credentials
+            for key, value in credentials.items():
+                if value:  # Only store non-empty values
+                    encrypted_value = self.cipher.encrypt(value.encode())
+                    credential_id = str(uuid.uuid4())
+                    await db.execute("""
+                        INSERT INTO credentials (id, integration_id, credential_key, credential_value_encrypted, created_at)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, (credential_id, integration_id, key, encrypted_value, time.time()))
+            
+            await db.commit()
+        
+        logger.info(f"Updated {len(credentials)} credentials for integration {integration_id}")
         
     async def clean_invalid_credentials(self, integration_id: str) -> None:
         """Clean up credentials that can't be decrypted (due to key changes)"""
