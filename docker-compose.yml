@@ -65,23 +65,19 @@ services:
 
   ui:
     build:
-      context: .
-      dockerfile: ui.Dockerfile
+      context: ./ui-nextjs # Point to the Next.js app
+      dockerfile: Dockerfile
     container_name: chatbot_ui
     ports:
       - "3000:3000"
-    volumes:
-      - ./ui:/app # Mount for live development
-      - /app/node_modules # Anonymous volume to prevent host node_modules from overwriting container's
-      - /app/.next # Anonymous volume to prevent build artifacts from being overwritten
-    depends_on:
-      chatbot:
-        condition: service_healthy
     networks:
       - chatbot_network
     environment:
-      - NODE_ENV=production
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      # The Next.js app needs to know where the backend is.
+      # Since they are on the same Docker network, it can use the service name.
+      - NEXT_PUBLIC_API_URL=http://chatbot:8000
+    depends_on:
+      - chatbot
     restart: unless-stopped
 
 volumes:

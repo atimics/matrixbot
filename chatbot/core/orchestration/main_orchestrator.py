@@ -428,6 +428,9 @@ class MainOrchestrator:
             # Connect all active integrations from database
             await self.integration_manager.connect_all_active()
             
+            # Update action context with properly connected integrations
+            await self._update_action_context_integrations()
+            
             # Initialize NFT and blockchain services
             await self._initialize_nft_services()
             
@@ -573,6 +576,15 @@ class MainOrchestrator:
                 logger.info("Continuing without Farcaster integration")
         
         # Update action context with initialized observers
+        self.action_context.matrix_observer = self.matrix_observer
+        self.action_context.farcaster_observer = self.farcaster_observer
+        
+        # Configure critical node pinning based on active integrations
+        self._configure_critical_node_pinning()
+
+    async def _update_action_context_integrations(self) -> None:
+        """Update action context with properly connected integrations from IntegrationManager."""
+        # Update action context with initialized observers
         active_integrations = self.integration_manager.get_active_integrations()
         
         # Find Matrix and Farcaster integrations
@@ -580,17 +592,24 @@ class MainOrchestrator:
         farcaster_integration = None
         
         for integration_id, integration in active_integrations.items():
-            if hasattr(integration, 'name') and integration.name == 'matrix':
+            if hasattr(integration, 'integration_type') and integration.integration_type == 'matrix':
                 matrix_integration = integration
-            elif hasattr(integration, 'name') and integration.name == 'farcaster':
+            elif hasattr(integration, 'integration_type') and integration.integration_type == 'farcaster':
                 farcaster_integration = integration
         
         # Update action context and maintain legacy properties
         self.action_context.matrix_observer = matrix_integration or self.matrix_observer
         self.action_context.farcaster_observer = farcaster_integration or self.farcaster_observer
         
-        # Configure critical node pinning based on active integrations
-        self._configure_critical_node_pinning()
+        # Debug logging to track which observer is being used
+        if farcaster_integration:
+            logger.info(f"✓ Using Farcaster integration from IntegrationManager (ID: {farcaster_integration.integration_id})")
+            logger.info(f"  API client initialized: {farcaster_integration.api_client is not None}")
+        elif self.farcaster_observer:
+            logger.info(f"⚠ Using legacy Farcaster observer (fallback)")
+            logger.info(f"  API client initialized: {self.farcaster_observer.api_client is not None}")
+        else:
+            logger.info("ℹ No Farcaster observer available")
 
     def _configure_critical_node_pinning(self):
         """Configure critical node paths for pinning based on active integrations."""
@@ -609,18 +628,34 @@ class MainOrchestrator:
             ])
             logger.info("Added Farcaster feeds to critical pins: home, notifications")
         
-        # Update PayloadBuilder's NodeManager with critical pins if it exists
+        # Try to apply critical pins to available node managers
+        node_manager = None
+        
+        # First, check if PayloadBuilder has a node_manager
         if hasattr(self.payload_builder, 'node_manager') and self.payload_builder.node_manager:
+            node_manager = self.payload_builder.node_manager
+            logger.debug("Using PayloadBuilder's NodeManager for critical pinning")
+        # Next, check if ProcessingHub's node_processor has a node_manager
+        elif (self.processing_hub.node_processor and 
+              hasattr(self.processing_hub.node_processor, 'node_manager') and 
+              self.processing_hub.node_processor.node_manager):
+            node_manager = self.processing_hub.node_processor.node_manager
+            logger.debug("Using ProcessingHub's node_processor NodeManager for critical pinning")
+        
+        if node_manager:
             for pin_path in critical_pins:
-                self.payload_builder.node_manager.get_node_metadata(pin_path).is_pinned = True
-                self.payload_builder.node_manager._log_system_event(
+                node_manager.get_node_metadata(pin_path).is_pinned = True
+                node_manager._log_system_event(
                     "integration_pin",
                     f"Node '{pin_path}' pinned as critical integration point.",
                     [pin_path]
                 )
-            logger.info(f"Configured {len(critical_pins)} critical node pins in PayloadBuilder")
+            logger.info(f"Configured {len(critical_pins)} critical node pins")
         else:
-            logger.warning("PayloadBuilder NodeManager not available for critical pinning")
+            if critical_pins:  # Only warn if there are actually pins to configure
+                logger.warning("NodeManager not available for critical pinning")
+            else:
+                logger.debug("No critical pins to configure")
 
     def trigger_state_change(self):
         """Trigger immediate processing when world state changes."""
