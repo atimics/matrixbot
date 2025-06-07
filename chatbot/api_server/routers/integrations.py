@@ -167,3 +167,30 @@ async def get_available_integration_types(
     except Exception as e:
         logger.error(f"Error getting integration types: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/arweave/wallet")
+async def get_arweave_wallet_info(orchestrator: MainOrchestrator = Depends(get_orchestrator)):
+    """Get Arweave wallet information for funding and monitoring."""
+    try:
+        arweave_client = orchestrator.arweave_client
+        if not arweave_client:
+            raise HTTPException(
+                status_code=503, 
+                detail="Arweave client not configured. Check ARWEAVE_INTERNAL_UPLOADER_SERVICE_URL setting."
+            )
+
+        wallet_info = await arweave_client.get_wallet_info()
+        if wallet_info:
+            return wallet_info
+        else:
+            raise HTTPException(
+                status_code=503,
+                detail="Could not retrieve wallet information from Arweave uploader service. Check if the service is running and properly configured."
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting Arweave wallet info: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")

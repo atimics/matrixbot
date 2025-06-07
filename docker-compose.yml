@@ -33,6 +33,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      arweave_uploader:
+        condition: service_healthy
     networks:
       - chatbot_network
     env_file:
@@ -41,12 +43,33 @@ services:
       # Additional runtime environment
       - PYTHONUNBUFFERED=1
       - CHATBOT_DB_PATH=/app/data/chatbot.db
+      - ARWEAVE_INTERNAL_UPLOADER_SERVICE_URL=http://arweave_uploader:8001
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
+
+  arweave_uploader:
+    build:
+      context: ./arweave_uploader_service
+      dockerfile: Dockerfile
+    container_name: arweave_uploader
+    environment:
+      - ARWEAVE_WALLET_FILE_PATH=/data/arweave_wallet.json
+      - ARWEAVE_GATEWAY_URL=https://arweave.net
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - arweave_wallet_data:/data
+    networks:
+      - chatbot_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8001/health || exit 1"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
 
   chatbot_ui:
     build:
@@ -68,6 +91,7 @@ services:
 
 volumes:
   postgres_data:
+  arweave_wallet_data:
 
 networks:
   chatbot_network:

@@ -223,3 +223,7 @@ data/chatbot.db
 # control_panel.py  # Deprecated - use ui-nextjs instead
 # setup_server.py   # Deprecated - setup handled in Next.js UI
 # ui/               # Deprecated - use ui-nextjs instead
+
+# Arweave wallet files (SENSITIVE!)
+**/arweave_wallet.json
+arweave_wallet_data/

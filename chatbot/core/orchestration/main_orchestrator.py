@@ -246,15 +246,14 @@ class MainOrchestrator:
             model=self.config.ai_model
         )
         
-        # Initialize Arweave client
+        # Initialize Arweave client for internal uploader service
         self.arweave_client = None
-        if settings.ARWEAVE_UPLOADER_API_ENDPOINT and settings.ARWEAVE_UPLOADER_API_KEY:
+        if settings.ARWEAVE_INTERNAL_UPLOADER_SERVICE_URL:
             self.arweave_client = ArweaveUploaderClient(
-                api_endpoint=settings.ARWEAVE_UPLOADER_API_ENDPOINT,
-                api_key=settings.ARWEAVE_UPLOADER_API_KEY,
+                uploader_service_url=settings.ARWEAVE_INTERNAL_UPLOADER_SERVICE_URL,
                 gateway_url=settings.ARWEAVE_GATEWAY_URL,
             )
-            logger.info("Arweave client initialized.")
+            logger.info("Arweave client initialized for internal uploader service.")
         
         # Create action context for tool execution
         from ...tools.base import ActionContext

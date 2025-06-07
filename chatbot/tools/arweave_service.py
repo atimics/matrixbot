@@ -29,10 +29,9 @@ class ArweaveService:
         self.arweave_client = arweave_client
         
         # Create client from settings if not provided
-        if not self.arweave_client and settings.ARWEAVE_UPLOADER_API_ENDPOINT and settings.ARWEAVE_UPLOADER_API_KEY:
+        if not self.arweave_client and settings.ARWEAVE_INTERNAL_UPLOADER_SERVICE_URL:
             self.arweave_client = ArweaveUploaderClient(
-                api_endpoint=settings.ARWEAVE_UPLOADER_API_ENDPOINT,
-                api_key=settings.ARWEAVE_UPLOADER_API_KEY,
+                uploader_service_url=settings.ARWEAVE_INTERNAL_UPLOADER_SERVICE_URL,
                 gateway_url=settings.ARWEAVE_GATEWAY_URL,
             )
     
