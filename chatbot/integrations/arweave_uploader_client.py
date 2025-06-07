@@ -167,7 +167,10 @@ class ArweaveUploaderClient:
         """
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(f"{self.uploader_service_url}/wallet-info")
+                response = await client.get(
+                    f"{self.uploader_service_url}/wallet-info",
+                    headers=self._get_headers()
+                )
                 response.raise_for_status()
                 result = response.json()
                 return result.get("balance_winston")
