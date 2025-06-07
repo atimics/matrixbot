@@ -16,6 +16,8 @@ from typing import Any, Dict, List
 
 import httpx
 
+from .prompts import prompt_builder
+
 logger = logging.getLogger(__name__)
 
 
