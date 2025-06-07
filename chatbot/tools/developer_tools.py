@@ -389,7 +389,7 @@ class AnalyzeChannelForIssuesTool(ToolInterface):
         create_issues = params.get("create_issues", False)
         focus = params.get("focus", "all")
         
-        messages = context.world_state_manager.get_recent_messages(channel_id, message_limit)
+        messages = context.world_state_manager.state.get_recent_messages(channel_id, message_limit)
         if not messages:
             return {"status": "failure", "message": f"No messages found in channel {channel_id}"}
         
