@@ -23,8 +23,8 @@ from pydantic import BaseModel
 import uvicorn
 
 # Import our context management components
-from chatbot.core.context import ContextManager
-from chatbot.core.orchestrator import ContextAwareOrchestrator
+# Note: HistoryRecorder was consolidated into ContextManager for cleaner architecture
+from chatbot.core.orchestration import MainOrchestrator
 from chatbot.core.world_state import WorldStateManager
 
 logger = logging.getLogger(__name__)
@@ -60,7 +60,7 @@ class MessageRequest(BaseModel):
     sender: str = "@user:control-panel"
 
 # Global orchestrator instance
-orchestrator: Optional[ContextAwareOrchestrator] = None
+orchestrator: Optional[MainOrchestrator] = None
 start_time = time.time()
 
 app = FastAPI(title="Context Management Control Panel", version="1.0.0")
@@ -78,9 +78,12 @@ app.add_middleware(
 async def startup_event():
     """Initialize the orchestrator"""
     global orchestrator
-    from chatbot.core.orchestrator import OrchestratorConfig
-    config = OrchestratorConfig(db_path="control_panel.db")
-    orchestrator = ContextAwareOrchestrator(config)
+    from chatbot.core.orchestration import OrchestratorConfig, ProcessingConfig
+    config = OrchestratorConfig(
+        db_path="control_panel.db",
+        processing_config=ProcessingConfig(enable_node_based_processing=True)
+    )
+    orchestrator = MainOrchestrator(config)
     logger.info("Control panel started")
 
 @app.on_event("shutdown")
@@ -849,7 +852,7 @@ def main():
     
     parser = argparse.ArgumentParser(description="Context Management Control Panel")
     parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
-    parser.add_argument("--port", type=int, default=8000, help="Port to bind to")
+    parser.add_argument("--port", type=int, default=8001, help="Port to bind to")
     parser.add_argument("--reload", action="store_true", help="Enable auto-reload")
     
     args = parser.parse_args()

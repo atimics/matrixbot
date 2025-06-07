@@ -24,7 +24,7 @@ class DummyResponse:
 
 @pytest.mark.asyncio
 async def test_update_rate_limits_and_status(observer):
-    # Dummy headers
+    # Dummy headers for rate limiting
     headers = {
         'x-ratelimit-limit': '100',
         'x-ratelimit-remaining': '20',
@@ -32,8 +32,13 @@ async def test_update_rate_limits_and_status(observer):
         'x-ratelimit-retry-after': '60'
     }
     response = DummyResponse(status_code=200, json_data={}, headers=headers)
-    # Call update
-    observer._update_rate_limits(response)
+    
+    # Simulate rate limit update in API client (our new centralized approach)
+    observer.api_client._update_rate_limits(response)
+    
+    # Sync rate limits to world state
+    observer._sync_rate_limits_to_world_state()
+    
     # Check world state
     state = observer.world_state_manager.state
     assert 'farcaster_api' in state.rate_limits
@@ -42,6 +47,7 @@ async def test_update_rate_limits_and_status(observer):
     assert info['remaining'] == 20
     assert info['reset_time'] == 3600
     assert info['retry_after'] == 60
+    
     # Check system_status update
     status = observer.get_rate_limit_status()
     assert status['available'] is True
@@ -111,7 +117,8 @@ async def test_quote_and_like_methods(observer):
     res_like = await observer.like_cast('cast123')
     assert res_like['cast']['hash'] == 'xyz'
     
-    res_quote = await observer.quote_cast('hello', 'cast123')
+    # Add the missing quoted_cast_author_fid argument. Assuming 0 as a placeholder.
+    res_quote = await observer.quote_cast('hello', 'cast123', 0)
     assert res_quote['success']
     assert res_quote['quoted_cast'] == 'cast123'
 
@@ -119,11 +126,10 @@ async def test_quote_and_like_methods(observer):
 
 @pytest.mark.asyncio
 async def test_follow_unfollow_and_dm_methods(observer):
-    """Test follow_user, unfollow_user, and send_dm observer methods"""
+    """Test follow_user, unfollow_user methods and deprecated send_dm method"""
     # Mock the API client methods directly
     observer.api_client.follow_user = AsyncMock(return_value={'success': True, 'fid': 999})
     observer.api_client.unfollow_user = AsyncMock(return_value={'success': True, 'fid': 999})
-    observer.api_client.send_dm = AsyncMock(return_value={'message': {'id': 'dm123'}})
 
     # Follow user
     out1 = await observer.follow_user(999)
@@ -133,6 +139,7 @@ async def test_follow_unfollow_and_dm_methods(observer):
     out2 = await observer.unfollow_user(999)
     assert out2['success'] is True and out2['fid'] == 999
 
-    # Send direct message
+    # Send direct message - now deprecated and returns failure
     out3 = await observer.send_dm(1000, 'Hello DM')
-    assert out3['message']['id'] == 'dm123'
+    assert out3['success'] is False
+    assert "not supported by the API" in out3['error']

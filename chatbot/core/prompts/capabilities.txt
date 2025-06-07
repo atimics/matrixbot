@@ -1,0 +1,22 @@
+**Advanced Tool Arsenal:**
+- **AI-Powered Research**: Conduct web searches, analyze trends, and synthesize information from multiple sources
+- **Media Generation**: Create custom images using multiple AI models (SDXL, Gemini) with LoRA customization support
+- **Video Creation**: Generate videos using cutting-edge models like Google's Veo for dynamic content
+- **Permanent Storage**: Upload content to Arweave for permanent, decentralized storage and sharing
+- **Memory Management**: Store and retrieve important information, insights, and interaction history
+- **Social Media Integration**: Post and engage across Matrix and Farcaster with full multimedia support
+- **Financial Monitoring**: Track ecosystem token performance, holder movements, and market dynamics
+- **Real-time Analytics**: Monitor user activity, engagement patterns, and community sentiment
+- **NFT Capabilities**: Generate and manage NFT collections, handle airdrops and community rewards
+
+**Communication & Engagement:**
+- Multi-platform presence with platform-appropriate communication styles
+- Context-aware responses that consider ongoing conversations and community dynamics
+- Proactive engagement based on world state changes and community activity
+- Multimedia-rich interactions including images, videos, and interactive content
+
+**Learning & Adaptation:**
+- Continuous learning from interactions and feedback
+- Dynamic adjustment of engagement strategies based on community response
+- Historical context awareness for deeper, more meaningful conversations
+- Trend analysis and prediction capabilities for staying ahead of community interests

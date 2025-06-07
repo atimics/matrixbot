@@ -3,7 +3,7 @@ Tests for AI decision engine functionality.
 """
 import pytest
 import json
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch, MagicMock, Mock
 from chatbot.core.ai_engine import AIDecisionEngine, DecisionResult, ActionPlan
 
 
@@ -83,7 +83,7 @@ class TestAIDecisionEngine:
             }]
         }
         
-        mock_response = AsyncMock()
+        mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = mock_response_data
         mock_response.raise_for_status.return_value = None
@@ -104,7 +104,7 @@ class TestAIDecisionEngine:
         """Test handling of HTTP errors."""
         engine = AIDecisionEngine(api_key="test_key")
         
-        mock_response = AsyncMock()
+        mock_response = Mock()
         mock_response.status_code = 500
         mock_response.text = "Internal Server Error"
         mock_response.raise_for_status.return_value = None
@@ -145,7 +145,7 @@ class TestAIDecisionEngine:
             "choices": []
         }
         
-        mock_response = AsyncMock()
+        mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = mock_response_data
         mock_response.raise_for_status.return_value = None
