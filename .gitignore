@@ -176,9 +176,11 @@ ehthumbs.db
 Thumbs.db
 
 matrix_token.json
-<coroutine*
-state_change_
+state_change_*
 context_storage/state_change_*
+
+# Synapse data directory
+synapse-data/
 
 # Debug and demo files (cleaned up)
 debug_*.py
@@ -199,3 +201,14 @@ test_git_debug/
 # Additional temporary files
 coverage.xml
 dummy.db
+pytest.xml
+
+# IDE and editor files
+.idea/
+*.swp
+*.swo
+
+# Runtime generated files
+*.pid
+*.seed
+*.pid.lock
