@@ -18,7 +18,7 @@ from ...core.context import ContextManager
 from ...core.integration_manager import IntegrationManager
 from ...integrations.arweave_uploader_client import ArweaveUploaderClient
 from ...integrations.farcaster import FarcasterObserver
-from .node_manager import NodeManager
+from ..node_system.node_manager import NodeManager
 from ...integrations.matrix.observer import MatrixObserver
 from ...integrations.base_nft_service import BaseNFTService
 from ...integrations.eligibility_service import UserEligibilityService
