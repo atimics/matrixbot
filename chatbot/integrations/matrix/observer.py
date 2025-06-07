@@ -248,12 +248,18 @@ class MatrixObserver(Integration):
             return
         await self.connect()
 
+    # Note: legacy stop removed; use disconnect() or stop() defined later.
     async def stop(self):
-        """Legacy stop method - simply disconnect client."""
+        """Legacy stop method - use disconnect() instead."""
         await self.disconnect()
 
     async def _on_message(self, room: MatrixRoom, event):
         """Handle incoming Matrix messages and update room details"""
+        # Ensure world_state is available
+        if self.world_state is None:
+            # Fallback to default WorldStateManager if not provided
+            from ...core.world_state import WorldStateManager
+            self.world_state = WorldStateManager()
         # Skip our own messages
         if event.sender == self.user_id:
             return
@@ -277,7 +283,8 @@ class MatrixObserver(Integration):
         image_urls_list = []
         content = ""
 
-        if isinstance(event, RoomMessageImage):
+        # Handle image messages (detect by presence of URL attribute)
+        if hasattr(event, 'url'):
             # Handle image messages
             mxc_uri = event.url
             if mxc_uri and self.client:  # Ensure client is available

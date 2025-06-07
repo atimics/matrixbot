@@ -17,14 +17,14 @@ class MatrixMarkdownFormatter:
 
     def convert(self, markdown_text: str) -> Dict[str, str]:
         """Convert markdown to both plain text and HTML for Matrix."""
-        # Reset parser state before conversion to handle successive calls
-        try:
-            self.md.reset()
-        except Exception:
-            # reset may not be available in older versions
-            pass
-        # Convert to HTML
-        html_content = self.md.convert(markdown_text)
+        # Create a fresh Markdown parser for each conversion with codehilite
+        md_parser = markdown.Markdown(
+            extensions=["fenced_code", "codehilite", "tables", "nl2br", "sane_lists"]
+        )
+        html_content = md_parser.convert(markdown_text)
+        # Post-process to remove span tags inserted by codehilite, preserving class wrappers
+        html_content = re.sub(r"<span[^>]*>", "", html_content)
+        html_content = html_content.replace("</span>", "")
 
         # Create plain text fallback by removing markdown syntax
         plain_text = self._markdown_to_plain(markdown_text)
