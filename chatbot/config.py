@@ -112,9 +112,8 @@ class AppConfig(BaseSettings):
     GOOGLE_GEMINI_IMAGE_MODEL: str = "gemini-1.5-flash-latest"
     GOOGLE_VEO_VIDEO_MODEL: str = "models/veo-experimental-v1"
 
-    # Arweave Uploader Service
-    ARWEAVE_UPLOADER_API_ENDPOINT: Optional[str] = None
-    ARWEAVE_UPLOADER_API_KEY: Optional[str] = None
+    # Arweave Configuration
+    ARWEAVE_INTERNAL_UPLOADER_SERVICE_URL: str = "http://arweave-uploader:8001"
     ARWEAVE_GATEWAY_URL: str = "https://arweave.net"
 
     # NFT & Airdrop Configuration (v0.0.4)

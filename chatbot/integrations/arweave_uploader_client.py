@@ -2,9 +2,10 @@
 Arweave Uploader Client
 
 This module provides integration with Arweave for permanent data storage on the permaweb.
-Supports uploading text, JSON, images, and videos with custom tags.
+Communicates with the internal Arweave uploader microservice.
 """
 
+import json
 import logging
 from typing import Dict, List, Optional
 
@@ -14,21 +15,19 @@ logger = logging.getLogger(__name__)
 
 
 class ArweaveUploaderClient:
-    """Client for uploading data to Arweave via an uploader service."""
+    """Client for uploading data to Arweave via internal uploader service."""
 
     def __init__(
-        self, api_endpoint: str, api_key: str, gateway_url: str = "https://arweave.net"
+        self, uploader_service_url: str, gateway_url: str = "https://arweave.net"
     ):
         """
         Initialize Arweave uploader client.
 
         Args:
-            api_endpoint: API endpoint of the Arweave uploader service
-            api_key: API key for authentication
+            uploader_service_url: URL of the internal Arweave uploader service
             gateway_url: Arweave gateway URL for constructing public URLs
         """
-        self.api_endpoint = api_endpoint.rstrip("/")
-        self.api_key = api_key
+        self.uploader_service_url = uploader_service_url.rstrip("/")
         self.gateway_url = gateway_url.rstrip("/")
 
     async def upload_data(
@@ -41,7 +40,7 @@ class ArweaveUploaderClient:
         Upload data to Arweave via the uploader service.
 
         Args:
-            data: Raw data bytes to upload
+            data: Raw data bytes to upload  
             content_type: MIME type of the data
             tags: Optional list of Arweave tags in format [{"name": "key", "value": "val"}]
 
@@ -49,25 +48,17 @@ class ArweaveUploaderClient:
             Arweave transaction ID (TXID) or None if failed
         """
         try:
-            # Prepare headers
-            headers = {
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/octet-stream",
-            }
-
-            # Prepare form data
-            files = {"data": ("data", data, content_type)}
-
-            # Prepare tags as JSON
-            form_data = {}
+            # Prepare multipart form data
+            files = {"file": ("data", data, content_type)}
+            form_data = {"content_type": content_type}
+            
+            # Add tags as JSON string if provided
             if tags:
-                # Convert tags to the format expected by the uploader service
-                form_data["tags"] = str(tags)  # Will be JSON stringified
+                form_data["tags"] = json.dumps(tags)
 
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            async with httpx.AsyncClient(timeout=120.0) as client:
                 response = await client.post(
-                    f"{self.api_endpoint}/upload",
-                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    f"{self.uploader_service_url}/upload",
                     files=files,
                     data=form_data,
                 )
@@ -76,11 +67,7 @@ class ArweaveUploaderClient:
                 result = response.json()
 
                 # Extract transaction ID from response
-                tx_id = (
-                    result.get("txid")
-                    or result.get("transaction_id")
-                    or result.get("id")
-                )
+                tx_id = result.get("tx_id")
 
                 if tx_id:
                     logger.info(
@@ -116,7 +103,7 @@ class ArweaveUploaderClient:
 
     async def get_upload_status(self, tx_id: str) -> Optional[Dict]:
         """
-        Check the status of an Arweave transaction.
+        Check the status of an Arweave transaction via the uploader service.
 
         Args:
             tx_id: Transaction ID to check
@@ -126,11 +113,61 @@ class ArweaveUploaderClient:
         """
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(f"{self.gateway_url}/tx/{tx_id}")
+                response = await client.get(f"{self.uploader_service_url}/status/{tx_id}")
                 response.raise_for_status()
                 return response.json()
         except Exception as e:
             logger.error(
                 f"ArweaveUploaderClient: Failed to get status for {tx_id}: {e}"
             )
+            return None
+
+    async def get_wallet_address(self) -> Optional[str]:
+        """
+        Get the Arweave wallet address from the uploader service.
+
+        Returns:
+            Wallet address or None if failed
+        """
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(f"{self.uploader_service_url}/wallet-info")
+                response.raise_for_status()
+                result = response.json()
+                return result.get("address")
+        except Exception as e:
+            logger.error(f"ArweaveUploaderClient: Failed to get wallet address: {e}")
+            return None
+
+    async def get_wallet_balance(self) -> Optional[str]:
+        """
+        Get the Arweave wallet balance from the uploader service.
+
+        Returns:
+            Balance in Winston as string, or None if failed
+        """
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(f"{self.uploader_service_url}/wallet-info")
+                response.raise_for_status()
+                result = response.json()
+                return result.get("balance_winston")
+        except Exception as e:
+            logger.error(f"ArweaveUploaderClient: Failed to get wallet balance: {e}")
+            return None
+
+    async def get_wallet_info(self) -> Optional[Dict]:
+        """
+        Get complete wallet information from the uploader service.
+
+        Returns:
+            Wallet info dictionary or None if failed
+        """
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(f"{self.uploader_service_url}/wallet-info")
+                response.raise_for_status()
+                return response.json()
+        except Exception as e:
+            logger.error(f"ArweaveUploaderClient: Failed to get wallet info: {e}")
             return None
