@@ -142,3 +142,115 @@ class GitHubService:
         response = await self._client.post(url, json=payload)
         response.raise_for_status()
         return response.json()
+
+    async def get_issues(
+        self, 
+        state: str = "open", 
+        labels: List[str] = None,
+        per_page: int = 20,
+        page: int = 1
+    ) -> List[Dict[str, Any]]:
+        """
+        Get issues from the repository.
+        
+        Args:
+            state: Issue state ('open', 'closed', 'all')
+            labels: List of label names to filter by
+            per_page: Number of issues per page (max 100)
+            page: Page number for pagination
+        """
+        url = f"repos/{self.main_repo}/issues"
+        params = {
+            "state": state,
+            "per_page": min(per_page, 100),
+            "page": page
+        }
+        
+        if labels:
+            params["labels"] = ",".join(labels)
+            
+        response = await self._client.get(url, params=params)
+        response.raise_for_status()
+        return response.json()
+
+    async def get_issue(self, issue_number: int) -> Dict[str, Any]:
+        """Get a specific issue by number."""
+        url = f"repos/{self.main_repo}/issues/{issue_number}"
+        response = await self._client.get(url)
+        response.raise_for_status()
+        return response.json()
+
+    async def get_issue_comments(self, issue_number: int) -> List[Dict[str, Any]]:
+        """Get comments for a specific issue."""
+        url = f"repos/{self.main_repo}/issues/{issue_number}/comments"
+        response = await self._client.get(url)
+        response.raise_for_status()
+        return response.json()
+
+    async def create_issue_comment(
+        self, issue_number: int, body: str
+    ) -> Dict[str, Any]:
+        """Create a comment on an issue."""
+        url = f"repos/{self.main_repo}/issues/{issue_number}/comments"
+        payload = {"body": body}
+        response = await self._client.post(url, json=payload)
+        response.raise_for_status()
+        return response.json()
+
+    async def create_issue(
+        self,
+        title: str,
+        body: str = "",
+        labels: List[str] = None,
+        assignees: List[str] = None
+    ) -> Dict[str, Any]:
+        """Create a new issue."""
+        payload = {
+            "title": title,
+            "body": body
+        }
+        
+        if labels:
+            payload["labels"] = labels
+        if assignees:
+            payload["assignees"] = assignees
+            
+        url = f"repos/{self.main_repo}/issues"
+        response = await self._client.post(url, json=payload)
+        response.raise_for_status()
+        return response.json()
+
+    async def update_issue(
+        self,
+        issue_number: int,
+        title: str = None,
+        body: str = None,
+        state: str = None,
+        labels: List[str] = None
+    ) -> Dict[str, Any]:
+        """Update an existing issue."""
+        payload = {}
+        
+        if title is not None:
+            payload["title"] = title
+        if body is not None:
+            payload["body"] = body
+        if state is not None:
+            payload["state"] = state
+        if labels is not None:
+            payload["labels"] = labels
+            
+        url = f"repos/{self.main_repo}/issues/{issue_number}"
+        response = await self._client.patch(url, json=payload)
+        response.raise_for_status()
+        return response.json()
+
+    async def close(self):
+        """Close the HTTP client."""
+        await self._client.aclose()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.close()

@@ -23,6 +23,469 @@ from ..utils.git_utils import LocalGitRepository
 from .base import ToolInterface, ActionContext
 
 
+# ==============================================================================
+# GitHub-Centric ACE Tools (Phase 2 - New Architecture)
+# ==============================================================================
+
+class GetGitHubIssuesTool(ToolInterface):
+    """
+    Fetch open issues from a GitHub repository with filtering capabilities.
+    This is the primary entry point for AI to discover work.
+    """
+    @property
+    def name(self) -> str:
+        return "GetGitHubIssues"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Fetch open issues from a GitHub repository. Use this to discover "
+            "available work items, bugs to fix, or features to implement. "
+            "Filter by labels to find specific types of work."
+        )
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "repo_full_name": "string - Repository name in format 'owner/repo'",
+            "labels": "array of strings (optional) - Filter by labels (e.g. ['bug', 'enhancement', 'good first issue'])",
+            "state": "string (optional, default: 'open') - Issue state: 'open', 'closed', 'all'",
+            "limit": "integer (optional, default: 20) - Maximum number of issues to return (max 100)"
+        }
+
+    async def execute(
+        self, params: Dict[str, Any], context: ActionContext
+    ) -> Dict[str, Any]:
+        repo_full_name = params.get("repo_full_name")
+        if not repo_full_name:
+            return {"status": "failure", "message": "repo_full_name is required"}
+        
+        labels = params.get("labels", [])
+        state = params.get("state", "open")
+        limit = params.get("limit", 20)
+        
+        try:
+            gh = GitHubService(main_repo=repo_full_name)
+            issues = await gh.get_issues(
+                state=state,
+                labels=labels,
+                per_page=limit
+            )
+            
+            # Format for AI consumption
+            formatted_issues = []
+            for issue in issues:
+                # Skip pull requests (they appear in issues API)
+                if issue.get("pull_request"):
+                    continue
+                    
+                formatted_issues.append({
+                    "number": issue["number"],
+                    "title": issue["title"],
+                    "state": issue["state"],
+                    "labels": [label["name"] for label in issue["labels"]],
+                    "created_at": issue["created_at"],
+                    "updated_at": issue["updated_at"],
+                    "url": issue["html_url"],
+                    "author": issue["user"]["login"],
+                    "assignees": [assignee["login"] for assignee in issue.get("assignees", [])],
+                    "body_preview": (issue["body"][:200] + "..." if issue["body"] and len(issue["body"]) > 200 else issue["body"] or "")
+                })
+            
+            await gh.close()
+            
+            return {
+                "status": "success",
+                "issues": formatted_issues,
+                "total_count": len(formatted_issues),
+                "repository": repo_full_name,
+                "filters_applied": {
+                    "state": state,
+                    "labels": labels,
+                    "limit": limit
+                }
+            }
+            
+        except Exception as e:
+            return {
+                "status": "failure", 
+                "message": f"Failed to fetch issues from {repo_full_name}: {str(e)}"
+            }
+
+
+class GetGitHubIssueDetailsTool(ToolInterface):
+    """
+    Get comprehensive details of a specific GitHub issue including comments.
+    Use this to understand the full context before proposing solutions.
+    """
+    @property
+    def name(self) -> str:
+        return "GetGitHubIssueDetails"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Get full details of a specific GitHub issue including description, "
+            "comments, and metadata. Use this to understand the complete context "
+            "before analyzing or implementing solutions."
+        )
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "repo_full_name": "string - Repository name in format 'owner/repo'",
+            "issue_number": "integer - Issue number to retrieve"
+        }
+
+    async def execute(
+        self, params: Dict[str, Any], context: ActionContext
+    ) -> Dict[str, Any]:
+        repo_full_name = params.get("repo_full_name")
+        issue_number = params.get("issue_number")
+        
+        if not repo_full_name or not issue_number:
+            return {
+                "status": "failure", 
+                "message": "Both repo_full_name and issue_number are required"
+            }
+        
+        try:
+            gh = GitHubService(main_repo=repo_full_name)
+            
+            # Get issue details
+            issue = await gh.get_issue(issue_number)
+            
+            # Skip if this is actually a pull request
+            if issue.get("pull_request"):
+                await gh.close()
+                return {
+                    "status": "failure",
+                    "message": f"#{issue_number} is a pull request, not an issue"
+                }
+            
+            # Get comments
+            comments = await gh.get_issue_comments(issue_number)
+            
+            formatted_comments = []
+            for comment in comments:
+                formatted_comments.append({
+                    "id": comment["id"],
+                    "author": comment["user"]["login"],
+                    "created_at": comment["created_at"],
+                    "updated_at": comment["updated_at"],
+                    "body": comment["body"],
+                    "url": comment["html_url"]
+                })
+            
+            await gh.close()
+            
+            return {
+                "status": "success",
+                "issue": {
+                    "number": issue["number"],
+                    "title": issue["title"],
+                    "body": issue["body"] or "",
+                    "state": issue["state"],
+                    "labels": [label["name"] for label in issue["labels"]],
+                    "assignees": [assignee["login"] for assignee in issue.get("assignees", [])],
+                    "milestone": issue.get("milestone", {}).get("title") if issue.get("milestone") else None,
+                    "created_at": issue["created_at"],
+                    "updated_at": issue["updated_at"],
+                    "closed_at": issue.get("closed_at"),
+                    "url": issue["html_url"],
+                    "author": issue["user"]["login"]
+                },
+                "comments": formatted_comments,
+                "comment_count": len(formatted_comments),
+                "repository": repo_full_name
+            }
+            
+        except Exception as e:
+            return {
+                "status": "failure",
+                "message": f"Failed to fetch details for issue #{issue_number} in {repo_full_name}: {str(e)}"
+            }
+
+
+class CommentOnGitHubIssueTool(ToolInterface):
+    """
+    Add a comment to a GitHub issue for communication and status updates.
+    """
+    @property
+    def name(self) -> str:
+        return "CommentOnGitHubIssue"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Add a comment to a GitHub issue. Use this to ask clarifying questions, "
+            "provide analysis results, give status updates, or propose solutions. "
+            "Comments support Markdown formatting."
+        )
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "repo_full_name": "string - Repository name in format 'owner/repo'",
+            "issue_number": "integer - Issue number to comment on",
+            "comment_body": "string - Comment text (supports Markdown formatting)"
+        }
+
+    async def execute(
+        self, params: Dict[str, Any], context: ActionContext
+    ) -> Dict[str, Any]:
+        repo_full_name = params.get("repo_full_name")
+        issue_number = params.get("issue_number")
+        comment_body = params.get("comment_body")
+        
+        if not all([repo_full_name, issue_number, comment_body]):
+            return {
+                "status": "failure", 
+                "message": "repo_full_name, issue_number, and comment_body are all required"
+            }
+        
+        # Add AI signature to comments for transparency
+        ai_signature = "\n\n---\n*Comment posted by AI Assistant*"
+        full_comment = comment_body + ai_signature
+        
+        try:
+            gh = GitHubService(main_repo=repo_full_name)
+            
+            comment = await gh.create_issue_comment(issue_number, full_comment)
+            
+            await gh.close()
+            
+            return {
+                "status": "success",
+                "comment": {
+                    "id": comment["id"],
+                    "url": comment["html_url"],
+                    "created_at": comment["created_at"]
+                },
+                "issue_number": issue_number,
+                "repository": repo_full_name,
+                "message": f"Successfully posted comment on issue #{issue_number}"
+            }
+            
+        except Exception as e:
+            return {
+                "status": "failure",
+                "message": f"Failed to create comment on issue #{issue_number} in {repo_full_name}: {str(e)}"
+            }
+
+
+class CreateGitHubIssueTool(ToolInterface):
+    """
+    Create a new GitHub issue for tracking bugs, features, or analysis results.
+    """
+    @property
+    def name(self) -> str:
+        return "CreateGitHubIssue"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Create a new GitHub issue. Use this when analysis reveals problems "
+            "that need tracking, or when proposing new features or improvements. "
+            "Issues support Markdown formatting and labels."
+        )
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "repo_full_name": "string - Repository name in format 'owner/repo'",
+            "title": "string - Issue title (clear and descriptive)",
+            "body": "string - Issue description (supports Markdown)",
+            "labels": "array of strings (optional) - Labels to apply (e.g. ['bug', 'enhancement'])",
+            "assignees": "array of strings (optional) - GitHub usernames to assign"
+        }
+
+    async def execute(
+        self, params: Dict[str, Any], context: ActionContext
+    ) -> Dict[str, Any]:
+        repo_full_name = params.get("repo_full_name")
+        title = params.get("title")
+        body = params.get("body", "")
+        labels = params.get("labels", [])
+        assignees = params.get("assignees", [])
+        
+        if not repo_full_name or not title:
+            return {
+                "status": "failure",
+                "message": "repo_full_name and title are required"
+            }
+        
+        # Add AI signature to issue body for transparency
+        ai_signature = "\n\n---\n*Issue created by AI Assistant*"
+        full_body = body + ai_signature
+        
+        try:
+            gh = GitHubService(main_repo=repo_full_name)
+            
+            issue = await gh.create_issue(
+                title=title,
+                body=full_body,
+                labels=labels,
+                assignees=assignees
+            )
+            
+            await gh.close()
+            
+            return {
+                "status": "success",
+                "issue": {
+                    "number": issue["number"],
+                    "title": issue["title"],
+                    "url": issue["html_url"],
+                    "created_at": issue["created_at"]
+                },
+                "repository": repo_full_name,
+                "message": f"Successfully created issue #{issue['number']}: {title}"
+            }
+            
+        except Exception as e:
+            return {
+                "status": "failure",
+                "message": f"Failed to create issue in {repo_full_name}: {str(e)}"
+            }
+
+
+class AnalyzeChannelForIssuesTool(ToolInterface):
+    """
+    Analyze channel discussions to identify potential GitHub issues.
+    Replacement for the deprecated SummarizeChannelTool.
+    """
+    @property
+    def name(self) -> str:
+        return "AnalyzeChannelForIssues"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Analyze recent channel messages to identify bugs, feature requests, "
+            "or issues that should be tracked in GitHub. Can optionally create "
+            "GitHub issues directly from the analysis."
+        )
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "channel_id": "string - Channel ID to analyze",
+            "message_limit": "integer (optional, default: 20) - Number of recent messages to analyze",
+            "repo_full_name": "string (optional) - Repository to create issues in if found",
+            "create_issues": "boolean (optional, default: false) - Whether to automatically create GitHub issues",
+            "focus": "string (optional, default: 'all') - Focus on: 'bugs', 'features', 'improvements', 'all'"
+        }
+
+    async def execute(
+        self, params: Dict[str, Any], context: ActionContext
+    ) -> Dict[str, Any]:
+        channel_id = params.get("channel_id")
+        if not channel_id:
+            return {"status": "failure", "message": "channel_id is required"}
+        
+        message_limit = params.get("message_limit", 20)
+        repo_full_name = params.get("repo_full_name")
+        create_issues = params.get("create_issues", False)
+        focus = params.get("focus", "all")
+        
+        messages = context.world_state_manager.get_recent_messages(channel_id, message_limit)
+        if not messages:
+            return {"status": "failure", "message": f"No messages found in channel {channel_id}"}
+        
+        # Analyze messages for potential issues
+        potential_issues = []
+        
+        for msg in messages:
+            if not msg.content:
+                continue
+                
+            content_lower = msg.content.lower()
+            
+            # Bug indicators
+            bug_keywords = ["error", "bug", "broken", "issue", "problem", "fail", "crash", "doesn't work", "not working"]
+            feature_keywords = ["feature", "add", "new", "implement", "enhancement", "improve", "should", "could", "would be nice"]
+            
+            is_bug = any(keyword in content_lower for keyword in bug_keywords)
+            is_feature = any(keyword in content_lower for keyword in feature_keywords)
+            
+            if (focus == "all" or 
+                (focus == "bugs" and is_bug) or 
+                (focus == "features" and is_feature) or
+                (focus == "improvements" and (is_bug or is_feature))):
+                
+                issue_type = "bug" if is_bug else "enhancement" if is_feature else "discussion"
+                
+                potential_issues.append({
+                    "type": issue_type,
+                    "message_id": getattr(msg, 'id', 'unknown'),
+                    "sender": msg.sender,
+                    "content": msg.content,
+                    "timestamp": msg.timestamp,
+                    "suggested_title": self._generate_issue_title(msg.content, issue_type),
+                    "priority": "high" if is_bug else "medium"
+                })
+        
+        # Create GitHub issues if requested
+        created_issues = []
+        if create_issues and repo_full_name and potential_issues:
+            create_tool = CreateGitHubIssueTool()
+            
+            for issue_data in potential_issues[:5]:  # Limit to 5 issues to avoid spam
+                title = issue_data["suggested_title"]
+                body = f"""## Issue identified from channel discussion
+
+**Original message from:** {issue_data['sender']}
+**Timestamp:** {issue_data['timestamp']}
+**Type:** {issue_data['type']}
+
+**Content:**
+{issue_data['content']}
+
+**Analysis:** This {issue_data['type']} was identified through automated analysis of channel discussions.
+"""
+                
+                labels = [issue_data["type"]]
+                if issue_data["priority"] == "high":
+                    labels.append("priority-high")
+                
+                result = await create_tool.execute({
+                    "repo_full_name": repo_full_name,
+                    "title": title,
+                    "body": body,
+                    "labels": labels
+                }, context)
+                
+                if result.get("status") == "success":
+                    created_issues.append(result["issue"])
+        
+        return {
+            "status": "success",
+            "analysis": {
+                "channel_id": channel_id,
+                "messages_analyzed": len(messages),
+                "potential_issues_found": len(potential_issues),
+                "focus": focus
+            },
+            "potential_issues": potential_issues,
+            "created_issues": created_issues,
+            "summary": f"Analyzed {len(messages)} messages and found {len(potential_issues)} potential issues"
+        }
+    
+    def _generate_issue_title(self, content: str, issue_type: str) -> str:
+        """Generate a concise issue title from message content."""
+        # Take first sentence or first 60 chars
+        first_sentence = content.split('.')[0].split('!')[0].split('?')[0]
+        title = first_sentence[:60].strip()
+        
+        if issue_type == "bug":
+            return f"Bug: {title}"
+        elif issue_type == "enhancement":
+            return f"Feature: {title}"
+        else:
+            return f"Discussion: {title}"
+
+
 class GetCodebaseStructureTool(ToolInterface):  # Phase 1
     """
     Retrieves the codebase file tree from GitHub (read-only) or local clone.
@@ -85,186 +548,6 @@ class GetCodebaseStructureTool(ToolInterface):  # Phase 1
                 }
             except Exception as err:
                 return {"status": "failure", "message": str(err)}
-
-
-class UpdateProjectPlanTool(ToolInterface):  # Phase 2
-    """
-    Creates or updates project tasks in the world state project plan.
-    """
-    @property
-    def name(self) -> str:
-        return "UpdateProjectPlan"
-
-    @property
-    def description(self) -> str:
-        return (
-            "Create, update, or manage project tasks in the development plan. "
-            "Use this to organize development work based on analysis of codebase structure, "
-            "channel discussions, or identified issues."
-        )
-
-    @property
-    def parameters_schema(self) -> Dict[str, Any]:
-        return {
-            "action": "string - 'create', 'update', or 'list'",
-            "task_id": "string (optional) - Required for 'update' action",
-            "title": "string (optional) - Task title for 'create' action",
-            "description": "string (optional) - Detailed task description",
-            "status": "string (optional) - 'todo', 'in_progress', 'needs_review', 'blocked', 'done'",
-            "priority": "integer (optional) - 1-10 priority level",
-            "complexity": "string (optional) - 'S', 'M', 'L' for size estimation",
-            "related_files": "array of strings (optional) - Related code file paths",
-            "source_refs": "array of strings (optional) - References to discussions or issues"
-        }
-
-    async def execute(
-        self, params: Dict[str, Any], context: ActionContext
-    ) -> Dict[str, Any]:
-        action = params.get("action", "list")
-        
-        # Import here to avoid circular imports
-        from ..core.world_state.structures import ProjectTask
-        
-        if action == "list":
-            tasks = context.world_state_manager.state.project_plan
-            task_summary = []
-            for task_id, task in tasks.items():
-                task_summary.append({
-                    "task_id": task_id,
-                    "title": task.title,
-                    "status": task.status,
-                    "priority": task.priority,
-                    "complexity": task.estimated_complexity
-                })
-            return {
-                "status": "success",
-                "message": f"Retrieved {len(tasks)} project tasks",
-                "tasks": task_summary
-            }
-        
-        elif action == "create":
-            title = params.get("title", "Untitled Task")
-            description = params.get("description", "")
-            task = ProjectTask(
-                title=title,
-                description=description,
-                status=params.get("status", "todo"),
-                priority=params.get("priority", 5),
-                estimated_complexity=params.get("complexity"),
-                related_code_files=params.get("related_files", []),
-                source_references=params.get("source_refs", [])
-            )
-            context.world_state_manager.state.add_project_task(task)
-            return {
-                "status": "success",
-                "message": f"Created task '{title}' with ID {task.task_id}",
-                "task_id": task.task_id
-            }
-        
-        elif action == "update":
-            task_id = params.get("task_id")
-            if not task_id or task_id not in context.world_state_manager.state.project_plan:
-                return {"status": "failure", "message": "Invalid or missing task_id"}
-            
-            update_fields = {}
-            for field in ["title", "description", "status", "priority", "complexity", "related_files", "source_refs"]:
-                if field in params:
-                    if field == "complexity":
-                        update_fields["estimated_complexity"] = params[field]
-                    elif field == "related_files":
-                        update_fields["related_code_files"] = params[field]
-                    elif field == "source_refs":
-                        update_fields["source_references"] = params[field]
-                    else:
-                        update_fields[field] = params[field]
-            
-            context.world_state_manager.update_project_task(task_id, **update_fields)
-            return {
-                "status": "success",
-                "message": f"Updated task {task_id}",
-                "updated_fields": list(update_fields.keys())
-            }
-        
-        else:
-            return {"status": "failure", "message": f"Unknown action: {action}"}
-
-
-class SummarizeChannelTool(ToolInterface):  # Phase 2
-    """
-    Analyzes recent channel activity to generate insights for project planning.
-    """
-    @property
-    def name(self) -> str:
-        return "SummarizeChannel"
-
-    @property
-    def description(self) -> str:
-        return (
-            "Analyze recent messages in a channel to extract key topics, issues, "
-            "feature requests, or development discussions that could inform project planning."
-        )
-
-    @property
-    def parameters_schema(self) -> Dict[str, Any]:
-        return {
-            "channel_id": "string - Channel ID to analyze",
-            "message_limit": "integer (optional, default: 20) - Number of recent messages to analyze",
-            "focus": "string (optional) - 'issues', 'features', 'bugs', 'general' - What to focus analysis on"
-        }
-
-    async def execute(
-        self, params: Dict[str, Any], context: ActionContext
-    ) -> Dict[str, Any]:
-        channel_id = params.get("channel_id")
-        if not channel_id:
-            return {"status": "failure", "message": "channel_id is required"}
-        
-        message_limit = params.get("message_limit", 20)
-        focus = params.get("focus", "general")
-        
-        messages = context.world_state_manager.get_recent_messages(channel_id, message_limit)
-        if not messages:
-            return {"status": "failure", "message": f"No messages found in channel {channel_id}"}
-        
-        # Basic text analysis (could be enhanced with AI summarization)
-        text_content = []
-        for msg in messages:
-            if msg.content:
-                text_content.append(f"{msg.sender}: {msg.content}")
-        
-        combined_text = "\n".join(text_content)
-        word_count = len(combined_text.split())
-        
-        # Simple keyword analysis based on focus
-        keywords = []
-        if focus == "issues":
-            keywords = ["error", "bug", "broken", "issue", "problem", "fail", "crash"]
-        elif focus == "features":
-            keywords = ["feature", "add", "new", "implement", "enhancement", "improve"]
-        elif focus == "bugs":
-            keywords = ["bug", "fix", "broken", "error", "crash", "issue"]
-        
-        keyword_mentions = {}
-        for keyword in keywords:
-            count = combined_text.lower().count(keyword.lower())
-            if count > 0:
-                keyword_mentions[keyword] = count
-        
-        return {
-            "status": "success",
-            "message": f"Analyzed {len(messages)} messages from {channel_id}",
-            "summary": {
-                "message_count": len(messages),
-                "word_count": word_count,
-                "focus": focus,
-                "keyword_mentions": keyword_mentions,
-                "time_range": {
-                    "earliest": messages[0].timestamp if messages else None,
-                    "latest": messages[-1].timestamp if messages else None
-                }
-            },
-            "sample_content": combined_text[:500] + "..." if len(combined_text) > 500 else combined_text
-        }
 
 
 class SetupDevelopmentWorkspaceTool(ToolInterface):
@@ -557,12 +840,12 @@ class ExploreCodebaseTool(ToolInterface):
         }
 
 
-class AnalyzeAndProposeChangeTool(ToolInterface):  # Phase 2
+class AnalyzeAndProposeChangeTool(ToolInterface):  # Phase 2 - GitHub-Centric
     """
-    Uses AI to analyze code and propose specific improvements or changes.
+    Analyze code and propose changes, posting results to GitHub Issues.
     
-    This tool takes the context from codebase exploration and generates
-    concrete, actionable change proposals with reasoning and implementation plans.
+    This tool analyzes code based on GitHub Issues or general focus areas,
+    then posts findings and proposals as GitHub Issue comments or creates new issues.
     """
     @property
     def name(self) -> str:
@@ -571,42 +854,68 @@ class AnalyzeAndProposeChangeTool(ToolInterface):  # Phase 2
     @property
     def description(self) -> str:
         return (
-            "Analyze a codebase and propose specific code changes or improvements. "
-            "Uses AI to understand code patterns, identify issues, and suggest "
-            "concrete implementations with detailed reasoning."
+            "Analyze a codebase and propose specific code changes. Can work with "
+            "a specific GitHub issue or perform general analysis. Results are "
+            "posted to GitHub issues for tracking and collaboration."
         )
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
-            "target_repo_url": "string - Repository URL to analyze",
-            "analysis_focus": "string - Focus area: 'bug_fixes', 'performance', 'code_quality', 'features', 'security', 'documentation'",
+            "repo_full_name": "string - Repository name in format 'owner/repo'",
+            "issue_number": "integer (optional) - Specific GitHub issue to analyze",
+            "analysis_focus": "string (optional) - Focus area if no issue: 'bug_fixes', 'performance', 'code_quality', 'features', 'security', 'documentation'",
             "specific_files": "list of strings (optional) - Specific files to focus analysis on",
-            "context_description": "string (optional) - Additional context about what to look for",
+            "context_description": "string (optional) - Additional context about what to analyze",
+            "create_new_issue": "boolean (optional, default: true) - Create new issue if none specified",
             "proposal_scope": "string (optional, default: 'targeted') - 'minimal', 'targeted', or 'comprehensive'"
         }
 
     async def execute(
         self, params: Dict[str, Any], context: ActionContext
     ) -> Dict[str, Any]:
-        target_repo_url = params.get("target_repo_url")
+        repo_full_name = params.get("repo_full_name")
+        issue_number = params.get("issue_number")
         analysis_focus = params.get("analysis_focus", "code_quality")
         specific_files = params.get("specific_files", [])
         context_description = params.get("context_description", "")
+        create_new_issue = params.get("create_new_issue", True)
         proposal_scope = params.get("proposal_scope", "targeted")
         
-        if not target_repo_url:
-            return {"status": "failure", "message": "target_repo_url is required"}
+        if not repo_full_name:
+            return {"status": "failure", "message": "repo_full_name is required"}
         
         try:
+            # If issue_number provided, get issue context first
+            issue_context = ""
+            if issue_number:
+                details_tool = GetGitHubIssueDetailsTool()
+                issue_result = await details_tool.execute({
+                    "repo_full_name": repo_full_name,
+                    "issue_number": issue_number
+                }, context)
+                
+                if issue_result.get("status") == "success":
+                    issue_data = issue_result["issue"]
+                    issue_context = f"GitHub Issue #{issue_number}: {issue_data['title']}\n{issue_data['body']}"
+                    analysis_focus = "issue_specific"
+                else:
+                    return {"status": "failure", "message": f"Could not fetch issue #{issue_number}"}
+            
+            # Convert repo_full_name to URL format for workspace lookup
+            target_repo_url = f"https://github.com/{repo_full_name}"
+            
             # Find workspace path from world state
             workspace_path = await self._find_workspace_path(target_repo_url, context)
             if not workspace_path:
-                return {"status": "failure", "message": f"Workspace not found for {target_repo_url}. Run SetupDevelopmentWorkspace first."}
+                return {"status": "failure", "message": f"Workspace not found for {repo_full_name}. Run SetupDevelopmentWorkspace first."}
+            
+            # Combine context
+            full_context = f"{context_description}\n{issue_context}".strip()
             
             # Analyze codebase structure and content
             analysis_result = await self._analyze_codebase(
-                workspace_path, analysis_focus, specific_files, context_description
+                workspace_path, analysis_focus, specific_files, full_context
             )
             
             # Generate AI-driven change proposals
@@ -614,25 +923,107 @@ class AnalyzeAndProposeChangeTool(ToolInterface):  # Phase 2
                 analysis_result, analysis_focus, proposal_scope, workspace_path
             )
             
-            # Create development task in world state
-            if proposals and hasattr(context, 'world_state_manager') and context.world_state_manager:
-                task_id = f"ace-proposal-{analysis_focus}-{asyncio.get_event_loop().time():.0f}"
-                await self._create_development_task(
-                    context, target_repo_url, task_id, proposals, analysis_focus
-                )
+            # Format analysis results for GitHub
+            github_content = self._format_analysis_for_github(
+                analysis_result, proposals, analysis_focus, specific_files
+            )
             
-            return {
+            # Post to GitHub
+            github_result = None
+            if issue_number:
+                # Comment on existing issue
+                comment_tool = CommentOnGitHubIssueTool()
+                github_result = await comment_tool.execute({
+                    "repo_full_name": repo_full_name,
+                    "issue_number": issue_number,
+                    "comment_body": github_content
+                }, context)
+            elif create_new_issue:
+                # Create new issue with analysis
+                create_tool = CreateGitHubIssueTool()
+                title = f"Code Analysis: {analysis_focus.replace('_', ' ').title()}"
+                if specific_files:
+                    title += f" ({', '.join(specific_files[:2])}{'...' if len(specific_files) > 2 else ''})"
+                
+                github_result = await create_tool.execute({
+                    "repo_full_name": repo_full_name,
+                    "title": title,
+                    "body": github_content,
+                    "labels": ["analysis", "enhancement"]
+                }, context)
+            
+            # Prepare response
+            result = {
                 "status": "success",
                 "analysis_focus": analysis_focus,
                 "workspace_path": str(workspace_path),
                 "proposals_count": len(proposals),
-                "proposals": proposals[:3],  # Limit to first 3 for readability
-                "all_proposals_summary": f"Generated {len(proposals)} change proposals",
-                "next_steps": "Use ImplementCodeChangesTool to apply selected proposals"
+                "repository": repo_full_name
             }
+            
+            if github_result:
+                if github_result.get("status") == "success":
+                    if issue_number:
+                        result["github_comment"] = github_result["comment"]
+                        result["message"] = f"Posted analysis to issue #{issue_number}"
+                    else:
+                        result["github_issue"] = github_result["issue"]
+                        result["message"] = f"Created issue #{github_result['issue']['number']} with analysis"
+                else:
+                    result["github_error"] = github_result.get("message")
+                    result["message"] = "Analysis completed but failed to post to GitHub"
+            else:
+                result["message"] = "Analysis completed (no GitHub posting requested)"
+            
+            result["next_steps"] = "Use ImplementCodeChangesTool to apply proposed changes"
+            
+            return result
             
         except Exception as e:
             return {"status": "failure", "message": f"Error analyzing codebase: {str(e)}"}
+    
+    def _format_analysis_for_github(
+        self, analysis_result: Dict[str, Any], proposals: List[Dict[str, Any]], 
+        focus: str, files: List[str]
+    ) -> str:
+        """Format analysis results for GitHub issue/comment."""
+        content = f"## Code Analysis Results\n\n"
+        content += f"**Focus:** {focus.replace('_', ' ').title()}\n"
+        
+        if files:
+            content += f"**Files Analyzed:** {', '.join(files)}\n"
+        
+        content += f"\n### Analysis Summary\n"
+        
+        if analysis_result.get("issues_found"):
+            content += f"**Issues Found:** {len(analysis_result['issues_found'])}\n"
+            for issue in analysis_result["issues_found"][:5]:  # Limit to 5
+                content += f"- {issue.get('description', 'Issue identified')}\n"
+        
+        if analysis_result.get("metrics"):
+            content += f"\n**Code Metrics:**\n"
+            metrics = analysis_result["metrics"]
+            for key, value in metrics.items():
+                content += f"- {key.replace('_', ' ').title()}: {value}\n"
+        
+        if proposals:
+            content += f"\n### Proposed Changes ({len(proposals)} total)\n"
+            for i, proposal in enumerate(proposals[:3], 1):  # Show first 3
+                content += f"\n#### Proposal {i}: {proposal.get('title', 'Code Change')}\n"
+                content += f"**Priority:** {proposal.get('priority', 'Medium')}\n"
+                content += f"**Files:** {', '.join(proposal.get('affected_files', []))}\n"
+                content += f"**Description:** {proposal.get('description', 'No description')}\n"
+                
+                if proposal.get("implementation_plan"):
+                    content += f"**Implementation:**\n{proposal['implementation_plan']}\n"
+        
+        content += f"\n### Next Steps\n"
+        content += f"1. Review the proposed changes above\n"
+        content += f"2. Use `ImplementCodeChangesTool` to apply selected changes\n"
+        content += f"3. Test the implementation\n"
+        content += f"4. Create a pull request with the changes\n"
+        
+        return content
 
     async def _find_workspace_path(self, target_repo_url: str, context: ActionContext) -> Optional[Path]:
         """Find the local workspace path for a target repository."""
@@ -1154,172 +1545,3 @@ class CreatePullRequestTool(ToolInterface):  # Phase 3
         except Exception as e:
             return {"status": "failure", "message": f"Error creating PR: {str(e)}"}
 
-
-class ACEOrchestratorTool(ToolInterface):  # Phase 3
-    """
-    High-level orchestrator for complete ACE workflows.
-    
-    This tool manages the entire lifecycle from repository analysis
-    to PR creation, coordinating all ACE tools in sequence.
-    """
-    @property
-    def name(self) -> str:
-        return "ACEOrchestrator"
-
-    @property
-    def description(self) -> str:
-        return (
-            "Orchestrate a complete Autonomous Code Evolution workflow. "
-            "Manages the full cycle: setup → exploration → analysis → "
-            "proposal → implementation → PR creation."
-        )
-
-    @property
-    def parameters_schema(self) -> Dict[str, Any]:
-        return {
-            "target_repo_url": "string - GitHub repository URL to improve",
-            "improvement_focus": "string - Focus area: 'bug_fixes', 'performance', 'code_quality', 'features', 'security', 'documentation'",
-            "workflow_scope": "string (optional, default: 'targeted') - 'minimal', 'targeted', or 'comprehensive'",
-            "context_description": "string (optional) - Additional context about what to improve",
-            "auto_implement": "boolean (optional, default: false) - Whether to auto-implement changes or wait for approval",
-            "create_pr": "boolean (optional, default: true) - Whether to automatically create PR"
-        }
-
-    async def execute(
-        self, params: Dict[str, Any], context: ActionContext
-    ) -> Dict[str, Any]:
-        target_repo_url = params.get("target_repo_url")
-        improvement_focus = params.get("improvement_focus", "code_quality")
-        workflow_scope = params.get("workflow_scope", "targeted")
-        context_description = params.get("context_description", "")
-        auto_implement = params.get("auto_implement", False)
-        create_pr = params.get("create_pr", True)
-        
-        if not target_repo_url:
-            return {"status": "failure", "message": "target_repo_url is required"}
-        
-        workflow_id = f"ace-workflow-{improvement_focus}-{asyncio.get_event_loop().time():.0f}"
-        results = {"workflow_id": workflow_id, "steps": []}
-        
-        try:
-            # Step 1: Setup Development Workspace
-            setup_result = await self._execute_setup(target_repo_url, workflow_id, context)
-            results["steps"].append(("setup", setup_result))
-            
-            if setup_result.get("status") != "success":
-                return {"status": "failure", "message": "Workspace setup failed", "results": results}
-            
-            # Step 2: Explore Codebase
-            explore_result = await self._execute_exploration(target_repo_url, context)
-            results["steps"].append(("exploration", explore_result))
-            
-            # Step 3: Analyze and Propose Changes
-            analyze_result = await self._execute_analysis(
-                target_repo_url, improvement_focus, context_description, workflow_scope, context
-            )
-            results["steps"].append(("analysis", analyze_result))
-            
-            if analyze_result.get("status") != "success":
-                return {"status": "partial_success", "message": "Analysis failed", "results": results}
-            
-            # Step 4: Implement Changes (if auto_implement or no proposals)
-            implement_result = None
-            if auto_implement or analyze_result.get("proposals_count", 0) == 0:
-                implement_result = await self._execute_implementation(
-                    target_repo_url, workflow_id, context
-                )
-                results["steps"].append(("implementation", implement_result))
-            
-            # Step 5: Create PR (if changes were implemented and create_pr is True)
-            pr_result = None
-            if create_pr and implement_result and implement_result.get("status") == "success":
-                pr_result = await self._execute_pr_creation(
-                    target_repo_url, improvement_focus, workflow_id, context
-                )
-                results["steps"].append(("pr_creation", pr_result))
-            
-            # Determine overall status
-            if pr_result and pr_result.get("status") == "success":
-                status = "complete"
-                message = f"ACE workflow completed successfully: {pr_result.get('pr_url')}"
-            elif implement_result and implement_result.get("status") == "success":
-                status = "implemented"
-                message = "Changes implemented successfully, ready for PR creation"
-            elif analyze_result.get("proposals_count", 0) > 0:
-                status = "proposals_ready"
-                message = f"Analysis complete, {analyze_result.get('proposals_count')} proposals generated"
-            else:
-                status = "analyzed"
-                message = "Codebase analyzed, no immediate improvements identified"
-            
-            return {
-                "status": status,
-                "message": message,
-                "workflow_id": workflow_id,
-                "improvement_focus": improvement_focus,
-                "results": results
-            }
-            
-        except Exception as e:
-            return {
-                "status": "failure", 
-                "message": f"ACE workflow error: {str(e)}",
-                "workflow_id": workflow_id,
-                "results": results
-            }
-
-    async def _execute_setup(self, target_repo_url: str, workflow_id: str, context: ActionContext):
-        """Execute workspace setup step."""
-        setup_tool = SetupDevelopmentWorkspaceTool()
-        params = {
-            "target_repo_url": target_repo_url,
-            "task_id": workflow_id,
-            "task_description": "ACE automated workflow",
-            "workspace_base_path": f"/tmp/ace_workflows"
-        }
-        return await setup_tool.execute(params, context)
-
-    async def _execute_exploration(self, target_repo_url: str, context: ActionContext):
-        """Execute codebase exploration step."""
-        explore_tool = ExploreCodebaseTool()
-        params = {
-            "target_repo_url": target_repo_url,
-            "exploration_type": "overview"
-        }
-        return await explore_tool.execute(params, context)
-
-    async def _execute_analysis(
-        self, target_repo_url: str, focus: str, context_desc: str, scope: str, context: ActionContext
-    ):
-        """Execute analysis and proposal generation step."""
-        analyze_tool = AnalyzeAndProposeChangeTool()
-        params = {
-            "target_repo_url": target_repo_url,
-            "analysis_focus": focus,
-            "context_description": context_desc,
-            "proposal_scope": scope
-        }
-        return await analyze_tool.execute(params, context)
-
-    async def _execute_implementation(self, target_repo_url: str, workflow_id: str, context: ActionContext):
-        """Execute implementation step."""
-        implement_tool = ImplementCodeChangesTool()
-        params = {
-            "target_repo_url": target_repo_url,
-            "task_id": workflow_id,
-            "commit_message": f"ACE: Automated improvements ({workflow_id})"
-        }
-        return await implement_tool.execute(params, context)
-
-    async def _execute_pr_creation(
-        self, target_repo_url: str, focus: str, workflow_id: str, context: ActionContext
-    ):
-        """Execute PR creation step."""
-        pr_tool = CreatePullRequestTool()
-        params = {
-            "target_repo_url": target_repo_url,
-            "pr_title": f"ACE: {focus.replace('_', ' ').title()} Improvements",
-            "pr_description": f"Automated code improvements generated by ACE workflow {workflow_id}",
-            "draft": True
-        }
-        return await pr_tool.execute(params, context)

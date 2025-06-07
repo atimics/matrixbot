@@ -330,10 +330,11 @@ class MainOrchestrator:
         from ...tools.web_tools import WebSearchTool
         from ...tools.research_tools import UpdateResearchTool, QueryResearchTool
         from ...tools.developer_tools import (
-            GetCodebaseStructureTool, UpdateProjectPlanTool, SummarizeChannelTool,
-            SetupDevelopmentWorkspaceTool, ExploreCodebaseTool,
+            GetGitHubIssuesTool, GetGitHubIssueDetailsTool, CommentOnGitHubIssueTool,
+            CreateGitHubIssueTool, AnalyzeChannelForIssuesTool,
+            GetCodebaseStructureTool, SetupDevelopmentWorkspaceTool, ExploreCodebaseTool,
             AnalyzeAndProposeChangeTool, ImplementCodeChangesTool,
-            CreatePullRequestTool, ACEOrchestratorTool
+            CreatePullRequestTool
         )
         
         # Core tools
@@ -389,16 +390,21 @@ class MainOrchestrator:
         
         # Permaweb tools
         self.tool_registry.register_tool(StorePermanentMemoryTool())
-        # Developer tools (ACE Phase 1, 2 & 3)
+        
+        # GitHub-Centric Developer tools (ACE Phase 2 & 3)
+        self.tool_registry.register_tool(GetGitHubIssuesTool())
+        self.tool_registry.register_tool(GetGitHubIssueDetailsTool())
+        self.tool_registry.register_tool(CommentOnGitHubIssueTool())
+        self.tool_registry.register_tool(CreateGitHubIssueTool())
+        self.tool_registry.register_tool(AnalyzeChannelForIssuesTool())
+        
+        # Core Developer tools (ACE Phase 1, 2 & 3)
         self.tool_registry.register_tool(GetCodebaseStructureTool())
         self.tool_registry.register_tool(SetupDevelopmentWorkspaceTool())
         self.tool_registry.register_tool(ExploreCodebaseTool())
         self.tool_registry.register_tool(AnalyzeAndProposeChangeTool())
         self.tool_registry.register_tool(ImplementCodeChangesTool())
         self.tool_registry.register_tool(CreatePullRequestTool())
-        self.tool_registry.register_tool(ACEOrchestratorTool())
-        self.tool_registry.register_tool(UpdateProjectPlanTool())
-        self.tool_registry.register_tool(SummarizeChannelTool())
 
     async def start(self) -> None:
         """Start the entire orchestrator system."""
