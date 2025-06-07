@@ -719,13 +719,14 @@ class MainOrchestrator:
         """Register integrations from environment variables if they don't exist."""
         logger.info("Checking for integrations to register from environment variables...")
         
+        # Get existing integrations
+        existing_integrations = await self.integration_manager.list_integrations()
+        
         # Check for Farcaster integration
         if (settings.NEYNAR_API_KEY and 
             settings.FARCASTER_BOT_FID and 
             settings.FARCASTER_BOT_SIGNER_UUID):
             
-            # Check if Farcaster integration already exists
-            existing_integrations = await self.integration_manager.list_integrations()
             farcaster_exists = any(
                 integration.get('integration_type') == 'farcaster' 
                 for integration in existing_integrations
@@ -751,6 +752,13 @@ class MainOrchestrator:
                     logger.error(f"Failed to register Farcaster integration: {e}")
             else:
                 logger.info("Farcaster integration already exists, skipping registration")
+                # Clean up any invalid credentials for existing integration
+                farcaster_integration = next(
+                    (integration for integration in existing_integrations 
+                     if integration.get('integration_type') == 'farcaster'), None
+                )
+                if farcaster_integration:
+                    await self.integration_manager.clean_invalid_credentials(farcaster_integration['id'])
         else:
             logger.debug("Farcaster environment variables not fully configured, skipping auto-registration")
         
@@ -759,8 +767,6 @@ class MainOrchestrator:
             settings.MATRIX_USER_ID and 
             settings.MATRIX_PASSWORD):
             
-            # Check if Matrix integration already exists
-            existing_integrations = await self.integration_manager.list_integrations()
             matrix_exists = any(
                 integration.get('integration_type') == 'matrix' 
                 for integration in existing_integrations
@@ -787,5 +793,12 @@ class MainOrchestrator:
                     logger.error(f"Failed to register Matrix integration: {e}")
             else:
                 logger.info("Matrix integration already exists, skipping registration")
+                # Clean up any invalid credentials for existing integration
+                matrix_integration = next(
+                    (integration for integration in existing_integrations 
+                     if integration.get('integration_type') == 'matrix'), None
+                )
+                if matrix_integration:
+                    await self.integration_manager.clean_invalid_credentials(matrix_integration['id'])
         else:
             logger.debug("Matrix environment variables not fully configured, skipping auto-registration")
