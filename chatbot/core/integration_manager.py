@@ -31,6 +31,10 @@ class IntegrationManager:
         self.active_integrations: Dict[str, Integration] = {}
         self.integration_types: Dict[str, Type[Integration]] = {}
         
+        # For in-memory databases, we need to maintain a persistent connection
+        self._persistent_db = None
+        self._is_memory_db = db_path == ":memory:"
+        
         # Initialize encryption for credentials
         if encryption_key:
             self.cipher = Fernet(encryption_key)
@@ -41,13 +45,42 @@ class IntegrationManager:
             
     async def initialize(self):
         """Initialize the integration manager and database schema"""
+        if self._is_memory_db:
+            # For in-memory databases, create a persistent connection
+            self._persistent_db = await aiosqlite.connect(self.db_path)
+            
         await self._create_database_schema()
         await self._register_integration_types()
         logger.info("IntegrationManager initialized")
+    
+    async def _get_db_connection(self):
+        """Get a database connection, reusing persistent connection for in-memory databases"""
+        if self._is_memory_db and self._persistent_db:
+            return self._persistent_db
+        else:
+            return aiosqlite.connect(self.db_path)
+    
+    async def _execute_db_operation(self, operation_func):
+        """Execute a database operation with proper connection handling"""
+        if self._is_memory_db:
+            # Use persistent connection for in-memory database
+            return await operation_func(self._persistent_db)
+        else:
+            # Use context manager for file databases
+            async with aiosqlite.connect(self.db_path) as db:
+                return await operation_func(db)
+            
+    async def cleanup(self):
+        """Clean up resources"""
+        if self._persistent_db:
+            await self._persistent_db.close()
+            self._persistent_db = None
         
     async def _create_database_schema(self):
         """Create the database tables for integration management"""
-        async with aiosqlite.connect(self.db_path) as db:
+        if self._is_memory_db:
+            # Use persistent connection for in-memory database
+            db = self._persistent_db
             # Integrations table
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS integrations (
@@ -76,6 +109,37 @@ class IntegrationManager:
             """)
             
             await db.commit()
+        else:
+            # Use regular connection for file databases
+            async with aiosqlite.connect(self.db_path) as db:
+                # Integrations table
+                await db.execute("""
+                    CREATE TABLE IF NOT EXISTS integrations (
+                        id TEXT PRIMARY KEY,
+                        user_id TEXT,
+                        integration_type TEXT NOT NULL,
+                        display_name TEXT NOT NULL,
+                        is_active BOOLEAN DEFAULT TRUE,
+                        config TEXT NOT NULL,
+                        created_at REAL NOT NULL,
+                        updated_at REAL NOT NULL
+                    )
+                """)
+                
+                # Credentials table
+                await db.execute("""
+                    CREATE TABLE IF NOT EXISTS credentials (
+                        id TEXT PRIMARY KEY,
+                        integration_id TEXT NOT NULL,
+                        credential_key TEXT NOT NULL,
+                        credential_value_encrypted BLOB NOT NULL,
+                        created_at REAL NOT NULL,
+                        FOREIGN KEY (integration_id) REFERENCES integrations (id) ON DELETE CASCADE,
+                        UNIQUE(integration_id, credential_key)
+                    )
+                """)
+                
+                await db.commit()
             
     async def _register_integration_types(self):
         """Register available integration types"""
@@ -124,7 +188,7 @@ class IntegrationManager:
         integration_id = str(uuid.uuid4())
         current_time = asyncio.get_event_loop().time()
         
-        async with aiosqlite.connect(self.db_path) as db:
+        async def db_operation(db):
             # Store integration configuration
             await db.execute("""
                 INSERT INTO integrations (
@@ -150,6 +214,8 @@ class IntegrationManager:
                 ))
                 
             await db.commit()
+        
+        await self._execute_db_operation(db_operation)
             
         logger.info(f"Added integration {display_name} ({integration_type}) with ID {integration_id}")
         return integration_id
@@ -239,11 +305,13 @@ class IntegrationManager:
         """
         results = {}
         
-        async with aiosqlite.connect(self.db_path) as db:
+        async def db_operation(db):
             cursor = await db.execute("""
                 SELECT id FROM integrations WHERE is_active = TRUE
             """)
-            rows = await cursor.fetchall()
+            return await cursor.fetchall()
+        
+        rows = await self._execute_db_operation(db_operation)
             
         for row in rows:
             integration_id = row[0]
@@ -281,12 +349,14 @@ class IntegrationManager:
         """List all configured integrations with their status"""
         integrations = []
         
-        async with aiosqlite.connect(self.db_path) as db:
+        async def db_operation(db):
             cursor = await db.execute("""
                 SELECT id, integration_type, display_name, is_active 
                 FROM integrations ORDER BY created_at
             """)
-            rows = await cursor.fetchall()
+            return await cursor.fetchall()
+        
+        rows = await self._execute_db_operation(db_operation)
             
         for row in rows:
             integration_id, integration_type, display_name, is_active = row
@@ -337,12 +407,14 @@ class IntegrationManager:
             
     async def _load_integration_data(self, integration_id: str) -> Optional[Dict[str, Any]]:
         """Load integration configuration from database"""
-        async with aiosqlite.connect(self.db_path) as db:
+        async def db_operation(db):
             cursor = await db.execute("""
                 SELECT integration_type, display_name, is_active, config
                 FROM integrations WHERE id = ?
             """, (integration_id,))
-            row = await cursor.fetchone()
+            return await cursor.fetchone()
+            
+        row = await self._execute_db_operation(db_operation)
             
         if row:
             return {
@@ -357,12 +429,14 @@ class IntegrationManager:
         """Load and decrypt credentials for an integration"""
         credentials = {}
         
-        async with aiosqlite.connect(self.db_path) as db:
+        async def db_operation(db):
             cursor = await db.execute("""
                 SELECT credential_key, credential_value_encrypted
                 FROM credentials WHERE integration_id = ?
             """, (integration_id,))
-            rows = await cursor.fetchall()
+            return await cursor.fetchall()
+            
+        rows = await self._execute_db_operation(db_operation)
             
         for row in rows:
             cred_key, encrypted_value = row
@@ -416,7 +490,7 @@ class IntegrationManager:
             
     async def clean_invalid_credentials(self, integration_id: str) -> None:
         """Clean up credentials that can't be decrypted (due to key changes)"""
-        async with aiosqlite.connect(self.db_path) as db:
+        async def db_operation(db):
             cursor = await db.execute("""
                 SELECT credential_key, credential_value_encrypted, rowid
                 FROM credentials WHERE integration_id = ?
@@ -440,10 +514,8 @@ class IntegrationManager:
                 """, invalid_rowids)
                 await db.commit()
                 logger.info(f"Cleaned up {len(invalid_rowids)} invalid credentials for integration '{integration_id}'")
-
-    def get_available_integration_types(self) -> List[str]:
-        """Get list of available integration types"""
-        return list(self.integration_types.keys())
+        
+        await self._execute_db_operation(db_operation)
         
     def get_active_integrations(self) -> Dict[str, Integration]:
         """Get currently active integration instances"""

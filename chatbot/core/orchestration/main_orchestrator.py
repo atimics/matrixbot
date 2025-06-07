@@ -117,6 +117,78 @@ class TraditionalProcessor:
                 }
             )
 
+    async def _execute_actions(self, actions: list) -> None:
+        """
+        Execute a list of actions with coordination logic.
+        
+        This method handles special coordination cases like injecting generated
+        image URLs into posting actions.
+        """
+        # Track results from executed actions for coordination
+        execution_results = {}
+        
+        # Sort actions by priority (higher priority first)
+        sorted_actions = sorted(actions, key=lambda a: getattr(a, 'priority', 0), reverse=True)
+        
+        for action in sorted_actions:
+            try:
+                # Check for coordination opportunities
+                if action.action_type in ["send_farcaster_post", "send_matrix_message"]:
+                    # Check if we have a generated image to coordinate with
+                    if "generate_image" in execution_results:
+                        image_result = execution_results["generate_image"]
+                        if image_result.get("status") == "success" and "embed_page_url" in image_result:
+                            # Inject the embed URL into the posting action
+                            action.parameters["embed_url"] = image_result["embed_page_url"]
+                
+                # Execute the action
+                result = await self._execute_action_and_return_result(action)
+                execution_results[action.action_type] = result
+                
+            except Exception as e:
+                logger.error(f"Error executing action {action.action_type}: {e}")
+                execution_results[action.action_type] = {"status": "error", "error": str(e)}
+    
+    async def _execute_action_and_return_result(self, action: ActionPlan) -> dict:
+        """Execute a single action and return the result for coordination."""
+        try:
+            # Get the tool from registry
+            tool = self.tool_registry.get_tool(action.action_type)
+            if not tool:
+                logger.error(f"Tool not found: {action.action_type}")
+                return {"status": "error", "error": f"Tool not found: {action.action_type}"}
+                
+            # Execute the tool with parameters and context
+            result = await tool.execute(action.parameters, self.action_context)
+            
+            # Log the action result
+            await self.context_manager.add_tool_result(
+                channel_id="system",  # Use system channel for orchestrator actions
+                tool_name=action.action_type,
+                result={
+                    "status": result.get("status", "unknown"),
+                    "message": result.get("message", str(result)),
+                    "reasoning": action.reasoning,
+                    "parameters": action.parameters
+                }
+            )
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error executing action {action.action_type}: {e}")
+            # Log the failed action
+            await self.context_manager.add_tool_result(
+                channel_id="system",
+                tool_name=action.action_type,
+                result={
+                    "status": "error",
+                    "message": f"Error: {str(e)}",
+                    "reasoning": action.reasoning,
+                    "parameters": action.parameters
+                }
+            )
+            return {"status": "error", "error": str(e)}
 
 @dataclass
 class OrchestratorConfig:
@@ -382,6 +454,9 @@ class MainOrchestrator:
         
         # Disconnect all integrations
         await self.integration_manager.disconnect_all()
+        
+        # Clean up integration manager resources
+        await self.integration_manager.cleanup()
         
         # Stop external observers (legacy compatibility)
         if self.matrix_observer:
@@ -656,7 +731,7 @@ class MainOrchestrator:
     async def _execute_action(self, action) -> None:
         """Execute a single action - wrapper for test compatibility."""
         if hasattr(self.processing_hub, 'traditional_processor') and self.processing_hub.traditional_processor:
-            await self.processing_hub.traditional_processor._execute_actions([action])
+            await self.processing_hub.traditional_processor._execute_action(action)
         else:
             logger.warning("No traditional processor available, executing action directly")
             # For test compatibility, execute matrix actions directly

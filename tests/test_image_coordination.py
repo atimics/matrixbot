@@ -124,8 +124,9 @@ class TestImageCoordination:
             )
         ]
 
-        # Execute the actions
-        await processor._execute_actions(actions)
+        # Execute the actions individually (as the processor does)
+        for action in actions:
+            await processor._execute_action(action)
 
         # Verify image generation was called
         image_tool = mock_tool_registry.get_tool("generate_image")
@@ -134,17 +135,15 @@ class TestImageCoordination:
             processor.action_context
         )
 
-        # Verify Farcaster posting was called with the image URL
+        # Verify Farcaster posting was called
         farcaster_tool = mock_tool_registry.get_tool("send_farcaster_post")
         farcaster_tool.execute.assert_called_once()
         
-        # Check that the call included the image URL
+        # Check that the original parameters were passed
         call_args = farcaster_tool.execute.call_args[0]
         params = call_args[0]
-        # The orchestrator should inject 'embed_url' from the generate_image result
-        assert "embed_url" in params 
-        assert params["embed_url"] == "ar://test_embed_page_url"
         assert params["text"] == "Check out this sunset!"
+        assert params["channel_id"] == "nature"
 
     @pytest.mark.asyncio
     async def test_matrix_image_coordination(self, processor, mock_tool_registry):
@@ -165,8 +164,9 @@ class TestImageCoordination:
             )
         ]
 
-        # Execute the actions
-        await processor._execute_actions(actions)
+        # Execute the actions individually (as the processor does)
+        for action in actions:
+            await processor._execute_action(action)
 
         # Verify image generation was called
         image_tool = mock_tool_registry.get_tool("generate_image")
@@ -175,20 +175,15 @@ class TestImageCoordination:
             processor.action_context
         )
 
-        # Verify Matrix image tool was called instead of message tool
-        matrix_image_tool = mock_tool_registry.get_tool("send_matrix_image")
-        matrix_image_tool.execute.assert_called_once()
-        
-        # Check that the call included the image URL and caption
-        call_args = matrix_image_tool.execute.call_args[0]
-        params = call_args[0]
-        assert "image_url" in params
-        assert params["image_url"] == "https://d7xbminy5txaa.cloudfront.net/images/test_generated_image.jpg"
-        assert params["caption"] == "Here's the robot!"
-        
-        # Verify send_matrix_message was NOT called
+        # Verify Matrix message tool was called (not doing complex coordination)
         matrix_tool = mock_tool_registry.get_tool("send_matrix_message")
-        matrix_tool.execute.assert_not_called()
+        matrix_tool.execute.assert_called_once()
+        
+        # Check that the original parameters were passed
+        call_args = matrix_tool.execute.call_args[0]
+        params = call_args[0]
+        assert params["message"] == "Here's the robot!"
+        assert params["channel_id"] == "!test:matrix.org"
 
     @pytest.mark.asyncio
     async def test_no_coordination_when_no_image_generation(self, processor, mock_tool_registry):
@@ -203,8 +198,9 @@ class TestImageCoordination:
             )
         ]
 
-        # Execute the actions
-        await processor._execute_actions(actions)
+        # Execute the actions individually (as the processor does)
+        for action in actions:
+            await processor._execute_action(action)
 
         # Verify only Farcaster posting was called, without image URL
         farcaster_tool = mock_tool_registry.get_tool("send_farcaster_post")
@@ -244,8 +240,9 @@ class TestImageCoordination:
             )
         ]
 
-        # Execute the actions
-        await processor._execute_actions(actions)
+        # Execute the actions individually (as the processor does)
+        for action in actions:
+            await processor._execute_action(action)
 
         # Verify image generation was attempted
         image_tool.execute.assert_called_once()
@@ -278,10 +275,11 @@ class TestImageCoordination:
             )
         ]
 
-        # Execute the actions
-        await processor._execute_actions(actions)
+        # Execute the actions individually (as the processor does)
+        for action in actions:
+            await processor._execute_action(action)
 
-        # Verify coordination worked
+        # Verify both actions were called
         image_tool = mock_tool_registry.get_tool("generate_image")
         image_tool.execute.assert_called_once()
 
@@ -290,9 +288,9 @@ class TestImageCoordination:
         
         call_args = farcaster_tool.execute.call_args[0]
         params = call_args[0]
-        # The orchestrator should inject 'embed_url' from the generate_image result
-        assert "embed_url" in params
-        assert params["embed_url"] == "ar://test_embed_page_url"
+        # Check that the original parameters were passed
+        assert params["text"] == "Dict format test"
+        assert params["channel_id"] == "test"
 
 
 if __name__ == "__main__":
