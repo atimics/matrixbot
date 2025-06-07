@@ -5,14 +5,12 @@ import asyncio
 import json
 import logging
 import os
-from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Annotated
 
 import uvicorn
 from arweave import Wallet, Transaction
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Depends, Header
 from fastapi.responses import JSONResponse
-from typing import Annotated
 
 # Configure logging
 logging.basicConfig(
@@ -30,74 +28,21 @@ class ArweaveWalletManager:
         self.wallet: Optional[Wallet] = None
         
     async def initialize(self):
-        """Initialize the wallet"""
+        """Initialize the wallet by loading it from the guaranteed path."""
         try:
-            await self._load_or_generate_wallet()
-            if self.wallet:
-                logger.info("ArweaveWalletManager initialized successfully")
-            else:
-                logger.error("Failed to initialize wallet")
+            # The entrypoint script guarantees this file exists.
+            logger.info(f"Loading wallet from {self.wallet_file_path}")
+            self.wallet = Wallet(self.wallet_file_path)
+            logger.info(f"Wallet loaded successfully. Address: {self.wallet.address}")
+        except FileNotFoundError:
+            logger.error(f"CRITICAL: Wallet file not found at {self.wallet_file_path}. The entrypoint script should have created it.")
+            # The service will fail health checks if the wallet is not initialized.
+            self.wallet = None
         except Exception as e:
             logger.error(f"Failed to initialize ArweaveWalletManager: {e}", exc_info=True)
-            
-    async def _load_or_generate_wallet(self):
-        """Load existing wallet or generate a new one"""
-        wallet_path = Path(self.wallet_file_path)
-        
-        try:
-            if wallet_path.exists():
-                # Load existing wallet
-                logger.info(f"Loading existing wallet from {wallet_path}")
-                with open(wallet_path, 'r') as f:
-                    jwk_data = json.load(f)
-                self.wallet = Wallet.from_data(jwk_data)
-                logger.info(f"Wallet loaded successfully. Address: {self.wallet.address}")
-            else:
-                # Generate new wallet using RSA keys
-                logger.info("No existing wallet found. Generating new wallet...")
-                
-                # Generate RSA key pair
-                from arweave.arweave_lib import RSA, base64url_encode, base64url_decode
-                import base64
-                
-                # Generate 4096-bit RSA key
-                rsa_key = RSA.generate(4096)
-                
-                # Convert to JWK format that Arweave expects
-                jwk_data = {
-                    "kty": "RSA",
-                    "d": base64url_encode(rsa_key.d.to_bytes((rsa_key.d.bit_length() + 7) // 8, 'big')),
-                    "dp": base64url_encode(rsa_key.dq.to_bytes((rsa_key.dq.bit_length() + 7) // 8, 'big')),
-                    "dq": base64url_encode(rsa_key.dp.to_bytes((rsa_key.dp.bit_length() + 7) // 8, 'big')),
-                    "e": base64url_encode(rsa_key.e.to_bytes((rsa_key.e.bit_length() + 7) // 8, 'big')),
-                    "n": base64url_encode(rsa_key.n.to_bytes((rsa_key.n.bit_length() + 7) // 8, 'big')),
-                    "p": base64url_encode(rsa_key.p.to_bytes((rsa_key.p.bit_length() + 7) // 8, 'big')),
-                    "q": base64url_encode(rsa_key.q.to_bytes((rsa_key.q.bit_length() + 7) // 8, 'big')),
-                    "qi": base64url_encode(rsa_key.u.to_bytes((rsa_key.u.bit_length() + 7) // 8, 'big'))
-                }
-                
-                # Create wallet from JWK data
-                self.wallet = Wallet.from_data(jwk_data)
-                
-                # Ensure directory exists
-                wallet_path.parent.mkdir(parents=True, exist_ok=True)
-                
-                # Save wallet
-                with open(wallet_path, 'w') as f:
-                    json.dump(jwk_data, f, indent=2)
-                
-                # Set restrictive permissions
-                try:
-                    os.chmod(wallet_path, 0o600)
-                except OSError as e:
-                    logger.warning(f"Could not set restrictive permissions on wallet file: {e}")
-                
-                logger.info(f"New wallet generated and saved. Address: {self.wallet.address}")
-                logger.info("*** IMPORTANT: Please fund this wallet with AR tokens to enable uploads ***")
-                
-        except Exception as e:
-            logger.error(f"Error loading/generating wallet: {e}", exc_info=True)
             self.wallet = None
+            
+
             
     def get_wallet_address(self) -> Optional[str]:
         """Get the wallet's public address"""
