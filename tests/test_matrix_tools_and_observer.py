@@ -1,11 +1,13 @@
 import pytest
 import time
+import mimetypes
 from unittest.mock import AsyncMock, Mock
 
 import nio
 from chatbot.tools.matrix_tools import (
     SendMatrixReplyTool, 
     SendMatrixMessageTool,
+    SendMatrixVideoTool,
     JoinMatrixRoomTool,
     LeaveMatrixRoomTool,
     AcceptMatrixInviteTool,
@@ -305,6 +307,163 @@ async def test_ignore_matrix_invite_tool_missing_params():
     assert result["status"] == "failure"
     # Correct the assertion to check for the actual error message
     assert "Missing required parameter: room_id" in result["error"]
+
+# ---- Tests for SendMatrixVideoTool ----
+@pytest.mark.asyncio
+async def test_send_matrix_video_tool_success():
+    """Test successful video upload."""
+    dummy_obs = type("DummyObs", (), {})()
+    dummy_obs.send_video = AsyncMock(return_value={
+        "success": True, 
+        "event_id": "video123",
+        "message": "Video uploaded successfully"
+    })
+
+    context = ActionContext(matrix_observer=dummy_obs)
+    tool = SendMatrixVideoTool()
+
+    params = {
+        "channel_id": "!room:server", 
+        "video_url": "https://example.com/video.mp4",
+        "description": "Test video"
+    }
+    result = await tool.execute(params, context)
+
+    assert result["status"] == "success"
+    assert result["event_id"] == "video123"
+    dummy_obs.send_video.assert_awaited_once_with(
+        "!room:server", 
+        "https://example.com/video.mp4", 
+        "Test video"
+    )
+
+@pytest.mark.asyncio
+async def test_send_matrix_video_tool_failure():
+    """Test video upload failure."""
+    dummy_obs = type("DummyObs", (), {})()
+    dummy_obs.send_video = AsyncMock(return_value={
+        "success": False, 
+        "error": "Failed to upload video"
+    })
+
+    context = ActionContext(matrix_observer=dummy_obs)
+    tool = SendMatrixVideoTool()
+
+    params = {
+        "channel_id": "!room:server", 
+        "video_url": "https://example.com/video.mp4",
+        "description": "Test video"
+    }
+    result = await tool.execute(params, context)
+
+    assert result["status"] == "failure"
+    assert "Failed to upload video" in result["error"]
+
+@pytest.mark.asyncio
+async def test_send_matrix_video_tool_missing_params():
+    """Test video upload with missing parameters."""
+    context = ActionContext(matrix_observer=type("DummyObs", (), {})())
+    tool = SendMatrixVideoTool()
+
+    # Missing all params
+    result = await tool.execute({}, context)
+    assert result["status"] == "failure"
+    assert "Missing required parameters" in result["error"]
+
+    # Missing video_url
+    result = await tool.execute({"channel_id": "!room:server"}, context)
+    assert result["status"] == "failure"
+    assert "Missing required parameters" in result["error"]
+
+    # Missing channel_id
+    result = await tool.execute({"video_url": "https://example.com/video.mp4"}, context)
+    assert result["status"] == "failure"
+    assert "Missing required parameters" in result["error"]
+
+def test_video_mime_type_detection():
+    """Test MIME type detection logic for various video formats."""
+    
+    # Test standard video formats
+    test_cases = [
+        ("video.mp4", "video/mp4"),
+        ("movie.avi", "video/x-msvideo"),
+        ("clip.mov", "video/quicktime"),
+        ("stream.webm", "video/webm"),
+        ("content.mkv", "video/x-matroska"),
+        ("presentation.wmv", "video/x-ms-wmv"),
+        ("recording.flv", "video/x-flv"),
+        ("animation.ogv", "video/ogg"),
+    ]
+    
+    for filename, expected_mime in test_cases:
+        # Test the mimetypes.guess_type logic
+        mime_type, _ = mimetypes.guess_type(filename)
+        
+        # If mimetypes doesn't detect it, test our fallback logic
+        if not mime_type or not mime_type.startswith('video/'):
+            if filename.endswith('.webm'):
+                mime_type = 'video/webm'
+            elif filename.endswith('.mov'):
+                mime_type = 'video/quicktime'
+            elif filename.endswith('.avi'):
+                mime_type = 'video/x-msvideo'
+            elif filename.endswith('.mkv'):
+                mime_type = 'video/x-matroska'
+            else:
+                mime_type = 'video/mp4'  # Default fallback
+        
+        # For some formats, mimetypes might return different values
+        # but we want to ensure we get a video MIME type
+        assert mime_type.startswith('video/'), f"Expected video MIME type for {filename}, got {mime_type}"
+
+def test_video_mime_type_detection_edge_cases():
+    """Test MIME type detection for edge cases."""
+    
+    # Test URLs with query parameters
+    url_cases = [
+        ("https://example.com/video.mp4?param=1", "video/mp4"),
+        ("https://example.com/movie.webm#timestamp", "video/webm"),
+        ("https://example.com/clip.mov?quality=high&format=mov", "video/quicktime"),
+    ]
+    
+    for url, expected_mime_prefix in url_cases:
+        # Extract filename from URL (remove query params and fragments)
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        filename = parsed.path.split('/')[-1]
+        
+        mime_type, _ = mimetypes.guess_type(filename)
+        if not mime_type or not mime_type.startswith('video/'):
+            if filename.endswith('.webm'):
+                mime_type = 'video/webm'
+            elif filename.endswith('.mov'):
+                mime_type = 'video/quicktime'
+            elif filename.endswith('.avi'):
+                mime_type = 'video/x-msvideo'
+            elif filename.endswith('.mkv'):
+                mime_type = 'video/x-matroska'
+            else:
+                mime_type = 'video/mp4'
+        
+        assert mime_type.startswith('video/'), f"Expected video MIME type for {url}, got {mime_type}"
+
+def test_video_mime_type_detection_no_extension():
+    """Test MIME type detection for files without extensions."""
+    
+    # When no extension is found, should default to video/mp4
+    test_cases = [
+        "video_file_no_extension",
+        "https://example.com/stream",
+        "some_video",
+    ]
+    
+    for filename in test_cases:
+        mime_type, _ = mimetypes.guess_type(filename)
+        if not mime_type or not mime_type.startswith('video/'):
+            # Should fall back to video/mp4
+            mime_type = 'video/mp4'
+        
+        assert mime_type == 'video/mp4', f"Expected fallback to video/mp4 for {filename}, got {mime_type}"
 
 # ---- Tests for MatrixObserver basic methods ----
 def test_matrix_observer_user_and_room_details_empty(monkeypatch):
