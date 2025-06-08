@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from 'react'
 import { apiClient } from '@/lib/api'
+import { Configuration } from '@/types'
 
 export default function ConfigurationEditor() {
-  const [config, setConfig] = useState<any>({})
+  const [config, setConfig] = useState<Configuration | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -13,7 +14,7 @@ export default function ConfigurationEditor() {
 
   const fetchConfig = async () => {
     try {
-      const response = await apiClient.get<any>('/api/config')
+      const response = await apiClient.get<Configuration>('/api/config')
       setConfig(response.data)
     } catch (error) {
       console.error('Failed to fetch config:', error)

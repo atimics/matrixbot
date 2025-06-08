@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from 'react'
 import { apiClient } from '@/lib/api'
+import { WorldState } from '@/types'
 
 export default function WorldStateExplorer() {
-  const [worldState, setWorldState] = useState<any>(null)
+  const [worldState, setWorldState] = useState<WorldState | null>(null)
   const [loading, setLoading] = useState(true)
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set())
 
@@ -14,7 +15,7 @@ export default function WorldStateExplorer() {
 
   const fetchWorldState = async () => {
     try {
-      const response = await apiClient.get('/api/world-state')
+      const response = await apiClient.get<WorldState>('/api/worldstate')
       setWorldState(response.data)
     } catch (error) {
       console.error('Failed to fetch world state:', error)

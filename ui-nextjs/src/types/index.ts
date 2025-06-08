@@ -16,6 +16,9 @@ export interface SystemInfo {
   config?: any
   setup?: any
   timestamp?: string
+  total_cycles?: number
+  messages_processed?: number
+  integrations?: Record<string, any>
 }
 
 export interface SetupStep {
@@ -48,4 +51,47 @@ export interface ToolsResponse {
   total_count: number
   enabled_count: number
   stats: Record<string, any>
+}
+
+// World State types
+export interface WorldState {
+  channels: Record<string, any>
+  recent_media_actions: {
+    recent_media_actions: any[]
+    images_recently_described: string[]
+    recent_generations: any[]
+    summary: {
+      total_recent_media_actions: number
+      described_images_count: number
+      generated_media_count: number
+    }
+  }
+  action_history: any[]
+  meta_info: Record<string, any>
+  current_task?: string
+  processing_mode?: string
+}
+
+// Configuration types
+export interface Configuration {
+  ai: {
+    temperature: number
+    model: string
+    multimodal_model: string
+  }
+  processing: {
+    max_expanded_nodes: number
+    auto_collapse_threshold: number
+  }
+  rate_limits: {
+    max_cycles_per_hour: number
+    max_actions_per_hour: number
+  }
+  storage: {
+    history_retention_days: number
+  }
+  logging: {
+    level: string
+  }
+  editable_keys: string[]
 }

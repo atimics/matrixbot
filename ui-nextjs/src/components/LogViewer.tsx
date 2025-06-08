@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { io, Socket } from 'socket.io-client'
 
 interface LogEntry {
   timestamp: string
@@ -15,38 +14,48 @@ export default function LogViewer() {
   const [isConnected, setIsConnected] = useState(false)
   const [autoScroll, setAutoScroll] = useState(true)
   const logsContainerRef = useRef<HTMLDivElement>(null)
-  const socketRef = useRef<Socket | null>(null)
+  const websocketRef = useRef<WebSocket | null>(null)
 
   useEffect(() => {
-    // Initialize WebSocket connection
+    // Initialize native WebSocket connection
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-    const wsUrl = apiUrl.replace('http', 'ws')
+    const wsUrl = apiUrl.replace(/^https?/, apiUrl.startsWith('https') ? 'wss' : 'ws') + '/ws/logs'
     
-    socketRef.current = io(wsUrl, {
-      path: '/ws/logs'
-    })
+    const websocket = new WebSocket(wsUrl)
 
-    socketRef.current.on('connect', () => {
+    websocket.onopen = () => {
       setIsConnected(true)
       console.log('Connected to log stream')
-    })
+    }
 
-    socketRef.current.on('disconnect', () => {
+    websocket.onclose = () => {
       setIsConnected(false)
       console.log('Disconnected from log stream')
-    })
+    }
 
-    socketRef.current.on('log', (logEntry: LogEntry) => {
-      setLogs(prevLogs => {
-        const newLogs = [...prevLogs, logEntry]
-        // Keep only last 1000 log entries
-        return newLogs.slice(-1000)
-      })
-    })
+    websocket.onerror = (error) => {
+      console.error('WebSocket error:', error)
+      setIsConnected(false)
+    }
+
+    websocket.onmessage = (event) => {
+      try {
+        const logEntry = JSON.parse(event.data)
+        setLogs(prevLogs => {
+          const newLogs = [...prevLogs, logEntry]
+          // Keep only last 1000 log entries
+          return newLogs.slice(-1000)
+        })
+      } catch (e) {
+        console.error('Error parsing log data:', e)
+      }
+    }
+
+    websocketRef.current = websocket
 
     return () => {
-      if (socketRef.current) {
-        socketRef.current.disconnect()
+      if (websocketRef.current) {
+        websocketRef.current.close()
       }
     }
   }, [])

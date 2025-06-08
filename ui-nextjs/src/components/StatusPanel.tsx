@@ -6,7 +6,7 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import { SystemInfo, DashboardProps } from '@/types'
 
 export default function StatusPanel({ systemInfo, onStatusChange }: DashboardProps) {
-  const [metrics, setMetrics] = useState<any>(null)
+  const [metrics, setMetrics] = useState<SystemInfo | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -17,10 +17,10 @@ export default function StatusPanel({ systemInfo, onStatusChange }: DashboardPro
 
   const fetchMetrics = async () => {
     try {
-      const response = await apiClient.get('/api/metrics')
+      const response = await apiClient.get<SystemInfo>('/api/system/status')
       setMetrics(response.data)
     } catch (error) {
-      console.error('Failed to fetch metrics:', error)
+      console.error('Failed to fetch system status:', error)
     } finally {
       setLoading(false)
     }
