@@ -313,20 +313,18 @@ async def test_ignore_matrix_invite_tool_missing_params():
 async def test_send_matrix_video_tool_success():
     """Test successful video upload."""
     from unittest.mock import patch, AsyncMock
+    from nio import UploadResponse, RoomSendResponse
     
     # Mock the Matrix observer
     dummy_obs = type("DummyObs", (), {})()
     dummy_obs.client = type("Client", (), {})()
     
-    # Mock the upload response
-    from unittest.mock import Mock
-    upload_response = Mock()
-    upload_response.content_uri = "mxc://example.com/abcd1234"
+    # Mock the upload response as proper nio.UploadResponse
+    upload_response = UploadResponse(content_uri="mxc://example.com/abcd1234")
     dummy_obs.client.upload = AsyncMock(return_value=upload_response)
     
-    # Mock the send response
-    send_response = Mock()
-    send_response.event_id = "video123"
+    # Mock the send response as proper nio.RoomSendResponse
+    send_response = RoomSendResponse(event_id="video123", room_id="!room:server")
     dummy_obs.client.room_send = AsyncMock(return_value=send_response)
 
     context = ActionContext(matrix_observer=dummy_obs)
