@@ -890,9 +890,20 @@ class MatrixObserver(Integration):
         self, room_id: str, plain_content: str, html_content: str
     ) -> Dict[str, Any]:
         """Send a formatted message with both plain text and HTML versions."""
-        try:
-            logger.info(f"MatrixObserver.send_formatted_message called: room={room_id}")
+        logger.info(f"MatrixObserver.send_formatted_message called: room={room_id}")
 
+        if not self.client:
+            logger.error("Matrix client not connected")
+            return {"success": False, "error": "Matrix client not connected"}
+
+        # Check connection health before sending
+        try:
+            await self.ensure_connection()
+        except Exception as e:
+            logger.error(f"Failed to ensure connection before sending message: {e}")
+            return {"success": False, "error": f"Connection issue: {str(e)}"}
+
+        try:
             # Create formatted message content
             content = {
                 "msgtype": "m.text",
@@ -901,27 +912,81 @@ class MatrixObserver(Integration):
                 "formatted_body": html_content,
             }
 
-            response = await self.client.room_send(
-                room_id=room_id, message_type="m.room.message", content=content
-            )
+            # Add retry logic with exponential backoff
+            max_retries = 3
+            for attempt in range(max_retries):
+                response = await self.client.room_send(
+                    room_id=room_id, message_type="m.room.message", content=content
+                )
 
-            if isinstance(response, RoomSendResponse):
                 logger.info(
-                    f"MatrixObserver: Successfully sent formatted message to {room_id}"
+                    f"Matrix client room_send response (attempt {attempt + 1}): {response} (type: {type(response)})"
                 )
-                return {
-                    "success": True,
-                    "event_id": response.event_id,
-                    "room_id": room_id,
-                }
-            else:
-                logger.error(
-                    f"MatrixObserver: Failed to send formatted message: {response}"
-                )
-                return {"success": False, "error": str(response)}
+
+                if isinstance(response, RoomSendResponse):
+                    logger.info(
+                        f"MatrixObserver: Successfully sent formatted message to {room_id} (event: {response.event_id})"
+                    )
+                    return {
+                        "success": True,
+                        "event_id": response.event_id,
+                        "room_id": room_id,
+                    }
+                elif isinstance(response, RoomSendError):
+                    # Enhanced error logging for RoomSendError
+                    error_details = {
+                        "message": getattr(response, "message", "unknown error"),
+                        "status_code": getattr(response, "status_code", None),
+                        "retry_after_ms": getattr(response, "retry_after_ms", None),
+                        "transport_response": str(
+                            getattr(response, "transport_response", None)
+                        ),
+                    }
+
+                    logger.error(
+                        f"MatrixObserver: RoomSendError (attempt {attempt + 1}/{max_retries}): {error_details}"
+                    )
+
+                    # Handle rate limiting
+                    if error_details["retry_after_ms"]:
+                        wait_time = error_details["retry_after_ms"] / 1000
+                        logger.info(f"Rate limited, waiting {wait_time}s before retry")
+                        await asyncio.sleep(wait_time)
+                        continue
+
+                    # For other errors, wait with exponential backoff
+                    if attempt < max_retries - 1:
+                        wait_time = 2**attempt
+                        logger.info(f"Waiting {wait_time}s before retry")
+                        await asyncio.sleep(wait_time)
+                        continue
+
+                    # Final attempt failed
+                    return {
+                        "success": False,
+                        "error": f"RoomSendError: {error_details['message']} (Status: {error_details['status_code']})",
+                    }
+                else:
+                    # Unknown response type
+                    logger.error(
+                        f"MatrixObserver: Unknown response type: {type(response)}, value: {response}"
+                    )
+                    if attempt < max_retries - 1:
+                        wait_time = 2**attempt
+                        logger.info(f"Waiting {wait_time}s before retry")
+                        await asyncio.sleep(wait_time)
+                        continue
+
+                    return {
+                        "success": False,
+                        "error": f"Unknown response type: {type(response)} - {str(response)}",
+                    }
+
+            # Should not reach here, but just in case
+            return {"success": False, "error": f"Failed after {max_retries} attempts"}
 
         except Exception as e:
-            logger.error(f"MatrixObserver: Error sending formatted message: {e}")
+            logger.error(f"MatrixObserver: Error sending formatted message: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
 
     async def send_formatted_reply(
@@ -932,11 +997,22 @@ class MatrixObserver(Integration):
         reply_to_event_id: str,
     ) -> Dict[str, Any]:
         """Send a formatted reply with both plain text and HTML versions."""
-        try:
-            logger.info(
-                f"MatrixObserver.send_formatted_reply called: room={room_id}, reply_to={reply_to_event_id}"
-            )
+        logger.info(
+            f"MatrixObserver.send_formatted_reply called: room={room_id}, reply_to={reply_to_event_id}"
+        )
 
+        if not self.client:
+            logger.error("Matrix client not connected")
+            return {"success": False, "error": "Matrix client not connected"}
+
+        # Check connection health before sending
+        try:
+            await self.ensure_connection()
+        except Exception as e:
+            logger.error(f"Failed to ensure connection before sending reply: {e}")
+            return {"success": False, "error": f"Connection issue: {str(e)}"}
+
+        try:
             # Create formatted reply content with reply metadata
             content = {
                 "msgtype": "m.text",
@@ -946,28 +1022,82 @@ class MatrixObserver(Integration):
                 "m.relates_to": {"m.in_reply_to": {"event_id": reply_to_event_id}},
             }
 
-            response = await self.client.room_send(
-                room_id=room_id, message_type="m.room.message", content=content
-            )
+            # Add retry logic with exponential backoff
+            max_retries = 3
+            for attempt in range(max_retries):
+                response = await self.client.room_send(
+                    room_id=room_id, message_type="m.room.message", content=content
+                )
 
-            if isinstance(response, RoomSendResponse):
                 logger.info(
-                    f"MatrixObserver: Successfully sent formatted reply to {room_id}"
+                    f"Matrix client room_send response (attempt {attempt + 1}): {response} (type: {type(response)})"
                 )
-                return {
-                    "success": True,
-                    "event_id": response.event_id,
-                    "room_id": room_id,
-                    "reply_to": reply_to_event_id,
-                }
-            else:
-                logger.error(
-                    f"MatrixObserver: Failed to send formatted reply: {response}"
-                )
-                return {"success": False, "error": str(response)}
+
+                if isinstance(response, RoomSendResponse):
+                    logger.info(
+                        f"MatrixObserver: Successfully sent formatted reply to {room_id} (event: {response.event_id}, reply_to: {reply_to_event_id})"
+                    )
+                    return {
+                        "success": True,
+                        "event_id": response.event_id,
+                        "room_id": room_id,
+                        "reply_to": reply_to_event_id,
+                    }
+                elif isinstance(response, RoomSendError):
+                    # Enhanced error logging for RoomSendError
+                    error_details = {
+                        "message": getattr(response, "message", "unknown error"),
+                        "status_code": getattr(response, "status_code", None),
+                        "retry_after_ms": getattr(response, "retry_after_ms", None),
+                        "transport_response": str(
+                            getattr(response, "transport_response", None)
+                        ),
+                    }
+
+                    logger.error(
+                        f"MatrixObserver: RoomSendError (attempt {attempt + 1}/{max_retries}): {error_details}"
+                    )
+
+                    # Handle rate limiting
+                    if error_details["retry_after_ms"]:
+                        wait_time = error_details["retry_after_ms"] / 1000
+                        logger.info(f"Rate limited, waiting {wait_time}s before retry")
+                        await asyncio.sleep(wait_time)
+                        continue
+
+                    # For other errors, wait with exponential backoff
+                    if attempt < max_retries - 1:
+                        wait_time = 2**attempt
+                        logger.info(f"Waiting {wait_time}s before retry")
+                        await asyncio.sleep(wait_time)
+                        continue
+
+                    # Final attempt failed
+                    return {
+                        "success": False,
+                        "error": f"RoomSendError: {error_details['message']} (Status: {error_details['status_code']})",
+                    }
+                else:
+                    # Unknown response type
+                    logger.error(
+                        f"MatrixObserver: Unknown response type: {type(response)}, value: {response}"
+                    )
+                    if attempt < max_retries - 1:
+                        wait_time = 2**attempt
+                        logger.info(f"Waiting {wait_time}s before retry")
+                        await asyncio.sleep(wait_time)
+                        continue
+
+                    return {
+                        "success": False,
+                        "error": f"Unknown response type: {type(response)} - {str(response)}",
+                    }
+
+            # Should not reach here, but just in case
+            return {"success": False, "error": f"Failed after {max_retries} attempts"}
 
         except Exception as e:
-            logger.error(f"MatrixObserver: Error sending formatted reply: {e}")
+            logger.error(f"MatrixObserver: Error sending formatted reply: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
 
     async def join_room(self, room_identifier: str) -> Dict[str, Any]:
@@ -1453,3 +1583,66 @@ class MatrixObserver(Integration):
         logger.info(
             f"MatrixObserver: Added channel {channel_name} ({channel_id}) to monitoring"
         )
+
+    async def check_connection_health(self) -> bool:
+        """Check if the Matrix connection is healthy."""
+        if not self.client:
+            return False
+            
+        try:
+            # Try a simple whoami request to test the connection
+            response = await self.client.whoami()
+            if hasattr(response, 'user_id'):
+                logger.debug(f"Connection healthy for user: {response.user_id}")
+                return True
+            else:
+                logger.warning(f"Unexpected whoami response: {response}")
+                return False
+        except Exception as e:
+            logger.error(f"Connection health check failed: {e}")
+            return False
+
+    async def ensure_connection(self):
+        """Ensure the Matrix connection is active and attempt to reconnect if needed."""
+        if not await self.check_connection_health():
+            logger.info("Connection unhealthy, attempting to reconnect...")
+            try:
+                # Try a quick sync to refresh the connection
+                await self.client.sync(timeout=1000)
+                logger.info("Connection refresh successful")
+                
+                # Verify the connection is now healthy
+                if await self.check_connection_health():
+                    logger.info("Connection restored successfully")
+                else:
+                    logger.warning("Connection still unhealthy after reconnection attempt")
+            except Exception as e:
+                logger.error(f"Connection refresh failed: {e}")
+                raise
+
+    async def check_room_permissions(self, room_id: str) -> Dict[str, Any]:
+        """Check if the bot has permission to send messages in the room."""
+        if not self.client:
+            return {"error": "Matrix client not connected"}
+            
+        try:
+            # Get room state to check power levels
+            power_levels = await self.client.room_get_state_event(
+                room_id, "m.room.power_levels"
+            )
+            
+            # Check if bot has required power level to send messages
+            user_id = self.client.user_id
+            required_level = power_levels.content.get("events", {}).get("m.room.message", 0)
+            user_level = power_levels.content.get("users", {}).get(user_id, 0)
+            
+            logger.info(f"Room {room_id}: Required level {required_level}, User level {user_level}")
+            
+            return {
+                "can_send": user_level >= required_level,
+                "required_level": required_level,
+                "user_level": user_level
+            }
+        except Exception as e:
+            logger.error(f"Failed to check room permissions: {e}")
+            return {"error": str(e)}
