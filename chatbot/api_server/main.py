@@ -99,6 +99,15 @@ class ChatbotAPIServer:
                 "service": "chatbot_api"
             }
         
+        # Add compatibility route for legacy /api/status endpoint
+        @self.app.get("/api/status")
+        async def legacy_status_endpoint():
+            """Legacy status endpoint for backwards compatibility - redirects to /api/system/status."""
+            from .routers.system import get_system_status
+            from .dependencies import get_orchestrator
+            orchestrator = self.orchestrator
+            return await get_system_status(orchestrator)
+        
     def _setup_websocket_routes(self):
         """Set up WebSocket routes for real-time features."""
         @self.app.websocket("/ws/logs")

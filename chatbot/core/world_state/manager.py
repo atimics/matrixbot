@@ -36,16 +36,6 @@ logger = logging.getLogger(__name__)
 
 
 class WorldStateManager:
-    def get_last_generated_media_url(self) -> Optional[str]:
-        """
-        Returns the URL of the most recently generated image or video, or None if none exist.
-        """
-        if self.state.generated_media_library:
-            last = self.state.generated_media_library[-1]
-            return last.get("url")
-        return None
-
-class WorldStateManager:
     """
     Manages the world state and provides updates.
     
@@ -605,6 +595,15 @@ class WorldStateManager:
         logger.info(
             f"WorldState: Added {media_type} to generated media library: {prompt[:50]}..."
         )
+
+    def get_last_generated_media_url(self) -> Optional[str]:
+        """
+        Returns the URL of the most recently generated image or video, or None if none exist.
+        """
+        if self.state.generated_media_library:
+            last = self.state.generated_media_library[-1]
+            return last.get("url")
+        return None
 
     def get_world_state_data(self) -> WorldStateData:
         """

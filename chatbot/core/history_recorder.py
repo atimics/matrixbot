@@ -182,7 +182,7 @@ class HistoryRecorder:
         await self._store_state_change(state_change)
         logger.debug(f"HistoryRecorder: Recorded world update: {update_type}")
 
-    async def record_tool_execution( # This method is distinct from record_action
+    async def record_tool_execution(
         self,
         tool_name: str,
         tool_params: Dict[str, Any],
@@ -190,29 +190,14 @@ class HistoryRecorder:
         channel_id: Optional[str] = None
     ):
         """Record the execution of a tool/action."""
-        observation_str = f"Tool \'{tool_name}\' executed with params {tool_params}. Result: {tool_result}"
-        state_change = StateChangeBlock(
-            timestamp=time.time(),
-            change_type="tool_execution", 
-            source="system", # This is different from record_action's "tool"
-            channel_id=channel_id,
-            observations=observation_str, # Populated observations
-            potential_actions=None,
-            selected_actions=[{
-                "tool": tool_name,
-                "parameters": tool_params,
-                "result": tool_result
-            }],
-            reasoning=f"Tool execution: {tool_name}",
-            raw_content={
-                "tool_name": tool_name,
-                "parameters": tool_params,
-                "result": tool_result
-            }
-        )
+        # Convert to the format expected by record_action
+        action_data = tool_params.copy()
+        if channel_id:
+            action_data["channel_id"] = channel_id
         
-        await self._store_state_change(state_change)
-        logger.debug(f"HistoryRecorder: Recorded tool execution {tool_name}")
+        # Use the unified record_action method
+        await self.record_action(tool_name, action_data, tool_result)
+        logger.debug(f"HistoryRecorder: Recorded tool execution {tool_name} (via record_action)")
 
     async def record_state_change(self, state_change: StateChangeBlock):
         """Record a state change block (public interface for external callers)."""
