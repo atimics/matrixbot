@@ -278,7 +278,6 @@ async def get_transaction_status(tx_id: str, _: bool = Depends(verify_api_key)):
     
     try:
         # Use the Arweave Python library to check transaction status
-        from arweave import Arweave
         arweave = Arweave()
         
         loop = asyncio.get_event_loop()
