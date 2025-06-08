@@ -41,6 +41,7 @@ class AppConfig(BaseSettings):
     OBSERVATION_INTERVAL: float = 2.0
     MAX_CYCLES_PER_HOUR: int = 300
     AI_MODEL: str = "openai/gpt-4o-mini"
+    AI_MULTIMODAL_MODEL: str = "openai/gpt-4o"  # Model for image/video analysis
     OPENROUTER_API_KEY: Optional[str] = None  # Made optional for demo mode
     LOG_LEVEL: str = "INFO"
     
@@ -71,10 +72,6 @@ class AppConfig(BaseSettings):
     HOLDER_CAST_HISTORY_LENGTH: int = 5  # Number of recent casts to store per holder
 
     # OpenRouter specific from original .env.example (these might be for other services or documentation)
-    OPENROUTER_MODEL: str = "openai/gpt-4o-mini"  # Matches AI_MODEL typically
-    OPENROUTER_MULTIMODAL_MODEL: str = (
-        "openai/gpt-4o"  # Or your preferred OpenRouter multimodal model
-    )
     YOUR_SITE_URL: Optional[str] = None
     YOUR_SITE_NAME: Optional[str] = None
 

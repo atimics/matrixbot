@@ -152,7 +152,7 @@ class TestMediaActionTracking:
         # Mock settings
         with patch('chatbot.tools.describe_image_tool.settings') as mock_settings:
             mock_settings.OPENROUTER_API_KEY = "test_key"
-            mock_settings.OPENROUTER_MULTIMODAL_MODEL = "test_model"
+            mock_settings.AI_MULTIMODAL_MODEL = "test_model"
             mock_settings.YOUR_SITE_URL = "http://test.com"
             mock_settings.YOUR_SITE_NAME = "Test"
             
@@ -207,7 +207,7 @@ class TestMediaActionTracking:
         # Mock settings
         with patch('chatbot.tools.describe_image_tool.settings') as mock_settings:
             mock_settings.OPENROUTER_API_KEY = "test_key"
-            mock_settings.OPENROUTER_MULTIMODAL_MODEL = "test_model"
+            mock_settings.AI_MULTIMODAL_MODEL = "test_model"
             mock_settings.YOUR_SITE_URL = "http://test.com"
             mock_settings.YOUR_SITE_NAME = "Test"
             

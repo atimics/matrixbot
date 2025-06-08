@@ -28,7 +28,7 @@ async def get_configuration(orchestrator: MainOrchestrator = Depends(get_orchest
         # Get current configuration from settings
         config = {
             "ai": {
-                "model": settings.OPENROUTER_MODEL,
+                "model": settings.AI_MODEL,
                 "max_actions_per_cycle": 3,
                 "temperature": getattr(settings, 'AI_TEMPERATURE', 0.7)
             },

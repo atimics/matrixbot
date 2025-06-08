@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from ..config import (  # To access OPENROUTER_API_KEY and OPENROUTER_MULTIMODAL_MODEL
+from ..config import (  # To access OPENROUTER_API_KEY and AI_MULTIMODAL_MODEL
     settings,
 )
 from .base import ActionContext, ToolInterface
@@ -175,8 +175,8 @@ class DescribeImageTool(ToolInterface):
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
         openrouter_model = (
-            settings.OPENROUTER_MULTIMODAL_MODEL
-        )  # Or settings.AI_MODEL if it's multimodal
+            settings.AI_MULTIMODAL_MODEL
+        )  # Use AI_MULTIMODAL_MODEL for image analysis
 
         payload = {
             "model": openrouter_model,
