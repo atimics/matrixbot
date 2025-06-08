@@ -35,7 +35,7 @@ COPY . .
 RUN poetry install --without dev --no-interaction --no-ansi
 
 # Create necessary directories
-RUN mkdir -p /app/context_storage /app/matrix_store
+RUN mkdir -p /app/data /app/matrix_store
 
 # Expose the API server port
 EXPOSE 8000

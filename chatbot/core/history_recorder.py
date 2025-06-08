@@ -50,7 +50,7 @@ class HistoryRecorder:
         self.state_changes: List[StateChangeBlock] = []
 
         # Initialize storage directory
-        self.storage_path = Path("context_storage")
+        self.storage_path = Path("data/context_storage")
         self.storage_path.mkdir(exist_ok=True)
 
         logger.info("HistoryRecorder: Initialized")

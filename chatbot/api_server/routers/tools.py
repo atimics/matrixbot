@@ -23,7 +23,7 @@ async def get_tools(orchestrator: MainOrchestrator = Depends(get_orchestrator)):
     try:
         tools_info = []
         
-        for tool_name in orchestrator.tool_registry.list_tools():
+        for tool_name in orchestrator.tool_registry.get_tool_names():
             tool = orchestrator.tool_registry.get_tool(tool_name)
             if tool:
                 tool_info = {

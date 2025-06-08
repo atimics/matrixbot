@@ -37,9 +37,10 @@ class AppConfig(BaseSettings):
     )
 
     # Chatbot Core
-    CHATBOT_DB_PATH: str = "chatbot.db"
+    CHATBOT_DB_PATH: str = "data/chatbot.db"
     OBSERVATION_INTERVAL: float = 2.0
     MAX_CYCLES_PER_HOUR: int = 300
+    MAX_ACTIONS_PER_HOUR: int = 600
     AI_MODEL: str = "openai/gpt-4o-mini"
     AI_MULTIMODAL_MODEL: str = "openai/gpt-4o"  # Model for image/video analysis
     OPENROUTER_API_KEY: Optional[str] = None  # Made optional for demo mode
@@ -56,6 +57,7 @@ class AppConfig(BaseSettings):
         "#robot-laboratory:chat.ratimics.com"  # Default initial room to monitor
     )
     MATRIX_DEVICE_ID: Optional[str] = None
+    MATRIX_MEDIA_GALLERY_ROOM_ID: Optional[str] = None  # Dedicated channel for auto-posting generated media
     DEVICE_NAME: str = "ratichat_bot"
 
     # Farcaster (Optional)
