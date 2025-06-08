@@ -1037,11 +1037,30 @@ class SendMatrixVideoTool(ToolInterface):
                 response.raise_for_status()
                 video_data = response.content
 
+            # Determine MIME type for the video file
+            import mimetypes
+            mime_type, _ = mimetypes.guess_type(filename)
+            if not mime_type or not mime_type.startswith('video/'):
+                # Default fallback - but try to detect from file extension first
+                lower_filename = filename.lower()
+                if lower_filename.endswith('.webm'):
+                    mime_type = "video/webm"
+                elif lower_filename.endswith('.mov'):
+                    mime_type = "video/quicktime"
+                elif lower_filename.endswith('.avi'):
+                    mime_type = "video/avi"
+                elif lower_filename.endswith('.mkv'):
+                    mime_type = "video/x-matroska"
+                else:
+                    mime_type = "video/mp4"  # Default fallback
+            
+            logger.info(f"Detected video MIME type: {mime_type} for file: {filename}")
+
             # Upload the video to Matrix media repository
             from nio import UploadResponse, UploadError
             upload_response = await context.matrix_observer.client.upload(
                 data_provider=lambda _, __: video_data,
-                content_type="video/mp4",
+                content_type=mime_type,
                 filename=filename,
                 filesize=len(video_data)
             )
@@ -1057,7 +1076,7 @@ class SendMatrixVideoTool(ToolInterface):
                 "msgtype": "m.video",
                 "url": upload_response.content_uri,
                 "info": {
-                    "mimetype": "video/mp4",
+                    "mimetype": mime_type,
                     "size": len(video_data),
                     # Future enhancement: Add duration, thumbnail_url, w, h
                 }
