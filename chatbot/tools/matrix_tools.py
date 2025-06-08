@@ -23,7 +23,8 @@ class SendMatrixReplyTool(ToolInterface):
 
     @property
     def description(self) -> str:
-        return "Reply to a specific message in a Matrix channel. If reply_to_id is not provided, will send as a regular message to the channel."
+        return ("Reply to a specific message in a Matrix channel. If reply_to_id is not provided, will send as a regular message to the channel. "
+                "Recently generated media (within 5 minutes) will be automatically attached as a separate image message if no explicit image_url is provided.")
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
@@ -32,6 +33,7 @@ class SendMatrixReplyTool(ToolInterface):
             "content": "string - The message content to send as a reply (supports markdown formatting)",
             "reply_to_id": "string (optional) - The event ID of the message to reply to. If not provided, sends as regular message",
             "format_as_markdown": "boolean (optional, default: true) - Whether to format the content as markdown",
+            "image_url": "string (optional) - URL of an image to attach. If not provided, recently generated media will be auto-attached",
         }
 
     async def execute(
@@ -53,6 +55,7 @@ class SendMatrixReplyTool(ToolInterface):
         content = params.get("content")
         reply_to_event_id = params.get("reply_to_id")
         format_as_markdown = params.get("format_as_markdown", True)
+        image_url = params.get("image_url")
 
         missing_params = []
         if not room_id:
@@ -64,6 +67,20 @@ class SendMatrixReplyTool(ToolInterface):
             error_msg = f"Missing required parameters for Matrix reply: {', '.join(missing_params)}"
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+        # Auto-attachment: Check for recently generated media if no image_url provided
+        if not image_url and context.world_state_manager:
+            recent_media_url = context.world_state_manager.get_last_generated_media_url()
+            if recent_media_url:
+                # Check if the media was generated recently (within last 5 minutes)
+                if hasattr(context.world_state_manager.state, 'generated_media_library'):
+                    media_library = context.world_state_manager.state.generated_media_library
+                    if media_library:
+                        last_media = media_library[-1]
+                        media_age = time.time() - last_media.get('timestamp', 0)
+                        if media_age <= 300:  # 5 minutes
+                            image_url = recent_media_url
+                            logger.info(f"Auto-attaching recently generated media to Matrix reply: {image_url}")
 
         # Deduplication check: prevent replying to events we've already replied to
         if reply_to_event_id and context.world_state_manager:
@@ -130,6 +147,21 @@ class SendMatrixReplyTool(ToolInterface):
                         await context.context_manager.add_assistant_message(room_id, assistant_message)
                         logger.debug(f"Recorded sent Matrix fallback message in context manager: {event_id}")
 
+                    # Send auto-attached image if available (fallback case)
+                    image_event_id = None
+                    if image_url:
+                        try:
+                            image_result = await context.matrix_observer.send_image(
+                                room_id, image_url, None, None
+                            )
+                            if image_result.get("success"):
+                                image_event_id = image_result.get("event_id", "unknown")
+                                logger.info(f"Auto-attached image to Matrix fallback message: {image_event_id}")
+                            else:
+                                logger.warning(f"Failed to auto-attach image to fallback: {image_result.get('error', 'unknown error')}")
+                        except Exception as e:
+                            logger.warning(f"Error auto-attaching image to fallback: {e}")
+
                     return {
                         "status": "success",
                         "message": success_msg,
@@ -137,6 +169,8 @@ class SendMatrixReplyTool(ToolInterface):
                         "room_id": room_id,
                         "sent_content": content,
                         "fallback_to_message": True,  # Indicate this was a fallback
+                        "auto_attached_image": image_url if image_url else None,
+                        "image_event_id": image_event_id,
                         "timestamp": time.time(),
                     }
                 else:
@@ -204,6 +238,21 @@ class SendMatrixReplyTool(ToolInterface):
                     await context.context_manager.add_assistant_message(room_id, assistant_message)
                     logger.debug(f"Recorded sent Matrix reply in context manager: {event_id}")
 
+                # Send auto-attached image if available
+                image_event_id = None
+                if image_url:
+                    try:
+                        image_result = await context.matrix_observer.send_image(
+                            room_id, image_url, None, None
+                        )
+                        if image_result.get("success"):
+                            image_event_id = image_result.get("event_id", "unknown")
+                            logger.info(f"Auto-attached image to Matrix reply: {image_event_id}")
+                        else:
+                            logger.warning(f"Failed to auto-attach image to reply: {image_result.get('error', 'unknown error')}")
+                    except Exception as e:
+                        logger.warning(f"Error auto-attaching image to reply: {e}")
+
                 return {
                     "status": "success",
                     "message": success_msg,
@@ -211,6 +260,8 @@ class SendMatrixReplyTool(ToolInterface):
                     "room_id": room_id,
                     "reply_to_event_id": reply_to_event_id,
                     "sent_content": content,  # For AI Blindness Fix
+                    "auto_attached_image": image_url if image_url else None,
+                    "image_event_id": image_event_id,
                     "timestamp": time.time(),
                 }
             else:
@@ -239,7 +290,8 @@ class SendMatrixMessageTool(ToolInterface):
 
     @property
     def description(self) -> str:
-        return "Send a new message to a Matrix channel. Use this when you want to start a new conversation or make an announcement."
+        return ("Send a new message to a Matrix channel. Use this when you want to start a new conversation or make an announcement. "
+                "Recently generated media (within 5 minutes) will be automatically attached as a separate image message if no explicit image_url is provided.")
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
@@ -247,6 +299,7 @@ class SendMatrixMessageTool(ToolInterface):
             "channel_id": "string (Matrix room ID) - The room where the message should be sent",
             "content": "string - The message content to send (supports markdown formatting)",
             "format_as_markdown": "boolean (optional, default: true) - Whether to format the content as markdown",
+            "image_url": "string (optional) - URL of an image to attach. If not provided, recently generated media will be auto-attached",
         }
 
     async def execute(
@@ -267,6 +320,7 @@ class SendMatrixMessageTool(ToolInterface):
         room_id = params.get("channel_id")
         content = params.get("content")
         format_as_markdown = params.get("format_as_markdown", True)
+        image_url = params.get("image_url")
 
         missing_params = []
         if not room_id:
@@ -279,8 +333,22 @@ class SendMatrixMessageTool(ToolInterface):
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
+        # Auto-attachment: Check for recently generated media if no image_url provided
+        if not image_url and context.world_state_manager:
+            recent_media_url = context.world_state_manager.get_last_generated_media_url()
+            if recent_media_url:
+                # Check if the media was generated recently (within last 5 minutes)
+                if hasattr(context.world_state_manager.state, 'generated_media_library'):
+                    media_library = context.world_state_manager.state.generated_media_library
+                    if media_library:
+                        last_media = media_library[-1]
+                        media_age = time.time() - last_media.get('timestamp', 0)
+                        if media_age <= 300:  # 5 minutes
+                            image_url = recent_media_url
+                            logger.info(f"Auto-attaching recently generated media to Matrix message: {image_url}")
+
         try:
-            # Format content if markdown is enabled
+            # Send the text message first
             if format_as_markdown:
                 formatted = format_for_matrix(content)
                 result = await context.matrix_observer.send_formatted_message(
@@ -326,12 +394,29 @@ class SendMatrixMessageTool(ToolInterface):
                     except Exception as e:
                         logger.warning(f"Failed to record message in context manager: {e}")
 
+                # Send auto-attached image if available
+                image_event_id = None
+                if image_url:
+                    try:
+                        image_result = await context.matrix_observer.send_image(
+                            room_id, image_url, None, None
+                        )
+                        if image_result.get("success"):
+                            image_event_id = image_result.get("event_id", "unknown")
+                            logger.info(f"Auto-attached image to Matrix message: {image_event_id}")
+                        else:
+                            logger.warning(f"Failed to auto-attach image: {image_result.get('error', 'unknown error')}")
+                    except Exception as e:
+                        logger.warning(f"Error auto-attaching image: {e}")
+
                 return {
                     "status": "success",
                     "message": success_msg,
                     "event_id": event_id,
                     "room_id": room_id,
                     "sent_content": content,  # For AI Blindness Fix
+                    "auto_attached_image": image_url if image_url else None,
+                    "image_event_id": image_event_id,
                     "timestamp": time.time(),
                 }
             else:

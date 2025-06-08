@@ -67,7 +67,8 @@ class SendFarcasterPostTool(ToolInterface):
     @property
     def description(self) -> str:
         return ("Send a new post (cast) to Farcaster. "
-                "Use the 'embed_url' parameter to attach media or frames.")
+                "Use the 'embed_url' parameter to attach media or frames. "
+                "If no embed_url is provided, recently generated media (within 5 minutes) will be automatically attached.")
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
@@ -127,6 +128,20 @@ class SendFarcasterPostTool(ToolInterface):
         if len(content) > MAX_FARCASTER_CONTENT_LENGTH:
             content = content[:MAX_FARCASTER_CONTENT_LENGTH - 3] + "..."
             logger.warning(f"Farcaster content truncated to {MAX_FARCASTER_CONTENT_LENGTH} chars.")
+
+        # Auto-attachment: Check for recently generated media if no embed_url provided
+        if not embed_url and context.world_state_manager:
+            recent_media_url = context.world_state_manager.get_last_generated_media_url()
+            if recent_media_url:
+                # Check if the media was generated recently (within last 5 minutes)
+                if hasattr(context.world_state_manager.state, 'generated_media_library'):
+                    media_library = context.world_state_manager.state.generated_media_library
+                    if media_library:
+                        last_media = media_library[-1]
+                        media_age = time.time() - last_media.get('timestamp', 0)
+                        if media_age <= 300:  # 5 minutes
+                            embed_url = recent_media_url
+                            logger.info(f"Auto-attaching recently generated media to Farcaster post: {embed_url}")
 
         # Prepare embeds
         embeds = []
