@@ -158,6 +158,74 @@ async def get_wallet_info():
         logger.error(f"Failed to get wallet info: {e}")
         raise HTTPException(status_code=503, detail="Could not fetch wallet information")
 
+async def _parse_tags(tags: Optional[str]) -> Dict[str, str]:
+    """Parse tags from JSON string format"""
+    if not tags:
+        return {}
+    
+    try:
+        tag_dict = json.loads(tags)
+        return {key: str(value) for key, value in tag_dict.items()}
+    except json.JSONDecodeError:
+        logger.warning(f"Invalid tags JSON provided: {tags}")
+        return {}
+
+async def _create_and_send_transaction(
+    data: bytes, 
+    content_type: str, 
+    custom_tags: Dict[str, str],
+    additional_tags: Optional[Dict[str, str]] = None
+) -> Transaction:
+    """
+    Create, tag, sign and send an Arweave transaction
+    
+    Args:
+        data: The data to upload
+        content_type: Content type of the data
+        custom_tags: Custom tags from user input
+        additional_tags: Additional system tags (e.g., filename)
+    
+    Returns:
+        The completed transaction
+    """
+    # Create transaction
+    transaction = Transaction(wallet_manager.wallet, data=data)
+    
+    # Add content type tag
+    transaction.add_tag('Content-Type', content_type)
+    
+    # Add additional system tags
+    if additional_tags:
+        for key, value in additional_tags.items():
+            transaction.add_tag(key, value)
+    
+    # Add custom tags
+    for key, value in custom_tags.items():
+        transaction.add_tag(key, value)
+    
+    # Sign and send transaction
+    transaction.sign()
+    await asyncio.to_thread(transaction.send)
+    
+    return transaction
+
+def _create_upload_response(
+    transaction: Transaction, 
+    data_size: int, 
+    content_type: str
+) -> UploadResponse:
+    """Create a standardized upload response"""
+    arweave_url = f"https://arweave.net/{transaction.id}"
+    
+    return UploadResponse(
+        transaction_id=transaction.id,
+        wallet_address=wallet_manager.get_wallet_address(),
+        data_size=data_size,
+        content_type=content_type,
+        upload_status="submitted",
+        arweave_url=arweave_url
+    )
+
 @app.post("/upload", response_model=UploadResponse)
 async def upload_to_arweave(
     file: UploadFile = File(...),
@@ -186,40 +254,27 @@ async def upload_to_arweave(
         
         logger.info(f"Uploading file: {file.filename} ({len(file_content)} bytes)")
         
-        # Create transaction
-        transaction = Transaction(wallet_manager.wallet, data=file_content)
+        # Parse custom tags
+        custom_tags = await _parse_tags(tags)
         
-        # Add content type tag
-        if file.content_type:
-            transaction.add_tag('Content-Type', file.content_type)
-        
-        # Add filename tag if available
+        # Prepare additional system tags
+        additional_tags = {}
         if file.filename:
-            transaction.add_tag('File-Name', file.filename)
+            additional_tags['File-Name'] = file.filename
         
-        # Add custom tags if provided
-        if tags:
-            try:
-                tag_dict = json.loads(tags)
-                for key, value in tag_dict.items():
-                    transaction.add_tag(key, str(value))
-            except json.JSONDecodeError:
-                logger.warning(f"Invalid tags JSON provided: {tags}")
-        
-        # Sign and send transaction
-        transaction.sign()
-        await asyncio.to_thread(transaction.send)
-        
-        # Construct response
-        arweave_url = f"https://arweave.net/{transaction.id}"
-        
-        response = UploadResponse(
-            transaction_id=transaction.id,
-            wallet_address=wallet_manager.get_wallet_address(),
-            data_size=len(file_content),
+        # Create and send transaction
+        transaction = await _create_and_send_transaction(
+            data=file_content,
             content_type=file.content_type or "application/octet-stream",
-            upload_status="submitted",
-            arweave_url=arweave_url
+            custom_tags=custom_tags,
+            additional_tags=additional_tags
+        )
+        
+        # Create response
+        response = _create_upload_response(
+            transaction=transaction,
+            data_size=len(file_content),
+            content_type=file.content_type or "application/octet-stream"
         )
         
         logger.info(f"Upload successful: {transaction.id}")
@@ -255,35 +310,21 @@ async def upload_data_to_arweave(
         data_bytes = data.encode('utf-8')
         logger.info(f"Uploading data ({len(data_bytes)} bytes)")
         
-        # Create transaction
-        transaction = Transaction(wallet_manager.wallet, data=data_bytes)
+        # Parse custom tags
+        custom_tags = await _parse_tags(tags)
         
-        # Add content type tag
-        transaction.add_tag('Content-Type', content_type)
-        
-        # Add custom tags if provided
-        if tags:
-            try:
-                tag_dict = json.loads(tags)
-                for key, value in tag_dict.items():
-                    transaction.add_tag(key, str(value))
-            except json.JSONDecodeError:
-                logger.warning(f"Invalid tags JSON provided: {tags}")
-        
-        # Sign and send transaction
-        transaction.sign()
-        await asyncio.to_thread(transaction.send)
-        
-        # Construct response
-        arweave_url = f"https://arweave.net/{transaction.id}"
-        
-        response = UploadResponse(
-            transaction_id=transaction.id,
-            wallet_address=wallet_manager.get_wallet_address(),
-            data_size=len(data_bytes),
+        # Create and send transaction
+        transaction = await _create_and_send_transaction(
+            data=data_bytes,
             content_type=content_type,
-            upload_status="submitted",
-            arweave_url=arweave_url
+            custom_tags=custom_tags
+        )
+        
+        # Create response
+        response = _create_upload_response(
+            transaction=transaction,
+            data_size=len(data_bytes),
+            content_type=content_type
         )
         
         logger.info(f"Data upload successful: {transaction.id}")

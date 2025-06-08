@@ -73,26 +73,11 @@ class ArweaveWalletManager:
             return None
             
         try:
-            # Create transaction
-            transaction = Transaction(
-                wallet=self.wallet,
-                data=data
-            )
+            # Create and configure transaction
+            transaction = self._create_transaction(data, content_type, tags)
             
-            # Add Content-Type tag
-            transaction.add_tag('Content-Type', content_type)
-            
-            # Add custom tags
-            if tags:
-                for tag in tags:
-                    transaction.add_tag(tag['name'], tag['value'])
-                    
-            # Sign transaction
-            transaction.sign()
-            
-            # Send transaction (run in thread pool to avoid blocking)
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, transaction.send)
+            # Sign and send transaction
+            await self._sign_and_send_transaction(transaction)
             
             if transaction.id:
                 logger.info(f"Data uploaded to Arweave. TX ID: {transaction.id}")
@@ -104,6 +89,38 @@ class ArweaveWalletManager:
         except Exception as e:
             logger.error(f"Failed to upload data to Arweave: {e}", exc_info=True)
             return None
+    
+    def _create_transaction(
+        self, 
+        data: bytes, 
+        content_type: str, 
+        tags: Optional[List[Dict[str, str]]] = None
+    ) -> Transaction:
+        """Create and tag an Arweave transaction"""
+        # Create transaction
+        transaction = Transaction(
+            wallet=self.wallet,
+            data=data
+        )
+        
+        # Add Content-Type tag
+        transaction.add_tag('Content-Type', content_type)
+        
+        # Add custom tags
+        if tags:
+            for tag in tags:
+                transaction.add_tag(tag['name'], tag['value'])
+        
+        return transaction
+    
+    async def _sign_and_send_transaction(self, transaction: Transaction) -> None:
+        """Sign and send a transaction to Arweave"""
+        # Sign transaction
+        transaction.sign()
+        
+        # Send transaction (run in thread pool to avoid blocking)
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, transaction.send)
 
 
 # Initialize FastAPI app
@@ -145,6 +162,23 @@ async def startup_event():
     wallet_manager = ArweaveWalletManager(wallet_file_path, gateway_url)
     await wallet_manager.initialize()
 
+def _parse_tags(tags: Optional[str]) -> Optional[List[Dict[str, str]]]:
+    """Parse tags from JSON string format"""
+    if not tags:
+        return None
+    
+    try:
+        parsed_tags = json.loads(tags)
+        if not isinstance(parsed_tags, list):
+            raise ValueError("Tags must be a list")
+        return parsed_tags
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.warning(f"Invalid tags format: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid tags format. Expected JSON list: {str(e)}"
+        )
+
 @app.post("/upload")
 async def upload_file(
     file: UploadFile = File(...),
@@ -164,17 +198,7 @@ async def upload_file(
         file_data = await file.read()
         
         # Parse tags if provided
-        parsed_tags = None
-        if tags:
-            try:
-                parsed_tags = json.loads(tags)
-                if not isinstance(parsed_tags, list):
-                    raise ValueError("Tags must be a list")
-            except (json.JSONDecodeError, ValueError) as e:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Invalid tags format. Expected JSON list: {str(e)}"
-                )
+        parsed_tags = _parse_tags(tags)
         
         # Upload to Arweave
         tx_id = await wallet_manager.upload_data(file_data, content_type, parsed_tags)
