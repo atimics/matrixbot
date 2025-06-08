@@ -19,6 +19,11 @@ export interface SystemInfo {
   total_cycles?: number
   messages_processed?: number
   integrations?: Record<string, any>
+  recent_activities?: Array<{
+    timestamp: string
+    activity: string
+    details?: string
+  }>
 }
 
 export interface SetupStep {
@@ -55,8 +60,9 @@ export interface ToolsResponse {
 
 // World State types
 export interface WorldState {
-  channels: Record<string, any>
-  recent_media_actions: {
+  [key: string]: any
+  channels?: Record<string, any>
+  recent_media_actions?: {
     recent_media_actions: any[]
     images_recently_described: string[]
     recent_generations: any[]
@@ -66,32 +72,49 @@ export interface WorldState {
       generated_media_count: number
     }
   }
-  action_history: any[]
-  meta_info: Record<string, any>
+  action_history?: any[]
+  meta_info?: Record<string, any>
   current_task?: string
   processing_mode?: string
+  nodes?: Array<{
+    id: string
+    type: string
+    data: any
+    connections: string[]
+  }>
+  recent_actions?: Array<{
+    timestamp: string
+    action: string
+    result: any
+  }>
+  summary?: {
+    total_nodes: number
+    active_channels: number
+    recent_activity_count: number
+  }
 }
 
 // Configuration types
 export interface Configuration {
-  ai: {
-    temperature: number
-    model: string
-    multimodal_model: string
+  [key: string]: any
+  ai?: {
+    temperature?: number
+    model?: string
+    multimodal_model?: string
   }
-  processing: {
-    max_expanded_nodes: number
-    auto_collapse_threshold: number
+  processing?: {
+    max_expanded_nodes?: number
+    auto_collapse_threshold?: number
   }
-  rate_limits: {
-    max_cycles_per_hour: number
-    max_actions_per_hour: number
+  rate_limits?: {
+    max_cycles_per_hour?: number
+    max_actions_per_hour?: number
   }
-  storage: {
-    history_retention_days: number
+  storage?: {
+    history_retention_days?: number
   }
-  logging: {
-    level: string
+  logging?: {
+    level?: string
   }
-  editable_keys: string[]
+  editable_keys?: string[]
 }
