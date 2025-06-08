@@ -3,18 +3,35 @@
 #   poetry export -f requirements.txt --output requirements.txt --without-hashes
 # The canonical dependency source is pyproject.toml/poetry.lock.
 
-matrix-nio[e2e]
-python-dotenv
-pydantic
-aiosqlite
-markdown
-# For a real message queue, you'd add one of these:
-# pika                 # For RabbitMQ (blocking, often used with threads or separate processes)
-# aio-pika             # For RabbitMQ (asyncio compatible)
-# redis                # For Redis Streams (if using redis-py)
-# confluent-kafka      # For Kafka
+# --- Core & Web ---
+fastapi>=0.111.0
+uvicorn>=0.29.0
+pydantic>=2.7.1
+pydantic-settings>=2.2.1
+httpx>=0.28.1
+
+# --- AI & LLM ---
+google-genai>=1.19.0
+
+# --- Matrix Integration ---
+matrix-nio[e2e]>=0.24.0
+
+# --- Blockchain & Web3 ---
+web3>=6.15.1
+aiohttp>=3.9.5
+
+# --- Utilities ---
+python-dotenv>=1.0.1
+markdown>=3.6
+pillow>=10.3.0
+base58>=2.1.1
+aiosqlite>=0.21.0
+cryptography>=45.0.3
+arweave-python-client>=1.0.19
+python-multipart>=0.0.20
+
+# Legacy dependencies
 ollama
-httpx # Added for asynchronous HTTP requests
 colorlog # Added for colorful logging
 
 # Testing dependencies
