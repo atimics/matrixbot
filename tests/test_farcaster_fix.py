@@ -4,12 +4,14 @@ Test script to verify the Farcaster empty content fix works.
 """
 import asyncio
 import logging
+import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 from chatbot.tools.base import ActionContext
 from chatbot.tools.farcaster_tools import SendFarcasterPostTool
 
 
+@pytest.mark.asyncio
 async def test_farcaster_empty_content_with_image():
     """Test that Farcaster posting works with empty content when image is provided."""
     
@@ -35,10 +37,10 @@ async def test_farcaster_empty_content_with_image():
     # Create tool instance
     tool = SendFarcasterPostTool()
     
-    # Test parameters with empty content but with image URL
+    # Test parameters with empty content but with embed URL
     params = {
         "content": "",  # Empty content - this was causing the failure before
-        "image_arweave_url": "https://arweave.net/example_image_id"
+        "embed_url": "https://arweave.net/example_image_id"
     }
     
     # Execute the tool
@@ -58,11 +60,12 @@ async def test_farcaster_empty_content_with_image():
     
     # Verify content is not empty (should be emoji)
     assert posted_content, "Content should not be empty after processing"
-    assert posted_content == "🖼️", f"Expected emoji content, got: '{posted_content}'"
+    assert posted_content == "📎", f"Expected clip emoji content, got: '{posted_content}'"
     
     print("✅ Test passed! Empty content with image now works correctly.")
 
 
+@pytest.mark.asyncio
 async def test_farcaster_no_content_no_media_fails():
     """Test that Farcaster posting fails when no content and no media."""
     
@@ -85,7 +88,7 @@ async def test_farcaster_no_content_no_media_fails():
     
     # Check that it failed as expected
     assert result["status"] == "failure", f"Expected failure, got: {result}"
-    assert "content required when no media" in result["error"]
+    assert "content required when no embed is attached" in result["error"]
     
     print("✅ Test passed! No content + no media correctly fails.")
 

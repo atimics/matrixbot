@@ -203,13 +203,9 @@ Create new Farcaster posts with automatic image embedding and social media optim
                 "type": "string", 
                 "description": "The channel to post in (if not provided, posts to user's timeline)"
             },
-            "image_arweave_url": {
+            "embed_url": {
                 "type": "string",
-                "description": "Arweave URL of an image to attach to the post"
-            },
-            "video_arweave_url": {
-                "type": "string", 
-                "description": "Arweave URL of a video to attach to the post"
+                "description": "A URL to embed in the cast, such as an Arweave URL for an image/video page or a frame URL"
             }
         },
         "required": ["content"]

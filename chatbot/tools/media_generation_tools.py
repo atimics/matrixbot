@@ -314,7 +314,7 @@ class GenerateImageTool(ToolInterface):
                 image_caption = f"Generated: {prompt[:200]}{'...' if len(prompt) > 200 else ''}"
                 farcaster_params = {
                     "content": image_caption,  # Meaningful content describing the generated image
-                    "image_arweave_url": arweave_url
+                    "embed_url": arweave_url
                 }
                 # Optionally, add channel if available in params
                 if "channel" in params:
@@ -335,7 +335,7 @@ class GenerateImageTool(ToolInterface):
                 "service_used": service_used,
                 "aspect_ratio": aspect_ratio,
                 "farcaster_post_result": farcaster_result,
-                "next_actions_suggestion": f"Use 'send_matrix_image' or 'send_farcaster_post' with image_arweave_url parameter to share this image: {arweave_url}"
+                "next_actions_suggestion": f"Use 'send_matrix_image' or 'send_farcaster_post' with embed_url parameter to share this image: {arweave_url}"
             }
             return result
 

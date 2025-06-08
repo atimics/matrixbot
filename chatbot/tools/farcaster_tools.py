@@ -117,7 +117,7 @@ class SendFarcasterPostTool(ToolInterface):
         
         # Generate minimal content for embed-only posts
         if not content and embed_url:
-            content = "�"  # Simple emoji for embed posts
+            content = "📎"  # Simple emoji for embed posts
 
         # Strip markdown formatting for Farcaster
         content = strip_markdown(content)
@@ -187,12 +187,12 @@ class SendFarcasterPostTool(ToolInterface):
         # Immediate execution fallback
         try:
             # Prepare embed URLs for the observer
-            final_embed_urls = [e['url'] for e in embeds if 'url' in e]
+            embed_urls = [e['url'] for e in embeds if 'url' in e]
 
             result = await context.farcaster_observer.post_cast(
                 content=content,
                 channel=channel,
-                embed_urls=final_embed_urls if final_embed_urls else None
+                embed_urls=embed_urls if embed_urls else None
             )
             logger.info(f"Farcaster observer post_cast returned: {result}")
 
@@ -213,7 +213,11 @@ class SendFarcasterPostTool(ToolInterface):
                 else:
                     context.world_state_manager.add_action_result(
                         action_type=self.name,
-                        parameters={"content": content, "channel": channel, "embed_url": embed_url},
+                        parameters={
+                            "content": content, 
+                            "channel": channel, 
+                            "embed_url": embed_url,
+                        },
                         result=f"failure: {result.get('error', 'unknown')}",
                     )
 
@@ -233,7 +237,11 @@ class SendFarcasterPostTool(ToolInterface):
             if context.world_state_manager:
                 context.world_state_manager.add_action_result(
                     action_type=self.name,
-                    parameters={"content": content, "channel": channel},
+                    parameters={
+                        "content": content, 
+                        "channel": channel,
+                        "embed_url": embed_url,
+                    },
                     result=f"failure: {str(e)}",
                 )
 
