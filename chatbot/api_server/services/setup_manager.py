@@ -133,7 +133,7 @@ class SetupManager:
         """Save the configuration to a config file in the data directory."""
         # Use data directory for persistence instead of .env (which may be read-only in Docker)
         config_path = Path("data/config.json")
-        config_path.parent.mkdir(exist_ok=True)
+        config_path.parent.mkdir(parents=True, exist_ok=True)
         
         # Map our step keys to environment variable names
         step_to_env = {
