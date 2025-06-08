@@ -12,6 +12,7 @@ A sophisticated, context-aware chatbot system with dynamic tool-based architectu
 - [🌟 Key Features](#-key-features)
 - [🏗️ Architecture Overview](#️-architecture-overview)
 - [🚀 Quick Start](#-quick-start)
+- [💻 Local Development](#-local-development)
 - [🌐 World State Management](#-world-state-management)
 - [🔧 Configuration](#-configuration)
 - [🚀 Deployment](#-deployment)
@@ -157,6 +158,72 @@ poetry run black chatbot/ && poetry run isort chatbot/
 # Lint code
 poetry run flake8 chatbot/ && poetry run mypy chatbot/
 ```
+
+## 💻 Local Development
+
+### 🏠 Migrating from GitHub Codespaces
+
+If you're currently using GitHub Codespaces and want to migrate to local development for better performance and no resource limits:
+
+#### Quick Migration
+```bash
+# 1. Clone to your local machine
+git clone <your-repo-url>
+cd matrixbot
+
+# 2. Run the migration script
+./migrate_to_local.sh
+
+# 3. Open in VS Code and reopen in container
+code .
+# When prompted: "Reopen in Container"
+```
+
+#### Manual Setup
+1. **Install Prerequisites**:
+   - [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+   - [Visual Studio Code](https://code.visualstudio.com/)
+   - [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
+
+2. **Setup Environment**:
+   ```bash
+   cp .env.example .env
+   # Edit .env with your actual values
+   ```
+
+3. **Open in Dev Container**:
+   - Open project in VS Code
+   - Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on macOS)
+   - Select "Dev Containers: Reopen in Container"
+
+### 🔧 Local Development Benefits
+
+- **Performance**: Faster file I/O and build times
+- **Resources**: Use your full machine resources
+- **Persistence**: Data persists between sessions
+- **Offline**: Work without internet connection
+- **Debugging**: Better debugging experience
+
+### 📂 Development Workflow
+
+```bash
+# Start all services
+docker-compose up -d
+
+# Run the chatbot in development
+poetry run python run.py
+
+# Run with UI
+poetry run python chatbot/main_with_ui.py
+
+# Run tests
+poetry run pytest
+
+# View logs
+docker-compose logs -f chatbot_backend
+```
+
+For detailed local development setup, see [LOCAL_DEVELOPMENT.md](./LOCAL_DEVELOPMENT.md).
 
 ## 🌐 World State Management
 
