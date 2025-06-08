@@ -137,7 +137,7 @@ class ArweaveService:
         
         # Download the image and upload to Arweave
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
                 response = await client.get(url)
                 response.raise_for_status()
                 
@@ -168,7 +168,7 @@ class ArweaveService:
             File data bytes or None if failed
         """
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
                 response = await client.get(url)
                 response.raise_for_status()
                 return response.content
