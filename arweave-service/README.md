@@ -45,6 +45,7 @@ Upload raw data to Arweave.
 ### Environment Variables
 
 - `ARWEAVE_WALLET_PATH`: Path to the wallet JSON file (default: `/data/arweave_wallet.json`)
+- `ARWEAVE_SERVICE_API_KEY`: Optional API key for endpoint authentication. If set, all upload endpoints will require this key in the `x-api-key` header.
 
 ### Required Files
 

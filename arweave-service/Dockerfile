@@ -6,15 +6,18 @@ WORKDIR /app
 # Create a non-root user for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
-# Install dependencies directly with pip (avoiding Poetry issues)
+# Install poetry
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir \
-        fastapi==0.104.1 \
-        uvicorn==0.24.0 \
-        arweave-python-client==1.0.19 \
-        python-multipart==0.0.6 \
-        httpx==0.25.2 \
-        pydantic==2.5.0
+    && pip install --no-cache-dir poetry==1.7.1
+
+# Configure poetry to not create virtual environment
+RUN poetry config virtualenvs.create false
+
+# Copy pyproject.toml and poetry.lock for dependency installation
+COPY pyproject.toml poetry.lock* ./
+
+# Install dependencies using poetry
+RUN poetry install --no-dev --no-interaction --no-ansi
 
 # Copy the application source code
 COPY . .

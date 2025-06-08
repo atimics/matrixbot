@@ -2,6 +2,7 @@
 Arweave Service - Secure, lean microservice for Arweave uploads
 This service expects a pre-provisioned wallet file and does NOT generate wallets.
 """
+import asyncio
 import json
 import logging
 import os
@@ -109,6 +110,14 @@ app = FastAPI(
 # Global wallet manager instance
 wallet_manager = get_wallet()
 
+# API Key for basic authentication
+API_KEY = os.getenv("ARWEAVE_SERVICE_API_KEY")
+
+def validate_api_key(x_api_key: Optional[str] = None):
+    """Validate API key if one is configured"""
+    if API_KEY and x_api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API Key")
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize the wallet on startup"""
@@ -161,6 +170,9 @@ async def upload_to_arweave(
         tags: Optional JSON string of tags to add to the transaction
         x_api_key: Optional API key for authentication
     """
+    # Validate API key if configured
+    validate_api_key(x_api_key)
+    
     if not wallet_manager.is_ready():
         raise HTTPException(status_code=503, detail="Wallet not initialized")
     
@@ -194,7 +206,7 @@ async def upload_to_arweave(
         
         # Sign and send transaction
         transaction.sign()
-        transaction.send()
+        await asyncio.to_thread(transaction.send)
         
         # Construct response
         arweave_url = f"https://arweave.net/{transaction.id}"
@@ -231,6 +243,9 @@ async def upload_data_to_arweave(
         tags: Optional JSON string of tags to add to the transaction
         x_api_key: Optional API key for authentication
     """
+    # Validate API key if configured
+    validate_api_key(x_api_key)
+    
     if not wallet_manager.is_ready():
         raise HTTPException(status_code=503, detail="Wallet not initialized")
     
@@ -255,7 +270,7 @@ async def upload_data_to_arweave(
         
         # Sign and send transaction
         transaction.sign()
-        transaction.send()
+        await asyncio.to_thread(transaction.send)
         
         # Construct response
         arweave_url = f"https://arweave.net/{transaction.id}"
