@@ -51,7 +51,7 @@ class HistoryRecorder:
 
         # Initialize storage directory
         self.storage_path = Path("data/context_storage")
-        self.storage_path.mkdir(exist_ok=True)
+        self.storage_path.mkdir(parents=True, exist_ok=True)
 
         logger.info("HistoryRecorder: Initialized")
 
