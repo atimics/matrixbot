@@ -335,6 +335,11 @@ class MainOrchestrator:
             AnalyzeAndProposeChangeTool, ImplementCodeChangesTool,
             CreatePullRequestTool
         )
+        from ...tools.user_profiling_tools import (
+            SentimentAnalysisTool,
+            StoreUserMemoryTool,
+            GetUserProfileTool
+        )
         
         # Core tools
         self.tool_registry.register_tool(WaitTool())
@@ -404,6 +409,11 @@ class MainOrchestrator:
         self.tool_registry.register_tool(AnalyzeAndProposeChangeTool())
         self.tool_registry.register_tool(ImplementCodeChangesTool())
         self.tool_registry.register_tool(CreatePullRequestTool())
+        
+        # User Profiling tools (Initiative B)
+        self.tool_registry.register_tool(SentimentAnalysisTool())
+        self.tool_registry.register_tool(StoreUserMemoryTool())
+        self.tool_registry.register_tool(GetUserProfileTool())
 
     async def start(self) -> None:
         """Start the entire orchestrator system."""

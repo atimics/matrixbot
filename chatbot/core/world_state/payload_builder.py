@@ -226,6 +226,11 @@ class PayloadBuilder:
                 },
             })
 
+        # Add user profiling data (Initiative B: Enhanced User Profiling Implementation)
+        user_profiling_data = self._build_user_profiling_payload(world_state_data, optimize_for_size)
+        if user_profiling_data:
+            payload["user_profiling"] = user_profiling_data
+
         return payload
 
     def build_node_based_payload(
@@ -787,3 +792,132 @@ class PayloadBuilder:
         except Exception as e:
             logger.error(f"Error getting data for node path {node_path}: {e}")
             return None
+
+    def _build_user_profiling_payload(self, world_state_data: WorldStateData, optimize_for_size: bool) -> Dict[str, Any]:
+        """
+        Build user profiling data for inclusion in AI payloads.
+        
+        Args:
+            world_state_data: The world state data to extract profiling info from
+            optimize_for_size: Whether to optimize payload size
+            
+        Returns:
+            Dictionary containing user profiling data or empty dict if no data
+        """
+        user_profiling = {}
+        
+        # Extract Farcaster user profiles with sentiment and memories
+        farcaster_users = getattr(world_state_data, 'farcaster_users', {})
+        if farcaster_users:
+            farcaster_profiles = {}
+            for fid, user in farcaster_users.items():
+                profile = {
+                    "username": getattr(user, 'username', None),
+                    "display_name": getattr(user, 'display_name', None),
+                    "follower_count": getattr(user, 'follower_count', 0),
+                }
+                
+                # Add bio (truncated if optimizing)
+                bio = getattr(user, 'bio', None)
+                if bio:
+                    if optimize_for_size and len(bio) > 50:
+                        profile["bio"] = bio[:50] + "..."
+                    else:
+                        profile["bio"] = bio
+                
+                # Add sentiment data
+                sentiment = getattr(user, 'sentiment', None)
+                if sentiment:
+                    profile["sentiment"] = {
+                        "current_sentiment": getattr(sentiment, 'current_sentiment', None),
+                        "sentiment_score": getattr(sentiment, 'sentiment_score', 0.0),
+                        "message_count": getattr(sentiment, 'message_count', 0),
+                        "last_interaction": getattr(sentiment, 'last_interaction_time', None)
+                    }
+                
+                # Add recent memories (limited for optimization)
+                memory_entries = getattr(user, 'memory_entries', [])
+                if memory_entries:
+                    memory_limit = 3 if optimize_for_size else 5
+                    profile["recent_memories"] = [
+                        {
+                            "content": mem.content[:100] + "..." if optimize_for_size and len(mem.content) > 100 else mem.content,
+                            "memory_type": mem.memory_type,
+                            "importance": mem.importance,
+                            "timestamp": mem.timestamp
+                        }
+                        for mem in memory_entries[-memory_limit:]
+                    ]
+                
+                farcaster_profiles[fid] = profile
+            
+            if farcaster_profiles:
+                user_profiling["farcaster_users"] = farcaster_profiles
+        
+        # Extract Matrix user profiles with sentiment and memories
+        matrix_users = getattr(world_state_data, 'matrix_users', {})
+        if matrix_users:
+            matrix_profiles = {}
+            for user_id, user in matrix_users.items():
+                profile = {
+                    "user_id": getattr(user, 'user_id', user_id),
+                    "display_name": getattr(user, 'display_name', None),
+                }
+                
+                # Add sentiment data
+                sentiment = getattr(user, 'sentiment', None)
+                if sentiment:
+                    profile["sentiment"] = {
+                        "current_sentiment": getattr(sentiment, 'current_sentiment', None),
+                        "sentiment_score": getattr(sentiment, 'sentiment_score', 0.0),
+                        "message_count": getattr(sentiment, 'message_count', 0),
+                        "last_interaction": getattr(sentiment, 'last_interaction_time', None)
+                    }
+                
+                # Add recent memories (limited for optimization)
+                memory_entries = getattr(user, 'memory_entries', [])
+                if memory_entries:
+                    memory_limit = 3 if optimize_for_size else 5
+                    profile["recent_memories"] = [
+                        {
+                            "content": mem.content[:100] + "..." if optimize_for_size and len(mem.content) > 100 else mem.content,
+                            "memory_type": mem.memory_type,
+                            "importance": mem.importance,
+                            "timestamp": mem.timestamp
+                        }
+                        for mem in memory_entries[-memory_limit:]
+                    ]
+                
+                matrix_profiles[user_id] = profile
+            
+            if matrix_profiles:
+                user_profiling["matrix_users"] = matrix_profiles
+        
+        # Add memory bank overview
+        memory_bank = getattr(world_state_data, 'user_memory_bank', {})
+        if memory_bank:
+            memory_stats = {}
+            total_memories = 0
+            for user_platform_id, memories in memory_bank.items():
+                platform = user_platform_id.split(":")[0] if ":" in user_platform_id else "unknown"
+                if platform not in memory_stats:
+                    memory_stats[platform] = {"users": 0, "memories": 0}
+                memory_stats[platform]["users"] += 1
+                memory_stats[platform]["memories"] += len(memories)
+                total_memories += len(memories)
+            
+            user_profiling["memory_bank_stats"] = {
+                "total_memories": total_memories,
+                "platforms": memory_stats,
+                "note": "Use get_user_profile tool to access detailed user memories"
+            }
+        
+        # Add profiling tools availability
+        if user_profiling:
+            user_profiling["available_tools"] = [
+                "analyze_user_sentiment - Analyze sentiment from user messages",
+                "store_user_memory - Store important user information",
+                "get_user_profile - Retrieve comprehensive user profile data"
+            ]
+        
+        return user_profiling

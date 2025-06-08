@@ -5,9 +5,12 @@ Farcaster Observer (Refactored)
 Orchestrates Farcaster API, data conversion, and scheduling.
 """
 import asyncio
+import json
 import logging
+import os
 import time
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ...core.world_state import Message
@@ -49,6 +52,11 @@ class FarcasterObserver(Integration):
         self.scheduler: Optional[FarcasterScheduler] = None
         self.neynar_api_client: Optional[NeynarAPIClient] = None  # Legacy compatibility
         
+        # File-based persistence setup
+        self.persistence_dir = Path("data/farcaster_state")
+        self.persistence_dir.mkdir(parents=True, exist_ok=True)
+        self.state_file = self.persistence_dir / "observer_state.json"
+        
         # Check if properly configured
         self._enabled = bool(self.api_key)
         
@@ -70,7 +78,10 @@ class FarcasterObserver(Integration):
             logger.warning(
                 "No Farcaster API key provided - observer will be largely inactive."
             )
-        self.last_check_time = time.time()
+            
+        # Load persistent state
+        self._load_persistent_state()
+        
         self.observed_channels = set()
         self.last_seen_hashes = set()
         
@@ -82,8 +93,39 @@ class FarcasterObserver(Integration):
         # Ecosystem token service
         self.ecosystem_token_service: Optional[Any] = None  # EcosystemTokenService
         
+        # State change callback for MainOrchestrator integration
+        self.on_state_change: Optional[callable] = None
+        
         logger.info("Farcaster observer initialized (refactored)")
 
+    def _load_persistent_state(self) -> None:
+        """Load persistent state from file"""
+        try:
+            if self.state_file.exists():
+                with open(self.state_file, 'r') as f:
+                    state_data = json.load(f)
+                self.last_check_time = state_data.get('last_check_time', time.time())
+                logger.info(f"Loaded persistent state: last_check_time={self.last_check_time}")
+            else:
+                self.last_check_time = time.time()
+                logger.info("No persistent state found, starting fresh")
+        except Exception as e:
+            logger.error(f"Error loading persistent state: {e}", exc_info=True)
+            self.last_check_time = time.time()
+
+    def _save_persistent_state(self) -> None:
+        """Save persistent state to file"""
+        try:
+            state_data = {
+                'last_check_time': self.last_check_time,
+                'saved_at': time.time()
+            }
+            with open(self.state_file, 'w') as f:
+                json.dump(state_data, f, indent=2)
+            logger.debug(f"Saved persistent state: last_check_time={self.last_check_time}")
+        except Exception as e:
+            logger.error(f"Error saving persistent state: {e}", exc_info=True)
+        
     @property
     def enabled(self) -> bool:
         """Check if integration is enabled and properly configured."""
@@ -331,6 +373,9 @@ class FarcasterObserver(Integration):
             unique_messages_dict = {msg.id: msg for msg in new_messages}
             new_messages = list(unique_messages_dict.values())
             self.last_check_time = current_time
+            
+            # Save persistent state after successful observation
+            self._save_persistent_state()
             
             # Sync rate limits after API calls
             self._sync_rate_limits_to_world_state()
@@ -851,7 +896,50 @@ class FarcasterObserver(Integration):
         else:
             context["engagement_level"] = "low"
 
+        # Update user profile in world state if available
+        if self.world_state_manager and context.get("fid"):
+            try:
+                self._update_farcaster_user_profile(message, context)
+            except Exception as e:
+                logger.error(f"Error updating user profile: {e}", exc_info=True)
+
         return context
+
+    def _update_farcaster_user_profile(self, message: Message, context: Dict[str, Any]) -> None:
+        """Update Farcaster user profile data in world state."""
+        fid = str(context.get("fid"))
+        if not fid:
+            return
+            
+        try:
+            # Get or create user details
+            user_details = self.world_state_manager.get_or_create_farcaster_user(fid)
+            
+            # Update basic information if we have new data
+            if context.get("username") and context["username"] != "unknown":
+                user_details.username = context["username"]
+            if context.get("display_name") and context["display_name"] != "Unknown":
+                user_details.display_name = context["display_name"]
+            if context.get("follower_count") is not None:
+                user_details.follower_count = context["follower_count"]
+            if context.get("following_count") is not None:
+                user_details.following_count = context["following_count"]
+            if context.get("power_badge") is not None:
+                user_details.power_badge = context["power_badge"]
+            if context.get("verified_addresses"):
+                user_details.verified_addresses = context["verified_addresses"]
+                
+            # Update bio from message metadata if available
+            metadata = getattr(message, "metadata", {})
+            if isinstance(metadata, dict) and metadata.get("bio"):
+                user_details.bio = metadata["bio"]
+            if isinstance(metadata, dict) and metadata.get("pfp_url"):
+                user_details.pfp_url = metadata["pfp_url"]
+            
+            logger.debug(f"Updated profile for Farcaster user {fid} ({user_details.username})")
+            
+        except Exception as e:
+            logger.error(f"Error updating Farcaster user profile for FID {fid}: {e}", exc_info=True)
 
     def _store_world_state_data(self, data_type: str, messages: List[Message]) -> None:
         """Store categorized world state data in the world state manager."""
@@ -859,8 +947,16 @@ class FarcasterObserver(Integration):
             return
             
         try:
-            # Create a special channel for each data type
-            channel_id = f"farcaster:world_state_{data_type}"
+            # Map data types to persistent channel IDs
+            channel_mapping = {
+                'trending': 'farcaster:trending',
+                'home': 'farcaster:home', 
+                'notifications': 'farcaster:notifications',
+                'for_you': 'farcaster:for_you'
+            }
+            
+            # Use mapped channel ID or fallback to prefixed version
+            channel_id = channel_mapping.get(data_type, f"farcaster:world_state_{data_type}")
             
             # Add messages to world state manager
             for msg in messages:
@@ -876,7 +972,7 @@ class FarcasterObserver(Integration):
                     # Log and continue on error
                     logger.error(f"WorldStateManager: Failed to add message {getattr(msg, 'id', None)}", exc_info=True)
                         
-            logger.debug(f"Stored {len(messages)} {data_type} messages in world state")
+            logger.debug(f"Stored {len(messages)} {data_type} messages in world state channel {channel_id}")
             
         except Exception as e:
             logger.error(f"Error storing {data_type} world state data: {e}", exc_info=True)
@@ -920,6 +1016,14 @@ class FarcasterObserver(Integration):
                         
                 if total_messages > 0:
                     logger.info(f"World state collection: stored {total_messages} messages across {len(world_state_data)} categories")
+                    
+                    # Trigger state change notification for MainOrchestrator
+                    if hasattr(self, 'on_state_change') and self.on_state_change:
+                        try:
+                            self.on_state_change()
+                            logger.debug("Triggered state change notification after world state collection")
+                        except Exception as e:
+                            logger.error(f"Error triggering state change: {e}", exc_info=True)
                 else:
                     logger.debug("World state collection: no new messages found")
                     
