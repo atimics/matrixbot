@@ -205,8 +205,8 @@ class TestMediaGalleryIntegration:
             orchestrator.action_context = mock_action_context
             
             # Mock room creation response
-            mock_response = AsyncMock()
-            mock_response.room_id = "!new-gallery:example.com"
+            from nio import RoomCreateResponse
+            mock_response = RoomCreateResponse(room_id="!new-gallery:example.com")
             mock_client.room_create.return_value = mock_response
             
             # Mock the file operations for config persistence
