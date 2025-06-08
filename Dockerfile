@@ -20,9 +20,8 @@ RUN pip install poetry
 
 # Configure Poetry
 ENV POETRY_NO_INTERACTION=1 \
-    POETRY_VENV_IN_PROJECT=1 \
-    POETRY_CACHE_DIR=/tmp/poetry_cache \
-    POETRY_VIRTUALENVS_PATH=/app
+    POETRY_VIRTUALENVS_IN_PROJECT=1 \
+    POETRY_CACHE_DIR=/tmp/poetry_cache
 
 # Create and set work directory
 WORKDIR /app
@@ -35,14 +34,9 @@ COPY chatbot/ ./chatbot/
 COPY scripts/ ./scripts/
 COPY README.md ./
 
-# Install dependencies using Poetry and locate venv
-RUN poetry install --only=main --no-interaction --no-ansi && \
+# Install dependencies using Poetry (no-root since package-mode is false)
+RUN poetry install --only=main --no-interaction --no-ansi --no-root && \
     rm -rf $POETRY_CACHE_DIR
-
-# Create a simple script to find and copy the venv
-RUN echo '#!/bin/bash\ncp -r /app/chatbot-*/ /app/.venv' > /app/copy_venv.sh && \
-    chmod +x /app/copy_venv.sh && \
-    /app/copy_venv.sh
 
 # Copy control panel from scripts to root for Docker service
 COPY control_panel.py ./control_panel.py
@@ -93,5 +87,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 # Expose port (if needed for web interface)
 EXPOSE 8000
 
-# Set default command
-CMD ["python", "-m", "chatbot.main"]
+# Set default command to run chatbot with UI
+CMD ["python", "-m", "chatbot.main_with_ui"]

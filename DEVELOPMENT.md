@@ -1,18 +1,22 @@
 # 🚀 Development Guide
 
-This guide provides comprehensive information for developers working on the chatbot system, including setup procedures, development workflows, testing strategies, and contribution guidelines.
+Comprehensive development guide for the Chatbot System, including setup procedures, workflows, testing strategies, and contribution guidelines.
+
+[![Development](https://img.shields.io/badge/development-active-green.svg)](https://github.com)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Poetry](https://img.shields.io/badge/dependency%20management-poetry-blue)](https://python-poetry.org/)
 
 ## 📋 Table of Contents
 
-- [Development Environment Setup](#-development-environment-setup)
-- [Project Structure](#-project-structure)
-- [Development Workflow](#-development-workflow)
-- [Testing Guidelines](#-testing-guidelines)
-- [Code Quality Standards](#-code-quality-standards)
-- [Debugging & Troubleshooting](#-debugging--troubleshooting)
-- [Contributing Guidelines](#-contributing-guidelines)
-- [Release Process](#-release-process)
-- [Development Roadmap & Status](#-development-roadmap--status)
+- [🛠️ Development Environment Setup](#️-development-environment-setup)
+- [📁 Project Structure](#-project-structure)
+- [🔄 Development Workflow](#-development-workflow)
+- [🧪 Testing Guidelines](#-testing-guidelines)
+- [📏 Code Quality Standards](#-code-quality-standards)
+- [🐛 Debugging & Troubleshooting](#-debugging--troubleshooting)
+- [🚀 Deployment Options](#-deployment-options)
+- [🤝 Contributing Guidelines](#-contributing-guidelines)
+- [📋 Development Roadmap](#-development-roadmap)
 
 ## 🛠️ Development Environment Setup
 

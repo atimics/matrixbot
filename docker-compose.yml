@@ -1,116 +1,99 @@
+# RatiChat AI - Full-Stack Containerized Architecture
+
 services:
-  chatbot:
+  postgres:
+    image: postgres:14-alpine
+    container_name: ratichat_postgres
+    environment:
+      POSTGRES_USER: ratichat
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ratichat
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - ratichat_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ratichat"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  ratichat_backend:
     build:
       context: .
-      dockerfile: Dockerfile
-      target: production
-    container_name: ratimics-chatbot
-    restart: unless-stopped
-    
-    # Environment variables (override with .env file)
-    environment:
-      - CHATBOT_ENV=production
-      - CHATBOT_DB_PATH=/app/data/chatbot.db
-      - OBSERVATION_INTERVAL=${OBSERVATION_INTERVAL:-2}
-      - MAX_CYCLES_PER_HOUR=${MAX_CYCLES_PER_HOUR:-300}
-      - AI_MODEL=${AI_MODEL:-openai/gpt-4o-mini}
-      
-      # Matrix configuration
-      - MATRIX_HOMESERVER=${MATRIX_HOMESERVER}
-      - MATRIX_USER_ID=${MATRIX_USER_ID}
-      - MATRIX_PASSWORD=${MATRIX_PASSWORD}
-      - MATRIX_ROOM_ID=${MATRIX_ROOM_ID:-#robot-laboratory:chat.ratimics.com}
-      - MATRIX_DEVICE_ID=${MATRIX_DEVICE_ID}
-      - DEVICE_NAME=${DEVICE_NAME:-ratichat_bot}
-      
-      # OpenRouter API
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      
-      # Farcaster (optional)
-      - NEYNAR_API_KEY=${NEYNAR_API_KEY}
-    
-    # Volume mounts for persistence
+      dockerfile: Dockerfile  # Use main Dockerfile for production-ready build
+    container_name: ratichat_backend
+    ports:
+      - "8000:8000" # Expose the API server
     volumes:
-      - chatbot_data:/app/data
-      - chatbot_logs:/app/logs
-      - chatbot_matrix_store:/app/matrix_store
-      - chatbot_context:/app/context_storage
-    
-    # Network configuration
+      - ./data:/app/data # Persist ratichat data (db, context storage, etc.)
+      - ./matrix_store:/app/matrix_store # Persist matrix session data
+      - ./.env:/app/.env:ro # Mount .env file for configuration (read-only)
+    depends_on:
+      postgres:
+        condition: service_healthy
+      arweave-service:
+        condition: service_healthy
     networks:
-      - chatbot_network
-    
-    # Resource limits
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.5'
-        reservations:
-          memory: 256M
-          cpus: '0.1'
-    
-    # Health check
+      - ratichat_network
+    env_file:
+      - .env # Load environment variables from .env file
+    environment:
+      # Additional runtime environment
+      - PYTHONUNBUFFERED=1
+      - RATICHAT_DB_PATH=/app/data/ratichat.db
+      - ARWEAVE_INTERNAL_UPLOADER_SERVICE_URL=http://arweave-service:8001
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import sqlite3; sqlite3.connect('/app/data/chatbot.db').execute('SELECT 1')"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  arweave-service:
+    build:
+      context: ./arweave-service
+      dockerfile: Dockerfile
+    container_name: arweave_service
+    ports:
+      - "8001:8001"  # Expose for testing and direct access
+    environment:
+      - ARWEAVE_WALLET_PATH=/data/arweave_wallet.json
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # Mount the wallet file directly from host data directory
+      - ./data/arweave_wallet.json:/data/arweave_wallet.json:ro
+    networks:
+      - ratichat_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health')\" || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
-    
-    # Logging configuration
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
 
-  # Optional: Web interface for monitoring
-  web-interface:
+  ratichat_ui:
     build:
-      context: .
+      context: ./ui-nextjs # Point to the Next.js app
       dockerfile: Dockerfile
-      target: production
-    container_name: ratimics-chatbot-web
-    restart: unless-stopped
-    command: ["python", "control_panel.py"]
-    
-    environment:
-      - CHATBOT_ENV=production
-      - CHATBOT_DB_PATH=/app/data/chatbot.db
-      
-    volumes:
-      - chatbot_data:/app/data:ro
-      - chatbot_logs:/app/logs:ro
-      
+    container_name: ratichat_ui
     ports:
-      - "8000:8000"
-      
+      - "3000:3000"
     networks:
-      - chatbot_network
-      
+      - ratichat_network
+    environment:
+      # For client-side API calls (from browser)
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      # For server-side API calls (from Next.js server)
+      - INTERNAL_API_URL=http://ratichat_backend:8000
     depends_on:
-      chatbot:
-        condition: service_healthy
-    
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-          cpus: '0.2'
+      - ratichat_backend
+    restart: unless-stopped
 
-# Named volumes for data persistence
 volumes:
-  chatbot_data:
-    driver: local
-  chatbot_logs:
-    driver: local
-  chatbot_matrix_store:
-    driver: local
-  chatbot_context:
-    driver: local
+  postgres_data:
 
-# Network for service communication
 networks:
-  chatbot_network:
+  ratichat_network:
     driver: bridge

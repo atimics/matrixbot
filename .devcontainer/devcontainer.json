@@ -14,7 +14,7 @@
 	},
 
 	// 👇 Use 'forwardPorts' to make a list of ports inside the container available locally.
-	// "forwardPorts": [],
+	"forwardPorts": [8000, 3000, 8001],
 
 	// 👇 Mount host Docker socket for Docker-outside-of-Docker (alternative to DinD)
 	"mounts": [
@@ -22,7 +22,7 @@
 	],
 
 	// 👇 Use 'postCreateCommand' to run commands after the container is created.
-	// "postCreateCommand": "",
+	"postCreateCommand": "poetry run python -m pip install --upgrade pip && poetry install",
 
 	// 👇 Configure tool-specific properties.
 	"customizations": {

@@ -17,11 +17,19 @@ class ActionContext:
         farcaster_observer=None,
         world_state_manager=None,
         context_manager=None,
+        arweave_client=None,
+        arweave_service=None,
+        base_nft_service=None,
+        eligibility_service=None,
     ):
         self.matrix_observer = matrix_observer
         self.farcaster_observer = farcaster_observer
         self.world_state_manager = world_state_manager
         self.context_manager = context_manager
+        self.arweave_client = arweave_client
+        self.arweave_service = arweave_service
+        self.base_nft_service = base_nft_service
+        self.eligibility_service = eligibility_service
 
 
 class ToolInterface(ABC):

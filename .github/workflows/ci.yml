@@ -1,10 +1,12 @@
 name: CI
 
 on:
-  push:
+  pull_request:
+    branches: [main]
     paths-ignore:
       - '**/*.md'
-  pull_request:
+  push:
+    branches: [develop]
     paths-ignore:
       - '**/*.md'
 
@@ -20,13 +22,16 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install dependencies
+      - name: Install Poetry
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install poetry
+      - name: Install dependencies
+        run: |
+          poetry install
       - name: Run tests
         run: |
-          pytest -v --junitxml=pytest.xml
+          poetry run pytest -v --junitxml=pytest.xml
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4

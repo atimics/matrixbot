@@ -49,22 +49,24 @@ async def test_unfollow_farcaster_user_tool_missing_param():
     assert "Missing required parameter" in res["error"]
 
 @pytest.mark.asyncio
-async def test_send_farcaster_dm_tool_success():
+async def test_send_farcaster_dm_tool_deprecated():
+    """Test that DM tool now returns failure since DM functionality is not supported."""
     tool = SendFarcasterDMTool()
     mock_obs = AsyncMock()
-    mock_obs.send_dm.return_value = {"success": True, "message_id": "dm789"}
     context = ActionContext(farcaster_observer=mock_obs)
     params = {"fid": 123, "content": "Hello DM"}
     res = await tool.execute(params, context)
-    assert res["status"] == "success"
-    assert res["message_id"] == "dm789"
-    mock_obs.send_dm.assert_awaited_once_with(123, "Hello DM")
+    assert res["status"] == "failure"
+    assert "not supported by the API" in res["error"]
+    # Ensure the observer method is not called since functionality is deprecated
+    mock_obs.send_dm.assert_not_called()
 
 @pytest.mark.asyncio
-async def test_send_farcaster_dm_tool_missing_params():
+async def test_send_farcaster_dm_tool_missing_params_deprecated():
+    """Test that DM tool returns failure for missing params (but still due to deprecation)."""
     tool = SendFarcasterDMTool()
     mock_obs = AsyncMock()
     context = ActionContext(farcaster_observer=mock_obs)
     res = await tool.execute({"fid": 123}, context)
     assert res["status"] == "failure"
-    assert "Missing required parameters" in res["error"]
+    assert "not supported by the API" in res["error"]

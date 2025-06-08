@@ -56,7 +56,9 @@ class TestAIBlindnessFix:
             }
         
         observer.send_reply = AsyncMock(side_effect=make_reply_return)
+        observer.send_formatted_reply = AsyncMock(side_effect=make_reply_return)
         observer.send_message = AsyncMock(side_effect=make_message_return)
+        observer.send_formatted_message = AsyncMock(side_effect=make_message_return)
         return observer
     
     @pytest.mark.asyncio
@@ -185,6 +187,10 @@ class TestAIBlindnessFix:
         """Test that failed actions don't create phantom bot messages."""
         # Setup failed observer
         mock_matrix_observer.send_reply = AsyncMock(return_value={
+            "success": False,
+            "error": "Test failure"
+        })
+        mock_matrix_observer.send_formatted_reply = AsyncMock(return_value={
             "success": False,
             "error": "Test failure"
         })

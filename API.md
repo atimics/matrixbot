@@ -186,19 +186,38 @@ Join Matrix rooms and accept invitations.
 
 #### SendFarcasterPostTool
 
-Create new Farcaster posts.
+Create new Farcaster posts with automatic image embedding and social media optimization.
 
 ```python
 {
     "name": "send_farcaster_post",
     "description": "Send a new post to Farcaster",
     "parameters_schema": {
-        "content": "string - post content (max 320 characters)",
-        "embeds": "array (optional) - URLs to embed",
-        "channel": "string (optional) - channel to post in"
+        "type": "object",
+        "properties": {
+            "content": {
+                "type": "string",
+                "description": "The text content of the cast to post"
+            },
+            "channel": {
+                "type": "string", 
+                "description": "The channel to post in (if not provided, posts to user's timeline)"
+            },
+            "embed_url": {
+                "type": "string",
+                "description": "A URL to embed in the cast, such as an Arweave URL for an image/video page or a frame URL"
+            }
+        },
+        "required": ["content"]
     }
 }
 ```
+
+**Enhanced Features:**
+- Automatic generation of embeddable URLs with Open Graph metadata for images
+- Social media optimized previews with descriptive titles
+- Proper URL encoding for special characters
+- Rich media display in Farcaster clients
 
 #### SendFarcasterReplyTool
 
@@ -209,8 +228,18 @@ Reply to Farcaster casts.
     "name": "send_farcaster_reply",
     "description": "Reply to a Farcaster cast",
     "parameters_schema": {
-        "content": "string - reply content",
-        "reply_to_hash": "string - hash of cast to reply to"
+        "type": "object",
+        "properties": {
+            "content": {
+                "type": "string",
+                "description": "The text content of the reply"
+            },
+            "reply_to_hash": {
+                "type": "string",
+                "description": "The hash of the cast to reply to"
+            }
+        },
+        "required": ["content", "reply_to_hash"]
     }
 }
 ```
@@ -224,7 +253,14 @@ Like Farcaster casts.
     "name": "like_farcaster_post",
     "description": "Like a Farcaster cast",
     "parameters_schema": {
-        "cast_hash": "string - hash of cast to like"
+        "type": "object",
+        "properties": {
+            "cast_hash": {
+                "type": "string",
+                "description": "The hash of the cast to like"
+            }
+        },
+        "required": ["cast_hash"]
     }
 }
 ```
@@ -238,8 +274,22 @@ Quote Farcaster casts with additional commentary.
     "name": "quote_farcaster_post",
     "description": "Quote a Farcaster cast with commentary",
     "parameters_schema": {
-        "content": "string - your commentary on the quoted cast",
-        "quoted_cast_hash": "string - hash of cast to quote"
+        "type": "object",
+        "properties": {
+            "content": {
+                "type": "string",
+                "description": "Your commentary/thoughts to add to the quoted cast"
+            },
+            "quoted_cast_hash": {
+                "type": "string",
+                "description": "The hash of the cast to quote"
+            },
+            "channel": {
+                "type": "string",
+                "description": "The channel to post in (if not provided, posts to user's timeline)"
+            }
+        },
+        "required": ["content", "quoted_cast_hash"]
     }
 }
 ```
@@ -253,25 +303,100 @@ Follow Farcaster users.
     "name": "follow_farcaster_user",
     "description": "Follow a user on Farcaster",
     "parameters_schema": {
-        "fid": "number - Farcaster ID of user to follow"
+        "type": "object",
+        "properties": {
+            "fid": {
+                "type": "integer",
+                "description": "The Farcaster ID of the user to follow"
+            }
+        },
+        "required": ["fid"]
     }
 }
 ```
 
-#### SendFarcasterDirectMessageTool
+#### DeleteFarcasterPostTool
 
-Send direct messages on Farcaster.
+Delete Farcaster posts (casts) that you have previously created.
+
+```python
+{
+    "name": "delete_farcaster_post",
+    "description": "Delete a Farcaster cast by its hash",
+    "parameters_schema": {
+        "type": "object",
+        "properties": {
+            "cast_hash": {
+                "type": "string",
+                "description": "The hash of the cast to delete"
+            }
+        },
+        "required": ["cast_hash"]
+    }
+}
+```
+
+**Requirements:**
+- You must be the author of the cast to delete it
+- Your `signer_uuid` must be approved for the Neynar API
+- The cast must still exist on the network
+
+**Use Cases:**
+- Remove mistaken or incorrect posts
+- Delete outdated information
+- Clean up your timeline
+
+#### DeleteFarcasterReactionTool
+
+Remove reactions (likes or recasts) from Farcaster posts.
+
+```python
+{
+    "name": "delete_farcaster_reaction",
+    "description": "Delete a reaction from a Farcaster cast",
+    "parameters_schema": {
+        "type": "object",
+        "properties": {
+            "cast_hash": {
+                "type": "string",
+                "description": "The hash of the cast to remove reaction from"
+            }
+        },
+        "required": ["cast_hash"]
+    }
+}
+```
+
+**Requirements:**
+- You must have previously reacted to the cast
+- Your `signer_uuid` must be approved for the Neynar API
+
+**Use Cases:**
+- Unlike a post you accidentally liked
+- Remove a recast that's no longer relevant
+- Correct engagement mistakes
+
+#### SendFarcasterDirectMessageTool ⚠️ DEPRECATED
+
+**IMPORTANT: This tool is deprecated and non-functional.** Direct message functionality is not supported by the Farcaster API.
 
 ```python
 {
     "name": "send_farcaster_direct_message",
-    "description": "Send a direct message to a Farcaster user",
+    "description": "DEPRECATED: Send a direct message to a Farcaster user (NOT SUPPORTED)",
     "parameters_schema": {
         "recipient_fid": "number - Farcaster ID of recipient",
         "content": "string - message content"
-    }
+    },
+    "status": "deprecated",
+    "note": "Always returns failure - DM functionality not available via Farcaster API"
 }
 ```
+
+**Alternative Approaches:**
+- Use public replies for communication
+- Suggest moving conversations to Matrix for private messaging
+- Focus on public engagement tools (posts, replies, likes, follows)
 
 ## 🌍 World State API
 
@@ -729,7 +854,85 @@ For operations that may take time:
 }
 ```
 
-## 🔄 Versioning
+## � Enhanced Features
+
+### Rate Limiting Infrastructure
+
+The system includes comprehensive rate limiting with automatic monitoring:
+
+**Farcaster API Rate Limiting:**
+- Automatic parsing of rate limit headers (`x-ratelimit-limit`, `x-ratelimit-remaining`, `x-ratelimit-reset`)
+- Warning logs when approaching limits (< 10 requests remaining)
+- Rate limit status tracking in world state for AI awareness
+- Graceful degradation when limits are exceeded
+
+**Implementation:**
+```python
+# Rate limits are automatically tracked and available in world state
+{
+    "system_status": {
+        "rate_limits": {
+            "farcaster_api": {
+                "remaining": 245,
+                "limit": 300,
+                "reset_time": 1672531200,
+                "last_update": 1672527600
+            }
+        }
+    }
+}
+```
+
+### S3 Service Enhancements
+
+**Embeddable URL Generation:**
+- Automatic generation of embeddable URLs with Open Graph metadata
+- Proper URL encoding for titles and descriptions
+- Social media optimized previews for Farcaster sharing
+
+**Usage:**
+```python
+from chatbot.tools.arweave_service import ArweaveService
+
+arweave_service = ArweaveService()
+embeddable_url = arweave_service.generate_embeddable_url(
+    arweave_url="https://arweave.net/transaction_id",
+    title="AI Generated Image",
+    description="A beautiful sunset over mountains"
+)
+```
+
+**Features:**
+- Automatic URL encoding for special characters
+- Proper Open Graph meta tag generation
+- Enhanced social media preview support
+- Seamless integration with Farcaster posting
+
+### Tool Parameter Schema Standardization
+
+All tools now use standardized JSON Schema format for better validation and AI integration:
+
+**Standard Format:**
+```json
+{
+    "type": "object",
+    "properties": {
+        "parameter_name": {
+            "type": "string|integer|array|object",
+            "description": "Clear parameter description"
+        }
+    },
+    "required": ["required_param1", "required_param2"]
+}
+```
+
+**Benefits:**
+- Improved parameter validation
+- Better AI tool understanding
+- Consistent documentation
+- Enhanced error messages
+
+## �🔄 Versioning
 
 The API follows semantic versioning:
 

@@ -130,6 +130,21 @@ cython_debug/
 # VSCode
 .vscode/
 
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+package-lock.json
+yarn.lock
+.pnpm-debug.log*
+
+# Next.js
+.next/
+out/
+build/
+
 # Docker
 .env
 .env.local
@@ -161,6 +176,54 @@ ehthumbs.db
 Thumbs.db
 
 matrix_token.json
-<coroutine*
-state_change_
+state_change_*
 context_storage/state_change_*
+
+# Synapse data directory
+synapse-data/
+
+# Debug and demo files (cleaned up)
+debug_*.py
+demo_*.py
+test_*.py  # Only in root, not in tests/ directory
+!/tests/test_*.py  # Allow test files in tests directory
+
+# Backup files
+*.backup
+*.bak
+*~
+
+# Temporary runtime directories
+debug_matrix_store/
+test_ace_workspace/
+test_git_debug/
+
+# Additional temporary files
+coverage.xml
+dummy.db
+pytest.xml
+
+# IDE and editor files
+.idea/
+*.swp
+*.swo
+
+# Runtime generated files
+*.pid
+*.seed
+*.pid.lock
+
+# Project-specific additions for consolidated UI
+
+# Runtime configuration files
+data/config.json
+data/chatbot.db
+
+# Deprecated UI components (keeping for reference)
+# control_panel.py  # Deprecated - use ui-nextjs instead
+# setup_server.py   # Deprecated - setup handled in Next.js UI
+# ui/               # Deprecated - use ui-nextjs instead
+
+# Arweave wallet files (SENSITIVE!)
+**/arweave_wallet.json
+arweave_wallet_data/

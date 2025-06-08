@@ -116,7 +116,8 @@ class TestMatrixTools:
         params = {
             "channel_id": "!test:example.com",
             "content": "Test reply",
-            "reply_to_id": "original_event"
+            "reply_to_id": "original_event",
+            "format_as_markdown": False
         }
         
         result = await tool.execute(params, context)
@@ -146,7 +147,8 @@ class TestMatrixTools:
         context = ActionContext(matrix_observer=mock_observer)
         params = {
             "channel_id": "!test:example.com",
-            "content": "Test message"
+            "content": "Test message",
+            "format_as_markdown": False
         }
         
         result = await tool.execute(params, context)
@@ -166,7 +168,7 @@ class TestFarcasterTools:
         # Test properties
         assert tool.name == "send_farcaster_post"
         assert "farcaster" in tool.description.lower()
-        assert "content" in tool.parameters_schema
+        assert "content" in tool.parameters_schema["properties"]
         
         # Test execution with mock observer
         mock_observer = AsyncMock()
@@ -192,8 +194,8 @@ class TestFarcasterTools:
         # Test properties
         assert tool.name == "send_farcaster_reply"
         assert "reply" in tool.description.lower()
-        assert "content" in tool.parameters_schema
-        assert "reply_to_hash" in tool.parameters_schema
+        assert "content" in tool.parameters_schema["properties"]
+        assert "reply_to_hash" in tool.parameters_schema["properties"]
         
         # Test execution with mock observer
         mock_observer = AsyncMock()

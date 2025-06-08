@@ -1,6 +1,25 @@
-# Chatbot System
+# 🤖 Chatbot System
 
-A sophisticated context-aware chatbot system with a dynamic tool-based architecture that manages conversation state and integrates with Matrix and Farcaster platforms. The system implements an advanced world state management approach for maintaining conversation context across multi-platform interactions.
+A sophisticated, context-aware chatbot system with dynamic tool-based architecture, multi-platform integration, and advanced conversation state management. Built for intelligent conversations across Matrix and Farcaster platforms with comprehensive AI-driven decision making.
+
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Poetry](https://img.shields.io/badge/dependency%20management-poetry-blue)](https://python-poetry.org/)
+[![License: CC BY-NC 4.0](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/)
+[![Code Quality](https://img.shields.io/badge/code%20quality-black%20%7C%20flake8%20%7C%20mypy-blue)](pyproject.toml)
+
+## 📋 Table of Contents
+
+- [🌟 Key Features](#-key-features)
+- [🏗️ Architecture Overview](#️-architecture-overview)
+- [🚀 Quick Start](#-quick-start)
+- [💻 Local Development](#-local-development)
+- [🌐 World State Management](#-world-state-management)
+- [🔧 Configuration](#-configuration)
+- [🚀 Deployment](#-deployment)
+- [🧪 Testing](#-testing)
+- [📖 Documentation](#-documentation)
+- [🤝 Contributing](#-contributing)
+- [📄 License](#-license)
 
 ## 🌟 Key Features
 
@@ -61,6 +80,8 @@ All platform interactions are handled through standardized tools with consistent
 - `LikeFarcasterPostTool` - Social engagement actions with deduplication
 - `QuoteFarcasterPostTool` - Quote casting with content attribution
 - `FollowFarcasterUserTool` - User following functionality
+- `DeleteFarcasterPostTool` - Delete your own Farcaster posts/casts
+- `DeleteFarcasterReactionTool` - Remove likes/recasts from posts
 - `SendFarcasterDirectMessageTool` - Private messaging capabilities
 
 ### 🎯 Key Benefits
@@ -73,50 +94,136 @@ All platform interactions are handled through standardized tools with consistent
 - **⚡ Performance**: Optimized payload generation and intelligent message filtering
 - **🔒 Reliability**: Robust error handling, rate limiting, and state consistency
 
-## Quick Start
+## 🚀 Quick Start
 
-### Docker Deployment (Recommended)
+### 🐳 Docker Deployment (Recommended)
 
-1. **Setup environment**:
+The fastest way to get started is using Docker:
+
 ```bash
-cp env.example .env
+# 1. Clone the repository
+git clone <repository-url>
+cd python3-poetry-pyenv
+
+# 2. Setup environment
+cp .env.example .env
 nano .env  # Fill in your API keys and credentials
-```
 
-2. **Deploy with Docker**:
-```bash
+# 3. Deploy with Docker
 ./scripts/deploy.sh
-```
 
-3. **Monitor logs**:
-```bash
+# 4. Monitor logs
 docker-compose logs -f chatbot
 ```
 
-### Development Setup
+### 🛠️ Development Setup
 
-1. **Install dependencies**:
-```bash
-pip install -e .
-```
-
-2. **Configure environment**:
-```bash
-cp env.example .env
-nano .env  # Add your credentials
-```
-
-3. **Run the system**:
-```bash
-python -m chatbot.main
-```
-
-### Using Poetry
+For local development and testing:
 
 ```bash
+# 1. Install Poetry (if not already installed)
+curl -sSL https://install.python-poetry.org | python3 -
+
+# 2. Install dependencies
 poetry install
+
+# 3. Configure environment
+cp .env.example .env
+nano .env  # Add your credentials
+
+# 4. Run the system
 poetry run python -m chatbot.main
 ```
+
+### 🎮 Available Tasks
+
+Use VS Code tasks or run them directly:
+
+```bash
+# Run the main chatbot
+poetry run python -m chatbot.main
+
+# Run with management UI
+poetry run python -m chatbot.main_with_ui
+
+# Run control panel
+poetry run python control_panel.py
+
+# Run tests
+poetry run pytest tests/ -v
+
+# Format code
+poetry run black chatbot/ && poetry run isort chatbot/
+
+# Lint code
+poetry run flake8 chatbot/ && poetry run mypy chatbot/
+```
+
+## 💻 Local Development
+
+### 🏠 Migrating from GitHub Codespaces
+
+If you're currently using GitHub Codespaces and want to migrate to local development for better performance and no resource limits:
+
+#### Quick Migration
+```bash
+# 1. Clone to your local machine
+git clone <your-repo-url>
+cd matrixbot
+
+# 2. Run the migration script
+./migrate_to_local.sh
+
+# 3. Open in VS Code and reopen in container
+code .
+# When prompted: "Reopen in Container"
+```
+
+#### Manual Setup
+1. **Install Prerequisites**:
+   - [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+   - [Visual Studio Code](https://code.visualstudio.com/)
+   - [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
+
+2. **Setup Environment**:
+   ```bash
+   cp .env.example .env
+   # Edit .env with your actual values
+   ```
+
+3. **Open in Dev Container**:
+   - Open project in VS Code
+   - Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on macOS)
+   - Select "Dev Containers: Reopen in Container"
+
+### 🔧 Local Development Benefits
+
+- **Performance**: Faster file I/O and build times
+- **Resources**: Use your full machine resources
+- **Persistence**: Data persists between sessions
+- **Offline**: Work without internet connection
+- **Debugging**: Better debugging experience
+
+### 📂 Development Workflow
+
+```bash
+# Start all services
+docker-compose up -d
+
+# Run the chatbot in development
+poetry run python run.py
+
+# Run with UI
+poetry run python chatbot/main_with_ui.py
+
+# Run tests
+poetry run pytest
+
+# View logs
+docker-compose logs -f chatbot_backend
+```
+
+For detailed local development setup, see [LOCAL_DEVELOPMENT.md](./LOCAL_DEVELOPMENT.md).
 
 ## 🌐 World State Management
 
@@ -165,87 +272,134 @@ The world state provides rich analytics for understanding conversation patterns 
 - **Bot Performance**: Action success rates, response times, and error patterns
 - **Social Dynamics**: User interaction patterns, thread participation, and engagement quality
 
-## 🔧 Configuration Management
+## 🔧 Configuration
 
-The system uses a centralized configuration approach with environment-based settings that support both development and production deployments.
+The system uses environment variables for configuration. Copy `.env.example` to `.env` and configure:
 
-### 📝 Core Configuration Categories
+### � Required Settings
 
-#### **AI & LLM Settings**
 ```bash
-AI_MODEL=openai/gpt-4o-mini                    # Primary AI model
-OPENROUTER_API_KEY=your_key_here              # OpenRouter API access
-PRIMARY_LLM_PROVIDER=openrouter               # LLM provider selection
-OLLAMA_API_URL=http://localhost:11434         # Local Ollama instance (optional)
-```
+# AI Configuration
+AI_MODEL=openai/gpt-4o-mini
+OPENROUTER_API_KEY=your_openrouter_key_here
 
-#### **Platform Credentials**
-```bash
 # Matrix Configuration
-MATRIX_HOMESERVER=https://matrix.org          # Matrix homeserver URL
-MATRIX_USER_ID=@bot:matrix.org                # Bot's Matrix user ID
-MATRIX_PASSWORD=secure_password               # Matrix account password
-MATRIX_ROOM_ID=#room:matrix.org               # Default monitoring room
-
-# Farcaster Configuration (Optional)
-NEYNAR_API_KEY=your_neynar_key               # Neynar API for Farcaster
-FARCASTER_BOT_FID=12345                      # Bot's Farcaster ID
-FARCASTER_BOT_SIGNER_UUID=uuid_here          # Signing key for posts
-FARCASTER_BOT_USERNAME=botname               # Bot username for filtering
+MATRIX_HOMESERVER=https://matrix.example.org
+MATRIX_USER_ID=@your-bot:example.org
+MATRIX_PASSWORD=your_secure_password
+MATRIX_ROOM_ID=!yourRoom:example.org
 ```
 
-#### **Performance Tuning**
+### ⚙️ Optional Settings
+
 ```bash
-# Core System
-OBSERVATION_INTERVAL=2.0                      # Seconds between observation cycles
-MAX_CYCLES_PER_HOUR=300                      # Rate limiting for AI cycles
-CHATBOT_DB_PATH=chatbot.db                   # Database file location
+# Farcaster Integration
+NEYNAR_API_KEY=your_neynar_key
+FARCASTER_BOT_FID=your_bot_fid
+FARCASTER_BOT_USERNAME=your_bot_username
 
-# AI Payload Optimization
-AI_CONVERSATION_HISTORY_LENGTH=10            # Messages per channel for AI
-AI_ACTION_HISTORY_LENGTH=5                   # Action history depth
-AI_THREAD_HISTORY_LENGTH=5                   # Thread message depth
-AI_OTHER_CHANNELS_SUMMARY_COUNT=3            # Secondary channels to include
-AI_INCLUDE_DETAILED_USER_INFO=true           # Full user metadata vs summary
+# Performance Tuning
+OBSERVATION_INTERVAL=2.0
+MAX_CYCLES_PER_HOUR=300
+AI_CONVERSATION_HISTORY_LENGTH=10
+
+# Alternative LLM Provider
+PRIMARY_LLM_PROVIDER=ollama  # or "openrouter"
+OLLAMA_API_URL=http://localhost:11434
 ```
 
-### ⚙️ Advanced Configuration
+See [Configuration Guide](DEVELOPMENT.md#configuration) for detailed options.
 
-The configuration system supports:
-- **Environment Variable Override**: All settings can be overridden via environment variables
-- **Development vs Production**: Different configurations for different deployment environments
-- **Secrets Management**: Secure handling of API keys and credentials
-- **Runtime Reconfiguration**: Some settings can be adjusted without restart (future enhancement)
+## 🚀 Deployment
 
-## 🚀 Deployment Options
+### 🐳 Docker Production Deployment
 
-## Docker Setup in Dev Container
-
-If you're using a dev container and need Docker support:
-
-1. **Configure Docker support**:
+1. **Configure production environment**:
 ```bash
-./scripts/setup-docker.sh
+cp .env.example .env.production
+# Edit .env.production with production credentials
 ```
 
-2. **Rebuild your dev container**:
-   - Open VS Code Command Palette (Ctrl+Shift+P)
-   - Run: "Dev Containers: Rebuild Container"
-
-## 🧪 Testing & Quality Assurance
-
-The project includes comprehensive testing infrastructure to ensure reliability and maintainability.
-
-### 🔬 Test Structure
-
-#### **Unit Tests**
-- **Core Component Tests**: Complete coverage of world state, AI engine, and orchestrator components
-- **Tool System Tests**: Individual tool testing with mocked dependencies
-- **Integration Tests**: End-to-end testing of platform integrations
-- **Configuration Tests**: Validation of configuration loading and environment handling
-
-#### **Test Categories**
+2. **Deploy using Docker Compose**:
+```bash
+docker-compose up -d
 ```
+
+3. **Monitor and manage**:
+```bash
+# View logs
+docker-compose logs -f chatbot
+
+# Restart services
+docker-compose restart
+
+# Update deployment
+git pull
+docker-compose build
+docker-compose up -d
+```
+
+### 🖥️ Traditional Server Deployment
+
+```bash
+# Install system dependencies
+sudo apt update
+sudo apt install python3.10 python3-pip
+
+# Install Poetry
+curl -sSL https://install.python-poetry.org | python3 -
+
+# Deploy application
+git clone <repository-url>
+cd python3-poetry-pyenv
+poetry install --only=main
+cp .env.example .env
+# Edit .env with production settings
+
+# Run as service (using systemd)
+sudo cp scripts/chatbot.service /etc/systemd/system/
+sudo systemctl enable chatbot
+sudo systemctl start chatbot
+```
+
+### ☁️ Cloud Deployment
+
+The system supports deployment on:
+- **AWS ECS**: Container-based deployment
+- **Google Cloud Run**: Serverless container deployment  
+- **Azure Container Instances**: Simple container deployment
+- **DigitalOcean App Platform**: Managed deployment
+
+See [Deployment Guide](DEVELOPMENT.md#deployment-options) for detailed instructions.
+
+## 🧪 Testing
+
+The system includes comprehensive testing infrastructure:
+
+```bash
+# Run all tests
+poetry run pytest tests/ -v
+
+# Run with coverage
+poetry run pytest tests/ --cov=chatbot --cov-report=html --cov-report=term
+
+# Run specific test categories
+poetry run pytest tests/test_core.py -v
+poetry run pytest tests/test_world_state_comprehensive.py -v
+
+# Performance testing
+poetry run pytest tests/ -m "not slow"  # Skip slow tests
+poetry run pytest tests/ -m "slow"      # Run only slow tests
+```
+
+### 🏗️ Test Structure
+
+- **Unit Tests**: Individual component testing
+- **Integration Tests**: Multi-component interactions  
+- **End-to-End Tests**: Complete workflow testing
+- **Performance Tests**: Load and stress testing
+
+See [Testing Guide](DEVELOPMENT.md#testing-guidelines) for detailed information.
 tests/
 ├── test_ai_engine.py                 # AI decision engine testing
 ├── test_core.py                      # Core component unit tests
@@ -358,217 +512,72 @@ Features:
 - **Platform Status**: Connection status and health metrics for all platforms
 - **Configuration Viewer**: Current configuration settings and environment variables
 
-## 📚 API Documentation
+## 📖 Documentation
 
-### 🔌 Tool Development
+Comprehensive documentation is available:
 
-#### **Creating Custom Tools**
-```python
-from chatbot.tools.base import ToolInterface, ActionContext
-from typing import Dict, Any
+- **[README.md](README.md)**: This file - quick start and overview
+- **[ARCHITECTURE.md](ARCHITECTURE.md)**: Detailed system architecture and design
+- **[DEVELOPMENT.md](DEVELOPMENT.md)**: Development setup, workflows, and guidelines
+- **[API.md](API.md)**: API reference and integration details
 
-class CustomTool(ToolInterface):
-    @property
-    def name(self) -> str:
-        return "custom_action"
-    
-    @property
-    def description(self) -> str:
-        return "Performs a custom action with specified parameters"
-    
-    @property
-    def parameters_schema(self) -> Dict[str, Any]:
-        return {
-            "parameter1": "string (description of parameter)",
-            "parameter2": "integer (another parameter description)"
-        }
-    
-    async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
-        # Implementation here
-        return {
-            "status": "success",
-            "message": "Action completed successfully",
-            "timestamp": time.time()
-        }
+### 📚 Additional Resources
 
-# Register the tool
-registry.register_tool(CustomTool())
-```
-
-#### **Tool Best Practices**
-- **Parameter Validation**: Always validate input parameters before execution
-- **Error Handling**: Provide meaningful error messages and proper exception handling
-- **State Updates**: Use the context to update world state appropriately
-- **Rate Limiting**: Respect platform rate limits and implement backoff strategies
-- **Logging**: Include comprehensive logging for debugging and monitoring
-
-### 🌐 Platform Integration
-
-#### **Adding New Platforms**
-1. **Observer Implementation**: Create an observer class for the new platform
-2. **Tool Development**: Implement platform-specific tools following the ToolInterface
-3. **Message Model Extensions**: Extend the Message class for platform-specific metadata
-4. **Configuration Updates**: Add necessary configuration parameters
-5. **Integration Testing**: Develop comprehensive tests for the new platform
-
-## 📈 Performance & Scalability
-
-### ⚡ Optimization Features
-
-#### **Memory Management**
-- **Message Rotation**: Automatic cleanup of old messages to prevent memory bloat
-- **Action History Limits**: Configurable limits on action history retention
-- **State Compression**: Efficient serialization and storage of world state
-- **Garbage Collection**: Proactive cleanup of unused objects and references
-
-#### **Processing Efficiency**
-- **Async Architecture**: Fully asynchronous design for maximum concurrency
-- **Batch Processing**: Efficient batch processing of multiple messages
-- **Smart Filtering**: Intelligent filtering to reduce unnecessary processing
-- **Cache Optimization**: Strategic caching of frequently accessed data
-
-### 📊 Monitoring & Metrics
-
-#### **Built-in Metrics**
-- **Cycle Performance**: Monitoring of observation and decision cycle times
-- **Platform Health**: Connection status and API response times for all platforms
-- **Action Success Rates**: Tracking of tool execution success and failure rates
-- **Memory Usage**: Monitoring of world state size and memory consumption
-- **Rate Limit Status**: Real-time tracking of API rate limit utilization
-
-#### **External Monitoring**
-The system supports integration with external monitoring solutions:
-- **Structured Logging**: JSON-formatted logs for easy parsing and analysis
-- **Metrics Export**: Prometheus-compatible metrics endpoints (future enhancement)
-- **Health Checks**: HTTP health check endpoints for load balancer integration
-- **Alert Integration**: Support for webhook-based alerting systems
+- **Tool System**: See `chatbot/tools/` for individual tool implementations
+- **Configuration**: Review `.env.example` for all available settings
+- **Scripts**: Check `scripts/` directory for deployment and utility scripts
 
 ## 🤝 Contributing
 
-### 📋 Development Guidelines
+We welcome contributions! Please see [DEVELOPMENT.md](DEVELOPMENT.md) for:
 
-#### **Code Standards**
-- Follow the existing code style enforced by Black and isort
-- Maintain type hints for all public interfaces
-- Include comprehensive docstrings for all classes and methods
-- Write tests for all new functionality
+- Development environment setup
+- Code quality standards
+- Testing requirements
+- Pull request process
 
-#### **Pull Request Process**
-1. **Fork & Branch**: Create a feature branch from the main branch
-2. **Development**: Implement changes following code standards
-3. **Testing**: Ensure all tests pass and add tests for new features
-4. **Documentation**: Update documentation for any API or configuration changes
-5. **Review**: Submit pull request with clear description of changes
+### 🛠️ Development Commands
 
-#### **Architecture Decisions**
-- **Tool-Based Extensions**: New functionality should be implemented as tools when possible
-- **Platform Abstraction**: Maintain clean separation between platform-specific and core logic
-- **Configuration Driven**: New features should be configurable rather than hard-coded
-- **Backwards Compatibility**: Maintain backwards compatibility for configuration and APIs
-
-## 📄 License & Support
-
-### 📞 Getting Help
-
-- **Documentation**: Check this README and inline code documentation first
-- **Issues**: Report bugs and feature requests via GitHub issues
-- **Discussions**: Use GitHub discussions for questions and community support
-- **Contributing**: See the contributing guidelines above for development questions
-
-### 🔄 Versioning
-
-The project follows semantic versioning (SemVer):
-- **Major versions**: Breaking changes to APIs or configuration
-- **Minor versions**: New features and enhancements
-- **Patch versions**: Bug fixes and security updates
-
-Current version: `0.1.0` (Initial release with core functionality)
-
-3. **Validate setup**:
 ```bash
-./scripts/validate-docker.sh
+# Setup development environment
+poetry install
+poetry run pre-commit install
+
+# Code quality checks
+poetry run black chatbot/           # Format code
+poetry run isort chatbot/           # Sort imports  
+poetry run flake8 chatbot/          # Lint code
+poetry run mypy chatbot/            # Type checking
+
+# Run tests
+poetry run pytest tests/ -v        # All tests
+poetry run pytest tests/ --cov     # With coverage
 ```
 
-## Configuration
+## 📄 License
 
-Required environment variables:
-- `MATRIX_HOMESERVER` - Your Matrix server URL
-- `MATRIX_USER_ID` - Bot's Matrix user ID
-- `MATRIX_PASSWORD` - Bot's Matrix password
-- `OPENROUTER_API_KEY` - OpenRouter API key for AI inference
-- `NEYNAR_API_KEY` - (Optional) Farcaster API key
+This project is licensed under the Creative Commons Attribution-NonCommercial 4.0 International License. See [LICENSE](LICENSE) file for details.
 
-## Docker Commands
+**Key Terms:**
+- ✅ **Share & Adapt**: You can copy, redistribute, remix, and build upon the material
+- 🏷️ **Attribution Required**: You must give appropriate credit and indicate changes
+- 🚫 **Non-Commercial**: Commercial use requires explicit written permission
+- 📧 **Commercial Licensing**: Contact us for commercial use permissions
 
-- **Start services**: `docker-compose up -d`
-- **View logs**: `docker-compose logs -f chatbot`
-- **Stop services**: `docker-compose down`
-- **Restart bot**: `docker-compose restart chatbot`
-- **Shell access**: `docker-compose exec chatbot bash`
-- **Web interface**: http://localhost:8000 (if enabled)
+For commercial use, licensing, or any revenue-generating applications, please obtain written permission from the copyright holder.
 
-## Architecture
+## 🆘 Support
 
-### Directory Structure
-- `chatbot/core/` - Core system components (orchestrator, world state, context management, AI engine)
-- `chatbot/tools/` - Dynamic tool system with registry and implementations
-- `chatbot/integrations/` - Platform observers (Matrix, Farcaster)
-- `chatbot/storage/` - Data persistence layer
+- **Issues**: [GitHub Issues](../../issues)
+- **Discussions**: [GitHub Discussions](../../discussions)
+- **Documentation**: [Project Documentation](DEVELOPMENT.md)
 
-### Tool Development
+---
 
-To add a new tool:
+<div align="center">
 
-1. **Create the tool class**:
-```python
-from chatbot.tools.base import ToolInterface, ActionContext
+**[⬆ Back to Top](#-chatbot-system)**
 
-class MyCustomTool(ToolInterface):
-    @property
-    def name(self) -> str:
-        return "my_custom_action"
-    
-    @property  
-    def description(self) -> str:
-        return "Description of what this tool does"
-    
-    @property
-    def parameters_schema(self) -> Dict[str, Any]:
-        return {
-            "param1": "string (description)",
-            "param2": "int (description)"
-        }
-    
-    async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
-        # Implementation here
-        return {"success": True, "message": "Action completed"}
-```
+Built with ❤️ using Python, Poetry, and modern async technologies
 
-2. **Register the tool**:
-```python
-# In orchestrator's _initialize_tools method
-self.tool_registry.register_tool(MyCustomTool())
-```
-
-The AI will automatically receive the tool description and can use it in decisions.
-
-## Testing
-
-Run tests with:
-```bash
-pytest
-```
-
-For coverage reports:
-```bash
-pytest --cov=chatbot
-```
-
-## Control Panel
-
-A web-based control panel is available for monitoring and managing the system:
-```bash
-python control_panel.py
-```
-
-Visit http://localhost:5000 to access the control panel.
+</div>

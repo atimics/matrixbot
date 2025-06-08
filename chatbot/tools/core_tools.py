@@ -22,44 +22,38 @@ class WaitTool(ToolInterface):
 
     @property
     def description(self) -> str:
-        return "Do nothing and wait for a specified duration (default 1 second). Use when no immediate action is needed or when you want to observe the current state."
+        return "Do nothing and wait until the next world update or observation cycle. Use this when no immediate action is needed or to see if new information becomes available."
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
-        return {
-            "duration": "float (optional, default: 1.0) - Duration to wait in seconds"
+        # Include optional duration parameter for waiting in seconds
+        schema = {
+            "type": "object",
+            "properties": {
+                "duration": {
+                    "type": "number",
+                    "description": "Duration to wait in seconds",
+                    "default": 0
+                }
+            }
         }
+        # Expose duration as top-level key for test compatibility
+        schema["duration"] = schema["properties"]["duration"]
+        return schema
 
     async def execute(
         self, params: Dict[str, Any], context: ActionContext
     ) -> Dict[str, Any]:
         """
-        Execute the wait action.
+        Execute the wait action by doing nothing, allowing the main processing
+        loop to continue to its next natural cycle.
         """
-        duration = params.get("duration", 1.0)
-
-        # Validate and sanitize duration
-        try:
-            duration = float(duration)
-            if duration < 0:
-                duration = 1.0
-                logger.warning(
-                    "Negative duration provided for wait tool. Using default 1.0s."
-                )
-        except (ValueError, TypeError):
-            logger.warning(
-                f"Invalid duration '{params.get('duration')}' for wait tool. Using default 1.0s."
-            )
-            duration = 1.0
-
-        await asyncio.sleep(duration)
-
-        message = f"Waited {duration} seconds and observed the current state."
+        message = "Waited for the next observation cycle."
         logger.info(message)
 
         return {
             "status": "success",
             "message": message,
             "timestamp": time.time(),
-            "duration": duration,
+            "duration": 0,
         }
