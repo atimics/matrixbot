@@ -6,14 +6,15 @@ WORKDIR /app
 # Create a non-root user for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
-# Copy only necessary files for dependency installation
-COPY pyproject.toml poetry.lock* ./
-
-# Install poetry and dependencies in a single layer
-# --no-cache-dir reduces image size
-RUN pip install --no-cache-dir poetry>=1.2.0 \
-    && poetry config virtualenvs.create false \
-    && poetry install --no-interaction --no-ansi --only main
+# Install dependencies directly with pip (avoiding Poetry issues)
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir \
+        fastapi==0.104.1 \
+        uvicorn==0.24.0 \
+        arweave-python-client==1.0.19 \
+        python-multipart==0.0.6 \
+        httpx==0.25.2 \
+        pydantic==2.5.0
 
 # Copy the application source code
 COPY . .
@@ -36,4 +37,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')" || exit 1
 
 # Default command to run the application
-CMD ["poetry", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]

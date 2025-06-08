@@ -13,8 +13,9 @@ export default function Home() {
 
   const checkSystemStatus = async () => {
     try {
-      const response = await apiClient.get<SystemInfo>('/api/status')
-      setSystemInfo(response.data)
+      const response = await apiClient.get('/api/status')
+      const systemData = response.data as SystemInfo
+      setSystemInfo(systemData)
       setError(null)
     } catch (err: any) {
       console.error('Failed to fetch system status:', err)

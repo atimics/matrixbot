@@ -29,7 +29,7 @@ RUN ardrive --version
 # Copy poetry configuration first for layer caching
 COPY pyproject.toml poetry.lock* ./
 
-# Install poetry and python dependencies
+# Install poetry and python dependencies as root first
 # Using --no-cache-dir reduces image size
 RUN pip install --no-cache-dir poetry>=1.2.0 \
     && poetry config virtualenvs.create false \
@@ -46,7 +46,7 @@ RUN chmod +x ./entrypoint.sh
 # Change ownership of the app directory to the non-root user
 RUN chown -R appuser:appgroup /uploader_app
 
-# Switch to the non-root user
+# Switch to the non-root user AFTER installing dependencies
 USER appuser
 
 # Expose port

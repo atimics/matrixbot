@@ -16,8 +16,9 @@ export default function ToolManager() {
 
   const fetchTools = async () => {
     try {
-      const response = await apiClient.get<ToolsResponse>('/api/tools')
-      setTools(response.data.tools || [])
+      const response = await apiClient.get('/api/tools')
+      const toolsData = response.data as ToolsResponse
+      setTools(toolsData.tools || [])
     } catch (error) {
       console.error('Failed to fetch tools:', error)
     } finally {

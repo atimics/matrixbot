@@ -51,10 +51,11 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
       setMessages([welcomeMessage])
 
       // Get first setup step
-      const response = await apiClient.get<{ step: SetupStep }>('/api/setup/start')
-      if (response.data.step) {
-        setCurrentStep(response.data.step)
-        await typeMessage(response.data.step.question)
+      const response = await apiClient.get('/api/setup/start')
+      const setupData = response.data as { step: SetupStep }
+      if (setupData.step) {
+        setCurrentStep(setupData.step)
+        await typeMessage(setupData.step.question)
       }
     } catch (error) {
       console.error('Failed to initialize setup:', error)
