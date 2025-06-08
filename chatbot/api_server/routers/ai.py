@@ -18,7 +18,7 @@ from ..dependencies import get_orchestrator
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/ai", tags=["ai"])
+router = APIRouter(prefix="/api/ai", tags=["ai"])
 
 
 

@@ -20,7 +20,7 @@ from ..dependencies import get_orchestrator, get_setup_manager
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/setup", tags=["setup"])
+router = APIRouter(prefix="/api/setup", tags=["setup"])
 
 
 class SetupSubmission(BaseModel):

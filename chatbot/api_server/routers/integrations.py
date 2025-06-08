@@ -20,7 +20,7 @@ from ..dependencies import get_orchestrator
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/integrations", tags=["integrations"])
+router = APIRouter(prefix="/api/integrations", tags=["integrations"])
 
 
 

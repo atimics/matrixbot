@@ -79,10 +79,10 @@ class ChatbotAPIServer:
         self.app.include_router(system.router)
         self.app.include_router(tools.router)
         self.app.include_router(config.router)
-        self.app.include_router(integrations.router, prefix="/api")
-        self.app.include_router(ai.router, prefix="/api")
-        self.app.include_router(worldstate.router, prefix="/api")
-        self.app.include_router(setup.router, prefix="/api")
+        self.app.include_router(integrations.router)
+        self.app.include_router(ai.router)
+        self.app.include_router(worldstate.router)
+        self.app.include_router(setup.router)
         self.app.include_router(logs.router)  # already has /api prefix
         
         # UI and frames routers (no prefix)

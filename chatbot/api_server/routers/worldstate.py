@@ -20,7 +20,7 @@ from ..schemas import StatusResponse
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/worldstate", tags=["worldstate"])
+router = APIRouter(prefix="/api/worldstate", tags=["worldstate"])
 
 
 class NodeAction(BaseModel):
