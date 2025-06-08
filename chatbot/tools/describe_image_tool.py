@@ -33,7 +33,7 @@ async def ensure_publicly_accessible_image_url(image_url: str, context: ActionCo
 
     # It's a Matrix URL. Download it with authentication.
     if hasattr(context, 'matrix_observer') and context.matrix_observer and context.matrix_observer.client:
-        async with httpx.AsyncClient() as http_client:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as http_client:
             try:
                 access_token = context.matrix_observer.client.access_token
                 if not access_token:
