@@ -56,12 +56,14 @@ services:
       context: ./arweave-service
       dockerfile: Dockerfile
     container_name: arweave_service
+    ports:
+      - "8001:8001"  # Expose for testing and direct access
     environment:
       - ARWEAVE_WALLET_PATH=/data/arweave_wallet.json
       - PYTHONUNBUFFERED=1
     volumes:
-      # Mount as read-only for extra security
-      - arweave_wallet_data:/data:ro
+      # Mount the wallet file directly from host data directory
+      - ./data/arweave_wallet.json:/data/arweave_wallet.json:ro
     networks:
       - chatbot_network
     restart: unless-stopped
@@ -91,7 +93,6 @@ services:
 
 volumes:
   postgres_data:
-  arweave_wallet_data:
 
 networks:
   chatbot_network:

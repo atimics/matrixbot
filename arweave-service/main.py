@@ -60,7 +60,9 @@ class ArweaveWalletManager:
             raise HTTPException(status_code=503, detail="Wallet not initialized")
         
         try:
-            balance_winston = await self.wallet.get_balance()
+            # Use run_in_executor for the synchronous wallet.balance property
+            loop = asyncio.get_event_loop()
+            balance_winston = await loop.run_in_executor(None, lambda: self.wallet.balance)
             # Convert winston to AR (1 AR = 1e12 winston)
             return float(balance_winston) / 1e12
         except Exception as e:
