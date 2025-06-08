@@ -1351,7 +1351,6 @@ class GetTrendingCastsTool(ToolInterface):
                         action_type="get_trending_casts",
                         parameters={"channel_id": channel_id, "timeframe_hours": timeframe_hours, "limit": limit},
                         result="success",
-                        timestamp=time.time(),
                     )
                     
                     # Cache trending results
@@ -1466,7 +1465,6 @@ class SearchCastsTool(ToolInterface):
                         action_type="search_casts",
                         parameters={"query": query, "limit": limit, "channel_id": channel_id},
                         result="success",
-                        timestamp=time.time(),
                     )
                     
                     # Cache search results for future reference

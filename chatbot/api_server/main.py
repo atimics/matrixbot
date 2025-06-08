@@ -89,6 +89,16 @@ class ChatbotAPIServer:
         self.app.include_router(ui_frames.ui_router)
         self.app.include_router(ui_frames.frames_router)
         
+        # Add root-level health endpoint for Docker health checks
+        @self.app.get("/health")
+        async def root_health_check():
+            """Root-level health check endpoint for Docker containers."""
+            return {
+                "status": "healthy",
+                "timestamp": datetime.now().isoformat(),
+                "service": "chatbot_api"
+            }
+        
     def _setup_websocket_routes(self):
         """Set up WebSocket routes for real-time features."""
         @self.app.websocket("/ws/logs")
