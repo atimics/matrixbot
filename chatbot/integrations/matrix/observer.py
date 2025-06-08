@@ -1459,10 +1459,20 @@ class MatrixObserver(Integration):
                 parsed_url = urlparse(image_url)
                 filename = parsed_url.path.split('/')[-1] or "image.jpg"
             
-            # Download the image
-            async with httpx.AsyncClient() as client:
+            # Download the image with redirect following (handles all URLs including Arweave)
+            logger.info(f"Downloading and uploading image: {image_url}")
+            
+            # Download the image with redirect following
+            async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
                 try:
-                    response = await client.get(image_url)
+                    # Add user-agent and other headers to mimic a browser
+                    headers = {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+                        "Accept": "image/*,*/*;q=0.8",
+                        "Accept-Language": "en-US,en;q=0.5",
+                        "Connection": "keep-alive",
+                    }
+                    response = await client.get(image_url, headers=headers)
                     response.raise_for_status()
                     image_data = response.content
                 except Exception as e:

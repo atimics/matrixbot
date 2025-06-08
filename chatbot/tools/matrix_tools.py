@@ -1032,7 +1032,7 @@ class SendMatrixVideoTool(ToolInterface):
                 "Connection": "keep-alive",
             }
             
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
                 response = await client.get(video_url, headers=browser_headers)
                 response.raise_for_status()
                 video_data = response.content
