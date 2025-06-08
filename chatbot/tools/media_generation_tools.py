@@ -126,7 +126,7 @@ class GenerateImageTool(ToolInterface):
                     replicate_client = ReplicateClient(api_token=settings.REPLICATE_API_TOKEN)
                     replicate_image_url = await replicate_client.generate_image(prompt, aspect_ratio=aspect_ratio)
                     if replicate_image_url:
-                        async with httpx.AsyncClient() as client:
+                        async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
                             response = await client.get(replicate_image_url)
                             response.raise_for_status()
                             image_data = response.content
