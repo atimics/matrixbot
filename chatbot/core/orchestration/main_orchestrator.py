@@ -942,7 +942,7 @@ class MainOrchestrator:
                     with open(config_path, 'r') as f: 
                         config_data = json.load(f)
                 config_data["MATRIX_MEDIA_GALLERY_ROOM_ID"] = new_room_id
-                config_path.parent.mkdir(exist_ok=True)
+                config_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(config_path, 'w') as f: 
                     json.dump(config_data, f, indent=2)
                 logger.info(f"Saved new gallery room ID to {config_path}")
