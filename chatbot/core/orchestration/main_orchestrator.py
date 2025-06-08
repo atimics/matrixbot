@@ -27,6 +27,7 @@ from ..world_state.manager import WorldStateManager
 from ..world_state.payload_builder import PayloadBuilder
 from .processing_hub import ProcessingHub, ProcessingConfig
 from .rate_limiter import RateLimiter, RateLimitConfig
+from ..proactive import ProactiveConversationEngine
 
 logger = logging.getLogger(__name__)
 
@@ -239,6 +240,15 @@ class MainOrchestrator:
             config=self.config.processing_config
         )
         
+        # Proactive conversation engine (Initiative C)
+        self.proactive_engine = ProactiveConversationEngine(
+            world_state_manager=self.world_state,
+            context_manager=self.context_manager
+        )
+        
+        # Connect proactive engine to world state manager for easy access
+        self.world_state.proactive_engine = self.proactive_engine
+        
         # Tool Registry and AI Engine
         self.tool_registry = ToolRegistry()
         self.ai_engine = AIDecisionEngine(
@@ -340,6 +350,12 @@ class MainOrchestrator:
             StoreUserMemoryTool,
             GetUserProfileTool
         )
+        from ...tools.proactive_conversation_tools import (
+            InitiateProactiveConversationTool,
+            DetectConversationOpportunitiesTool,
+            ScheduleProactiveEngagementTool,
+            GetProactiveEngagementStatusTool
+        )
         
         # Core tools
         self.tool_registry.register_tool(WaitTool())
@@ -414,6 +430,12 @@ class MainOrchestrator:
         self.tool_registry.register_tool(SentimentAnalysisTool())
         self.tool_registry.register_tool(StoreUserMemoryTool())
         self.tool_registry.register_tool(GetUserProfileTool())
+        
+        # Proactive Conversation tools (Initiative C)
+        self.tool_registry.register_tool(InitiateProactiveConversationTool())
+        self.tool_registry.register_tool(DetectConversationOpportunitiesTool())
+        self.tool_registry.register_tool(ScheduleProactiveEngagementTool())
+        self.tool_registry.register_tool(GetProactiveEngagementStatusTool())
 
     async def start(self) -> None:
         """Start the entire orchestrator system."""
@@ -446,6 +468,9 @@ class MainOrchestrator:
             # Set up processing hub with traditional processor
             self._setup_processing_components()
             
+            # Start the proactive conversation engine
+            await self.proactive_engine.start()
+            
             # Start the processing loop
             await self.processing_hub.start_processing_loop()
             
@@ -465,6 +490,10 @@ class MainOrchestrator:
 
         # Stop processing hub
         self.processing_hub.stop_processing_loop()
+        
+        # Stop proactive conversation engine
+        if self.proactive_engine:
+            await self.proactive_engine.stop()
         
         # Stop NFT and eligibility services
         if self.eligibility_service:
@@ -559,6 +588,9 @@ class MainOrchestrator:
                 # Connect state change notifications
                 self.matrix_observer.on_state_change = self.processing_hub.trigger_state_change
                 
+                # Connect proactive conversation engine to state changes
+                self.matrix_observer.on_state_change = self._on_world_state_change
+                
                 logger.info("Matrix observer initialized and started")
             except Exception as e:
                 logger.error(f"Failed to initialize Matrix observer: {e}")
@@ -577,6 +609,9 @@ class MainOrchestrator:
                 
                 # Connect state change notifications
                 self.farcaster_observer.on_state_change = self.processing_hub.trigger_state_change
+                
+                # Connect proactive conversation engine to state changes  
+                self.farcaster_observer.on_state_change = self._on_world_state_change
                 
                 self.world_state.update_system_status({"farcaster_connected": True})
                 logger.info("Farcaster observer initialized and started")
@@ -669,6 +704,15 @@ class MainOrchestrator:
     def trigger_state_change(self):
         """Trigger immediate processing when world state changes."""
         self.processing_hub.trigger_state_change()
+    
+    def _on_world_state_change(self):
+        """Handle world state changes for both processing and proactive conversations."""
+        # Trigger normal processing
+        self.processing_hub.trigger_state_change()
+        
+        # Trigger proactive conversation opportunity detection
+        if self.proactive_engine:
+            asyncio.create_task(self.proactive_engine.on_world_state_change())
 
     async def get_system_status(self) -> Dict[str, Any]:
         """

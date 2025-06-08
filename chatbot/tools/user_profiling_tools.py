@@ -11,9 +11,8 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
-from ..core.context import ActionContext
+from .base import ActionContext, ToolInterface
 from ..core.world_state.structures import MemoryEntry, SentimentData
-from .base import ToolInterface
 
 logger = logging.getLogger(__name__)
 

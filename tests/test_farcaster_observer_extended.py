@@ -1,17 +1,26 @@
 import pytest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 import time
 import httpx
+import tempfile
+from pathlib import Path
 from chatbot.integrations.farcaster.farcaster_observer import FarcasterObserver
 from chatbot.core.world_state import WorldStateManager, WorldState, Message
 
 @pytest.fixture
 def observer():
-    obs = FarcasterObserver(api_key="testkey", signer_uuid="test-signer", bot_fid=1234)
-    # Attach a world state manager
-    wsm = WorldStateManager()
-    obs.world_state_manager = wsm
-    return obs
+    # Use a temporary directory for testing
+    with tempfile.TemporaryDirectory() as temp_dir:
+        obs = FarcasterObserver(api_key="testkey", signer_uuid="test-signer", bot_fid=1234)
+        # Override the persistence directory after creation
+        obs.persistence_dir = Path(temp_dir) / "farcaster_state"
+        obs.persistence_dir.mkdir(parents=True, exist_ok=True)
+        obs.state_file = obs.persistence_dir / "observer_state.json"
+        
+        # Attach a world state manager
+        wsm = WorldStateManager()
+        obs.world_state_manager = wsm
+        yield obs
 
 class DummyResponse:
     def __init__(self, status_code=200, json_data=None, headers=None, text=''):
@@ -78,10 +87,17 @@ async def test_reply_to_cast_calls_post_cast(observer):
 
 @pytest.mark.asyncio
 async def test_observe_home_feed_without_fid(monkeypatch):
-    obs = FarcasterObserver(api_key="key", signer_uuid="sid")  # no bot_fid
-    obs.world_state_manager = WorldStateManager()
-    msgs = await obs._observe_home_feed()
-    assert msgs == []
+    # Use a temporary directory for testing
+    with tempfile.TemporaryDirectory() as temp_dir:
+        obs = FarcasterObserver(api_key="key", signer_uuid="sid")  # no bot_fid
+        # Override the persistence directory after creation
+        obs.persistence_dir = Path(temp_dir) / "farcaster_state"
+        obs.persistence_dir.mkdir(parents=True, exist_ok=True)
+        obs.state_file = obs.persistence_dir / "observer_state.json"
+        
+        obs.world_state_manager = WorldStateManager()
+        msgs = await obs._observe_home_feed()
+        assert msgs == []
 
 @pytest.mark.asyncio
 async def test_format_user_mention_and_context(observer):
