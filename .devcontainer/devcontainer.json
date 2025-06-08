@@ -22,7 +22,7 @@
 	],
 
 	// 👇 Use 'postCreateCommand' to run commands after the container is created.
-	"postCreateCommand": "poetry install && poetry run python -m pip install --upgrade pip",
+	"postCreateCommand": "poetry run python -m pip install --upgrade pip && poetry install",
 
 	// 👇 Configure tool-specific properties.
 	"customizations": {
