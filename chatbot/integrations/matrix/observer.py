@@ -63,7 +63,7 @@ class MatrixObserver(Integration):
 
         # Create store directory for Matrix client data
         self.store_path = Path("matrix_store")
-        self.store_path.mkdir(exist_ok=True)
+        self.store_path.mkdir(parents=True, exist_ok=True)
         
         # Check for Matrix configuration - disable if not available
         self._enabled = all([self.homeserver, self.user_id, self.password])
