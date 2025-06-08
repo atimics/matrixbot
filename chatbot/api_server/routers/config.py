@@ -39,7 +39,7 @@ async def get_configuration(orchestrator: MainOrchestrator = Depends(get_orchest
             },
             "rate_limits": {
                 "max_cycles_per_hour": settings.MAX_CYCLES_PER_HOUR,
-                "max_actions_per_hour": settings.MAX_ACTIONS_PER_HOUR,
+                "max_actions_per_hour": getattr(settings, 'MAX_ACTIONS_PER_HOUR', 600),
                 "image_generation_cooldown": settings.IMAGE_GENERATION_COOLDOWN_SECONDS,
                 "video_generation_cooldown": settings.VIDEO_GENERATION_COOLDOWN_SECONDS,
                 "farcaster_post_cooldown": settings.FARCASTER_POST_COOLDOWN_SECONDS

@@ -311,7 +311,7 @@ class MatrixObserver(Integration):
 
                             if self.arweave_client:
                                 arweave_tx_id = await self.arweave_client.upload_data(
-                                    download_response.body, content_type, tags=[{"name": "source", "value": "matrix"}]
+                                    download_response.body, content_type, tags={"source": "matrix"}
                                 )
                                 if arweave_tx_id:
                                     arweave_url = self.arweave_client.get_arweave_url(arweave_tx_id)

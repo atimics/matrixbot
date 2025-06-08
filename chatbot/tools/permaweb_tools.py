@@ -155,11 +155,8 @@ class StorePermanentMemoryTool(ToolInterface):
             # Add custom tags
             all_tags = {**default_tags, **custom_tags}
 
-            # Convert to Arweave tag format
-            tags = [{"name": k, "value": v} for k, v in all_tags.items()]
-
             # Upload to Arweave
-            tx_id = await arweave_client.upload_data(data, content_type, tags)
+            tx_id = await arweave_client.upload_data(data, content_type, all_tags)
 
             if tx_id:
                 arweave_url = arweave_client.get_arweave_url(tx_id)

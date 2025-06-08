@@ -30,64 +30,44 @@ async def ensure_publicly_accessible_image_url(image_url: str, context: ActionCo
         # For non-Matrix URLs, verify accessibility
         is_accessible = await _verify_image_accessibility(image_url)
         return image_url, is_accessible
-    
-    try:
-        # Extract server and media_id from Matrix URL generically
-        server_name = matrix_match.group(2)  # Server hosting the media
-        media_id = matrix_match.group(3)     # Media ID
-        mxc_uri = f"mxc://{server_name}/{media_id}"
-        
-        logger.info(f"Converting Matrix URL to MXC: {mxc_uri}")
-        
-        # Use Matrix client to download the media
-        if hasattr(context, 'matrix_observer') and context.matrix_observer:
+
+    # It's a Matrix URL. Download it with authentication.
+    if hasattr(context, 'matrix_observer') and context.matrix_observer and context.matrix_observer.client:
+        async with httpx.AsyncClient() as http_client:
             try:
-                # Check if client is authenticated
-                if not context.matrix_observer.client.access_token:
-                    logger.warning(f"Matrix client not authenticated, cannot download {mxc_uri}")
-                    # Fall back to trying the original URL
-                    is_accessible = await _verify_image_accessibility(image_url)
-                    return image_url, is_accessible
-                
-                # Use nio client's built-in download method with MXC URI
-                download_response = await context.matrix_observer.client.download(mxc_uri)
-                
-                if download_response and hasattr(download_response, 'body'):
-                    # Upload to Arweave
-                    if hasattr(context, 'arweave_service') and context.arweave_service:
-                        arweave_url = await context.arweave_service.upload_image_data(
-                            download_response.body,
-                            f"matrix_media_{media_id}.jpg"
-                        )
+                access_token = context.matrix_observer.client.access_token
+                if not access_token:
+                     logger.warning(f"Matrix client not authenticated, cannot download {image_url}")
+                     is_accessible = await _verify_image_accessibility(image_url)
+                     return image_url, is_accessible
+
+                headers = {"Authorization": f"Bearer {access_token}"}
+                response = await http_client.get(image_url, headers=headers)
+                response.raise_for_status()
+                image_data = response.content
+                content_type = response.headers.get('content-type', 'image/jpeg')
+
+                # Now upload to arweave
+                if hasattr(context, 'arweave_service') and context.arweave_service:
+                    media_id = matrix_match.group(3)
+                    arweave_url = await context.arweave_service.upload_image_data(
+                        image_data,
+                        f"matrix_media_{media_id}.jpg",
+                        content_type
+                    )
+                    if arweave_url:
                         logger.info(f"Successfully uploaded Matrix media to Arweave: {arweave_url}")
                         return arweave_url, True
                     else:
-                        logger.warning("No Arweave service available")
-                        # Fall back to trying the original URL
-                        is_accessible = await _verify_image_accessibility(image_url)
-                        return image_url, is_accessible
-                else:
-                    logger.error(f"Failed to download Matrix media: {mxc_uri}")
-                    # Fall back to trying the original URL
-                    is_accessible = await _verify_image_accessibility(image_url)
-                    return image_url, is_accessible
-                    
+                       logger.error("Failed to upload Matrix media to Arweave")
             except Exception as e:
-                logger.error(f"Error downloading Matrix media via nio client: {e}")
-                # Fall back to trying the original URL
-                is_accessible = await _verify_image_accessibility(image_url)
-                return image_url, is_accessible
-        else:
-            logger.warning("No Matrix observer available for media download")
-            # Fall back to trying the original URL
-            is_accessible = await _verify_image_accessibility(image_url)
-            return image_url, is_accessible
-            
-    except Exception as e:
-        logger.error(f"Error processing Matrix URL {image_url}: {e}")
-        # Fall back to trying the original URL
-        is_accessible = await _verify_image_accessibility(image_url)
-        return image_url, is_accessible
+                logger.error(f"Failed to download/re-upload Matrix image: {e}")
+    else:
+       logger.warning("No Matrix observer available for media download")
+
+    # Fallback if authenticated download fails
+    is_accessible = await _verify_image_accessibility(image_url)
+    return image_url, is_accessible
 
 
 async def _verify_image_accessibility(image_url: str) -> bool:

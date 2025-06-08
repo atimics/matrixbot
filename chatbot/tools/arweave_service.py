@@ -63,11 +63,11 @@ class ArweaveService:
             
         try:
             # Create tags for the image
-            tags = [
-                {"name": "Content-Type", "value": content_type},
-                {"name": "App-Name", "value": "Chatbot"},
-                {"name": "File-Name", "value": filename},
-            ]
+            tags = {
+                "Content-Type": content_type,
+                "App-Name": "Chatbot",
+                "File-Name": filename,
+            }
             
             # Upload to Arweave
             tx_id = await self.arweave_client.upload_data(

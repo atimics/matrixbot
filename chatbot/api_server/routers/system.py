@@ -63,7 +63,7 @@ async def get_system_status(orchestrator: MainOrchestrator = Depends(get_orchest
         # Integration status
         logger.info("Getting integration status")
         try:
-            integration_status = await orchestrator.integration_manager.get_status_all()
+            integration_status = await orchestrator.integration_manager.list_integrations()
             logger.info(f"Got integration status: {type(integration_status)}")
         except Exception as e:
             logger.warning(f"Failed to get integration status: {e}")

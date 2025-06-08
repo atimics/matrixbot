@@ -7,7 +7,7 @@ Communicates with the internal Arweave uploader microservice.
 
 import json
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 import httpx
 
@@ -46,7 +46,7 @@ class ArweaveUploaderClient:
         self,
         data: bytes,
         content_type: str,
-        tags: Optional[List[Dict[str, str]]] = None,
+        tags: Optional[Dict[str, str]] = None,
     ) -> Optional[str]:
         """
         Upload data to Arweave via the uploader service.
@@ -54,7 +54,7 @@ class ArweaveUploaderClient:
         Args:
             data: Raw data bytes to upload  
             content_type: MIME type of the data
-            tags: Optional list of Arweave tags in format [{"name": "key", "value": "val"}]
+            tags: Optional dictionary of Arweave tags in format {"key": "val"}
 
         Returns:
             Arweave transaction ID (TXID) or None if failed
