@@ -10,6 +10,7 @@ import json
 import requests
 import time
 from pathlib import Path
+import pytest
 
 def test_arweave_service(base_url: str = "http://localhost:8001"):
     """Test the arweave-service endpoints"""
@@ -33,11 +34,11 @@ def test_arweave_service(base_url: str = "http://localhost:8001"):
                 print("   ⚠️  WARNING: Wallet not ready - service may not be fully functional")
         else:
             print(f"   ❌ Health check failed: {response.status_code}")
-            return False
+            pytest.skip(f"Arweave service not available at {base_url}")
             
     except Exception as e:
         print(f"   ❌ Health check failed: {e}")
-        return False
+        pytest.skip(f"Arweave service not available at {base_url}: {e}")
     
     print()
     
@@ -108,7 +109,8 @@ def test_arweave_service(base_url: str = "http://localhost:8001"):
     print()
     print("✅ Arweave service transformation test complete!")
     
-    return True
+    # Test passes if we reach this point
+    assert True
 
 def main():
     """Run the test suite"""

@@ -528,3 +528,7 @@ class IntegrationManager:
     def get_observers(self) -> List[Integration]:
         """Get list of active integration instances (observers)"""
         return list(self.active_integrations.values())
+    
+    def get_available_integration_types(self) -> List[str]:
+        """Get list of available integration types"""
+        return list(self.integration_types.keys())

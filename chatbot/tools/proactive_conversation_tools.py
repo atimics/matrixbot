@@ -193,51 +193,56 @@ class DetectConversationOpportunitiesTool(ToolInterface):
     opportunities for proactive engagement.
     """
     
-    def __init__(self):
-        super().__init__(
-            name="detect_conversation_opportunities",
-            description="Detect potential opportunities for proactive conversation engagement",
-            parameters={
-                "type": "object", 
-                "properties": {
-                    "analysis_scope": {
+    @property
+    def name(self) -> str:
+        return "detect_conversation_opportunities"
+    
+    @property
+    def description(self) -> str:
+        return "Detect potential opportunities for proactive conversation engagement"
+    
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "type": "object", 
+            "properties": {
+                "analysis_scope": {
+                    "type": "string",
+                    "description": "Scope of analysis for opportunity detection",
+                    "enum": ["current_context", "recent_activity", "cross_platform", "comprehensive"],
+                    "default": "current_context"
+                },
+                "opportunity_types": {
+                    "type": "array",
+                    "items": {
                         "type": "string",
-                        "description": "Scope of analysis for opportunity detection",
-                        "enum": ["current_context", "recent_activity", "cross_platform", "comprehensive"],
-                        "default": "current_context"
+                        "enum": [
+                            "trending_topic",
+                            "user_milestone",
+                            "quiet_channel", 
+                            "follow_up",
+                            "cross_platform_bridge",
+                            "community_engagement"
+                        ]
                     },
-                    "opportunity_types": {
-                        "type": "array",
-                        "items": {
-                            "type": "string",
-                            "enum": [
-                                "trending_topic",
-                                "user_milestone",
-                                "quiet_channel", 
-                                "follow_up",
-                                "cross_platform_bridge",
-                                "community_engagement"
-                            ]
-                        },
-                        "description": "Types of opportunities to look for"
-                    },
-                    "minimum_priority": {
-                        "type": "number",
-                        "description": "Minimum priority score for opportunities (0.0-1.0)",
-                        "minimum": 0.0,
-                        "maximum": 1.0,
-                        "default": 0.5
-                    },
-                    "max_opportunities": {
-                        "type": "integer",
-                        "description": "Maximum number of opportunities to return",
-                        "minimum": 1,
-                        "maximum": 20,
-                        "default": 5
-                    }
+                    "description": "Types of opportunities to look for"
+                },
+                "minimum_priority": {
+                    "type": "number",
+                    "description": "Minimum priority score for opportunities (0.0-1.0)",
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                    "default": 0.5
+                },
+                "max_opportunities": {
+                    "type": "integer",
+                    "description": "Maximum number of opportunities to return",
+                    "minimum": 1,
+                    "maximum": 20,
+                    "default": 5
                 }
             }
-        )
+        }
     
     async def execute(self, context: ActionContext, **kwargs) -> Dict[str, Any]:
         """Execute opportunity detection."""
@@ -298,52 +303,57 @@ class ScheduleProactiveEngagementTool(ToolInterface):
     for optimal timing rather than immediate execution.
     """
     
-    def __init__(self):
-        super().__init__(
-            name="schedule_proactive_engagement",
-            description="Schedule a proactive engagement for future execution",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "opportunity_id": {
-                        "type": "string",
-                        "description": "ID of the opportunity to schedule engagement for"
-                    },
-                    "engagement_strategy": {
-                        "type": "string", 
-                        "description": "Strategy to use for the engagement",
-                        "enum": [
-                            "trending_topic_discussion",
-                            "milestone_celebration",
-                            "channel_reactivation", 
-                            "new_user_welcome",
-                            "cross_platform_bridge",
-                            "content_sharing"
-                        ]
-                    },
-                    "scheduled_time": {
-                        "type": "string",
-                        "description": "ISO format timestamp for when to execute the engagement"
-                    },
-                    "message_template": {
-                        "type": "string",
-                        "description": "Message template for the engagement"
-                    },
-                    "priority_score": {
-                        "type": "number",
-                        "description": "Priority score for this engagement (0.0-1.0)",
-                        "minimum": 0.0,
-                        "maximum": 1.0,
-                        "default": 0.5
-                    },
-                    "context_data": {
-                        "type": "object",
-                        "description": "Additional context data for the engagement"
-                    }
+    @property
+    def name(self) -> str:
+        return "schedule_proactive_engagement"
+    
+    @property
+    def description(self) -> str:
+        return "Schedule a proactive engagement for future execution"
+    
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "opportunity_id": {
+                    "type": "string",
+                    "description": "ID of the opportunity to schedule engagement for"
                 },
-                "required": ["opportunity_id", "engagement_strategy", "scheduled_time", "message_template"]
-            }
-        )
+                "engagement_strategy": {
+                    "type": "string", 
+                    "description": "Strategy to use for the engagement",
+                    "enum": [
+                        "trending_topic_discussion",
+                        "milestone_celebration",
+                        "channel_reactivation", 
+                        "new_user_welcome",
+                        "cross_platform_bridge",
+                        "content_sharing"
+                    ]
+                },
+                "scheduled_time": {
+                    "type": "string",
+                    "description": "ISO format timestamp for when to execute the engagement"
+                },
+                "message_template": {
+                    "type": "string",
+                    "description": "Message template for the engagement"
+                },
+                "priority_score": {
+                    "type": "number",
+                    "description": "Priority score for this engagement (0.0-1.0)",
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                    "default": 0.5
+                },
+                "context_data": {
+                    "type": "object",
+                    "description": "Additional context data for the engagement"
+                }
+            },
+            "required": ["opportunity_id", "engagement_strategy", "scheduled_time", "message_template"]
+        }
     
     async def execute(self, context: ActionContext, **kwargs) -> Dict[str, Any]:
         """Execute engagement scheduling."""
@@ -428,40 +438,45 @@ class GetProactiveEngagementStatusTool(ToolInterface):
     of previously initiated proactive conversations.
     """
     
-    def __init__(self):
-        super().__init__(
-            name="get_proactive_engagement_status", 
-            description="Get status and metrics for proactive engagements",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "opportunity_id": {
+    @property
+    def name(self) -> str:
+        return "get_proactive_engagement_status"
+    
+    @property
+    def description(self) -> str:
+        return "Get status and metrics for proactive engagements"
+    
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "opportunity_id": {
+                    "type": "string",
+                    "description": "Specific opportunity ID to check (optional)"
+                },
+                "time_range_hours": {
+                    "type": "integer",
+                    "description": "Hours back to check for engagements",
+                    "minimum": 1,
+                    "maximum": 168,  # 1 week
+                    "default": 24
+                },
+                "include_metrics": {
+                    "type": "boolean",
+                    "description": "Whether to include detailed success metrics",
+                    "default": True
+                },
+                "status_filter": {
+                    "type": "array",
+                    "items": {
                         "type": "string",
-                        "description": "Specific opportunity ID to check (optional)"
+                        "enum": ["scheduled", "initiated", "successful", "failed", "expired"]
                     },
-                    "time_range_hours": {
-                        "type": "integer",
-                        "description": "Hours back to check for engagements",
-                        "minimum": 1,
-                        "maximum": 168,  # 1 week
-                        "default": 24
-                    },
-                    "include_metrics": {
-                        "type": "boolean",
-                        "description": "Whether to include detailed success metrics",
-                        "default": True
-                    },
-                    "status_filter": {
-                        "type": "array",
-                        "items": {
-                            "type": "string",
-                            "enum": ["scheduled", "initiated", "successful", "failed", "expired"]
-                        },
-                        "description": "Filter by engagement status"
-                    }
+                    "description": "Filter by engagement status"
                 }
             }
-        )
+        }
     
     async def execute(self, context: ActionContext, **kwargs) -> Dict[str, Any]:
         """Execute engagement status check."""

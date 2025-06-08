@@ -201,8 +201,8 @@ class TestProactiveConversationEngine:
         
         proactive_engine.register_active_opportunity(expired_opportunity)
         
-        # Verify expired opportunity was added
-        assert len(proactive_engine.get_active_opportunities()) == 1
+        # Verify expired opportunity was added to the internal storage (before cleanup)
+        assert len(proactive_engine.active_opportunities) == 1
         
         # Add an active opportunity
         active_opportunity = ConversationOpportunity(
@@ -217,8 +217,12 @@ class TestProactiveConversationEngine:
         
         proactive_engine.register_active_opportunity(active_opportunity)
         
-        # Should have 2 opportunities before cleanup
-        assert len(proactive_engine.get_active_opportunities()) == 2
+        # Should have 2 opportunities in internal storage before cleanup
+        assert len(proactive_engine.active_opportunities) == 2
+        
+        # But get_active_opportunities() should only return non-expired ones
+        active_before_cleanup = proactive_engine.get_active_opportunities()
+        assert len(active_before_cleanup) == 1  # Only the non-expired one
         
         # Cleanup expired opportunities
         proactive_engine.cleanup_expired_opportunities()

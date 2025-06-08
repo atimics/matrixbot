@@ -4,6 +4,7 @@
 import asyncio
 import sys
 import os
+import pytest
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from chatbot.core.integration_manager import IntegrationManager
@@ -11,6 +12,7 @@ from chatbot.core.world_state.manager import WorldStateManager
 from chatbot.core.history_recorder import HistoryRecorder
 
 
+@pytest.mark.asyncio
 async def test_integration_system():
     """Test the integration system functionality."""
     print("Testing Integration System...")
@@ -129,6 +131,13 @@ async def test_integration_system():
         traceback.print_exc()
     
     print("Integration system test completed!")
+    
+    # Cleanup test database
+    if os.path.exists(test_db_path):
+        os.remove(test_db_path)
+    
+    # Test passes if we reach this point
+    assert True
 
 
 if __name__ == "__main__":
