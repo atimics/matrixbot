@@ -312,12 +312,22 @@ async def test_ignore_matrix_invite_tool_missing_params():
 @pytest.mark.asyncio
 async def test_send_matrix_video_tool_success():
     """Test successful video upload."""
+    from unittest.mock import patch, AsyncMock
+    
+    # Mock the Matrix observer
     dummy_obs = type("DummyObs", (), {})()
-    dummy_obs.send_video = AsyncMock(return_value={
-        "success": True, 
-        "event_id": "video123",
-        "message": "Video uploaded successfully"
-    })
+    dummy_obs.client = type("Client", (), {})()
+    
+    # Mock the upload response
+    from unittest.mock import Mock
+    upload_response = Mock()
+    upload_response.content_uri = "mxc://example.com/abcd1234"
+    dummy_obs.client.upload = AsyncMock(return_value=upload_response)
+    
+    # Mock the send response
+    send_response = Mock()
+    send_response.event_id = "video123"
+    dummy_obs.client.room_send = AsyncMock(return_value=send_response)
 
     context = ActionContext(matrix_observer=dummy_obs)
     tool = SendMatrixVideoTool()
@@ -325,26 +335,32 @@ async def test_send_matrix_video_tool_success():
     params = {
         "channel_id": "!room:server", 
         "video_url": "https://example.com/video.mp4",
-        "description": "Test video"
+        "caption": "Test video"
     }
-    result = await tool.execute(params, context)
+    
+    # Mock the HTTP request
+    with patch('httpx.AsyncClient') as mock_client:
+        mock_response = Mock()
+        mock_response.content = b"fake_video_data"
+        mock_response.headers = {"content-type": "video/mp4"}
+        mock_response.raise_for_status = Mock()
+        
+        mock_client.return_value.__aenter__.return_value.get = AsyncMock(return_value=mock_response)
+        
+        result = await tool.execute(params, context)
 
     assert result["status"] == "success"
     assert result["event_id"] == "video123"
-    dummy_obs.send_video.assert_awaited_once_with(
-        "!room:server", 
-        "https://example.com/video.mp4", 
-        "Test video"
-    )
+    dummy_obs.client.upload.assert_awaited_once()
+    dummy_obs.client.room_send.assert_awaited_once()
 
 @pytest.mark.asyncio
 async def test_send_matrix_video_tool_failure():
     """Test video upload failure."""
+    from unittest.mock import patch, AsyncMock
+    
     dummy_obs = type("DummyObs", (), {})()
-    dummy_obs.send_video = AsyncMock(return_value={
-        "success": False, 
-        "error": "Failed to upload video"
-    })
+    dummy_obs.client = type("Client", (), {})()
 
     context = ActionContext(matrix_observer=dummy_obs)
     tool = SendMatrixVideoTool()
@@ -352,12 +368,19 @@ async def test_send_matrix_video_tool_failure():
     params = {
         "channel_id": "!room:server", 
         "video_url": "https://example.com/video.mp4",
-        "description": "Test video"
+        "caption": "Test video"
     }
-    result = await tool.execute(params, context)
+    
+    # Mock HTTP request to raise an exception
+    with patch('httpx.AsyncClient') as mock_client:
+        mock_client.return_value.__aenter__.return_value.get = AsyncMock(
+            side_effect=Exception("Network error")
+        )
+        
+        result = await tool.execute(params, context)
 
     assert result["status"] == "failure"
-    assert "Failed to upload video" in result["error"]
+    assert "Network error" in result["error"]
 
 @pytest.mark.asyncio
 async def test_send_matrix_video_tool_missing_params():
