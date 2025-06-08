@@ -1,9 +1,10 @@
 [tool.poetry]
-name = "chatbot"
+name = "ratichat"
 version = "0.1.0"
-description = "A context-aware AI chatbot with Matrix and Farcaster integration."
-authors = ["Chatbot Team <your-email@example.com>"]
+description = "RatiChat - A context-aware AI chatbot with Matrix and Farcaster integration."
+authors = ["RatiChat Team <your-email@example.com>"]
 readme = "README.md"
+package-mode = false
 
 [tool.poetry.dependencies]
 python = "^3.10"

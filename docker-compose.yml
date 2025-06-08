@@ -1,33 +1,33 @@
-# Full-Stack Containerized Architecture
+# RatiChat AI - Full-Stack Containerized Architecture
 
 services:
   postgres:
     image: postgres:14-alpine
-    container_name: chatbot_postgres
+    container_name: ratichat_postgres
     environment:
-      POSTGRES_USER: chatbot
+      POSTGRES_USER: ratichat
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: chatbot
+      POSTGRES_DB: ratichat
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
-      - chatbot_network
+      - ratichat_network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U chatbot"]
+      test: ["CMD-SHELL", "pg_isready -U ratichat"]
       interval: 30s
       timeout: 10s
       retries: 5
 
-  chatbot_backend:
+  ratichat_backend:
     build:
       context: .
       dockerfile: Dockerfile  # Use main Dockerfile for production-ready build
-    container_name: chatbot_backend
+    container_name: ratichat_backend
     ports:
       - "8000:8000" # Expose the API server
     volumes:
-      - ./data:/app/data # Persist chatbot data (db, context storage, etc.)
+      - ./data:/app/data # Persist ratichat data (db, context storage, etc.)
       - ./matrix_store:/app/matrix_store # Persist matrix session data
       - ./.env:/app/.env:ro # Mount .env file for configuration (read-only)
     depends_on:
@@ -36,13 +36,13 @@ services:
       arweave-service:
         condition: service_healthy
     networks:
-      - chatbot_network
+      - ratichat_network
     env_file:
       - .env # Load environment variables from .env file
     environment:
       # Additional runtime environment
       - PYTHONUNBUFFERED=1
-      - CHATBOT_DB_PATH=/app/data/chatbot.db
+      - RATICHAT_DB_PATH=/app/data/ratichat.db
       - ARWEAVE_INTERNAL_UPLOADER_SERVICE_URL=http://arweave-service:8001
     restart: unless-stopped
     healthcheck:
@@ -65,7 +65,7 @@ services:
       # Mount the wallet file directly from host data directory
       - ./data/arweave_wallet.json:/data/arweave_wallet.json:ro
     networks:
-      - chatbot_network
+      - ratichat_network
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health')\" || exit 1"]
@@ -73,27 +73,27 @@ services:
       timeout: 10s
       retries: 3
 
-  chatbot_ui:
+  ratichat_ui:
     build:
       context: ./ui-nextjs # Point to the Next.js app
       dockerfile: Dockerfile
-    container_name: chatbot_ui
+    container_name: ratichat_ui
     ports:
       - "3000:3000"
     networks:
-      - chatbot_network
+      - ratichat_network
     environment:
       # For client-side API calls (from browser)
       - NEXT_PUBLIC_API_URL=http://localhost:8000
       # For server-side API calls (from Next.js server)
-      - INTERNAL_API_URL=http://chatbot_backend:8000
+      - INTERNAL_API_URL=http://ratichat_backend:8000
     depends_on:
-      - chatbot_backend
+      - ratichat_backend
     restart: unless-stopped
 
 volumes:
   postgres_data:
 
 networks:
-  chatbot_network:
+  ratichat_network:
     driver: bridge

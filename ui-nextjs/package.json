@@ -1,7 +1,7 @@
 {
-  "name": "chatbot-admin-ui",
+  "name": "ratichat-admin-ui",
   "version": "1.0.0",
-  "description": "Administrative interface for the AI Chatbot with conversational onboarding",
+  "description": "Administrative interface for RatiChat AI with conversational onboarding",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
