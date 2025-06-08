@@ -1036,12 +1036,20 @@ class SendMatrixVideoTool(ToolInterface):
                 response = await client.get(video_url, headers=browser_headers)
                 response.raise_for_status()
                 video_data = response.content
+                
+                # Get content type from HTTP response headers
+                response_content_type = response.headers.get('content-type', '').split(';')[0].strip()
 
             # Determine MIME type for the video file
             import mimetypes
             mime_type, _ = mimetypes.guess_type(filename)
-            if not mime_type or not mime_type.startswith('video/'):
-                # Default fallback - but try to detect from file extension first
+            
+            # Prefer HTTP response content type if it's a video type
+            if response_content_type and response_content_type.startswith('video/'):
+                mime_type = response_content_type
+                logger.info(f"Using content-type from HTTP response: {mime_type}")
+            elif not mime_type or not mime_type.startswith('video/'):
+                # Fallback to file extension detection
                 lower_filename = filename.lower()
                 if lower_filename.endswith('.webm'):
                     mime_type = "video/webm"
@@ -1054,7 +1062,7 @@ class SendMatrixVideoTool(ToolInterface):
                 else:
                     mime_type = "video/mp4"  # Default fallback
             
-            logger.info(f"Detected video MIME type: {mime_type} for file: {filename}")
+            logger.info(f"Final detected video MIME type: {mime_type} for file: {filename}")
 
             # Upload the video to Matrix media repository
             from nio import UploadResponse, UploadError
