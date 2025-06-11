@@ -213,6 +213,17 @@ class GenerateVideoTool(ToolInterface):
         if not settings.GOOGLE_API_KEY:
             return {"status": "error", "message": "Google AI API key not configured for video generation."}
 
+        # Check daily video generation limit (1 per day)
+        if context.world_state_manager:
+            today_video_count = context.world_state_manager.get_daily_video_generation_count()
+            if today_video_count >= 1:
+                return {
+                    "status": "error", 
+                    "message": "Daily video generation limit reached (1 video per day). Please try again tomorrow.",
+                    "daily_limit": 1,
+                    "videos_generated_today": today_video_count
+                }
+
         try:
             google_client = GoogleAIMediaClient(api_key=settings.GOOGLE_API_KEY)
             video_list = await google_client.generate_video_veo(prompt=prompt, aspect_ratio=aspect_ratio)
@@ -221,7 +232,11 @@ class GenerateVideoTool(ToolInterface):
                 return {"status": "error", "message": "Failed to generate video from Google Veo."}
 
             video_data = video_list[0]
-            video_arweave_url = await context.arweave_service.upload_image_data(video_data, "generated_video.mp4", "video/mp4")
+            video_arweave_url = await context.arweave_service.upload_media_data(
+                video_data, 
+                "generated_video.mp4", 
+                "video/mp4"
+            )
             if not video_arweave_url:
                 return {"status": "error", "message": "Failed to upload generated video to Arweave."}
 

@@ -175,6 +175,57 @@ class ArweaveService:
         except Exception as e:
             logger.error(f"ArweaveService: Error downloading file from {url}: {e}")
             return None
+    
+    async def upload_media_data(self, media_data: bytes, filename: str, content_type: str) -> Optional[str]:
+        """
+        Upload media data (image, video, etc.) to Arweave.
+        
+        Args:
+            media_data: Raw media data bytes
+            filename: Filename for the media file
+            content_type: MIME type of the media (e.g., 'video/mp4', 'image/png')
+            
+        Returns:
+            Public Arweave URL or None if failed
+        """
+        if not self.arweave_client:
+            logger.error("ArweaveService: No client configured")
+            return None
+            
+        try:
+            # Create tags for the media - determine type from content_type
+            media_type = "unknown"
+            if content_type.startswith("image/"):
+                media_type = "image"
+            elif content_type.startswith("video/"):
+                media_type = "video"
+            elif content_type.startswith("audio/"):
+                media_type = "audio"
+                
+            tags = {
+                "Content-Type": content_type,
+                "App-Name": "Chatbot",
+                "File-Name": filename,
+                "Media-Type": media_type,
+            }
+            
+            # Upload to Arweave
+            tx_id = await self.arweave_client.upload_data(
+                data=media_data,
+                content_type=content_type,
+                tags=tags
+            )
+            
+            if tx_id:
+                logger.info(f"ArweaveService: Successfully uploaded {media_type} ({len(media_data)} bytes) to Arweave: {tx_id}")
+                return self.arweave_client.get_arweave_url(tx_id)
+            else:
+                logger.error("ArweaveService: Failed to upload media - no transaction ID returned")
+                return None
+                
+        except Exception as e:
+            logger.error(f"ArweaveService: Error uploading {content_type} media: {e}")
+            return None
 
 
 # Global instance

@@ -8,7 +8,7 @@ import os
 from typing import Dict, List, Optional, Annotated
 
 import uvicorn
-from arweave import Wallet, Transaction
+from arweave import Wallet, Transaction, Arweave
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Depends, Header
 from fastapi.responses import JSONResponse
 
@@ -163,20 +163,30 @@ async def startup_event():
     await wallet_manager.initialize()
 
 def _parse_tags(tags: Optional[str]) -> Optional[List[Dict[str, str]]]:
-    """Parse tags from JSON string format"""
+    """Parse tags from JSON string format - supports both dict and list formats"""
     if not tags:
         return None
     
     try:
         parsed_tags = json.loads(tags)
-        if not isinstance(parsed_tags, list):
-            raise ValueError("Tags must be a list")
-        return parsed_tags
+        
+        # If tags is a dictionary ({"Content-Type": "video/mp4", "Media-Type": "video"}), 
+        # convert to list format
+        if isinstance(parsed_tags, dict):
+            return [{"name": key, "value": value} for key, value in parsed_tags.items()]
+        
+        # If tags is already a list ([{"name": "Content-Type", "value": "video/mp4"}]), use as-is
+        elif isinstance(parsed_tags, list):
+            return parsed_tags
+        
+        else:
+            raise ValueError("Tags must be a dict or list")
+            
     except (json.JSONDecodeError, ValueError) as e:
         logger.warning(f"Invalid tags format: {e}")
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid tags format. Expected JSON list: {str(e)}"
+            detail=f"Invalid tags format. Expected JSON dict or list: {str(e)}"
         )
 
 @app.post("/upload")

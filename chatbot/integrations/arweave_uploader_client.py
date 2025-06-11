@@ -49,7 +49,7 @@ class ArweaveUploaderClient:
         tags: Optional[Dict[str, str]] = None,
     ) -> Optional[str]:
         """
-        Upload data to Arweave via the uploader service.
+        Upload data to Arweave via the arweave-service.
 
         Args:
             data: Raw data bytes to upload  
@@ -60,9 +60,9 @@ class ArweaveUploaderClient:
             Arweave transaction ID (TXID) or None if failed
         """
         try:
-            # Prepare multipart form data
+            # Prepare multipart form data for file upload
             files = {"file": ("data", data, content_type)}
-            form_data = {"content_type": content_type}
+            form_data = {}
             
             # Add tags as JSON string if provided
             if tags:
@@ -79,8 +79,8 @@ class ArweaveUploaderClient:
                 response.raise_for_status()
                 result = response.json()
 
-                # Extract transaction ID from response - try both 'tx_id' and 'transaction_id' for compatibility
-                tx_id = result.get("tx_id") or result.get("transaction_id")
+                # Extract transaction ID from response - new service uses 'transaction_id'
+                tx_id = result.get("transaction_id")
 
                 if tx_id:
                     logger.info(
@@ -140,72 +140,47 @@ class ArweaveUploaderClient:
 
     async def get_wallet_address(self) -> Optional[str]:
         """
-        Get the Arweave wallet address from the uploader service.
+        Get the Arweave wallet address from the arweave-service.
 
         Returns:
             Wallet address or None if failed
         """
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
-                # Try /wallet-info first (arweave_uploader_service), then /wallet (arweave-service)
-                for endpoint in ["/wallet-info", "/wallet"]:
-                    try:
-                        response = await client.get(
-                            f"{self.uploader_service_url}{endpoint}",
-                            headers=self._get_headers()
-                        )
-                        response.raise_for_status()
-                        result = response.json()
-                        return result.get("address")
-                    except httpx.HTTPStatusError as e:
-                        if e.response.status_code == 404 and endpoint == "/wallet-info":
-                            # Try the other endpoint
-                            continue
-                        else:
-                            raise
-                return None
+                response = await client.get(
+                    f"{self.uploader_service_url}/wallet",
+                    headers=self._get_headers()
+                )
+                response.raise_for_status()
+                result = response.json()
+                return result.get("address")
         except Exception as e:
             logger.error(f"ArweaveUploaderClient: Failed to get wallet address: {e}")
             return None
 
     async def get_wallet_balance(self) -> Optional[str]:
         """
-        Get the Arweave wallet balance from the uploader service.
+        Get the Arweave wallet balance from the arweave-service.
 
         Returns:
             Balance in Winston as string, or None if failed
         """
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
-                # Try /wallet-info first (arweave_uploader_service), then /wallet (arweave-service)
-                for endpoint in ["/wallet-info", "/wallet"]:
-                    try:
-                        response = await client.get(
-                            f"{self.uploader_service_url}{endpoint}",
-                            headers=self._get_headers()
-                        )
-                        response.raise_for_status()
-                        result = response.json()
-                        
-                        # arweave_uploader_service returns balance_winston directly
-                        if "balance_winston" in result:
-                            return result.get("balance_winston")
-                        
-                        # arweave-service returns balance_ar as float, convert to winston
-                        elif "balance_ar" in result:
-                            balance_ar = result.get("balance_ar")
-                            if isinstance(balance_ar, (int, float)):
-                                # Convert AR to Winston (1 AR = 10^12 Winston)
-                                balance_winston = int(balance_ar * (10**12))
-                                return str(balance_winston)
-                        
-                        return None
-                    except httpx.HTTPStatusError as e:
-                        if e.response.status_code == 404 and endpoint == "/wallet-info":
-                            # Try the other endpoint
-                            continue
-                        else:
-                            raise
+                response = await client.get(
+                    f"{self.uploader_service_url}/wallet",
+                    headers=self._get_headers()
+                )
+                response.raise_for_status()
+                result = response.json()
+                
+                # arweave-service returns balance_ar as float, convert to winston
+                balance_ar = result.get("balance_ar")
+                if isinstance(balance_ar, (int, float)):
+                    # Convert AR to Winston (1 AR = 10^12 Winston)
+                    balance_winston = int(balance_ar * (10**12))
+                    return str(balance_winston)
+                
                 return None
         except Exception as e:
             logger.error(f"ArweaveUploaderClient: Failed to get wallet balance: {e}")
@@ -213,29 +188,19 @@ class ArweaveUploaderClient:
 
     async def get_wallet_info(self) -> Optional[Dict]:
         """
-        Get complete wallet information from the uploader service.
+        Get complete wallet information from the arweave-service.
 
         Returns:
             Wallet info dictionary or None if failed
         """
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
-                # Try /wallet-info first (arweave_uploader_service), then /wallet (arweave-service)
-                for endpoint in ["/wallet-info", "/wallet"]:
-                    try:
-                        response = await client.get(
-                            f"{self.uploader_service_url}{endpoint}",
-                            headers=self._get_headers()
-                        )
-                        response.raise_for_status()
-                        return response.json()
-                    except httpx.HTTPStatusError as e:
-                        if e.response.status_code == 404 and endpoint == "/wallet-info":
-                            # Try the other endpoint
-                            continue
-                        else:
-                            raise
-                return None
+                response = await client.get(
+                    f"{self.uploader_service_url}/wallet",
+                    headers=self._get_headers()
+                )
+                response.raise_for_status()
+                return response.json()
         except Exception as e:
             logger.error(f"ArweaveUploaderClient: Failed to get wallet info: {e}")
             return None

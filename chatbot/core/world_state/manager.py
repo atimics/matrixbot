@@ -100,7 +100,7 @@ class WorldStateManager:
     def add_message(self, *args, **kwargs):
         """Add a new message to a channel. Accepts (channel_id, message), (message_data, message), or (dict) for test compatibility."""
         from .structures import Message
-        # Accept (channel_id, message), (message_data, message), or (dict) with keys 'channel_id' and 'message'
+        # Accept (channel_id, message), (message_data, message), or (dict with keys 'channel_id' and 'message'
         if len(args) == 2:
             channel_id, message = args
             if isinstance(channel_id, dict):
@@ -787,3 +787,26 @@ class WorldStateManager:
                         logger.debug(f"Bot reply found in messages for event {original_event_id}: message_id {msg.id}")
                         return True
         return False
+
+    def get_daily_video_generation_count(self) -> int:
+        """
+        Get the number of videos generated today (since 00:00 UTC).
+        
+        Returns:
+            Number of videos generated today
+        """
+        import datetime
+        
+        # Get start of today in UTC
+        today_start = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_start_timestamp = today_start.timestamp()
+        
+        # Count videos generated since today_start
+        video_count = 0
+        for media_entry in self.state.generated_media_library:
+            if (media_entry.get("type") == "video" and 
+                media_entry.get("timestamp", 0) >= today_start_timestamp):
+                video_count += 1
+        
+        logger.debug(f"WorldState: Found {video_count} videos generated today")
+        return video_count
