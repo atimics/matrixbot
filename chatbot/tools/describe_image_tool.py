@@ -31,25 +31,25 @@ async def ensure_publicly_accessible_image_url(image_url: str, context: ActionCo
         is_accessible = await _verify_image_accessibility(image_url)
         return image_url, is_accessible
 
-    # It's a Matrix URL. Download it with authentication.
+    # It's a Matrix URL. Download it using the nio client.
     if hasattr(context, 'matrix_observer') and context.matrix_observer and context.matrix_observer.client:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as http_client:
-            try:
-                access_token = context.matrix_observer.client.access_token
-                if not access_token:
-                     logger.warning(f"Matrix client not authenticated, cannot download {image_url}")
-                     is_accessible = await _verify_image_accessibility(image_url)
-                     return image_url, is_accessible
-
-                headers = {"Authorization": f"Bearer {access_token}"}
-                response = await http_client.get(image_url, headers=headers)
-                response.raise_for_status()
-                image_data = response.content
-                content_type = response.headers.get('content-type', 'image/jpeg')
+        try:
+            # Extract MXC URI from the URL
+            server_name = matrix_match.group(2)
+            media_id = matrix_match.group(3)
+            mxc_uri = f"mxc://{server_name}/{media_id}"
+            logger.info(f"Downloading Matrix media via nio client: {mxc_uri}")
+            
+            # Use nio client's built-in download method which handles authentication
+            download_response = await context.matrix_observer.client.download(mxc_uri)
+            
+            if hasattr(download_response, "body") and download_response.body:
+                image_data = download_response.body
+                content_type = getattr(download_response, "content_type", "image/jpeg")
+                logger.info(f"Successfully downloaded Matrix media: {len(image_data)} bytes, type: {content_type}")
 
                 # Now upload to arweave
                 if hasattr(context, 'arweave_service') and context.arweave_service:
-                    media_id = matrix_match.group(3)
                     arweave_url = await context.arweave_service.upload_image_data(
                         image_data,
                         f"matrix_media_{media_id}.jpg",
@@ -60,8 +60,14 @@ async def ensure_publicly_accessible_image_url(image_url: str, context: ActionCo
                         return arweave_url, True
                     else:
                        logger.error("Failed to upload Matrix media to Arweave")
-            except Exception as e:
-                logger.error(f"Failed to download/re-upload Matrix image: {e}")
+                else:
+                    logger.warning("No Arweave service available for media upload")
+            else:
+                error_type = type(download_response).__name__
+                error_details = getattr(download_response, 'message', str(download_response))
+                logger.error(f"Failed to download Matrix media {mxc_uri}: {error_type} - {error_details}")
+        except Exception as e:
+            logger.error(f"Failed to download Matrix image via nio client: {e}")
     else:
        logger.warning("No Matrix observer available for media download")
 
@@ -239,11 +245,12 @@ class DescribeImageTool(ToolInterface):
             
             # Record this action result in world state for AI visibility
             # Store the plain description as the result for action history
-            context.world_state_manager.add_action_result(
-                action_type="describe_image",
-                parameters={"image_url": image_url, "prompt": prompt_text},
-                result=description
-            )
+            if context.world_state_manager:
+                context.world_state_manager.add_action_result(
+                    action_type="describe_image",
+                    parameters={"image_url": image_url, "prompt": prompt_text},
+                    result=description
+                )
             
             return result
 
