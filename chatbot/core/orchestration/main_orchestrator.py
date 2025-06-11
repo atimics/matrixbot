@@ -50,7 +50,7 @@ class TraditionalProcessor:
         
     async def process_payload(self, payload: Dict[str, Any], active_channels: list) -> None:
         """
-        Process a payload using the traditional approach.
+        Process a payload using the traditional approach with strategic fallback.
         
         Args:
             payload: The world state payload to process
@@ -63,8 +63,19 @@ class TraditionalProcessor:
             # Generate a cycle ID for this decision
             cycle_id = payload.get("cycle_id", f"cycle_{int(time.time() * 1000)}")
             
-            # Get AI decision
-            decision_result = await self.ai_engine.make_decision(payload, cycle_id)
+            # Strategic fallback: Try AI decision with current payload
+            try:
+                decision_result = await self.ai_engine.make_decision(payload, cycle_id)
+            except Exception as e:
+                # Check if this is a token limit error (HTTP 402 or similar)
+                if "402" in str(e) or "token" in str(e).lower() or "limit" in str(e).lower():
+                    logger.warning(f"Token limit error detected: {e}. Attempting fallback with heavily optimized payload.")
+                    
+                    # Strategic fallback: Create a heavily optimized payload
+                    fallback_payload = await self._create_fallback_payload(payload, active_channels)
+                    decision_result = await self.ai_engine.make_decision(fallback_payload, cycle_id)
+                else:
+                    raise  # Re-raise non-token-limit errors
             
             if not decision_result.selected_actions:
                 logger.debug("No actions selected by AI")
@@ -80,6 +91,59 @@ class TraditionalProcessor:
         except Exception as e:
             logger.error(f"Error in traditional processing: {e}")
             raise
+            
+    async def _create_fallback_payload(self, original_payload: Dict[str, Any], active_channels: list) -> Dict[str, Any]:
+        """
+        Create a heavily optimized fallback payload when token limits are exceeded.
+        
+        Args:
+            original_payload: The original payload that exceeded token limits
+            active_channels: List of active channel IDs
+            
+        Returns:
+            Heavily optimized payload for AI consumption
+        """
+        logger.info("Creating fallback payload with aggressive optimization")
+        
+        # Create minimal payload with only essential information
+        fallback_payload = {
+            "current_processing_channel_id": original_payload.get("current_processing_channel_id"),
+            "available_tools": original_payload.get("available_tools", []),
+            "cycle_id": original_payload.get("cycle_id"),
+        }
+        
+        # Include only the primary channel with minimal messages
+        primary_channel_id = original_payload.get("current_processing_channel_id")
+        if primary_channel_id and "channels" in original_payload:
+            channels = original_payload["channels"]
+            if primary_channel_id in channels:
+                primary_channel = channels[primary_channel_id]
+                # Drastically reduce messages for fallback
+                if "recent_messages" in primary_channel:
+                    fallback_payload["channels"] = {
+                        primary_channel_id: {
+                            **primary_channel,
+                            "recent_messages": primary_channel["recent_messages"][-2:]  # Only last 2 messages
+                        }
+                    }
+                else:
+                    fallback_payload["channels"] = {primary_channel_id: primary_channel}
+        
+        # Include minimal system status
+        if "system_status" in original_payload:
+            fallback_payload["system_status"] = {
+                "timestamp": original_payload["system_status"].get("timestamp"),
+                "rate_limits": original_payload["system_status"].get("rate_limits", {}),
+            }
+        
+        # Include basic payload stats
+        fallback_payload["payload_stats"] = {
+            "fallback_mode": True,
+            "reason": "token_limit_exceeded",
+            "primary_channel": primary_channel_id,
+        }
+        
+        return fallback_payload
             
     async def _execute_action(self, action: ActionPlan) -> None:
         """Execute a single action."""

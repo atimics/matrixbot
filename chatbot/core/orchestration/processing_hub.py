@@ -195,7 +195,7 @@ class ProcessingHub:
 
     def _determine_processing_mode(self, active_channels: List[str]) -> str:
         """
-        Determine whether to use traditional or node-based processing.
+        Determine whether to use traditional or node-based processing based on token estimates.
         
         Returns: "traditional" or "node_based"
         """
@@ -207,28 +207,50 @@ class ProcessingHub:
         if not self.config.enable_node_based_processing or not self.node_processor:
             return "traditional"
         
-        # Dynamic decision based on estimated payload size
+        # Dynamic decision based on estimated token count (strategic fix)
         try:
-            estimated_size = self.payload_builder.estimate_payload_size(
-                self.world_state.get_state_data()
+            from ...config import settings
+            from ...utils.token_utils import estimate_token_count, should_use_node_based_payload
+            
+            # Get primary channel and build a test payload to estimate tokens
+            primary_channel_id = self._get_primary_channel(active_channels)
+            config = {
+                "optimize_for_size": True,
+                "include_detailed_user_info": settings.AI_INCLUDE_DETAILED_USER_INFO,
+                "max_messages_per_channel": settings.AI_CONVERSATION_HISTORY_LENGTH,
+                "max_action_history": settings.AI_ACTION_HISTORY_LENGTH,
+                "max_thread_messages": settings.AI_THREAD_HISTORY_LENGTH,
+                "max_other_channels": settings.AI_OTHER_CHANNELS_SUMMARY_COUNT,
+                "message_snippet_length": settings.AI_OTHER_CHANNELS_MESSAGE_SNIPPET_LENGTH,
+                "bot_fid": settings.FARCASTER_BOT_FID,
+                "bot_username": settings.FARCASTER_BOT_USERNAME,
+            }
+            
+            # Build a test payload to estimate token count
+            test_payload = self.payload_builder.build_full_payload(
+                world_state_data=self.world_state.get_state_data(),
+                primary_channel_id=primary_channel_id,
+                config=config
             )
             
-            # Track payload size history
-            self.payload_size_history.append(estimated_size)
+            estimated_tokens = estimate_token_count(test_payload)
+            
+            # Track payload size history (now in tokens)
+            self.payload_size_history.append(estimated_tokens)
             if len(self.payload_size_history) > 10:
                 self.payload_size_history.pop(0)
             
-            # Use node-based if payload is likely to be too large
-            if estimated_size > self.config.max_traditional_payload_size:
-                logger.info(f"Switching to node-based processing (estimated size: {estimated_size} bytes)")
+            # Use node-based if estimated tokens exceed threshold
+            if should_use_node_based_payload(estimated_tokens, settings.AI_CONTEXT_TOKEN_THRESHOLD):
+                logger.info(f"Switching to node-based processing (estimated tokens: {estimated_tokens} > {settings.AI_CONTEXT_TOKEN_THRESHOLD})")
                 return "node_based"
             
             # Use traditional for smaller payloads
-            logger.debug(f"Using traditional processing (estimated size: {estimated_size} bytes)")
+            logger.debug(f"Using traditional processing (estimated tokens: {estimated_tokens})")
             return "traditional"
             
         except Exception as e:
-            logger.error(f"Error estimating payload size: {e}")
+            logger.error(f"Error estimating payload tokens: {e}")
             # Default to traditional on estimation error
             return "traditional"
 

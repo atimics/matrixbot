@@ -95,6 +95,7 @@ class AppConfig(BaseSettings):
     AI_INCLUDE_DETAILED_USER_INFO: bool = (
         False  # Include full user metadata or summarize - False reduces payload size significantly
     )
+    AI_CONTEXT_TOKEN_THRESHOLD: int = 12000  # Switch to node-based payload when estimated tokens exceed this
 
     # v0.0.3: Media Generation & Permaweb Storage Configuration
 

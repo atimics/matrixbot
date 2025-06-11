@@ -202,17 +202,42 @@ class TestOrchestrator:
             processing_config=ProcessingConfig()
         )
         orchestrator = MainOrchestrator(config)
-        
-        # Mock the observers initialization to avoid actual network calls
-        with patch.object(orchestrator, '_initialize_observers', new_callable=AsyncMock):
-            with patch.object(orchestrator.processing_hub, 'start_processing_loop', new_callable=AsyncMock) as mock_start:
-                mock_start.side_effect = KeyboardInterrupt()  # Simulate Ctrl+C
+
+        # Mock all the methods that could hang or make network calls
+        with patch.object(orchestrator, '_initialize_observers', new_callable=AsyncMock), \
+             patch.object(orchestrator, '_register_integrations_from_env', new_callable=AsyncMock), \
+             patch.object(orchestrator, '_update_action_context_integrations', new_callable=AsyncMock), \
+             patch.object(orchestrator, '_ensure_media_gallery_exists', new_callable=AsyncMock), \
+             patch.object(orchestrator, '_initialize_nft_services', new_callable=AsyncMock), \
+             patch.object(orchestrator.integration_manager, 'initialize', new_callable=AsyncMock), \
+             patch.object(orchestrator.integration_manager, 'connect_all_active', new_callable=AsyncMock), \
+             patch.object(orchestrator.integration_manager, 'disconnect_all', new_callable=AsyncMock), \
+             patch.object(orchestrator.integration_manager, 'cleanup', new_callable=AsyncMock), \
+             patch.object(orchestrator.proactive_engine, 'start', new_callable=AsyncMock), \
+             patch.object(orchestrator.proactive_engine, 'stop', new_callable=AsyncMock):
+            
+            # Mock processing loop to simulate quick start/stop
+            async def fake_processing_loop():
+                # Simulate starting up
+                orchestrator.running = True
+                await asyncio.sleep(0.001)  # Minimal delay
+                # Simulate shutdown signal
+                raise KeyboardInterrupt("Test shutdown")
+            
+            # Mock stop_processing_loop to be non-blocking
+            def fake_stop_processing_loop():
+                orchestrator.running = False
+            
+            with patch.object(orchestrator.processing_hub, 'start_processing_loop', new=fake_processing_loop), \
+                 patch.object(orchestrator.processing_hub, 'stop_processing_loop', new=fake_stop_processing_loop):
                 
+                # Test should complete quickly without hanging
                 try:
                     await orchestrator.start()
                 except KeyboardInterrupt:
-                    pass
+                    pass  # Expected from our mock
                 
+                # Ensure orchestrator is not running after stop
                 assert not orchestrator.running
 
 

@@ -127,7 +127,6 @@ class PayloadBuilder:
     ) -> Dict[str, Any]:
         """
         Build a traditional full payload from world state data with size optimizations.
-        Includes tactical fixes for handling newly joined channels and data spikes.
 
         Args:
             world_state_data: The world state data to convert.
@@ -138,36 +137,17 @@ class PayloadBuilder:
             Dictionary optimized for AI consumption.
         """
         cfg = config or {}
-        
-        # Tactical fix: More aggressive defaults when optimizing
-        base_max_messages = settings.AI_CONVERSATION_HISTORY_LENGTH
-        base_max_other_channels = settings.AI_OTHER_CHANNELS_SUMMARY_COUNT
-        
-        # Detect if we have many recently joined channels (potential data spike)
-        current_time = time.time()
-        recent_channels = [
-            ch for ch in world_state_data.channels.values() 
-            if ch.recent_messages and 
-            current_time - ch.recent_messages[0].timestamp < 3600  # Last hour
-        ]
-        
-        # Apply more aggressive filtering if we detect a data spike
-        data_spike_detected = len(recent_channels) > 10
-        
-        if data_spike_detected:
-            logger.info(f"Data spike detected: {len(recent_channels)} active channels. Applying aggressive filtering.")
-            # Reduce limits significantly for data spikes
-            max_messages_per_channel = cfg.get("max_messages_per_channel", max(1, base_max_messages // 2))
-            max_other_channels = cfg.get("max_other_channels", max(1, base_max_other_channels // 2))
-        else:
-            max_messages_per_channel = cfg.get("max_messages_per_channel", base_max_messages)
-            max_other_channels = cfg.get("max_other_channels", base_max_other_channels)
-            
+        max_messages_per_channel = cfg.get(
+            "max_messages_per_channel", settings.AI_CONVERSATION_HISTORY_LENGTH
+        )
         max_action_history = cfg.get(
             "max_action_history", settings.AI_ACTION_HISTORY_LENGTH
         )
         max_thread_messages = cfg.get(
             "max_thread_messages", settings.AI_THREAD_HISTORY_LENGTH
+        )
+        max_other_channels = cfg.get(
+            "max_other_channels", settings.AI_OTHER_CHANNELS_SUMMARY_COUNT
         )
         optimize_for_size = cfg.get("optimize_for_size", True)
 
@@ -191,26 +171,12 @@ class PayloadBuilder:
             is_key_farcaster = ch_data.type == "farcaster" and any(
                 k in ch_id for k in ["home", "notification", "reply"]
             )
-            
-            # Tactical fix: Detect newly joined channels and be more aggressive
-            is_newly_joined = False
-            if ch_data.recent_messages:
-                first_msg_time = ch_data.recent_messages[0].timestamp
-                is_newly_joined = current_time - first_msg_time < 1800  # Last 30 minutes
-            
             include_detailed = (
-                is_primary or 
-                (is_key_farcaster and not is_newly_joined) or  # Skip newly joined non-primary channels
-                (detailed_count < max_other_channels and not is_newly_joined)
+                is_primary or is_key_farcaster or (detailed_count < max_other_channels)
             )
 
             if include_detailed and ch_data.recent_messages:
-                # Tactical fix: Further reduce message count for newly joined channels
-                msg_limit = max_messages_per_channel
-                if is_newly_joined and not is_primary:
-                    msg_limit = max(1, msg_limit // 2)
-                    
-                messages = ch_data.recent_messages[-msg_limit:]
+                messages = ch_data.recent_messages[-max_messages_per_channel:]
                 messages_for_payload = []
                 for msg in messages:
                     msg_dict = (
@@ -221,32 +187,17 @@ class PayloadBuilder:
                     )
                     messages_for_payload.append(msg_dict)
 
-                channel_payload = {
+                channels_payload[ch_id] = {
                     "id": ch_data.id,
                     "type": ch_data.type,
                     "name": ch_data.name,
                     "recent_messages": messages_for_payload,
                 }
-                
-                # Mark newly joined channels for AI awareness
-                if is_newly_joined:
-                    channel_payload["recently_joined"] = True
-                    
-                channels_payload[ch_id] = channel_payload
-                
                 if not is_primary and not is_key_farcaster:
                     detailed_count += 1
             else:
-                # Tactical fix: Provide more compact summaries for newly joined channels
                 summary = ch_data.get_activity_summary()
                 summary.update({"id": ch_data.id, "type": ch_data.type, "name": ch_data.name})
-                
-                if is_newly_joined:
-                    summary["recently_joined"] = True
-                    # Truncate summary for newly joined channels
-                    if "recent_activity" in summary:
-                        summary["recent_activity"] = summary["recent_activity"][:2]  # Only 2 most recent
-                        
                 channels_payload[ch_id] = summary
 
         payload = {
@@ -268,8 +219,6 @@ class PayloadBuilder:
                 "primary_channel": primary_channel_id,
                 "detailed_channels": detailed_count,
                 "summary_channels": len(sorted_channels) - detailed_count,
-                "data_spike_detected": data_spike_detected,
-                "active_channels_count": len(recent_channels),
                 "bot_identity": {
                     "fid": settings.FARCASTER_BOT_FID,
                     "username": settings.FARCASTER_BOT_USERNAME,
