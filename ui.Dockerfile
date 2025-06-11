@@ -41,5 +41,3 @@ EXPOSE 3000
 
 # Run the application
 CMD ["node", "server.js"]
-# Serve the contents of the 'dist' directory
-CMD ["serve", "-s", "dist", "-l", "3000"]
