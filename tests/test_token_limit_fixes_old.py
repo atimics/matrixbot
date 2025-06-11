@@ -1,8 +1,8 @@
 """
-Simplified tests for token limit fixes and AI payload optimization.
+Tests for token limit fixes and AI payload optimization.
 
 These tests verify that the strategic and tactical fixes for HTTP 402 token limit errors
-work correctly, including token estimation and payload optimization.
+work correctly, including token estimation, processing mode switching, and payload optimization.
 """
 
 import pytest
@@ -227,6 +227,85 @@ class TestPayloadBuilderOptimization:
                     assert channel_data.get("recently_joined") is True
                 else:  # Summary channel
                     assert channel_data.get("recently_joined") is True
+
+
+class TestHTTP402ScenarioIntegration:
+    """Integration tests for the specific HTTP 402 scenario from the logs."""
+    
+    @pytest.mark.asyncio
+    async def test_http_402_scenario_simulation(self):
+        """Simulate the exact scenario that caused HTTP 402 errors."""
+        # Simulate the bot joining many Matrix rooms simultaneously
+        # This creates a large payload that exceeds token limits
+        
+        payload_builder = PayloadBuilder()
+        
+        # Create a scenario similar to the logs: many channels with messages
+        current_time = time.time()
+        channels = {}
+        
+        # Create 20 matrix channels (simulating joining many rooms)
+        for i in range(20):
+            channel_id = f"!room{i}:matrix.server"
+            messages = []
+            
+            # Each channel has some recent messages
+            for j in range(8):  # 8 messages per channel
+                message = Message(
+                    id=f"$event_{i}_{j}",
+                    channel_type="matrix",
+                    sender=f"@user{j}:matrix.server",
+                    content=f"Welcome to room {i}! This is message {j}. " * 10,  # Longer messages
+                    timestamp=current_time - (j * 300),  # 5 min intervals
+                    channel_id=channel_id
+                )
+                messages.append(message)
+            
+            channel = Channel(
+                id=channel_id,
+                name=f"Matrix Room {i}",
+                type="matrix",
+                recent_messages=messages
+            )
+            channels[channel_id] = channel
+        
+        world_state = WorldStateData(
+            channels=channels,
+            system_status={"running": True, "total_cycles": 150},
+            rate_limits={"matrix": {"remaining": 1000}},
+            action_history=[]  # Add some action history too
+        )
+        
+        # Build payload with default configuration
+        payload = payload_builder.build_full_payload(
+            world_state_data=world_state,
+            primary_channel_id=list(channels.keys())[0]
+        )
+        
+        # Estimate tokens
+        estimated_tokens = estimate_token_count(payload)
+        
+        # Verify that our fixes would handle this scenario
+        print(f"Estimated tokens: {estimated_tokens}")
+        print(f"Token threshold: {settings.AI_CONTEXT_TOKEN_THRESHOLD}")
+        print(f"Data spike detected: {payload['payload_stats']['data_spike_detected']}")
+        
+        # The payload should be optimized to prevent token limit issues
+        if estimated_tokens > settings.AI_CONTEXT_TOKEN_THRESHOLD:
+            # If still over threshold, the processing hub should switch to node-based
+            assert should_use_node_based_payload(estimated_tokens, settings.AI_CONTEXT_TOKEN_THRESHOLD)
+        
+        # Verify that data spike detection worked
+        assert payload["payload_stats"]["data_spike_detected"] is True
+        assert payload["payload_stats"]["active_channels_count"] == 20
+        
+        # Verify that aggressive filtering was applied
+        detailed_channels = payload["payload_stats"]["detailed_channels"]
+        summary_channels = payload["payload_stats"]["summary_channels"]
+        
+        # Should have fewer detailed channels due to optimization
+        assert detailed_channels < 20
+        assert summary_channels > 0
 
 
 if __name__ == "__main__":

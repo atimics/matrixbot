@@ -25,16 +25,10 @@ class ProcessingConfig:
     
     # Processing mode settings
     enable_node_based_processing: bool = True
-    force_traditional_fallback: bool = False
-    max_traditional_payload_size: int = 80000  # Bytes
     
     # Observation settings
     observation_interval: float = 2.0
     max_cycles_per_hour: int = 300
-    
-    # AI Model settings
-    traditional_ai_model: str = "openai/gpt-4o-mini"
-    node_based_ai_model: str = "openai/gpt-4o-mini"
 
 
 class ProcessingHub:
@@ -71,12 +65,7 @@ class ProcessingHub:
         self.state_changed_event = asyncio.Event()
         
         # Component availability tracking
-        self.traditional_processor = None
         self.node_processor = None
-        
-    def set_traditional_processor(self, processor):
-        """Set the traditional AI processing component."""
-        self.traditional_processor = processor
         
     def set_node_processor(self, processor):
         """Set the node-based processing component."""
@@ -175,124 +164,17 @@ class ProcessingHub:
 
     async def _process_world_state(self, active_channels: List[str]) -> None:
         """
-        Process world state using the appropriate strategy.
+        Process world state using the node-based strategy.
         """
         try:
-            # Determine processing mode
-            processing_mode = self._determine_processing_mode(active_channels)
-            
-            if processing_mode == "node_based" and self.node_processor:
-                await self._process_with_node_based_strategy(active_channels)
-            else:
-                await self._process_with_traditional_strategy(active_channels)
+            if not self.node_processor:
+                logger.error("Node processor not available - system requires node-based processing")
+                return
+                
+            await self._process_with_node_based_strategy(active_channels)
                 
         except Exception as e:
-            logger.error(f"Error in world state processing: {e}")
-            # Fallback to traditional processing
-            if self.current_processing_mode != "traditional" and self.traditional_processor:
-                logger.warning("Falling back to traditional processing")
-                await self._process_with_traditional_strategy(active_channels)
-
-    def _determine_processing_mode(self, active_channels: List[str]) -> str:
-        """
-        Determine whether to use traditional or node-based processing based on token estimates.
-        
-        Returns: "traditional" or "node_based"
-        """
-        # Force traditional fallback if configured
-        if self.config.force_traditional_fallback:
-            return "traditional"
-        
-        # Use traditional if node processor is not available
-        if not self.config.enable_node_based_processing or not self.node_processor:
-            return "traditional"
-        
-        # Dynamic decision based on estimated token count (strategic fix)
-        try:
-            from ...config import settings
-            from ...utils.token_utils import estimate_token_count, should_use_node_based_payload
-            
-            # Get primary channel and build a test payload to estimate tokens
-            primary_channel_id = self._get_primary_channel(active_channels)
-            config = {
-                "optimize_for_size": True,
-                "include_detailed_user_info": settings.AI_INCLUDE_DETAILED_USER_INFO,
-                "max_messages_per_channel": settings.AI_CONVERSATION_HISTORY_LENGTH,
-                "max_action_history": settings.AI_ACTION_HISTORY_LENGTH,
-                "max_thread_messages": settings.AI_THREAD_HISTORY_LENGTH,
-                "max_other_channels": settings.AI_OTHER_CHANNELS_SUMMARY_COUNT,
-                "message_snippet_length": settings.AI_OTHER_CHANNELS_MESSAGE_SNIPPET_LENGTH,
-                "bot_fid": settings.FARCASTER_BOT_FID,
-                "bot_username": settings.FARCASTER_BOT_USERNAME,
-            }
-            
-            # Build a test payload to estimate token count
-            test_payload = self.payload_builder.build_full_payload(
-                world_state_data=self.world_state.get_state_data(),
-                primary_channel_id=primary_channel_id,
-                config=config
-            )
-            
-            estimated_tokens = estimate_token_count(test_payload)
-            
-            # Track payload size history (now in tokens)
-            self.payload_size_history.append(estimated_tokens)
-            if len(self.payload_size_history) > 10:
-                self.payload_size_history.pop(0)
-            
-            # Use node-based if estimated tokens exceed threshold
-            if should_use_node_based_payload(estimated_tokens, settings.AI_CONTEXT_TOKEN_THRESHOLD):
-                logger.info(f"Switching to node-based processing (estimated tokens: {estimated_tokens} > {settings.AI_CONTEXT_TOKEN_THRESHOLD})")
-                return "node_based"
-            
-            # Use traditional for smaller payloads
-            logger.debug(f"Using traditional processing (estimated tokens: {estimated_tokens})")
-            return "traditional"
-            
-        except Exception as e:
-            logger.error(f"Error estimating payload tokens: {e}")
-            # Default to traditional on estimation error
-            return "traditional"
-
-    async def _process_with_traditional_strategy(self, active_channels: List[str]) -> None:
-        """Process using the traditional full payload approach."""
-        self.current_processing_mode = "traditional"
-        
-        if not self.traditional_processor:
-            logger.error("Traditional processor not available")
-            return
-            
-        try:
-            # Determine primary channel
-            primary_channel_id = self._get_primary_channel(active_channels)
-            
-            # Build full payload with optimized configuration for smaller size
-            from ...config import settings
-            config = {
-                "optimize_for_size": True,
-                "include_detailed_user_info": settings.AI_INCLUDE_DETAILED_USER_INFO,
-                "max_messages_per_channel": settings.AI_CONVERSATION_HISTORY_LENGTH,
-                "max_action_history": settings.AI_ACTION_HISTORY_LENGTH,
-                "max_thread_messages": settings.AI_THREAD_HISTORY_LENGTH,
-                "max_other_channels": settings.AI_OTHER_CHANNELS_SUMMARY_COUNT,
-                "message_snippet_length": settings.AI_OTHER_CHANNELS_MESSAGE_SNIPPET_LENGTH,
-                "bot_fid": settings.FARCASTER_BOT_FID,
-                "bot_username": settings.FARCASTER_BOT_USERNAME,
-            }
-            
-            payload = self.payload_builder.build_full_payload(
-                world_state_data=self.world_state.get_state_data(),
-                primary_channel_id=primary_channel_id,
-                config=config
-            )
-            
-            # Process with traditional approach
-            await self.traditional_processor.process_payload(payload, active_channels)
-            
-            logger.debug("Processed with traditional approach")
-            
-        except Exception as e:
-            logger.error(f"Error in traditional processing: {e}")
+            logger.error(f"Error in node-based processing: {e}")
             raise
 
     async def _process_with_node_based_strategy(self, active_channels: List[str]) -> None:
@@ -391,12 +273,9 @@ class ProcessingHub:
             "cycle_count": self.cycle_count,
             "last_cycle_time": self.last_cycle_time,
             "payload_size_history": self.payload_size_history[-5:],  # Last 5 estimates
-            "traditional_processor_available": self.traditional_processor is not None,
             "node_processor_available": self.node_processor is not None,
             "config": {
                 "enable_node_based_processing": self.config.enable_node_based_processing,
-                "force_traditional_fallback": self.config.force_traditional_fallback,
-                "max_traditional_payload_size": self.config.max_traditional_payload_size,
                 "observation_interval": self.config.observation_interval,
             }
         }
@@ -405,35 +284,3 @@ class ProcessingHub:
         """Get current rate limiting status."""
         current_time = time.time()
         return self.rate_limiter.get_rate_limit_status(current_time)
-
-    async def force_processing_mode(self, mode: str) -> bool:
-        """
-        Force a specific processing mode.
-        
-        Args:
-            mode: "traditional" or "node_based"
-            
-        Returns:
-            bool: True if mode was set successfully
-        """
-        if mode not in ["traditional", "node_based"]:
-            logger.error(f"Invalid processing mode: {mode}")
-            return False
-        
-        if mode == "node_based" and not self.node_processor:
-            logger.error("Cannot force node-based mode: processor not available")
-            return False
-        
-        # Update configuration
-        if mode == "traditional":
-            self.config.force_traditional_fallback = True
-        else:
-            self.config.force_traditional_fallback = False
-        
-        logger.info(f"Forced processing mode to: {mode}")
-        return True
-
-    def reset_processing_mode(self):
-        """Reset to automatic processing mode selection."""
-        self.config.force_traditional_fallback = False
-        logger.info("Reset to automatic processing mode selection")

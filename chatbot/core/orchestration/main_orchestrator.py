@@ -33,229 +33,6 @@ from ..proactive import ProactiveConversationEngine
 logger = logging.getLogger(__name__)
 
 
-class TraditionalProcessor:
-    """
-    Traditional AI processing wrapper that processes full payloads.
-    
-    This class acts as a bridge between the processing hub and the AI engine,
-    handling the traditional full-payload processing approach.
-    """
-    
-    def __init__(self, ai_engine, tool_registry, rate_limiter, context_manager, action_context):
-        self.ai_engine = ai_engine
-        self.tool_registry = tool_registry
-        self.rate_limiter = rate_limiter
-        self.context_manager = context_manager
-        self.action_context = action_context
-        
-    async def process_payload(self, payload: Dict[str, Any], active_channels: list) -> None:
-        """
-        Process a payload using the traditional approach with strategic fallback.
-        
-        Args:
-            payload: The world state payload to process
-            active_channels: List of active channel IDs
-        """
-        try:
-            # Add available tools to the payload
-            payload["available_tools"] = self.tool_registry.get_tool_descriptions_for_ai()
-            
-            # Generate a cycle ID for this decision
-            cycle_id = payload.get("cycle_id", f"cycle_{int(time.time() * 1000)}")
-            
-            # Strategic fallback: Try AI decision with current payload
-            try:
-                decision_result = await self.ai_engine.make_decision(payload, cycle_id)
-            except Exception as e:
-                # Check if this is a token limit error (HTTP 402 or similar)
-                if "402" in str(e) or "token" in str(e).lower() or "limit" in str(e).lower():
-                    logger.warning(f"Token limit error detected: {e}. Attempting fallback with heavily optimized payload.")
-                    
-                    # Strategic fallback: Create a heavily optimized payload
-                    fallback_payload = await self._create_fallback_payload(payload, active_channels)
-                    decision_result = await self.ai_engine.make_decision(fallback_payload, cycle_id)
-                else:
-                    raise  # Re-raise non-token-limit errors
-            
-            if not decision_result.selected_actions:
-                logger.debug("No actions selected by AI")
-                return
-                
-            # Execute selected actions
-            for action in decision_result.selected_actions:
-                try:
-                    await self._execute_action(action)
-                except Exception as e:
-                    logger.error(f"Error executing action {action.action_type}: {e}")
-                    
-        except Exception as e:
-            logger.error(f"Error in traditional processing: {e}")
-            raise
-            
-    async def _create_fallback_payload(self, original_payload: Dict[str, Any], active_channels: list) -> Dict[str, Any]:
-        """
-        Create a heavily optimized fallback payload when token limits are exceeded.
-        
-        Args:
-            original_payload: The original payload that exceeded token limits
-            active_channels: List of active channel IDs
-            
-        Returns:
-            Heavily optimized payload for AI consumption
-        """
-        logger.info("Creating fallback payload with aggressive optimization")
-        
-        # Create minimal payload with only essential information
-        fallback_payload = {
-            "current_processing_channel_id": original_payload.get("current_processing_channel_id"),
-            "available_tools": original_payload.get("available_tools", []),
-            "cycle_id": original_payload.get("cycle_id"),
-        }
-        
-        # Include only the primary channel with minimal messages
-        primary_channel_id = original_payload.get("current_processing_channel_id")
-        if primary_channel_id and "channels" in original_payload:
-            channels = original_payload["channels"]
-            if primary_channel_id in channels:
-                primary_channel = channels[primary_channel_id]
-                # Drastically reduce messages for fallback
-                if "recent_messages" in primary_channel:
-                    fallback_payload["channels"] = {
-                        primary_channel_id: {
-                            **primary_channel,
-                            "recent_messages": primary_channel["recent_messages"][-2:]  # Only last 2 messages
-                        }
-                    }
-                else:
-                    fallback_payload["channels"] = {primary_channel_id: primary_channel}
-        
-        # Include minimal system status
-        if "system_status" in original_payload:
-            fallback_payload["system_status"] = {
-                "timestamp": original_payload["system_status"].get("timestamp"),
-                "rate_limits": original_payload["system_status"].get("rate_limits", {}),
-            }
-        
-        # Include basic payload stats
-        fallback_payload["payload_stats"] = {
-            "fallback_mode": True,
-            "reason": "token_limit_exceeded",
-            "primary_channel": primary_channel_id,
-        }
-        
-        return fallback_payload
-            
-    async def _execute_action(self, action: ActionPlan) -> None:
-        """Execute a single action."""
-        try:
-            # Get the tool from registry
-            tool = self.tool_registry.get_tool(action.action_type)
-            if not tool:
-                logger.error(f"Tool not found: {action.action_type}")
-                return
-                
-            # Execute the tool with parameters and context
-            result = await tool.execute(action.parameters, self.action_context)
-            
-            # Log the action result
-            await self.context_manager.add_tool_result(
-                channel_id="system",  # Use system channel for orchestrator actions
-                tool_name=action.action_type,
-                result={
-                    "status": result.get("status", "unknown"),
-                    "message": result.get("message", str(result)),
-                    "reasoning": action.reasoning,
-                    "parameters": action.parameters
-                }
-            )
-            
-        except Exception as e:
-            logger.error(f"Error executing action {action.action_type}: {e}")
-            # Log the failed action
-            await self.context_manager.add_tool_result(
-                channel_id="system",
-                tool_name=action.action_type,
-                result={
-                    "status": "error",
-                    "message": f"Error: {str(e)}",
-                    "reasoning": action.reasoning,
-                    "parameters": action.parameters
-                }
-            )
-
-    async def _execute_actions(self, actions: list) -> None:
-        """
-        Execute a list of actions with coordination logic.
-        
-        This method handles special coordination cases like injecting generated
-        image URLs into posting actions.
-        """
-        # Track results from executed actions for coordination
-        execution_results = {}
-        
-        # Sort actions by priority (higher priority first)
-        sorted_actions = sorted(actions, key=lambda a: getattr(a, 'priority', 0), reverse=True)
-        
-        for action in sorted_actions:
-            try:
-                # Check for coordination opportunities
-                if action.action_type in ["send_farcaster_post", "send_matrix_message"]:
-                    # Check if we have a generated image to coordinate with
-                    if "generate_image" in execution_results:
-                        image_result = execution_results["generate_image"]
-                        if image_result.get("status") == "success" and "embed_page_url" in image_result:
-                            # Inject the embed URL into the posting action
-                            action.parameters["embed_url"] = image_result["embed_page_url"]
-                
-                # Execute the action
-                result = await self._execute_action_and_return_result(action)
-                execution_results[action.action_type] = result
-                
-            except Exception as e:
-                logger.error(f"Error executing action {action.action_type}: {e}")
-                execution_results[action.action_type] = {"status": "error", "error": str(e)}
-    
-    async def _execute_action_and_return_result(self, action: ActionPlan) -> dict:
-        """Execute a single action and return the result for coordination."""
-        try:
-            # Get the tool from registry
-            tool = self.tool_registry.get_tool(action.action_type)
-            if not tool:
-                logger.error(f"Tool not found: {action.action_type}")
-                return {"status": "error", "error": f"Tool not found: {action.action_type}"}
-                
-            # Execute the tool with parameters and context
-            result = await tool.execute(action.parameters, self.action_context)
-            
-            # Log the action result
-            await self.context_manager.add_tool_result(
-                channel_id="system",  # Use system channel for orchestrator actions
-                tool_name=action.action_type,
-                result={
-                    "status": result.get("status", "unknown"),
-                    "message": result.get("message", str(result)),
-                    "reasoning": action.reasoning,
-                    "parameters": action.parameters
-                }
-            )
-            
-            return result
-            
-        except Exception as e:
-            logger.error(f"Error executing action {action.action_type}: {e}")
-            # Log the failed action
-            await self.context_manager.add_tool_result(
-                channel_id="system",
-                tool_name=action.action_type,
-                result={
-                    "status": "error",
-                    "message": f"Error: {str(e)}",
-                    "reasoning": action.reasoning,
-                    "parameters": action.parameters
-                }
-            )
-            return {"status": "error", "error": str(e)}
-
 @dataclass
 class OrchestratorConfig:
     """Configuration for the main orchestrator."""
@@ -591,19 +368,9 @@ class MainOrchestrator:
 
     def _setup_processing_components(self):
         """Set up processing components for the processing hub."""
-        # Create traditional processor wrapper
-        traditional_processor = TraditionalProcessor(
-            ai_engine=self.ai_engine,
-            tool_registry=self.tool_registry,
-            rate_limiter=self.rate_limiter,
-            context_manager=self.context_manager,
-            action_context=self.action_context
-        )
-        
-        self.processing_hub.set_traditional_processor(traditional_processor)
-        
-        # Note: Node processor would be set up here when implementing
+        # Node processor would be set up here when implementing
         # the JSON Observer integration
+        logger.info("Processing components setup complete - using node-based processing only")
 
     async def _initialize_nft_services(self) -> None:
         """Initialize NFT and blockchain services if credentials are available."""
@@ -855,19 +622,16 @@ class MainOrchestrator:
 
     def force_processing_mode(self, enable_node_based: bool) -> None:
         """
-        Force the processing mode to a specific type.
+        Force the processing mode to a specific type - deprecated method.
         
         Args:
-            enable_node_based: True to force node-based processing, False for traditional
+            enable_node_based: Ignored, system now uses node-based processing only
         """
-        self.processing_hub.force_processing_mode(enable_node_based)
-        self.config.processing_config.enable_node_based_processing = enable_node_based
-        logger.info(f"Processing mode forced to {'node-based' if enable_node_based else 'traditional'}")
+        logger.warning("force_processing_mode is deprecated - system now uses node-based processing only")
 
     def reset_processing_mode(self) -> None:
-        """Reset processing mode to automatic determination."""
-        self.processing_hub.reset_processing_mode()
-        logger.info("Processing mode reset to automatic determination")
+        """Reset processing mode to automatic determination - deprecated method."""
+        logger.warning("reset_processing_mode is deprecated - system now uses node-based processing only")
 
     def get_tool_registry(self) -> ToolRegistry:
         """Get the tool registry instance."""
@@ -891,23 +655,17 @@ class MainOrchestrator:
 
     # Additional API methods for test compatibility and external usage
     async def process_payload(self, payload: Dict[str, Any], active_channels: list) -> None:
-        """Process a payload directly using the traditional processor."""
-        if hasattr(self.processing_hub, 'traditional_processor') and self.processing_hub.traditional_processor:
-            await self.processing_hub.traditional_processor.process_payload(payload, active_channels)
-        else:
-            logger.warning("No traditional processor available")
+        """Process a payload directly - deprecated method for backward compatibility."""
+        logger.warning("process_payload method is deprecated - system now uses node-based processing only")
 
     async def _execute_action(self, action) -> None:
         """Execute a single action - wrapper for test compatibility."""
-        if hasattr(self.processing_hub, 'traditional_processor') and self.processing_hub.traditional_processor:
-            await self.processing_hub.traditional_processor._execute_action(action)
+        logger.warning("_execute_action method is deprecated - system now uses node-based processing only")
+        # For test compatibility, execute matrix actions directly
+        if action.action_type in ["send_matrix_reply", "send_matrix_message"]:
+            await self._execute_matrix_action_directly(action)
         else:
-            logger.warning("No traditional processor available, executing action directly")
-            # For test compatibility, execute matrix actions directly
-            if action.action_type in ["send_matrix_reply", "send_matrix_message"]:
-                await self._execute_matrix_action_directly(action)
-            else:
-                logger.warning(f"Cannot execute action type {action.action_type} without traditional processor")
+            logger.warning(f"Cannot execute action type {action.action_type} without traditional processor")
     
     async def _execute_matrix_action_directly(self, action) -> None:
         """Execute matrix actions directly for test compatibility."""

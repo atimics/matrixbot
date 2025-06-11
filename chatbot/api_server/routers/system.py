@@ -148,24 +148,18 @@ async def execute_system_command(
             )
             
         elif command.command == "reset_processing_mode":
-            # Reset processing mode based on current configuration
-            orchestrator.processing_hub.reset_processing_mode()
+            # Deprecated command - system now uses node-based processing only
             return StatusResponse(
-                status="success",
-                message="Processing mode reset successfully",
+                status="warning",
+                message="Reset processing mode is deprecated - system now uses node-based processing only",
                 timestamp=datetime.now().isoformat()
             )
             
         elif command.command == "force_processing_mode":
-            # Force specific processing mode
-            mode = command.parameters.get("mode") if command.parameters else None
-            if mode not in ["traditional", "node-based"]:
-                raise HTTPException(status_code=400, detail="Mode must be 'traditional' or 'node-based'")
-            
-            orchestrator.processing_hub.force_processing_mode(mode == "node-based")
+            # Deprecated command - system now uses node-based processing only
             return StatusResponse(
-                status="success",
-                message=f"Processing mode forced to {mode}",
+                status="warning", 
+                message="Force processing mode is deprecated - system now uses node-based processing only",
                 timestamp=datetime.now().isoformat()
             )
             

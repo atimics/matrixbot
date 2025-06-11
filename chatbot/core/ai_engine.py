@@ -57,6 +57,21 @@ class AIDecisionEngine:
 
         logger.info(f"AIDecisionEngine: Initialized with model {model} and PromptBuilder.")
 
+    @property
+    def base_system_prompt(self) -> str:
+        """Get the base system prompt with core sections."""
+        return self.prompt_builder.build_system_prompt(
+            include_sections=[
+                "identity", 
+                "interaction_style", 
+                "world_state_context", 
+                "tools_context", 
+                "safety_guidelines",
+                "matrix_context",
+                "farcaster_context"
+            ]
+        )
+
     async def make_decision(
         self, world_state: Dict[str, Any], cycle_id: str
     ) -> DecisionResult:
