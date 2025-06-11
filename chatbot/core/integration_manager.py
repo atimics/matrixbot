@@ -9,7 +9,7 @@ import asyncio
 import json
 import logging
 import time
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Tuple, Type
 from pathlib import Path
 import uuid
 
@@ -532,3 +532,177 @@ class IntegrationManager:
     def get_available_integration_types(self) -> List[str]:
         """Get list of available integration types"""
         return list(self.integration_types.keys())
+    
+    # === SERVICE-ORIENTED MANAGEMENT ===
+    
+    async def get_integration_service(self, integration_id: str):
+        """
+        Get a service wrapper for an active integration.
+        
+        Args:
+            integration_id: The integration ID
+            
+        Returns:
+            Service wrapper instance or None
+        """
+        if integration_id not in self.active_integrations:
+            return None
+            
+        integration = self.active_integrations[integration_id]
+        integration_data = await self._load_integration_data(integration_id)
+        
+        if not integration_data:
+            return None
+            
+        integration_type = integration_data['integration_type']
+        
+        # Create appropriate service wrapper
+        if integration_type == 'matrix':
+            from ..integrations.matrix.service import MatrixService
+            service = MatrixService(
+                service_id=f"{integration_id}_service",
+                config=json.loads(integration_data['config']),
+                world_state_manager=self.world_state_manager
+            )
+            service._set_observer(integration)
+            service.is_connected = integration.is_connected
+            return service
+            
+        elif integration_type == 'farcaster':
+            from ..integrations.farcaster.service import FarcasterService
+            credentials = await self._load_credentials(integration_id)
+            service = FarcasterService(
+                service_id=f"{integration_id}_service",
+                config=json.loads(integration_data['config']),
+                api_key=credentials.get('api_key'),
+                signer_uuid=credentials.get('signer_uuid'),
+                bot_fid=credentials.get('bot_fid'),
+                world_state_manager=self.world_state_manager
+            )
+            service._set_observer(integration)
+            service.is_connected = integration.is_connected
+            return service
+            
+        return None
+    
+    async def get_all_services(self) -> Dict[str, Any]:
+        """
+        Get service wrappers for all active integrations.
+        
+        Returns:
+            Dict mapping integration_id -> service wrapper
+        """
+        services = {}
+        
+        for integration_id in self.active_integrations.keys():
+            service = await self.get_integration_service(integration_id)
+            if service:
+                services[integration_id] = service
+                
+        return services
+    
+    async def get_services_by_type(self, service_type: str) -> List[Any]:
+        """
+        Get all active services of a specific type.
+        
+        Args:
+            service_type: Type of service ('matrix', 'farcaster', etc.)
+            
+        Returns:
+            List of service wrapper instances
+        """
+        services = []
+        all_services = await self.get_all_services()
+        
+        for service in all_services.values():
+            if service.service_type == service_type:
+                services.append(service)
+                
+        return services
+    
+    async def connect_integration_with_service(self, integration_type: str, display_name: str,
+                                             config: Dict[str, Any], credentials: Dict[str, str],
+                                             user_id: Optional[str] = None) -> Tuple[str, Any]:
+        """
+        Add and connect an integration, returning both integration_id and service wrapper.
+        
+        Returns:
+            Tuple of (integration_id, service_wrapper)
+        """
+        # Add the integration
+        integration_id = await self.add_integration(
+            integration_type, display_name, config, credentials, user_id
+        )
+        
+        # Connect it
+        success = await self.connect_integration(integration_id, self.world_state_manager)
+        
+        if success:
+            # Get service wrapper
+            service = await self.get_integration_service(integration_id)
+            return integration_id, service
+        else:
+            raise IntegrationError(f"Failed to connect integration {integration_id}")
+    
+    async def remove_integration(self, integration_id: str) -> None:
+        """
+        Remove an integration completely (disconnect and delete from database).
+        
+        Args:
+            integration_id: The integration ID to remove
+        """
+        # First disconnect if active
+        await self.disconnect_integration(integration_id)
+        
+        # Remove from database
+        async def db_operation(db):
+            # Delete credentials first (foreign key constraint)
+            await db.execute("""
+                DELETE FROM credentials WHERE integration_id = ?
+            """, (integration_id,))
+            
+            # Delete integration
+            await db.execute("""
+                DELETE FROM integrations WHERE id = ?
+            """, (integration_id,))
+            
+            await db.commit()
+        
+        await self._execute_db_operation(db_operation)
+        logger.info(f"Removed integration {integration_id} from database")
+    
+    async def list_available_service_types(self) -> List[Dict[str, Any]]:
+        """
+        List all available service types with their capabilities.
+        
+        Returns:
+            List of service type info dicts
+        """
+        service_types = []
+        
+        for integration_type, integration_class in self.integration_types.items():
+            capabilities = []
+            
+            # Determine capabilities based on integration type
+            if integration_type == 'matrix':
+                capabilities = [
+                    'messaging', 'rooms', 'direct_messages', 'file_sharing',
+                    'encryption', 'federation'
+                ]
+            elif integration_type == 'farcaster':
+                capabilities = [
+                    'social_messaging', 'feeds', 'trending', 'following',
+                    'reactions', 'channels', 'notifications', 'search'
+                ]
+            
+            service_types.append({
+                'type': integration_type,
+                'name': integration_type.title(),
+                'description': f"{integration_type.title()} integration service",
+                'capabilities': capabilities,
+                'class': integration_class.__name__
+            })
+        
+        return service_types
+
+    # Add existing methods...

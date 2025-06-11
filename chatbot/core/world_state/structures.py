@@ -116,18 +116,26 @@ class Message:
 
         Returns:
             Dictionary with key message information optimized for AI prompts:
-            - Truncated content (250 chars max)
+            - Truncated content (2000 chars max for Matrix, 250 chars for others)
             - Essential user identification
             - Key social signals (follower count, verification status)
             - Platform-specific flags (bot status, power badges)
         """
+        # Use different content limits based on platform type
+        # Matrix messages need full content for proper AI response
+        # Other platforms can use shorter truncation for token efficiency
+        if self.channel_type == 'matrix':
+            max_content_length = 2000
+        else:
+            max_content_length = 250
+            
         return {
             "id": self.id,
             "channel_id": self.channel_id,
             "channel_type": self.channel_type,
             "sender_username": self.sender_username or self.sender,
-            "content": self.content[:250] + "..."
-            if len(self.content) > 250
+            "content": self.content[:max_content_length] + "..."
+            if len(self.content) > max_content_length
             else self.content,
             "timestamp": self.timestamp,
             "reply_to": self.reply_to,

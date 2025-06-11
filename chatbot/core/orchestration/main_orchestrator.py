@@ -129,7 +129,7 @@ class MainOrchestrator:
             arweave_service=arweave_service_instance
         )
         
-        # External observers
+        # Legacy observer references for backward compatibility
         self.matrix_observer: Optional[MatrixObserver] = None
         self.farcaster_observer: Optional[FarcasterObserver] = None
         
@@ -302,14 +302,15 @@ class MainOrchestrator:
             # Initialize integration manager
             await self.integration_manager.initialize()
             
-            # Initialize external observers (legacy method for backward compatibility)
-            await self._initialize_observers()
-            
             # Register integrations from environment variables
             await self._register_integrations_from_env()
             
-            # Connect all active integrations from database
+            # Connect all active integrations and start their services
             await self.integration_manager.connect_all_active()
+            await self.integration_manager.start_all_services()
+            
+            # Update legacy observer references for backward compatibility
+            await self._update_legacy_observer_references()
             
             # Update action context with properly connected integrations
             await self._update_action_context_integrations()
@@ -354,18 +355,16 @@ class MainOrchestrator:
         if self.eligibility_service:
             await self.eligibility_service.stop()
         
-        # Disconnect all integrations
+        # Stop all integration services and disconnect
+        await self.integration_manager.stop_all_services()
         await self.integration_manager.disconnect_all()
         
         # Clean up integration manager resources
         await self.integration_manager.cleanup()
         
-        # Stop external observers (legacy compatibility)
-        if self.matrix_observer:
-            await self.matrix_observer.stop()
-
-        if self.farcaster_observer:
-            await self.farcaster_observer.stop()
+        # Clear legacy observer references
+        self.matrix_observer = None
+        self.farcaster_observer = None
 
         logger.info("Main orchestrator system stopped")
 
@@ -443,6 +442,24 @@ class MainOrchestrator:
             logger.debug("Added Farcaster feeds to critical pins: home, notifications")
         
         return critical_pins
+
+    async def _update_legacy_observer_references(self) -> None:
+        """Update legacy observer references for backward compatibility."""
+        try:
+            active_integrations = self.integration_manager.get_active_integrations()
+            
+            # Update legacy references
+            for integration_id, integration in active_integrations.items():
+                if hasattr(integration, 'integration_type'):
+                    if integration.integration_type == 'matrix':
+                        self.matrix_observer = integration
+                        logger.debug(f"Updated legacy matrix_observer reference to integration {integration_id}")
+                    elif integration.integration_type == 'farcaster':
+                        self.farcaster_observer = integration
+                        logger.debug(f"Updated legacy farcaster_observer reference to integration {integration_id}")
+                        
+        except Exception as e:
+            logger.error(f"Error updating legacy observer references: {e}")
 
     async def _initialize_nft_services(self) -> None:
         """Initialize NFT and blockchain services if credentials are available."""
