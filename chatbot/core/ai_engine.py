@@ -240,7 +240,9 @@ IMPORTANT IMAGE TOOL USAGE GUIDELINES:
 - Use `describe_image` for understanding EXISTING images from messages
 - Use `generate_image` for creating NEW images when requested or valuable
 - Check `recent_media_actions` to avoid repeatedly describing the same image
-- If an image URL appears in `images_recently_described`, consider if another description is truly needed
+- If an image URL appears in `images_recently_described`, it was SUCCESSFULLY described - do NOT describe it again
+- Check `recent_media_actions` for failed image descriptions (status: "failed") - do NOT retry failed images
+- If an image failed with "not accessible" or "404" errors, do NOT attempt to describe it again
 - Generated images will have URLs returned - use these in follow-up messages when appropriate
 - Check recent action_history to avoid redundant image operations
 

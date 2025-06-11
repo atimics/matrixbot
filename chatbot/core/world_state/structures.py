@@ -1099,14 +1099,24 @@ class WorldStateData:
                 break
 
             if action.action_type == "describe_image":
-                if hasattr(action, "metadata") and action.metadata:
-                    image_url = action.metadata.get("image_url")
-                    if image_url:
-                        image_urls_recently_described.add(image_url)
-                elif hasattr(action, "parameters") and action.parameters:
-                    image_url = action.parameters.get("image_url")
-                    if image_url:
-                        image_urls_recently_described.add(image_url)
+                # Only consider successful image descriptions to avoid retry loops
+                is_successful = hasattr(action, "result") and not (
+                    "failure" in str(action.result).lower() or
+                    "not accessible" in str(action.result).lower() or
+                    "error" in str(action.result).lower()
+                )
+                
+                if is_successful:
+                    if hasattr(action, "metadata") and action.metadata:
+                        image_url = action.metadata.get("image_url")
+                        if image_url:
+                            image_urls_recently_described.add(image_url)
+                    elif hasattr(action, "parameters") and action.parameters:
+                        image_url = action.parameters.get("image_url")
+                        if image_url:
+                            image_urls_recently_described.add(image_url)
+                
+                # Include all describe_image actions in recent_media_actions for context
                 recent_media_actions.append(
                     {
                         "action": "describe_image",
@@ -1114,6 +1124,8 @@ class WorldStateData:
                         "image_url": action.parameters.get("image_url")
                         if hasattr(action, "parameters")
                         else None,
+                        "status": "success" if is_successful else "failed",
+                        "result": str(action.result) if hasattr(action, "result") else None,
                     }
                 )
 

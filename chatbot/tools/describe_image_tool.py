@@ -152,7 +152,16 @@ class DescribeImageTool(ToolInterface):
             if not is_accessible:
                 error_msg = f"Image is not accessible: {image_url}"
                 logger.error(error_msg)
-                return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+                
+                # Mark inaccessible images as processed to prevent retry loops
+                if context.world_state_manager:
+                    context.world_state_manager.add_action_result(
+                        action_type="describe_image",
+                        parameters={"image_url": image_url, "prompt": prompt_text},
+                        result=f"Image not accessible: {error_msg}"
+                    )
+                
+                return {"status": "failure", "error": error_msg, "timestamp": time.time(), "processed": True}
             
             logger.info(f"Using public image URL: {public_image_url}")
         except Exception as e:

@@ -203,6 +203,7 @@ class PayloadBuilder:
             "thread_context": thread_context_payload,
             "system_status": {**world_state_data.system_status, "rate_limits": world_state_data.rate_limits},
             "pending_matrix_invites": world_state_data.pending_matrix_invites,
+            "recent_media_actions": world_state_data.get_recent_media_actions(),
             "payload_stats": {
                 "primary_channel": primary_channel_id,
                 "detailed_channels": detailed_count,
