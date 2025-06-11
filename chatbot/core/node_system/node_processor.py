@@ -7,6 +7,7 @@ using the node-based JSON Observer and Interactive Executor pattern.
 
 import asyncio
 import logging
+import time
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -60,7 +61,9 @@ class NodeProcessor:
         context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        Process a single cycle using node-based interactive approach.
+        Process a single cycle using two-step node-based reasoning:
+        1. AI selects nodes to expand based on summaries
+        2. AI selects actions based on expanded nodes
         
         Args:
             cycle_id: Unique identifier for this processing cycle
@@ -73,22 +76,34 @@ class NodeProcessor:
         context = context or {}
         cycle_start_time = asyncio.get_event_loop().time()
         
-        logger.debug(f"Starting node-based processing cycle {cycle_id}")
+        logger.debug(f"Starting two-step node-based processing cycle {cycle_id}")
         
         try:
-            # Step 1: Build node-aware AI payload
-            payload_data = await self._build_node_payload(primary_channel_id, context)
+            # Step 1: Auto-expand the most active channels
+            await self._auto_expand_active_channels()
             
-            # Step 2: Process with AI and get decisions
-            ai_response = await self._process_with_ai(payload_data, cycle_id)
+            # Step 2: Build initial payload with collapsed nodes and summaries
+            initial_payload = await self._build_node_selection_payload(primary_channel_id, context)
             
-            # Step 3: Execute any actions the AI decided to take
+            # Step 3: First AI decision - select nodes to expand
+            node_selections = await self._ai_select_nodes_to_expand(initial_payload, cycle_id)
+            
+            # Step 4: Apply node expansions based on AI selection
+            expansion_results = await self._apply_node_expansions(node_selections)
+            
+            # Step 5: Build full payload with expanded nodes
+            full_payload = await self._build_action_selection_payload(primary_channel_id, context)
+            
+            # Step 6: Second AI decision - select actions based on expanded context
+            ai_response = await self._ai_select_actions(full_payload, cycle_id)
+            
+            # Step 7: Execute actions the AI decided to take
             execution_results = await self._execute_ai_actions(ai_response, cycle_id)
             
-            # Step 4: Update node summaries if needed
+            # Step 8: Update node summaries if needed
             await self._update_node_summaries()
             
-            # Step 5: Log system events from node operations
+            # Step 9: Log system events from node operations
             self._log_node_system_events()
             
             cycle_duration = asyncio.get_event_loop().time() - cycle_start_time
@@ -98,22 +113,24 @@ class NodeProcessor:
                 "success": True,
                 "actions_executed": execution_results.get("actions_executed", 0),
                 "nodes_processed": execution_results.get("nodes_processed", 0),
+                "nodes_expanded": expansion_results.get("nodes_expanded", 0),
                 "cycle_duration": cycle_duration,
                 "primary_channel": primary_channel_id,
                 "ai_response_summary": self._summarize_ai_response(ai_response),
+                "node_selection_summary": self._summarize_node_selections(node_selections),
                 "payload_info": {
                     "expanded_nodes": len(self.node_manager.get_expanded_nodes()),
-                    "payload_size": len(str(payload_data)) if payload_data else 0
+                    "payload_size": len(str(full_payload)) if full_payload else 0
                 }
             }
             
-            logger.info(f"Completed node-based cycle {cycle_id} in {cycle_duration:.2f}s - "
-                       f"{result['actions_executed']} actions executed")
+            logger.info(f"Completed two-step cycle {cycle_id} in {cycle_duration:.2f}s - "
+                       f"{result['nodes_expanded']} nodes expanded, {result['actions_executed']} actions executed")
             
             return result
             
         except Exception as e:
-            logger.error(f"Error in node-based processing cycle {cycle_id}: {e}", exc_info=True)
+            logger.error(f"Error in two-step processing cycle {cycle_id}: {e}", exc_info=True)
             return {
                 "cycle_id": cycle_id,
                 "success": False,
@@ -122,95 +139,9 @@ class NodeProcessor:
                 "nodes_processed": 0
             }
     
-    async def _build_node_payload(
-        self, 
-        primary_channel_id: Optional[str],
-        context: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Build a node-aware payload for AI processing."""
-        try:
-            # Get current world state
-            world_state_data = self.world_state.get_world_state_data()
-            
-            # Build node-based payload with expanded/collapsed state
-            payload = self.payload_builder.build_node_based_payload(
-                world_state_data=world_state_data,
-                node_manager=self.node_manager,
-                primary_channel_id=primary_channel_id or "default"
-            )
-            
-            # Add node interaction tools to the payload
-            if payload and "tools" not in payload:
-                payload["tools"] = []
-            
-            # Add node management tools
-            node_tools = self.interaction_tools.get_tool_definitions()
-            if payload:
-                payload["tools"].extend(node_tools.values())
-            
-            # Add all platform tools from tool registry
-            if hasattr(self, 'tool_registry') and self.tool_registry and payload:
-                platform_tools = self.tool_registry.get_tool_definitions()
-                payload["tools"].extend(platform_tools)
-                logger.debug(f"Added {len(platform_tools)} platform tools to payload")
-            
-            # Add processing context
-            if payload:
-                payload["processing_context"] = {
-                    "mode": "node_based",
-                    "primary_channel": primary_channel_id,
-                    "cycle_context": context,
-                    "node_stats": self.node_manager.get_expansion_status_summary()
-                }
-            
-            return payload
-            
-        except Exception as e:
-            logger.error(f"Error building node payload: {e}", exc_info=True)
-            return {}
-    
-    async def _process_with_ai(
-        self, 
-        payload_data: Dict[str, Any], 
-        cycle_id: str
-    ) -> Dict[str, Any]:
-        """Process the payload with AI and get response."""
-        try:
-            if not payload_data:
-                logger.warning(f"Empty payload for cycle {cycle_id}")
-                return {}
-            
-            # Send to AI engine using make_decision
-            decision_result = await self.ai_engine.make_decision(
-                world_state=payload_data,
-                cycle_id=cycle_id
-            )
-            
-            # Convert DecisionResult to dict format expected by execution methods
-            ai_response = {
-                "reasoning": decision_result.reasoning,
-                "observations": decision_result.observations,
-                "selected_actions": decision_result.selected_actions,
-                "tool_calls": []  # Convert ActionPlan objects to tool_calls format
-            }
-            
-            # Convert ActionPlan objects to tool_calls format for execution
-            for action_plan in decision_result.selected_actions:
-                tool_call = {
-                    "function": {
-                        "name": action_plan.action_type,
-                        "arguments": action_plan.parameters
-                    },
-                    "reasoning": action_plan.reasoning,
-                    "priority": action_plan.priority
-                }
-                ai_response["tool_calls"].append(tool_call)
-            
-            return ai_response
-            
-        except Exception as e:
-            logger.error(f"Error in AI processing for cycle {cycle_id}: {e}", exc_info=True)
-            return {}
+    # Old methods removed - now using two-step approach with:
+    # _build_node_selection_payload, _ai_select_nodes_to_expand
+    # _build_action_selection_payload, _ai_select_actions
 
     async def _execute_ai_actions(
         self, 
@@ -484,3 +415,412 @@ class NodeProcessor:
             "current_expanded_nodes": len(self.node_manager.get_expanded_nodes()) if self.node_manager else 0,
             "expansion_status": self.node_manager.get_expansion_status_summary() if self.node_manager else {}
         }
+    
+    async def _auto_expand_active_channels(self):
+        """Auto-expand the most active channels based on world state activity."""
+        try:
+            # Get world state data
+            world_state_data = self.world_state.get_world_state_data()
+            
+            # Extract channel activity data
+            channel_activity = {}
+            current_time = time.time()
+            
+            # Check Matrix channels
+            matrix_channels = getattr(world_state_data, 'channels', {}).get('matrix', {})
+            for room_id, room_data in matrix_channels.items():
+                if isinstance(room_data, dict) and 'recent_messages' in room_data:
+                    recent_messages = room_data['recent_messages']
+                    if recent_messages:
+                        # Get timestamp of most recent message
+                        latest_timestamp = max(
+                            msg.get('timestamp', 0) for msg in recent_messages
+                            if isinstance(msg, dict)
+                        )
+                        channel_activity[f"matrix.{room_id}"] = latest_timestamp
+            
+            # Check Farcaster channels
+            farcaster_channels = getattr(world_state_data, 'channels', {}).get('farcaster', {})
+            for channel_id, channel_data in farcaster_channels.items():
+                if isinstance(channel_data, dict) and 'recent_casts' in channel_data:
+                    recent_casts = channel_data['recent_casts']
+                    if recent_casts:
+                        # Get timestamp of most recent cast
+                        latest_timestamp = max(
+                            cast.get('timestamp', 0) for cast in recent_casts
+                            if isinstance(cast, dict)
+                        )
+                        channel_activity[f"farcaster.{channel_id}"] = latest_timestamp
+            
+            # Check Farcaster feeds for activity
+            farcaster_data = getattr(world_state_data, 'farcaster', {})
+            feeds = farcaster_data.get('feeds', {})
+            for feed_name, feed_data in feeds.items():
+                if isinstance(feed_data, dict) and 'casts' in feed_data:
+                    feed_casts = feed_data['casts']
+                    if feed_casts:
+                        # Get timestamp of most recent cast
+                        latest_timestamp = max(
+                            cast.get('timestamp', 0) for cast in feed_casts
+                            if isinstance(cast, dict)
+                        )
+                        channel_activity[f"farcaster.feeds.{feed_name}"] = latest_timestamp
+            
+            # Auto-expand active channels if we found any activity
+            if channel_activity:
+                auto_expanded = self.node_manager.auto_expand_active_channels(channel_activity)
+                if auto_expanded:
+                    logger.info(f"Auto-expanded {len(auto_expanded)} active channels: {auto_expanded}")
+                    
+        except Exception as e:
+            logger.error(f"Error in auto-expanding active channels: {e}", exc_info=True)
+
+    async def _build_node_selection_payload(
+        self, 
+        primary_channel_id: Optional[str],
+        context: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Build a payload for AI to select which nodes to expand - focuses on summaries."""
+        try:
+            # Get current world state
+            world_state_data = self.world_state.get_world_state_data()
+            
+            # Build node-based payload with expanded/collapsed state
+            payload = self.payload_builder.build_node_based_payload(
+                world_state_data=world_state_data,
+                node_manager=self.node_manager,
+                primary_channel_id=primary_channel_id or "default"
+            )
+            
+            # Add only node selection tools (no platform tools yet)
+            if payload and "tools" not in payload:
+                payload["tools"] = []
+            
+            # Add node selection tool
+            node_selection_tool = {
+                "type": "function",
+                "function": {
+                    "name": "select_nodes_to_expand",
+                    "description": (
+                        "Select which nodes you want to expand to get detailed information. "
+                        "Based on the collapsed node summaries, choose the nodes that are most "
+                        "relevant to the current situation and likely to contain actionable information."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "node_paths": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of node paths to expand for detailed examination"
+                            },
+                            "reasoning": {
+                                "type": "string", 
+                                "description": "Explain why you selected these specific nodes"
+                            }
+                        },
+                        "required": ["node_paths", "reasoning"]
+                    }
+                }
+            }
+            payload["tools"].append(node_selection_tool)
+            
+            # Add processing context
+            if payload:
+                payload["processing_context"] = {
+                    "mode": "node_selection",
+                    "primary_channel": primary_channel_id,
+                    "cycle_context": context,
+                    "node_stats": self.node_manager.get_expansion_status_summary(),
+                    "instruction": "Focus on selecting the most relevant nodes to expand based on their summaries. You will be able to take actions in the next step."
+                }
+            
+            return payload
+            
+        except Exception as e:
+            logger.error(f"Error building node selection payload: {e}", exc_info=True)
+            return {}
+
+    async def _build_action_selection_payload(
+        self, 
+        primary_channel_id: Optional[str],
+        context: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Build a payload for AI to select actions - includes all tools and expanded nodes."""
+        try:
+            # Get current world state
+            world_state_data = self.world_state.get_world_state_data()
+            
+            # Build node-based payload with expanded/collapsed state
+            payload = self.payload_builder.build_node_based_payload(
+                world_state_data=world_state_data,
+                node_manager=self.node_manager,
+                primary_channel_id=primary_channel_id or "default"
+            )
+            
+            # Add all tools for action selection
+            if payload and "tools" not in payload:
+                payload["tools"] = []
+            
+            # Add all platform tools from tool registry FIRST (higher priority)
+            if hasattr(self, 'tool_registry') and self.tool_registry and payload:
+                enabled_tools = self.tool_registry.get_enabled_tools()
+                platform_tools = []
+                
+                for tool in enabled_tools:
+                    # Convert ToolInterface to the format expected by AI
+                    tool_def = {
+                        "type": "function",
+                        "function": {
+                            "name": tool.name,
+                            "description": tool.description,
+                            "parameters": self._convert_parameters_schema(tool.parameters_schema)
+                        }
+                    }
+                    platform_tools.append(tool_def)
+                
+                # Insert platform tools at the beginning for higher priority
+                payload["tools"] = platform_tools + payload["tools"]
+                logger.debug(f"Added {len(platform_tools)} platform tools to action payload (high priority)")
+            
+            # Add node management tools at the end
+            node_tools = self.interaction_tools.get_tool_definitions()
+            if payload:
+                payload["tools"].extend(node_tools.values())
+                logger.debug(f"Added {len(node_tools)} node management tools to action payload")
+            
+            # Add processing context
+            if payload:
+                payload["processing_context"] = {
+                    "mode": "action_selection",
+                    "primary_channel": primary_channel_id,
+                    "cycle_context": context,
+                    "node_stats": self.node_manager.get_expansion_status_summary(),
+                    "instruction": "Now take appropriate actions based on the expanded node content. Prioritize platform communication tools over node management."
+                }
+            
+            return payload
+            
+        except Exception as e:
+            logger.error(f"Error building action selection payload: {e}", exc_info=True)
+            return {}
+
+    async def _ai_select_nodes_to_expand(
+        self, 
+        payload_data: Dict[str, Any], 
+        cycle_id: str
+    ) -> Dict[str, Any]:
+        """First AI decision - select which nodes to expand."""
+        try:
+            if not payload_data:
+                logger.warning(f"Empty payload for node selection in cycle {cycle_id}")
+                return {"node_paths": [], "reasoning": "No payload data"}
+            
+            # Send to AI engine for node selection
+            decision_result = await self.ai_engine.make_decision(
+                world_state=payload_data,
+                cycle_id=f"{cycle_id}_node_selection"
+            )
+            
+            # Extract node selection from AI response
+            selected_actions = decision_result.selected_actions
+            for action_plan in selected_actions:
+                if action_plan.action_type == "select_nodes_to_expand":
+                    return {
+                        "node_paths": action_plan.parameters.get("node_paths", []),
+                        "reasoning": action_plan.parameters.get("reasoning", "No reasoning provided"),
+                        "ai_reasoning": action_plan.reasoning
+                    }
+            
+            # If no explicit node selection, return empty selection
+            logger.debug(f"No node selection found in AI response for cycle {cycle_id}")
+            return {"node_paths": [], "reasoning": "AI did not select any nodes"}
+            
+        except Exception as e:
+            logger.error(f"Error in AI node selection for cycle {cycle_id}: {e}", exc_info=True)
+            return {"node_paths": [], "reasoning": f"Error: {str(e)}"}
+
+    async def _ai_select_actions(
+        self, 
+        payload_data: Dict[str, Any], 
+        cycle_id: str
+    ) -> Dict[str, Any]:
+        """Second AI decision - select actions based on expanded context."""
+        try:
+            if not payload_data:
+                logger.warning(f"Empty payload for action selection in cycle {cycle_id}")
+                return {}
+            
+            # Send to AI engine for action selection
+            decision_result = await self.ai_engine.make_decision(
+                world_state=payload_data,
+                cycle_id=f"{cycle_id}_action_selection"
+            )
+            
+            # Convert DecisionResult to dict format expected by execution methods
+            ai_response = {
+                "reasoning": decision_result.reasoning,
+                "observations": decision_result.observations,
+                "selected_actions": decision_result.selected_actions,
+                "tool_calls": []  # Convert ActionPlan objects to tool_calls format
+            }
+            
+            # Convert ActionPlan objects to tool_calls format for execution
+            for action_plan in decision_result.selected_actions:
+                tool_call = {
+                    "function": {
+                        "name": action_plan.action_type,
+                        "arguments": action_plan.parameters
+                    },
+                    "reasoning": action_plan.reasoning,
+                    "priority": action_plan.priority
+                }
+                ai_response["tool_calls"].append(tool_call)
+            
+            return ai_response
+            
+        except Exception as e:
+            logger.error(f"Error in AI action selection for cycle {cycle_id}: {e}", exc_info=True)
+            return {}
+
+    async def _apply_node_expansions(self, node_selections: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply the AI's node expansion selections."""
+        try:
+            node_paths = node_selections.get("node_paths", [])
+            reasoning = node_selections.get("reasoning", "")
+            
+            if not node_paths:
+                logger.debug("No nodes selected for expansion")
+                return {"nodes_expanded": 0, "expansion_results": []}
+            
+            logger.info(f"AI selected {len(node_paths)} nodes for expansion: {node_paths}")
+            logger.info(f"AI reasoning: {reasoning}")
+            
+            expansion_results = []
+            nodes_expanded = 0
+            
+            for node_path in node_paths:
+                try:
+                    success, auto_collapsed, message = self.node_manager.expand_node(node_path)
+                    if success:
+                        nodes_expanded += 1
+                    
+                    expansion_results.append({
+                        "node_path": node_path,
+                        "success": success,
+                        "message": message,
+                        "auto_collapsed": auto_collapsed
+                    })
+                    
+                    logger.debug(f"Expansion result for {node_path}: {message}")
+                    
+                except Exception as e:
+                    logger.error(f"Error expanding node {node_path}: {e}")
+                    expansion_results.append({
+                        "node_path": node_path,
+                        "success": False,
+                        "message": f"Error: {str(e)}",
+                        "auto_collapsed": None
+                    })
+            
+            return {
+                "nodes_expanded": nodes_expanded,
+                "expansion_results": expansion_results
+            }
+            
+        except Exception as e:
+            logger.error(f"Error applying node expansions: {e}", exc_info=True)
+            return {"nodes_expanded": 0, "expansion_results": []}
+
+    def _summarize_node_selections(self, node_selections: Dict[str, Any]) -> str:
+        """Create a brief summary of the AI's node selections."""
+        try:
+            if not node_selections:
+                return "No node selections"
+            
+            node_paths = node_selections.get("node_paths", [])
+            reasoning = node_selections.get("reasoning", "")
+            
+            if not node_paths:
+                return "AI selected no nodes for expansion"
+            
+            summary = f"AI selected {len(node_paths)} nodes: {', '.join(node_paths)}"
+            if reasoning:
+                summary += f" (Reason: {reasoning[:100]}{'...' if len(reasoning) > 100 else ''})"
+            
+            return summary
+            
+        except Exception as e:
+            logger.error(f"Error summarizing node selections: {e}")
+            return "Error summarizing selections"
+    
+    def _convert_parameters_schema(self, parameters_schema: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert tool parameters schema to the format expected by AI."""
+        try:
+            # If it's already in the proper OpenRouter function calling format, return as is
+            if "type" in parameters_schema and "properties" in parameters_schema:
+                return parameters_schema
+            
+            # Convert from simple description format to OpenRouter format
+            properties = {}
+            required = []
+            
+            for param_name, param_desc in parameters_schema.items():
+                if isinstance(param_desc, str):
+                    # Parse simple format like "string - description" or "integer (optional) - description"
+                    desc_parts = param_desc.split(' - ', 1)
+                    type_part = desc_parts[0].strip()
+                    description = desc_parts[1] if len(desc_parts) > 1 else param_desc
+                    
+                    # Extract type and check if optional
+                    is_optional = "(optional)" in type_part
+                    type_part = type_part.replace("(optional)", "").strip()
+                    
+                    # Determine the parameter type
+                    if type_part.startswith("string"):
+                        param_type = "string"
+                    elif type_part.startswith("integer"):
+                        param_type = "integer"
+                    elif type_part.startswith("number"):
+                        param_type = "number"
+                    elif type_part.startswith("boolean"):
+                        param_type = "boolean"
+                    elif type_part.startswith("array") or type_part.startswith("list"):
+                        param_type = "array"
+                        properties[param_name] = {
+                            "type": "array",
+                            "items": {"type": "string"},  # Default to string items
+                            "description": description
+                        }
+                        continue
+                    else:
+                        param_type = "string"  # Default fallback
+                    
+                    properties[param_name] = {
+                        "type": param_type,
+                        "description": description
+                    }
+                    
+                    if not is_optional:
+                        required.append(param_name)
+                        
+                elif isinstance(param_desc, dict):
+                    # Already in proper format
+                    properties[param_name] = param_desc
+                    if param_desc.get("required", True):
+                        required.append(param_name)
+            
+            return {
+                "type": "object",
+                "properties": properties,
+                "required": required
+            }
+            
+        except Exception as e:
+            logger.error(f"Error converting parameters schema: {e}")
+            # Fallback to empty schema
+            return {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }

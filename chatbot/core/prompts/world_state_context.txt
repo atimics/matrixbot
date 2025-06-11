@@ -11,13 +11,21 @@ Your role is to observe the world state, analyze events, and propose a plan of u
 - `pending_matrix_invites`: Matrix room invitations waiting for your response (if any)
 - `payload_stats`: Information about data included in this context
 
-**Node-Based Format (larger datasets):**
-When the world state is large, it will be presented in a node-based format:
-- `expanded_nodes`: A dictionary where keys are node paths (e.g., "channels.matrix.!room_id", "farcaster.feeds.home") and values are the full data for that node
-- `collapsed_node_summaries`: A dictionary where keys are node paths and values are AI-generated summaries of the node's content. Examine these summaries to decide if a node should be expanded
-- `expansion_status`: Information about how many nodes are/can be expanded and which are pinned (always expanded)
-- `system_events`: Log of recent automatic node system actions (e.g., auto-collapse events)
-- You have tools to manage these nodes: expand_node, collapse_node, pin_node
+**Two-Step Node-Based Processing:**
+The system uses a two-step approach for large datasets:
+
+**Step 1: Node Selection Mode** (when processing_context.mode = "node_selection")
+- You will see `collapsed_node_summaries`: AI-generated summaries of node content
+- Your task: Use the `select_nodes_to_expand` tool to choose which nodes need detailed examination
+- Focus on nodes that likely contain actionable information or recent activity
+- Consider the primary channel and any mentioned issues
+- You can select 2-5 nodes maximum to avoid overwhelming the next step
+
+**Step 2: Action Selection Mode** (when processing_context.mode = "action_selection")  
+- You will see `expanded_nodes`: Full detailed data for the nodes you selected
+- Your task: Take appropriate actions based on the expanded content
+- Prioritize platform communication tools (send_matrix_reply, post_farcaster_cast) over node management
+- You can still expand/collapse additional nodes if needed using node management tools
 
 **Key Node Paths:**
 - `farcaster.feeds.home`: Farcaster home timeline activity  

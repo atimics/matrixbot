@@ -11,7 +11,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from ...config import settings
 from ...core.ai_engine import AIDecisionEngine, ActionPlan
@@ -375,8 +375,13 @@ class MainOrchestrator:
             # Initialize node system components
             logger.info("Setting up node-based processing components...")
             
-            # Create node manager
-            self.node_manager = NodeManager()
+            # Create node manager with critical pinned nodes
+            critical_pins = self._get_critical_node_pins()
+            self.node_manager = NodeManager(
+                max_expanded_nodes=8,
+                default_pinned_nodes=critical_pins
+            )
+            logger.info(f"Node manager initialized with {len(critical_pins)} critical pins: {critical_pins}")
             
             # Create node summary service
             if settings.OPENROUTER_API_KEY:
@@ -419,6 +424,25 @@ class MainOrchestrator:
         except Exception as e:
             logger.error(f"Error setting up processing components: {e}", exc_info=True)
             self.node_processor = None
+
+    def _get_critical_node_pins(self) -> List[str]:
+        """Get critical node paths that should be pinned based on active integrations."""
+        critical_pins = []
+        
+        # Add Matrix room if available
+        if hasattr(self, 'matrix_observer') and self.matrix_observer and settings.MATRIX_ROOM_ID:
+            critical_pins.append(f"channels.matrix.{settings.MATRIX_ROOM_ID}")
+            logger.debug(f"Added Matrix room to critical pins: channels.matrix.{settings.MATRIX_ROOM_ID}")
+        
+        # Add Farcaster feeds if available  
+        if hasattr(self, 'farcaster_observer') and self.farcaster_observer:
+            critical_pins.extend([
+                "farcaster.feeds.home",
+                "farcaster.feeds.notifications"
+            ])
+            logger.debug("Added Farcaster feeds to critical pins: home, notifications")
+        
+        return critical_pins
 
     async def _initialize_nft_services(self) -> None:
         """Initialize NFT and blockchain services if credentials are available."""
