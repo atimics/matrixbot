@@ -7,7 +7,7 @@ tested, and customized.
 """
 
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 import logging
 
 logger = logging.getLogger(__name__)
@@ -29,10 +29,14 @@ class PromptBuilder:
             # Core identity and capabilities
             self.sections["identity"] = self._load_section("identity.txt")
             self.sections["capabilities"] = self._load_section("capabilities.txt") 
-            self.sections["world_state"] = self._load_section("world_state_context.txt")
-            self.sections["tools"] = self._load_section("tools_context.txt")
+            self.sections["world_state_context"] = self._load_section("world_state_context.txt")
+            self.sections["tools_context"] = self._load_section("tools_context.txt")
             self.sections["interaction_style"] = self._load_section("interaction_style.txt")
             self.sections["safety_guidelines"] = self._load_section("safety_guidelines.txt")
+            
+            # Platform-specific sections
+            self.sections["matrix_context"] = self._load_section("matrix_context.txt")
+            self.sections["farcaster_context"] = self._load_section("farcaster_context.txt")
             
         except Exception as e:
             logger.error(f"Error loading prompt sections: {e}")
@@ -53,16 +57,18 @@ class PromptBuilder:
         self.sections = {
             "identity": "You are an intelligent AI chatbot assistant.",
             "capabilities": "You can help with various tasks including conversation, information retrieval, and problem-solving.",
-            "world_state": "You maintain awareness of ongoing conversations and context.",
-            "tools": "You have access to various tools and integrations.",
+            "world_state_context": "You maintain awareness of ongoing conversations and context.",
+            "tools_context": "You have access to various tools and integrations.",
             "interaction_style": "Be helpful, informative, and engaging in your responses.",
-            "safety_guidelines": "Always prioritize user safety and provide accurate information."
+            "safety_guidelines": "Always prioritize user safety and provide accurate information.",
+            "matrix_context": "You can interact with Matrix rooms and users.",
+            "farcaster_context": "You can interact with Farcaster channels and users."
         }
     
     def build_system_prompt(
         self, 
-        include_sections: List[str] = None,
-        custom_context: str = None
+        include_sections: Optional[List[str]] = None,
+        custom_context: Optional[str] = None
     ) -> str:
         """
         Build a complete system prompt from components.

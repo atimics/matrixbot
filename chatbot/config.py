@@ -82,20 +82,20 @@ class AppConfig(BaseSettings):
     OLLAMA_API_URL: Optional[str] = "http://localhost:11434"
     OLLAMA_DEFAULT_CHAT_MODEL: Optional[str] = "llama3"
     OLLAMA_DEFAULT_SUMMARY_MODEL: Optional[str] = "llama3"
-    # AI payload truncation settings - optimized to prevent 413 Payload Too Large errors
-    AI_CONVERSATION_HISTORY_LENGTH: int = 7  # Max messages per channel for AI payload (reduced from 10)
-    AI_ACTION_HISTORY_LENGTH: int = 3  # Max actions in history for AI payload (reduced from 5)
-    AI_THREAD_HISTORY_LENGTH: int = 3  # Max thread messages for AI payload (reduced from 5)
+    # AI payload truncation settings - aggressively optimized to prevent 402/413 errors
+    AI_CONVERSATION_HISTORY_LENGTH: int = 3  # Max messages per channel for AI payload (reduced from 7)
+    AI_ACTION_HISTORY_LENGTH: int = 2  # Max actions in history for AI payload (reduced from 3)
+    AI_THREAD_HISTORY_LENGTH: int = 2  # Max thread messages for AI payload (reduced from 3)
     AI_OTHER_CHANNELS_SUMMARY_COUNT: int = (
-        2  # How many other active channels to summarize (reduced from 3)
+        1  # How many other active channels to summarize (reduced from 2)
     )
     AI_OTHER_CHANNELS_MESSAGE_SNIPPET_LENGTH: int = (
-        75  # Length of snippet for other channels
+        50  # Length of snippet for other channels (reduced from 75)
     )
     AI_INCLUDE_DETAILED_USER_INFO: bool = (
         False  # Include full user metadata or summarize - False reduces payload size significantly
     )
-    AI_CONTEXT_TOKEN_THRESHOLD: int = 12000  # Switch to node-based payload when estimated tokens exceed this
+    AI_CONTEXT_TOKEN_THRESHOLD: int = 8000  # Switch to node-based payload when estimated tokens exceed this (reduced from 12000)
 
     # v0.0.3: Media Generation & Permaweb Storage Configuration
 

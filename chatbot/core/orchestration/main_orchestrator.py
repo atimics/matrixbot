@@ -316,9 +316,14 @@ class MainOrchestrator:
         
         # Tool Registry and AI Engine
         self.tool_registry = ToolRegistry()
+        
+        # Import the prompt builder
+        from ...core.prompts import prompt_builder
+        
         self.ai_engine = AIDecisionEngine(
             api_key=settings.OPENROUTER_API_KEY,
-            model=self.config.ai_model
+            model=self.config.ai_model,
+            prompt_builder_instance=prompt_builder  # Inject the global prompt_builder instance
         )
         
         # Initialize Arweave client for internal uploader service
