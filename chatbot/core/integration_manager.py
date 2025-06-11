@@ -31,6 +31,9 @@ class IntegrationManager:
         self.active_integrations: Dict[str, Integration] = {}
         self.integration_types: Dict[str, Type[Integration]] = {}
         
+        # Add service-oriented tracking
+        self.active_services: Dict[str, Any] = {}
+        
         # For in-memory databases, we need to maintain a persistent connection
         self._persistent_db = None
         self._is_memory_db = db_path == ":memory:"
@@ -704,5 +707,32 @@ class IntegrationManager:
             })
         
         return service_types
-
-    # Add existing methods...
+    
+    async def start_all_services(self) -> None:
+        """Start all active services"""
+        # First, populate active_services with service wrappers from active_integrations
+        for integration_id, integration in self.active_integrations.items():
+            if integration_id not in self.active_services:
+                service = await self.get_integration_service(integration_id)
+                if service:
+                    self.active_services[integration_id] = service
+        
+        # Now start all services
+        for integration_id, service in self.active_services.items():
+            try:
+                await service.start()
+                logger.info(f"Started service for integration {integration_id}")
+            except Exception as e:
+                logger.error(f"Failed to start service for integration {integration_id}: {e}")
+    
+    async def stop_all_services(self) -> None:
+        """Stop all active services"""
+        for integration_id, service in self.active_services.items():
+            try:
+                await service.stop()
+                logger.info(f"Stopped service for integration {integration_id}")
+            except Exception as e:
+                logger.error(f"Failed to stop service for integration {integration_id}: {e}")
+        
+        # Clear the services after stopping them
+        self.active_services.clear()
