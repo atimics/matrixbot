@@ -1133,3 +1133,98 @@ class SendMatrixVideoTool(ToolInterface):
                 )
             
             return {"status": "failure", "error": str(e), "timestamp": time.time()}
+
+
+class SendMatrixVideoLinkTool(ToolInterface):
+    """
+    Tool for sharing video links in Matrix channels using Arweave URLs.
+    This avoids Matrix upload issues by sending the video as a rich text message with embedded link.
+    """
+
+    @property
+    def name(self) -> str:
+        return "send_matrix_video_link"
+
+    @property
+    def description(self) -> str:
+        return "Share a video link in a Matrix room using Arweave URL. Avoids Matrix video upload issues."
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "channel_id": "string (Matrix room ID) - The room where the video link should be sent",
+            "video_url": "string - The Arweave URL of the video to share",
+            "caption": "string (optional) - Optional text caption for the video",
+            "title": "string (optional) - Optional title for the video link",
+        }
+
+    async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
+        logger.info(f"Executing tool '{self.name}' with params: {params}")
+        
+        if not context.matrix_observer:
+            return {"status": "failure", "error": "Matrix integration not configured."}
+
+        room_id = params.get("channel_id")
+        video_url = params.get("video_url")
+        caption = params.get("caption", "")
+        title = params.get("title", "Video")
+
+        if not room_id or not video_url:
+            return {"status": "failure", "error": "Missing required parameters: channel_id and video_url"}
+
+        try:
+            # Create rich text message with embedded video link
+            if caption:
+                message_text = f"🎥 **{title}**\n\n{caption}\n\n[📺 Watch Video]({video_url})"
+            else:
+                message_text = f"🎥 **{title}**\n\n[📺 Watch Video]({video_url})"
+            
+            # Send as regular text message with Markdown formatting
+            result = await context.matrix_observer.send_message(room_id, message_text)
+            
+            if result.get("success"):
+                event_id = result.get("event_id", "unknown")
+                success_msg = f"Sent video link to Matrix room {room_id} (event: {event_id})"
+                logger.info(success_msg)
+
+                # Record this action in world state
+                if context.world_state_manager:
+                    context.world_state_manager.add_action_result(
+                        action_type=self.name,
+                        parameters={
+                            "room_id": room_id,
+                            "video_url": video_url,
+                            "caption": caption,
+                        },
+                        result="success",
+                    )
+
+                return {
+                    "status": "success",
+                    "message": success_msg,
+                    "event_id": event_id,
+                    "room_id": room_id,
+                    "video_url": video_url,
+                    "timestamp": time.time(),
+                }
+            else:
+                error_msg = f"Failed to send video link: {result.get('error', 'unknown error')}"
+                logger.error(error_msg)
+                return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+        except Exception as e:
+            error_msg = f"Error sending Matrix video link: {str(e)}"
+            logger.exception(error_msg)
+            
+            # Record this action failure in world state
+            if context.world_state_manager:
+                context.world_state_manager.add_action_result(
+                    action_type=self.name,
+                    parameters={
+                        "room_id": room_id,
+                        "video_url": video_url,
+                    },
+                    result=f"failure: {str(e)}",
+                )
+            
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}

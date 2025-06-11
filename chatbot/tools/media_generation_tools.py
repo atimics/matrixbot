@@ -14,7 +14,7 @@ from chatbot.config import settings
 from chatbot.integrations.google_ai_media_client import GoogleAIMediaClient
 from chatbot.integrations.replicate_client import ReplicateClient
 from chatbot.tools.base import ActionContext, ToolInterface
-from chatbot.tools.matrix_tools import SendMatrixImageTool, SendMatrixVideoTool
+from chatbot.tools.matrix_tools import SendMatrixImageTool, SendMatrixVideoTool, SendMatrixVideoLinkTool
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +46,14 @@ async def _auto_post_to_gallery(
             tool = SendMatrixImageTool()
             params = {"channel_id": settings.MATRIX_MEDIA_GALLERY_ROOM_ID, "image_url": media_url, "caption": caption}
         elif media_type == "video":
-            tool = SendMatrixVideoTool()
-            params = {"channel_id": settings.MATRIX_MEDIA_GALLERY_ROOM_ID, "video_url": media_url, "caption": caption}
+            # Use link-based approach to avoid Matrix upload tuple errors
+            tool = SendMatrixVideoLinkTool()
+            params = {
+                "channel_id": settings.MATRIX_MEDIA_GALLERY_ROOM_ID, 
+                "video_url": media_url, 
+                "caption": caption,
+                "title": f"{service_used.title()} Generated Video"
+            }
         else:
             return
 
@@ -231,7 +237,7 @@ class GenerateVideoTool(ToolInterface):
                 "message": "Video generated and stored on Arweave.",
                 "arweave_video_url": video_arweave_url,
                 "prompt_used": prompt,
-                "next_actions_suggestion": f"To share this video, use a tool like 'send_matrix_video' with the URL: {video_arweave_url}"
+                "next_actions_suggestion": f"To share this video, use 'send_matrix_video_link' tool with the URL: {video_arweave_url}"
             }
 
         except Exception as e:
