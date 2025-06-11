@@ -51,20 +51,22 @@ class TestOrchestratorExtended:
     async def test_start_stop_without_observers(self):
         """Test starting and stopping orchestrator without observers."""
         # Mock all the methods that could hang or make network calls
-        with patch.object(self.orchestrator, '_initialize_observers', new_callable=AsyncMock) as mock_init, \
-             patch.object(self.orchestrator, '_register_integrations_from_env', new_callable=AsyncMock), \
+        with patch.object(self.orchestrator, '_register_integrations_from_env', new_callable=AsyncMock), \
              patch.object(self.orchestrator, '_update_action_context_integrations', new_callable=AsyncMock), \
              patch.object(self.orchestrator, '_ensure_media_gallery_exists', new_callable=AsyncMock), \
              patch.object(self.orchestrator, '_initialize_nft_services', new_callable=AsyncMock), \
              patch.object(self.orchestrator.integration_manager, 'initialize', new_callable=AsyncMock), \
              patch.object(self.orchestrator.integration_manager, 'connect_all_active', new_callable=AsyncMock), \
+             patch.object(self.orchestrator.integration_manager, 'start_all_services', new_callable=AsyncMock), \
+             patch.object(self.orchestrator.integration_manager, 'stop_all_services', new_callable=AsyncMock), \
              patch.object(self.orchestrator.integration_manager, 'disconnect_all', new_callable=AsyncMock), \
              patch.object(self.orchestrator.integration_manager, 'cleanup', new_callable=AsyncMock), \
+             patch.object(self.orchestrator, '_update_legacy_observer_references', new_callable=AsyncMock), \
              patch.object(self.orchestrator.proactive_engine, 'start', new_callable=AsyncMock), \
              patch.object(self.orchestrator.proactive_engine, 'stop', new_callable=AsyncMock):
             
             with patch.object(self.orchestrator.processing_hub, 'start_processing_loop', new_callable=AsyncMock) as mock_start, \
-                 patch.object(self.orchestrator.processing_hub, 'stop_processing_loop', new_callable=AsyncMock) as mock_stop:
+                 patch.object(self.orchestrator.processing_hub, 'stop_processing_loop') as mock_stop:
                 
                 # Configure the mock to raise KeyboardInterrupt to simulate quick shutdown
                 mock_start.side_effect = KeyboardInterrupt("Test shutdown")
@@ -78,8 +80,7 @@ class TestOrchestratorExtended:
                 # Ensure orchestrator is not running after stop
                 assert not self.orchestrator.running
                 
-                # Verify methods were called
-                mock_init.assert_called_once()
+                # Verify processing loop was started
                 mock_start.assert_called_once()
     
     @pytest.mark.asyncio
