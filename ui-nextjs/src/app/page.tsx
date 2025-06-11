@@ -13,13 +13,12 @@ export default function Home() {
 
   const checkSystemStatus = async () => {
     try {
-      const response = await apiClient.get('/api/status')
-      const systemData = response.data as SystemInfo
+      const systemData = await apiClient.getSystemStatus()
       setSystemInfo(systemData)
       setError(null)
     } catch (err: any) {
       console.error('Failed to fetch system status:', err)
-      setError(err.response?.data?.detail || 'Failed to connect to the backend')
+      setError(err.response?.data?.detail || err.message || 'Failed to connect to the backend')
       setSystemInfo({ status: 'ERROR' })
     }
   }

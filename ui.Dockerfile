@@ -1,33 +1,45 @@
-# ui.Dockerfile
+# ui.Dockerfile - Next.js Standalone Build
 
 # 1. Build Stage
 FROM node:18-alpine AS builder
 WORKDIR /app
-COPY ui/package.json ./
-# If package-lock.json exists, it will be copied. If not, npm install will create one.
-COPY ui/package-lock.json* ./
-RUN npm install
-COPY ui/ .
+
+# Copy dependency files
+COPY ui-nextjs/package.json ui-nextjs/package-lock.json* ./
+
+# Install dependencies
+RUN npm ci --omit=dev
+
+# Copy source code
+COPY ui-nextjs/ .
+
+# Build the application
 RUN npm run build
 
 # 2. Production Stage
-FROM node:18-alpine
+FROM node:18-alpine AS runner
 WORKDIR /app
 
-# Install serve to run the built app
-RUN npm install -g serve
+# Set production environment
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
 
-# Copy built assets from builder stage
-# Vite typically builds to a 'dist' directory
-COPY --from=builder /app/dist ./dist 
+# Create system user for security
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
 
-# Copy package.json and node_modules if needed for serve or other runtime dependencies
-# For a simple Vite static build, these might not be strictly necessary if serve is global
-# and there are no runtime server-side dependencies from package.json.
-# However, it's safer to include them if 'serve' or other tools might rely on local packages.
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/node_modules ./node_modules
+# Copy standalone build output
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/public ./public
+
+# Set ownership
+RUN chown -R nextjs:nodejs /app
+USER nextjs
 
 EXPOSE 3000
+
+# Run the application
+CMD ["node", "server.js"]
 # Serve the contents of the 'dist' directory
 CMD ["serve", "-s", "dist", "-l", "3000"]
