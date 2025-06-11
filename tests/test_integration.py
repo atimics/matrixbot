@@ -32,8 +32,7 @@ class TestIntegration:
                 db_path=db_path,
                 processing_config=ProcessingConfig(
                     observation_interval=0.1,
-                    max_cycles_per_hour=3600,
-                    traditional_ai_model="test_model"
+                    max_cycles_per_hour=3600
                 ),
                 ai_model="test_model"
             )

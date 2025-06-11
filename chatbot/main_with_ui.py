@@ -52,7 +52,6 @@ class ChatbotWithUI:
                 enable_node_based_processing=True,  # Start with traditional mode
                 observation_interval=settings.OBSERVATION_INTERVAL,
                 max_cycles_per_hour=settings.MAX_CYCLES_PER_HOUR,
-                traditional_ai_model=settings.AI_MODEL,
             ),
             ai_model=settings.AI_MODEL,
         )

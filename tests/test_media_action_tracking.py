@@ -234,5 +234,9 @@ class TestMediaActionTracking:
                 assert result["status"] == "failure"
                 assert "not accessible" in result["error"]
                 
-                # Verify that add_action_result was NOT called since the image wasn't accessible
-                mock_world_state_manager.add_action_result.assert_not_called()
+                # Verify that add_action_result WAS called to mark the image as processed (prevent retry loops)
+                mock_world_state_manager.add_action_result.assert_called_once()
+                call_args = mock_world_state_manager.add_action_result.call_args
+                assert call_args[1]["action_type"] == "describe_image"
+                assert call_args[1]["parameters"]["image_url"] == "http://example.com/nonexistent.jpg"
+                assert "Image not accessible" in call_args[1]["result"]

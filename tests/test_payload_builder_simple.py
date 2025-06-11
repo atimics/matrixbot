@@ -35,6 +35,11 @@ class TestPayloadBuilderSimple:
         manager.current_state.pending_matrix_invites = []
         manager.current_state.system_status = {}
         
+        # Add user tracking attributes that PayloadBuilder expects
+        manager.current_state.farcaster_users = {}
+        manager.current_state.matrix_users = {}
+        manager.current_state.user_memory_bank = {}
+        
         # Add methods that are called by PayloadBuilder
         manager.current_state.get_recent_media_actions.return_value = {
             "recent_media_actions": []
@@ -82,7 +87,9 @@ class TestPayloadBuilderSimple:
     
     def test_estimate_payload_size_empty(self):
         """Test size estimation with empty data."""
-        size = PayloadBuilder.estimate_payload_size({})
+        from chatbot.core.world_state.structures import WorldStateData
+        empty_state = WorldStateData()
+        size = PayloadBuilder.estimate_payload_size(empty_state)
         assert isinstance(size, int)
         assert size >= 0
     
@@ -103,16 +110,13 @@ class TestPayloadBuilderSimple:
     
     def test_platform_detection(self):
         """Test platform detection logic."""
-        # Test with sample message data
-        sample_data = {
-            "channels": {
-                "matrix_room": {"type": "matrix"},
-                "farcaster_channel": {"type": "farcaster"}
-            }
-        }
+        from chatbot.core.world_state.structures import WorldStateData
+        
+        # Create sample world state data
+        sample_state = WorldStateData()
         
         # This tests that the method exists and returns something reasonable
         # Implementation details may vary
-        size = PayloadBuilder.estimate_payload_size(sample_data)
+        size = PayloadBuilder.estimate_payload_size(sample_state)
         assert isinstance(size, int)
         assert size > 0

@@ -63,20 +63,11 @@ class TestOrchestratorExtended:
              patch.object(self.orchestrator.proactive_engine, 'start', new_callable=AsyncMock), \
              patch.object(self.orchestrator.proactive_engine, 'stop', new_callable=AsyncMock):
             
-            # Mock processing loop to simulate quick start/stop
-            async def fake_processing_loop():
-                # Simulate starting up
-                self.orchestrator.running = True
-                await asyncio.sleep(0.001)  # Minimal delay
-                # Simulate shutdown signal
-                raise KeyboardInterrupt("Test shutdown")
-            
-            # Mock stop_processing_loop to be non-blocking
-            def fake_stop_processing_loop():
-                self.orchestrator.running = False
-            
-            with patch.object(self.orchestrator.processing_hub, 'start_processing_loop', new=fake_processing_loop) as mock_start, \
-                 patch.object(self.orchestrator.processing_hub, 'stop_processing_loop', new=fake_stop_processing_loop) as mock_stop:
+            with patch.object(self.orchestrator.processing_hub, 'start_processing_loop', new_callable=AsyncMock) as mock_start, \
+                 patch.object(self.orchestrator.processing_hub, 'stop_processing_loop', new_callable=AsyncMock) as mock_stop:
+                
+                # Configure the mock to raise KeyboardInterrupt to simulate quick shutdown
+                mock_start.side_effect = KeyboardInterrupt("Test shutdown")
                 
                 # Test should complete quickly without hanging
                 try:

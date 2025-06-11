@@ -269,12 +269,11 @@ class TestHTTP402ScenarioIntegration:
             )
             channels[channel_id] = channel
         
-        world_state = WorldStateData(
-            channels=channels,
-            system_status={"running": True, "total_cycles": 150},
-            rate_limits={"matrix": {"remaining": 1000}},
-            action_history=[]  # Add some action history too
-        )
+        world_state = WorldStateData()
+        world_state.channels = channels
+        world_state.system_status = {"running": True, "total_cycles": 150}
+        world_state.rate_limits = {"matrix": {"remaining": 1000}}
+        world_state.action_history = []
         
         # Build payload with default configuration
         payload = payload_builder.build_full_payload(

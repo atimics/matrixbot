@@ -776,7 +776,10 @@ class PayloadBuilder:
         if isinstance(data, dict):
             cleaned_dict = {}
             for key, value in data.items():
-                if (cleaned_value := PayloadBuilder._remove_empty_values(value)) not in (None, "", [], {}):
+                # Preserve important structural keys even if they're empty
+                preserve_empty = key in ["channels", "action_history", "thread_context", "system_status"]
+                cleaned_value = PayloadBuilder._remove_empty_values(value)
+                if cleaned_value not in (None, "", [], {}) or preserve_empty:
                     cleaned_dict[key] = cleaned_value
             return cleaned_dict
         if isinstance(data, list):
