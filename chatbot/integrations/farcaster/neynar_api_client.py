@@ -519,7 +519,7 @@ class NeynarAPIClient:
         endpoint = "/farcaster/fungible/owner/relevant"
         params = {
             "contract_address": contract_address.strip(),
-            "network": network,
+            "networks": network,
         }
         if viewer_fid:
             params["viewer_fid"] = viewer_fid

@@ -20,6 +20,9 @@ from ...core.integration_manager import IntegrationManager
 from ...integrations.arweave_uploader_client import ArweaveUploaderClient
 from ...integrations.farcaster import FarcasterObserver
 from ..node_system.node_manager import NodeManager
+from ..node_system.node_processor import NodeProcessor
+from ..node_system.summary_service import NodeSummaryService
+from ..node_system.interaction_tools import NodeInteractionTools
 from ...integrations.matrix.observer import MatrixObserver
 from ...integrations.base_nft_service import BaseNFTService
 from ...integrations.eligibility_service import UserEligibilityService
@@ -368,9 +371,54 @@ class MainOrchestrator:
 
     def _setup_processing_components(self):
         """Set up processing components for the processing hub."""
-        # Node processor would be set up here when implementing
-        # the JSON Observer integration
-        logger.info("Processing components setup complete - using node-based processing only")
+        try:
+            # Initialize node system components
+            logger.info("Setting up node-based processing components...")
+            
+            # Create node manager
+            self.node_manager = NodeManager()
+            
+            # Create node summary service
+            if settings.OPENROUTER_API_KEY:
+                self.node_summary_service = NodeSummaryService(
+                    api_key=settings.OPENROUTER_API_KEY,
+                    model=settings.AI_SUMMARY_MODEL
+                )
+            else:
+                logger.warning("No API key available for node summary service")
+                self.node_summary_service = None
+            
+            # Create node interaction tools
+            self.node_interaction_tools = NodeInteractionTools(self.node_manager)
+            
+            # Create node processor
+            if (self.world_state and self.payload_builder and self.ai_engine and 
+                self.node_manager and self.node_summary_service and self.node_interaction_tools):
+                
+                self.node_processor = NodeProcessor(
+                    world_state_manager=self.world_state,
+                    payload_builder=self.payload_builder,
+                    ai_engine=self.ai_engine,
+                    node_manager=self.node_manager,
+                    summary_service=self.node_summary_service,
+                    interaction_tools=self.node_interaction_tools,
+                    tool_registry=self.tool_registry,
+                    action_context=self.action_context
+                )
+                
+                # Set the node processor in the processing hub
+                self.processing_hub.node_processor = self.node_processor
+                
+                logger.info("Node processor successfully initialized and connected to processing hub")
+            else:
+                logger.error("Failed to initialize node processor - missing dependencies")
+                self.node_processor = None
+            
+            logger.info("Processing components setup complete - node-based processing ready")
+            
+        except Exception as e:
+            logger.error(f"Error setting up processing components: {e}", exc_info=True)
+            self.node_processor = None
 
     async def _initialize_nft_services(self) -> None:
         """Initialize NFT and blockchain services if credentials are available."""
