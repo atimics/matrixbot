@@ -48,7 +48,7 @@ class TestWorldStateExtended:
             world_state.add_message(channel_id, message)
         
         state_dict = world_state.to_dict()
-        messages = state_dict["channels"][channel_id]["recent_messages"]
+        messages = state_dict["channels"]["matrix"][channel_id]["recent_messages"]
         
         # Should be limited to 50 messages
         assert len(messages) == 50
@@ -187,7 +187,8 @@ class TestWorldStateExtended:
         import json
         parsed = json.loads(json_str)
         assert "channels" in parsed
-        assert "test_ch" in parsed["channels"]
+        assert "matrix" in parsed["channels"]
+        assert "test_ch" in parsed["channels"]["matrix"]
     
     def test_auto_channel_creation(self):
         """Test automatic channel creation when adding messages."""
@@ -208,9 +209,9 @@ class TestWorldStateExtended:
         state_dict = world_state.to_dict()
         
         # Channel should be auto-created
-        assert "auto_channel" in state_dict["channels"]
-        assert state_dict["channels"]["auto_channel"]["type"] == "matrix"
-        assert len(state_dict["channels"]["auto_channel"]["recent_messages"]) == 1
+        assert "matrix" in state_dict["channels"]
+        assert "auto_channel" in state_dict["channels"]["matrix"]
+        assert len(state_dict["channels"]["matrix"]["auto_channel"]["recent_messages"]) == 1
     
     def test_timestamp_updates(self):
         """Test that last_update timestamp is maintained."""

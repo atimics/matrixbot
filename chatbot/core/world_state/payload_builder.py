@@ -316,8 +316,26 @@ class PayloadBuilder:
             ),
         }
 
+        # DEBUG: Log Matrix channels and their recent messages
+        matrix_channels = [ch for ch in channels_payload.values() if ch.get('type') == 'matrix']
+        logger.debug(f"Matrix channels in payload: {[{'id': ch.get('id'), 'name': ch.get('name'), 'recent_messages': ch.get('recent_messages', [])} for ch in matrix_channels]}")
+
         if not optimize_for_size:
             payload.update(self._get_full_detail_data(world_state_data))
+
+        # --- ENHANCED DEBUG: Log Matrix channels and their recent messages (unmissable) ---
+        matrix_channels = [ch for ch in all_channels if getattr(ch, 'type', None) == 'matrix']
+        if matrix_channels:
+            debug_lines = ["\n=== MATRIX CHANNELS IN PAYLOAD ==="]
+            for ch in matrix_channels:
+                debug_lines.append(f"Channel: {ch.id} | {ch.name} | {len(ch.recent_messages)} messages")
+                for msg in ch.recent_messages[-5:]:
+                    debug_lines.append(f"  Msg: id={getattr(msg, 'id', None)} | sender={getattr(msg, 'sender_username', None)} | content={getattr(msg, 'content', None)}")
+            debug_lines.append("=== END MATRIX CHANNELS ===\n")
+            logger.info("\n".join(debug_lines))
+        else:
+            logger.info("\n=== NO MATRIX CHANNELS IN PAYLOAD ===\n")
+        # --- END ENHANCED DEBUG ---
 
         return self._optimize_payload_size(payload)
 
@@ -372,6 +390,7 @@ class PayloadBuilder:
             
             if metadata.is_expanded:
                 # Request EXPANDED data for this node
+                logger.info(f"Getting EXPANDED data for node: {node_path}")
                 node_data = self._get_node_data_by_path(world_state_data, node_path, expanded=True)
                 if node_data is not None:
                     expanded_nodes[node_path] = {
@@ -379,6 +398,9 @@ class PayloadBuilder:
                         "is_pinned": metadata.is_pinned,
                         "last_expanded": metadata.last_expanded_ts,
                     }
+                    logger.info(f"Added expanded node {node_path} to payload")
+                else:
+                    logger.warning(f"No data returned for expanded node: {node_path}")
             else:
                 # Request SUMMARY data for this node
                 node_data = self._get_node_data_by_path(world_state_data, node_path, expanded=False)
@@ -390,12 +412,16 @@ class PayloadBuilder:
                         "last_summary_update": metadata.last_summary_update_ts,
                     }
 
+        # Always include a summary of ALL available channels for AI discovery
+        available_channels = self._build_available_channels_summary(world_state_data, node_manager)
+
         payload = {
             "current_processing_channel_id": primary_channel_id,
             "system_status": {
                 "timestamp": world_state_data.last_update,
                 "rate_limits": world_state_data.rate_limits,
             },
+            "available_channels": available_channels,  # NEW: Always visible for AI discovery
             "expanded_nodes": expanded_nodes,
             "collapsed_node_summaries": collapsed_node_summaries,
             "expansion_status": node_manager.get_expansion_status_summary(),
@@ -565,54 +591,115 @@ class PayloadBuilder:
         if world_state_data.pending_matrix_invites:
             yield "system.notifications"
 
-    def _get_node_data_by_path(
-        self, world_state_data: WorldStateData, node_path: str, expanded: bool = False
-    ) -> Any:
+    def _parse_node_path(self, node_path: str) -> List[str]:
         """
-        Get the actual data for a specific node path using a dispatcher.
+        Parse a node path into components, handling special cases like Matrix room IDs and user IDs.
+        
+        Matrix room IDs can contain colons and dots (e.g., !room:domain.com), and
+        Matrix user IDs can contain colons (e.g., @user:domain.com), so we need
+        to be careful about how we split the path.
         
         Args:
-            world_state_data: The world state to extract data from.
-            node_path: The path to the node (e.g., "channels.matrix.!room_id").
-            expanded: Whether to return full details for the node.
-        
+            node_path: The node path to parse (e.g., "channels.matrix.!room:domain.com" or "users.matrix.@user:domain.com")
+            
         Returns:
-            The data for that node, or None if not found.
+            List of path components
+        """
+        # Split on dots, but handle special cases
+        if node_path.startswith("channels."):
+            # For channel paths: channels.{type}.{channel_id}
+            # We need to split only on the first two dots to preserve channel ID
+            parts = node_path.split(".", 2)  # Split into max 3 parts
+            if len(parts) == 3:
+                return parts
+            else:
+                # Fallback to regular split if it doesn't match expected format
+                return node_path.split(".")
+        elif node_path.startswith("users."):
+            # For user paths: users.{type}.{user_id}
+            # We need to split only on the first two dots to preserve user ID
+            parts = node_path.split(".", 2)  # Split into max 3 parts
+            if len(parts) == 3:
+                return parts
+            else:
+                # Fallback to regular split if it doesn't match expected format
+                return node_path.split(".")
+        else:
+            # For other paths, use regular splitting
+            return node_path.split(".")
+
+    def _get_node_data_by_path(self, world_state_data: WorldStateData, node_path: str, expanded: bool = False) -> Optional[Dict]:
+        """
+        Get node data by path, dispatching to appropriate handler based on node type.
+        
+        Args:
+            world_state_data: The world state data
+            node_path: The node path (e.g., "channels.matrix.!room:domain.com")
+            expanded: Whether to get expanded data
+            
+        Returns:
+            Dictionary containing node data or None if not found
         """
         try:
-            path_parts = node_path.split(".")
-            handler = self._node_data_handlers.get(path_parts[0])
-            if handler:
-                return handler(world_state_data, path_parts, expanded=expanded)
-            logger.warning(f"No handler found for node path prefix: {path_parts[0]}")
-            return None
+            # Parse the node path into components
+            path_parts = self._parse_node_path(node_path)
+            
+            if not path_parts:
+                logger.warning(f"Empty path parts for node: {node_path}")
+                return None
+            
+            # Route to appropriate handler based on first path component
+            node_type = path_parts[0]
+            
+            if node_type == "channels":
+                return self._get_channel_node_data(world_state_data, path_parts, expanded)
+            elif node_type == "users":
+                return self._get_user_node_data(world_state_data, path_parts, expanded)
+            elif node_type == "farcaster":
+                return self._get_farcaster_node_data(world_state_data, path_parts, expanded)
+            elif node_type == "system":
+                return self._get_system_node_data(world_state_data, path_parts, expanded)
+            elif node_type == "threads":
+                return self._get_thread_node_data(world_state_data, path_parts, expanded)
+            else:
+                logger.warning(f"Unknown node type '{node_type}' in path: {node_path}")
+                return None
+                
         except Exception as e:
-            logger.error(f"Error getting data for node path {node_path}: {e}", exc_info=True)
+            logger.error(f"Error getting node data for path '{node_path}': {e}")
             return None
 
     # --- Node Data Handlers ---
 
     def _get_channel_node_data(self, world_state_data: WorldStateData, path_parts: List[str], expanded: bool = False) -> Optional[Dict]:
-        if len(path_parts) != 3: return None
+        if len(path_parts) != 3: 
+            logger.warning(f"Invalid channel node path parts: {path_parts}")
+            return None
         _, channel_type, channel_id = path_parts
+        
+        logger.info(f"Getting channel node data: type={channel_type}, id={channel_id}, expanded={expanded}")
         
         # Access channel from nested structure: channels[platform][channel_id]
         if channel_type not in world_state_data.channels:
+            logger.warning(f"Channel type '{channel_type}' not in world state channels: {list(world_state_data.channels.keys())}")
             return None
         
         channel = world_state_data.channels[channel_type].get(channel_id)
         if not channel: 
+            logger.warning(f"Channel '{channel_id}' not found in {channel_type} channels: {list(world_state_data.channels[channel_type].keys())}")
             return None
         
         # Determine message list based on expansion status
         if expanded:
             # For expanded nodes, provide enhanced summaries with more messages and context
             messages_for_payload = [msg.to_ai_summary_dict() for msg in channel.recent_messages[-8:]] # More messages but still summaries
+            logger.info(f"Channel {channel_id} EXPANDED: {len(channel.recent_messages)} total messages, including {len(messages_for_payload)} in payload")
         else:
             # For collapsed nodes, provide basic summaries
             messages_for_payload = [msg.to_ai_summary_dict() for msg in channel.recent_messages[-3:]]
+            logger.info(f"Channel {channel_id} COLLAPSED: {len(channel.recent_messages)} total messages, including {len(messages_for_payload)} in payload")
 
-        return {
+        result = {
             "id": channel.id,
             "name": channel.name,
             "type": channel.type,
@@ -621,6 +708,9 @@ class PayloadBuilder:
             "last_activity": channel.recent_messages[-1].timestamp if channel.recent_messages else channel.last_checked,
             "recent_messages": messages_for_payload,
         }
+        
+        logger.info(f"Returning channel data for {channel_id}: {result['name']} with {len(result['recent_messages'])} messages")
+        return result
 
     def _get_user_node_data(self, world_state_data: WorldStateData, path_parts: List[str], expanded: bool = False) -> Optional[Dict]:
         if len(path_parts) < 3: return None
@@ -883,6 +973,53 @@ class PayloadBuilder:
                     yield ch
             elif hasattr(platform_channels, 'recent_messages'):
                 yield platform_channels
+
+    def _build_available_channels_summary(
+        self, world_state_data: WorldStateData, node_manager: "NodeManager"
+    ) -> Dict[str, Any]:
+        """
+        Build a summary of ALL available channels for AI discovery.
+        This allows the AI to see what channels exist and choose to expand them.
+        """
+        available_channels = {
+            "matrix": {},
+            "farcaster": {},
+            "summary": "Available channels the AI can expand for detailed content"
+        }
+        
+        # Matrix channels
+        matrix_channels = world_state_data.channels.get('matrix', {})
+        for channel_id, channel in matrix_channels.items():
+            if hasattr(channel, 'name') and hasattr(channel, 'recent_messages'):
+                node_path = f"channels.matrix.{channel_id}"
+                metadata = node_manager.get_node_metadata(node_path)
+                
+                available_channels["matrix"][channel_id] = {
+                    "name": channel.name,
+                    "node_path": node_path,
+                    "is_expanded": metadata.is_expanded,
+                    "is_pinned": metadata.is_pinned,
+                    "recent_message_count": len(channel.recent_messages),
+                    "last_activity": channel.recent_messages[-1].timestamp if channel.recent_messages else None
+                }
+        
+        # Farcaster channels
+        farcaster_channels = world_state_data.channels.get('farcaster', {})
+        for channel_id, channel in farcaster_channels.items():
+            if hasattr(channel, 'name') and hasattr(channel, 'recent_messages'):
+                node_path = f"channels.farcaster.{channel_id}"
+                metadata = node_manager.get_node_metadata(node_path)
+                
+                available_channels["farcaster"][channel_id] = {
+                    "name": channel.name,
+                    "node_path": node_path,
+                    "is_expanded": metadata.is_expanded,
+                    "is_pinned": metadata.is_pinned,
+                    "recent_message_count": len(channel.recent_messages),
+                    "last_activity": channel.recent_messages[-1].timestamp if channel.recent_messages else None
+                }
+        
+        return available_channels
 
     # Update all usages of world_state_data.channels.values() to use _iter_all_channels
     # Example for fallback user search:

@@ -64,6 +64,10 @@ class ProcessingHub:
         # Event coordination
         self.state_changed_event = asyncio.Event()
         
+        # Processing coordination - prevent overlapping cycles
+        self._processing_lock = asyncio.Lock()
+        self._current_cycle_id = None
+        
         # Component availability tracking
         self.node_processor = None
         
@@ -96,8 +100,12 @@ class ProcessingHub:
     def trigger_state_change(self):
         """Trigger immediate processing when world state changes."""
         if self.state_changed_event and not self.state_changed_event.is_set():
-            self.state_changed_event.set()
-            logger.debug("State change event triggered")
+            # Only trigger if we're not already processing
+            if not self._processing_lock.locked():
+                self.state_changed_event.set()
+                logger.debug("State change event triggered")
+            else:
+                logger.debug(f"State change ignored - cycle {self._current_cycle_id} already in progress")
 
     async def _main_event_loop(self) -> None:
         """Main event loop for processing world state changes."""
@@ -138,25 +146,33 @@ class ProcessingHub:
 
                 # Check if state has changed
                 if current_hash != last_state_hash:
-                    logger.info(f"World state changed, processing cycle {self.cycle_count}")
+                    # Check if we're already processing a cycle
+                    if self._processing_lock.locked():
+                        logger.debug(f"Cycle already in progress ({self._current_cycle_id}), skipping cycle {self.cycle_count}")
+                        continue
+                    
+                    async with self._processing_lock:
+                        self._current_cycle_id = f"cycle_{self.cycle_count}"
+                        logger.info(f"World state changed, processing {self._current_cycle_id}")
 
-                    # Get active channels to determine primary focus
-                    active_channels = self._get_active_channels(current_state)
+                        # Get active channels to determine primary focus
+                        active_channels = self._get_active_channels(current_state)
 
-                    # Process using selected strategy
-                    await self._process_world_state(active_channels)
+                        # Process using selected strategy
+                        await self._process_world_state(active_channels)
 
-                    # Update tracking
-                    last_state_hash = current_hash
-                    self.cycle_count += 1
-                    self.last_cycle_time = cycle_start
+                        # Update tracking
+                        last_state_hash = current_hash
+                        self.cycle_count += 1
+                        self.last_cycle_time = cycle_start
 
-                    cycle_duration = time.time() - cycle_start
-                    logger.info(f"Cycle {self.cycle_count} completed in {cycle_duration:.2f}s")
+                        cycle_duration = time.time() - cycle_start
+                        logger.info(f"{self._current_cycle_id} completed in {cycle_duration:.2f}s")
+                        self._current_cycle_id = None
 
-                    # Log rate limiting status every 10 cycles for monitoring
-                    if self.cycle_count % 10 == 0:
-                        self._log_rate_limit_status()
+                        # Log rate limiting status every 10 cycles for monitoring
+                        if self.cycle_count % 10 == 0:
+                            self._log_rate_limit_status()
 
             except Exception as e:
                 logger.error(f"Error in event loop cycle {self.cycle_count}: {e}")
@@ -276,6 +292,8 @@ class ProcessingHub:
             "current_mode": self.current_processing_mode,
             "cycle_count": self.cycle_count,
             "last_cycle_time": self.last_cycle_time,
+            "processing_in_progress": self._processing_lock.locked(),
+            "current_cycle_id": self._current_cycle_id,
             "payload_size_history": self.payload_size_history[-5:],  # Last 5 estimates
             "node_processor_available": self.node_processor is not None,
             "config": {
