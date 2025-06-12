@@ -61,9 +61,8 @@ class NodeProcessor:
         context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        Process a single cycle using two-step node-based reasoning:
-        1. AI selects nodes to expand based on summaries
-        2. AI selects actions based on expanded nodes
+        Process a single cycle using an iterative action loop.
+        The loop continues until the AI chooses to 'wait' or a limit is reached.
         
         Args:
             cycle_id: Unique identifier for this processing cycle
@@ -74,70 +73,144 @@ class NodeProcessor:
             Dict containing cycle results and metrics
         """
         context = context or {}
-        cycle_start_time = asyncio.get_event_loop().time()
-        
-        logger.debug(f"Starting two-step node-based processing cycle {cycle_id}")
-        
+        cycle_start_time = time.time()
+        actions_executed_count = 0
+        MAX_ACTIONS_PER_CYCLE = 3  # Safety break to prevent infinite loops
+
+        logger.info(f"Starting iterative processing cycle {cycle_id}")
+
         try:
-            # Step 1: Auto-expand the most active channels
+            # Initial auto-expansion of active channels
             await self._auto_expand_active_channels()
-            
-            # Step 2: Build initial payload with collapsed nodes and summaries
-            initial_payload = await self._build_node_selection_payload(primary_channel_id, context)
-            
-            # Step 3: First AI decision - select nodes to expand
-            node_selections = await self._ai_select_nodes_to_expand(initial_payload, cycle_id)
-            
-            # Step 4: Apply node expansions based on AI selection
-            expansion_results = await self._apply_node_expansions(node_selections)
-            
-            # Step 5: Build full payload with expanded nodes
-            full_payload = await self._build_action_selection_payload(primary_channel_id, context)
-            
-            # Step 6: Second AI decision - select actions based on expanded context
-            ai_response = await self._ai_select_actions(full_payload, cycle_id)
-            
-            # Step 7: Execute actions the AI decided to take
-            execution_results = await self._execute_ai_actions(ai_response, cycle_id)
-            
-            # Step 8: Update node summaries if needed
+
+            while actions_executed_count < MAX_ACTIONS_PER_CYCLE:
+                # 1. Build payload based on the current state of the world
+                payload = await self._build_current_payload(primary_channel_id, context)
+                if not payload:
+                    logger.warning("Failed to build payload, ending cycle.")
+                    break
+
+                # 2. Get the single next action from the AI
+                ai_actions = await self._get_next_actions(payload, cycle_id, actions_executed_count)
+                if not ai_actions:
+                    logger.info("AI returned no actions, ending cycle.")
+                    break
+
+                # The AI can return multiple actions, but we process them one by one.
+                # We primarily focus on the highest priority action.
+                action_to_execute = ai_actions[0]
+
+                # 3. If the action is 'wait', the cycle is complete
+                if action_to_execute.action_type == "wait":
+                    logger.info(f"AI chose to 'wait'. Cycle {cycle_id} complete.")
+                    await self._execute_platform_tool(action_to_execute.action_type, action_to_execute.parameters, cycle_id)
+                    actions_executed_count += 1
+                    break
+
+                # 4. Execute the chosen action
+                logger.info(f"Cycle {cycle_id}, Step {actions_executed_count + 1}: Executing action '{action_to_execute.action_type}'")
+                await self._execute_action(action_to_execute, cycle_id)
+                actions_executed_count += 1
+                
+                # After an action, the world state has changed. The loop will now
+                # build a new payload reflecting this change for the next AI decision.
+
+            # Finalize cycle
             await self._update_node_summaries()
-            
-            # Step 9: Log system events from node operations
             self._log_node_system_events()
+
+            cycle_duration = time.time() - cycle_start_time
+            logger.info(f"Completed iterative cycle {cycle_id} in {cycle_duration:.2f}s - {actions_executed_count} actions executed")
             
-            cycle_duration = asyncio.get_event_loop().time() - cycle_start_time
-            
-            result = {
+            return {
                 "cycle_id": cycle_id,
                 "success": True,
-                "actions_executed": execution_results.get("actions_executed", 0),
-                "nodes_processed": execution_results.get("nodes_processed", 0),
-                "nodes_expanded": expansion_results.get("nodes_expanded", 0),
-                "cycle_duration": cycle_duration,
-                "primary_channel": primary_channel_id,
-                "ai_response_summary": self._summarize_ai_response(ai_response),
-                "node_selection_summary": self._summarize_node_selections(node_selections),
-                "payload_info": {
-                    "expanded_nodes": len(self.node_manager.get_expanded_nodes()),
-                    "payload_size": len(str(full_payload)) if full_payload else 0
-                }
+                "actions_executed": actions_executed_count,
+                "cycle_duration": cycle_duration
             }
-            
-            logger.info(f"Completed two-step cycle {cycle_id} in {cycle_duration:.2f}s - "
-                       f"{result['nodes_expanded']} nodes expanded, {result['actions_executed']} actions executed")
-            
-            return result
-            
+
         except Exception as e:
-            logger.error(f"Error in two-step processing cycle {cycle_id}: {e}", exc_info=True)
+            logger.error(f"Error in iterative processing cycle {cycle_id}: {e}", exc_info=True)
             return {
                 "cycle_id": cycle_id,
                 "success": False,
                 "error": str(e),
-                "actions_executed": 0,
-                "nodes_processed": 0
+                "actions_executed": actions_executed_count,
             }
+    
+    async def _build_current_payload(self, primary_channel_id: Optional[str], context: Dict[str, Any]) -> Dict[str, Any]:
+        """Build a single, unified payload for the current state of the world."""
+        try:
+            world_state_data = self.world_state.get_world_state_data()
+            
+            payload = self.payload_builder.build_node_based_payload(
+                world_state_data=world_state_data,
+                node_manager=self.node_manager,
+                primary_channel_id=primary_channel_id or ""
+            )
+
+            # Add all available tools to the payload
+            payload["tools"] = []
+            if self.tool_registry:
+                enabled_tools = self.tool_registry.get_enabled_tools()
+                for tool in enabled_tools:
+                    payload["tools"].append({
+                        "type": "function",
+                        "function": {
+                            "name": tool.name,
+                            "description": tool.description,
+                            "parameters": self._convert_parameters_schema(tool.parameters_schema)
+                        }
+                    })
+            
+            # Add node interaction tools
+            node_interaction_tools = self.interaction_tools.get_tool_definitions()
+            payload["tools"].extend(node_interaction_tools.values())
+            
+            # Add processing context
+            payload["processing_context"] = {
+                "mode": "iterative_action",
+                "primary_channel": primary_channel_id,
+                "cycle_context": context,
+                "node_stats": self.node_manager.get_expansion_status_summary(),
+                "instruction": "Based on the current world state, select the single most important action to take now. Choose 'wait' if no action is needed."
+            }
+            
+            return payload
+        except Exception as e:
+            logger.error(f"Error building current payload: {e}", exc_info=True)
+            return {}
+
+    async def _get_next_actions(self, payload_data: Dict[str, Any], cycle_id: str, step: int):
+        """Get the next action(s) from the AI."""
+        try:
+            decision_result = await self.ai_engine.make_decision(
+                world_state=payload_data,
+                cycle_id=f"{cycle_id}_step_{step}"
+            )
+            # Log the AI's reasoning for this step
+            if decision_result.reasoning:
+                logger.info(f"AI Reasoning for step {step}: {decision_result.reasoning}")
+            return decision_result.selected_actions
+        except Exception as e:
+            logger.error(f"Error in AI action selection for cycle {cycle_id}, step {step}: {e}", exc_info=True)
+            return []
+
+    async def _execute_action(self, action, cycle_id: str):
+        """Executes a single action and updates the world state."""
+        tool_name = action.action_type
+        tool_args = action.parameters
+        
+        # Log AI reasoning for selecting this action
+        logger.info(f"AI reasoning: {action.reasoning}")
+
+        # Dispatch to the correct tool executor
+        if tool_name in ["select_nodes_to_expand", "expand_node", "collapse_node", "pin_node", "unpin_node"]:
+            await self._execute_node_tool(tool_name, tool_args)
+        elif tool_name == "refresh_summary":
+            await self._execute_summary_refresh(tool_args)
+        else:
+            await self._execute_platform_tool(tool_name, tool_args, cycle_id)
     
     # Old methods removed - now using two-step approach with:
     # _build_node_selection_payload, _ai_select_nodes_to_expand
@@ -244,6 +317,16 @@ class NodeProcessor:
     ) -> Dict[str, Any]:
         """Execute a node interaction tool."""
         try:
+            # The tool 'select_nodes_to_expand' is now handled here.
+            # It's essentially multiple 'expand_node' calls.
+            if tool_name == "select_nodes_to_expand":
+                node_paths = tool_args.get("node_paths", [])
+                logger.info(f"AI selected {len(node_paths)} nodes for expansion: {node_paths}")
+                for node_path in node_paths:
+                    success, auto_collapsed, message = self.node_manager.expand_node(node_path)
+                    logger.info(f"Expansion of '{node_path}': {message}")
+                return {"success": True, "message": f"Expanded {len(node_paths)} nodes."}
+
             node_path = tool_args.get("node_path", "")
             if not node_path:
                 return {"success": False, "error": "Missing node_path"}

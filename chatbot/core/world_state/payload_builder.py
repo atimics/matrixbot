@@ -145,8 +145,9 @@ class PayloadBuilder:
         
         # Detect if we have many recently joined channels (potential data spike)
         current_time = time.time()
+        all_channels = [ch for platform_channels in world_state_data.channels.values() for ch in platform_channels.values()]
         recent_channels = [
-            ch for ch in world_state_data.channels.values() 
+            ch for ch in all_channels 
             if ch.recent_messages and 
             current_time - ch.recent_messages[0].timestamp < 3600  # Last hour
         ]
@@ -182,7 +183,13 @@ class PayloadBuilder:
                 return (1, -last_activity)
             return (2 if ch_data.type == "farcaster" else 3, -last_activity)
 
-        sorted_channels = sorted(world_state_data.channels.items(), key=sort_key)
+        # Flatten channels from nested structure for sorting
+        all_channel_items = [
+            (channel_id, channel) 
+            for platform_channels in world_state_data.channels.values() 
+            for channel_id, channel in platform_channels.items()
+        ]
+        sorted_channels = sorted(all_channel_items, key=sort_key)
 
         channels_payload = {}
         detailed_count = 0
@@ -433,21 +440,28 @@ class PayloadBuilder:
         yield from self._generate_system_paths(world_state_data)
 
     def _generate_channel_paths(self, world_state_data: WorldStateData):
-        for channel_id, channel in world_state_data.channels.items():
-            yield f"channels.{channel.type}.{channel_id}"
+        for platform, platform_channels in world_state_data.channels.items():
+            for channel_id, channel in platform_channels.items():
+                yield f"channels.{channel.type}.{channel_id}"
 
     def _generate_farcaster_feed_paths(self, world_state_data: WorldStateData):
-        if any(ch.type == "farcaster" for ch in world_state_data.channels.values()):
+        # Check if any channel is of type farcaster
+        has_farcaster = any(
+            any(ch.type == "farcaster" for ch in platform_channels.values()) 
+            for platform_channels in world_state_data.channels.values()
+        )
+        if has_farcaster:
             yield from ["farcaster.feeds.home", "farcaster.feeds.notifications", "farcaster.feeds.trending"]
 
     def _generate_user_paths(self, world_state_data: WorldStateData):
         user_fids = set(world_state_data.farcaster_users.keys())
         user_matrix_ids = set(world_state_data.matrix_users.keys())
 
-        for channel in world_state_data.channels.values():
-            for msg in channel.recent_messages[-10:]:  # Limit scan to recent messages
-                if msg.sender_fid: user_fids.add(msg.sender_fid)
-                if msg.sender_username: user_matrix_ids.add(msg.sender_username)
+        for platform_channels in world_state_data.channels.values():
+            for channel in platform_channels.values():
+                for msg in channel.recent_messages[-10:]:  # Limit scan to recent messages
+                    if msg.sender_fid: user_fids.add(str(msg.sender_fid))
+                    if msg.sender_username: user_matrix_ids.add(msg.sender_username)
 
         for fid in user_fids:
             yield f"users.farcaster.{fid}"
@@ -542,8 +556,14 @@ class PayloadBuilder:
     def _get_channel_node_data(self, world_state_data: WorldStateData, path_parts: List[str], expanded: bool = False) -> Optional[Dict]:
         if len(path_parts) != 3: return None
         _, channel_type, channel_id = path_parts
-        channel = world_state_data.channels.get(channel_id)
-        if not channel or channel.type != channel_type: return None
+        
+        # Access channel from nested structure: channels[platform][channel_id]
+        if channel_type not in world_state_data.channels:
+            return None
+        
+        channel = world_state_data.channels[channel_type].get(channel_id)
+        if not channel: 
+            return None
         
         # Determine message list based on expansion status
         if expanded:
@@ -724,7 +744,7 @@ class PayloadBuilder:
             return {
                 "thread_id": thread_id,
                 "type": thread_type,
-                "messages": [asdict(msg) for msg in thread_messages[-5:]]
+                "messages": [msg.to_ai_summary_dict() for msg in thread_messages[-5:]]  # Use summaries instead of full data
             }
         return None
 

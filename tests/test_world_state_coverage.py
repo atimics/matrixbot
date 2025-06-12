@@ -268,8 +268,9 @@ class TestWorldStateCoverage:
         )
         
         manager.add_channel(channel)
-        assert "mgr_channel" in manager.world_state.channels
-        assert manager.world_state.channels["mgr_channel"].type == "farcaster"
+        assert "farcaster" in manager.world_state.channels
+        assert "mgr_channel" in manager.world_state.channels["farcaster"]
+        assert manager.world_state.channels["farcaster"]["mgr_channel"].type == "farcaster"
 
     def test_world_state_manager_add_message(self):
         """Test WorldStateManager add_message"""

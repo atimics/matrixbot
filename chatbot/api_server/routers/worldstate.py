@@ -65,23 +65,26 @@ async def get_channels(orchestrator: MainOrchestrator = Depends(get_orchestrator
     """Get detailed channel information."""
     try:
         channels = {}
-        for channel_id, channel in orchestrator.world_state.state.channels.items():
-            channels[channel_id] = {
-                "id": channel.id,
-                "name": channel.name,
-                "platform": channel.type,
-                "message_count": len(channel.recent_messages),
-                "recent_messages": [
-                    {
-                        "id": msg.id,
-                        "content": msg.content[:100] + "..." if len(msg.content) > 100 else msg.content,
-                        "author": msg.sender,
-                        "timestamp": msg.timestamp,
-                        "platform": msg.channel_type
+        # Handle nested structure: channels[platform][channel_id]
+        for platform, platform_channels in orchestrator.world_state.state.channels.items():
+            if isinstance(platform_channels, dict):
+                for channel_id, channel in platform_channels.items():
+                    channels[channel_id] = {
+                        "id": channel.id,
+                        "name": channel.name,
+                        "platform": channel.type,
+                        "message_count": len(channel.recent_messages),
+                        "recent_messages": [
+                            {
+                                "id": msg.id,
+                                "content": msg.content[:100] + "..." if len(msg.content) > 100 else msg.content,
+                                "author": msg.sender,
+                                "timestamp": msg.timestamp,
+                                "platform": msg.channel_type
+                            }
+                            for msg in channel.recent_messages[-5:]  # Last 5 messages
+                        ]
                     }
-                    for msg in channel.recent_messages[-5:]  # Last 5 messages
-                ]
-            }
         
         return {
             "channels": channels,

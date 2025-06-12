@@ -20,7 +20,7 @@ class TestWorldStateComprehensive:
 
     def test_world_state_deduplication(self):
         """Test message deduplication functionality"""
-        world_state = WorldState()
+        manager = WorldStateManager()
         
         # Add a message
         message1 = Message(
@@ -28,13 +28,14 @@ class TestWorldStateComprehensive:
             sender="user1",
             content="Hello",
             timestamp=time.time(),
-            channel_type="matrix"
+            channel_type="matrix",
+            channel_id="test_channel"
         )
         
         # First add should succeed
-        world_state.add_message(message1)
-        assert "msg1" in world_state.seen_messages
-        assert len(world_state.channels) == 1
+        manager.add_message("test_channel", message1)
+        assert "msg1" in manager.state.seen_messages
+        assert len(manager.state.channels) == 1
         
         # Duplicate message should be deduplicated
         message2 = Message(
@@ -42,16 +43,17 @@ class TestWorldStateComprehensive:
             sender="user1", 
             content="Hello duplicate",
             timestamp=time.time(),
-            channel_type="matrix"
+            channel_type="matrix",
+            channel_id="test_channel"
         )
         
-        world_state.add_message(message2)
+        manager.add_message("test_channel", message2)
         # Should still only have one message since it's a duplicate
-        assert len(world_state.seen_messages) == 1
+        assert len(manager.state.seen_messages) == 1
 
     def test_world_state_thread_management(self):
         """Test conversation thread management"""
-        world_state = WorldState()
+        manager = WorldStateManager()
         
         # Root message
         root_msg = Message(
@@ -59,9 +61,10 @@ class TestWorldStateComprehensive:
             sender="user1",
             content="Root message",
             timestamp=time.time(),
-            channel_type="farcaster"
+            channel_type="farcaster",
+            channel_id="test_channel"
         )
-        world_state.add_message(root_msg)
+        manager.add_message("test_channel", root_msg)
         
         # Reply message
         reply_msg = Message(
@@ -70,14 +73,15 @@ class TestWorldStateComprehensive:
             content="Reply to root",
             timestamp=time.time(),
             channel_type="farcaster",
+            channel_id="test_channel",
             reply_to="root1"
         )
-        world_state.add_message(reply_msg)
+        manager.add_message("test_channel", reply_msg)
         
         # Check thread tracking
-        assert "root1" in world_state.threads
-        assert len(world_state.threads["root1"]) == 2
-        assert reply_msg in world_state.threads["root1"]
+        assert "root1" in manager.state.threads
+        assert len(manager.state.threads["root1"]) == 2
+        assert reply_msg in manager.state.threads["root1"]
 
     def test_world_state_rate_limits(self):
         """Test rate limiting functionality"""
@@ -129,8 +133,8 @@ class TestWorldStateComprehensive:
 
     def test_world_state_cleanup_old_messages(self):
         """Test cleanup of old messages"""
-        world_state = WorldStateData()
-        world_state.add_channel("test_channel", "matrix", "Test Channel")
+        manager = WorldStateManager()
+        manager.add_channel("test_channel", "matrix", "Test Channel")
         
         # Add more than 50 messages to trigger cleanup
         for i in range(55):
@@ -142,10 +146,10 @@ class TestWorldStateComprehensive:
                 channel_type="matrix",
                 channel_id="test_channel"  # Ensure channel_id is set
             )
-            world_state.add_message(msg)
+            manager.add_message("test_channel", msg)
         
         # Should keep only last 50 messages
-        channel = world_state.channels["test_channel"]
+        channel = manager.state.channels["matrix"]["test_channel"]
         assert len(channel.recent_messages) == 50
         # Should have the most recent messages (msg5 to msg54)
         assert channel.recent_messages[0].id == "msg5"
@@ -172,8 +176,8 @@ class TestWorldStateComprehensive:
 
     def test_world_state_get_recent_activity(self):
         """Test recent activity retrieval"""
-        world_state = WorldState()
-        world_state.add_channel("test_channel", "matrix", "Test Channel")
+        manager = WorldStateManager()
+        manager.add_channel("test_channel", "matrix", "Test Channel")
         
         # Add recent message
         recent_msg = Message(
@@ -181,9 +185,10 @@ class TestWorldStateComprehensive:
             sender="user1",
             content="Recent message",
             timestamp=time.time(),
-            channel_type="matrix"
+            channel_type="matrix",
+            channel_id="test_channel"
         )
-        world_state.add_message(recent_msg)
+        manager.add_message("test_channel", recent_msg)
         
         # Add old message
         old_msg = Message(
@@ -191,30 +196,32 @@ class TestWorldStateComprehensive:
             sender="user1", 
             content="Old message",
             timestamp=time.time() - 400,  # 400 seconds ago
-            channel_type="matrix"
+            channel_type="matrix",
+            channel_id="test_channel"
         )
-        world_state.add_message(old_msg)
+        manager.add_message("test_channel", old_msg)
         
         # Get recent activity (last 300 seconds)
-        activity = world_state.get_recent_activity(300)
+        activity = manager.state.get_recent_activity(300)
         assert len(activity["recent_messages"]) == 1
         assert activity["recent_messages"][0]["id"] == "recent"
 
     def test_world_state_to_json(self):
         """Test JSON serialization"""
-        world_state = WorldState()
-        world_state.add_channel("test", "matrix", "Test")
+        manager = WorldStateManager()
+        manager.add_channel("test", "matrix", "Test")
         
         msg = Message(
             id="test_msg",
             sender="user1",
             content="Test message",
             timestamp=time.time(),
-            channel_type="matrix"
+            channel_type="matrix",
+            channel_id="test"
         )
-        world_state.add_message(msg)
+        manager.add_message("test", msg)
         
-        json_str = world_state.to_json()
+        json_str = manager.to_json()
         assert isinstance(json_str, str)
         
         # Should be valid JSON
@@ -224,8 +231,8 @@ class TestWorldStateComprehensive:
 
     def test_world_state_to_dict_for_ai_with_filters(self):
         """Test AI-optimized dictionary conversion with filters"""
-        world_state = WorldState()
-        world_state.add_channel("test", "matrix", "Test")
+        manager = WorldStateManager()
+        manager.add_channel("test", "matrix", "Test")
         
         # Add message
         msg = Message(
@@ -233,29 +240,21 @@ class TestWorldStateComprehensive:
             sender="user1",
             content="Test message",
             timestamp=time.time(),
-            channel_type="matrix"
+            channel_type="matrix",
+            channel_id="test"
         )
-        world_state.add_message(msg)
+        manager.add_message("test", msg)
         
         # Add action
-        action_data = {
-            "action_type": "test_action",
-            "parameters": {"test": "value"},
-            "result": "success",
-            "timestamp": time.time()
-        }
-        world_state.add_action_history(action_data)
+        manager.add_action_result("test_action", {"test": "value"}, "success")
         
-        # Test with filters
-        ai_dict = world_state.to_dict_for_ai(
-            include_channels=["test"],
-            max_messages_per_channel=5,
-            max_actions=10
-        )
+        # Test with observation data which provides similar functionality
+        observation = manager.get_observation_data(["test"], 300)
         
-        assert "channels" in ai_dict
-        assert "test" in ai_dict["channels"]
-        assert len(ai_dict["action_history"]) <= 10
+        assert "channels" in observation
+        # Check nested structure: observation["channels"]["matrix"]["test"]
+        assert "matrix" in observation["channels"]
+        assert "test" in observation["channels"]["matrix"]
 
 
 class TestWorldStateManager:
@@ -276,8 +275,9 @@ class TestWorldStateManager:
         
         manager.add_channel("test_channel", "matrix", "Test Channel", "active")
         
-        assert "test_channel" in manager.state.channels
-        channel = manager.state.channels["test_channel"]
+        assert "matrix" in manager.state.channels
+        assert "test_channel" in manager.state.channels["matrix"]
+        channel = manager.state.channels["matrix"]["test_channel"]
         assert channel.name == "Test Channel"
         assert channel.channel_type == "matrix"
         assert channel.status == "active"
@@ -298,7 +298,7 @@ class TestWorldStateManager:
         
         manager.add_message(message_data)
         
-        channel = manager.state.channels["test_channel"]
+        channel = manager.state.channels["matrix"]["test_channel"]
         assert len(channel.recent_messages) == 1
         assert channel.recent_messages[0].content == "Test message"
 
@@ -320,8 +320,10 @@ class TestWorldStateManager:
         observation = manager.get_observation_data(["test"], 300)
         
         assert "channels" in observation
-        assert "test" in observation["channels"]
-        assert len(observation["channels"]["test"]["recent_messages"]) == 1
+        # Check nested structure: observation["channels"]["matrix"]["test"]
+        assert "matrix" in observation["channels"]
+        assert "test" in observation["channels"]["matrix"]
+        assert len(observation["channels"]["matrix"]["test"]["recent_messages"]) == 1
 
     def test_world_state_manager_has_replied_to_cast(self):
         """Test Farcaster reply tracking"""

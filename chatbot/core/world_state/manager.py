@@ -74,7 +74,10 @@ class WorldStateManager:
         if isinstance(channel_or_id, Channel):
             # Adding a Channel object directly
             channel = channel_or_id
-            self.state.channels[channel.id] = channel
+            # Initialize platform dict if it doesn't exist
+            if channel.type not in self.state.channels:
+                self.state.channels[channel.type] = {}
+            self.state.channels[channel.type][channel.id] = channel
             logger.info(
                 f"WorldState: Added {channel.type} channel '{channel.name}' ({channel.id}) with status '{channel.status}'"
             )
@@ -84,7 +87,11 @@ class WorldStateManager:
             if channel_type is None or name is None:
                 raise ValueError("channel_type and name are required when adding by parameters")
             
-            self.state.channels[channel_id] = Channel(
+            # Initialize platform dict if it doesn't exist
+            if channel_type not in self.state.channels:
+                self.state.channels[channel_type] = {}
+                
+            channel = Channel(
                 id=channel_id,
                 name=name,
                 type=channel_type,
@@ -92,7 +99,8 @@ class WorldStateManager:
                 last_status_update=time.time(),
             )
             # Set last_checked after creation
-            self.state.channels[channel_id].update_last_checked()
+            channel.update_last_checked()
+            self.state.channels[channel_type][channel_id] = channel
             logger.info(
                 f"WorldState: Added {channel_type} channel '{name}' ({channel_id}) with status '{status}'"
             )
@@ -136,14 +144,23 @@ class WorldStateManager:
         if not channel_id:
             channel_id = message.channel_id or f"{message.channel_type}:unknown"
             logger.warning(f"None channel_id provided, using fallback: {channel_id}")
-        if channel_id not in self.state.channels:
+        
+        # Check if channel exists using the new nested structure
+        channel = self.get_channel(channel_id, message.channel_type)
+        if channel is None:
             # Auto-create channel if it doesn't exist
             self.add_channel(channel_id, channel_type=message.channel_type, name=channel_id)
-        self.state.channels[channel_id].recent_messages.append(message)
+            channel = self.get_channel(channel_id, message.channel_type)
+        
+        if channel is None:
+            logger.error(f"Failed to create or retrieve channel {channel_id}")
+            return
+            
+        channel.recent_messages.append(message)
         # Limit to 50 messages per channel
-        if len(self.state.channels[channel_id].recent_messages) > 50:
-            self.state.channels[channel_id].recent_messages = self.state.channels[channel_id].recent_messages[-50:]
-        self.state.channels[channel_id].update_last_checked()
+        if len(channel.recent_messages) > 50:
+            channel.recent_messages = channel.recent_messages[-50:]
+        channel.update_last_checked()
         
         # Thread management: group Farcaster messages by root cast
         if message.channel_type == "farcaster":
@@ -151,8 +168,7 @@ class WorldStateManager:
             self.state.threads.setdefault(thread_id, []).append(message)
             logger.info(f"WorldStateManager: Added message to thread '{thread_id}'")
 
-        # Get channel reference for logging
-        channel = self.state.channels[channel_id]
+        # Log the message addition
         logger.info(
             f"WorldState: New message in {channel.name}: {message.sender}: {message.content[:100]}..."
         )
@@ -263,10 +279,14 @@ class WorldStateManager:
         
         # Filter channels if specified
         if channels_filter and "channels" in observation:
-            filtered_channels = {
-                ch_id: ch_data for ch_id, ch_data in observation["channels"].items()
-                if ch_id in channels_filter
-            }
+            filtered_channels = {}
+            for platform, platform_channels in observation["channels"].items():
+                filtered_platform_channels = {
+                    ch_id: ch_data for ch_id, ch_data in platform_channels.items()
+                    if ch_id in channels_filter
+                }
+                if filtered_platform_channels:
+                    filtered_channels[platform] = filtered_platform_channels
             observation["channels"] = filtered_channels
         
         # Include thread context for AI to follow conversation threads
@@ -386,9 +406,26 @@ class WorldStateManager:
                     return True
         return False
 
-    def get_channel(self, channel_id: str) -> Optional[Channel]:
-        """Get a channel by ID"""
-        return self.state.channels.get(channel_id)
+    def get_channel(self, channel_id: str, channel_type: Optional[str] = None) -> Optional[Channel]:
+        """Get a channel by ID and optional type.
+        
+        Args:
+            channel_id: The channel ID to look up
+            channel_type: Optional platform type to narrow search
+            
+        Returns:
+            Channel object if found, None otherwise
+        """
+        # If channel_type is provided, look in specific platform
+        if channel_type and channel_type in self.state.channels:
+            return self.state.channels[channel_type].get(channel_id)
+        
+        # Search all platforms for the channel_id
+        for platform_channels in self.state.channels.values():
+            if channel_id in platform_channels:
+                return platform_channels[channel_id]
+        
+        return None
 
     def add_pending_matrix_invite(self, invite_info: Dict[str, Any]) -> None:
         """
@@ -459,13 +496,15 @@ class WorldStateManager:
             new_status: New status for the channel
             room_name: Optional room name for creating unknown channels
         """
-        if channel_id in self.state.channels:
-            old_status = self.state.channels[channel_id].status
-            self.state.channels[channel_id].status = new_status
-            self.state.channels[channel_id].last_status_update = time.time()
+        # Find channel in nested structure (assuming Matrix for backward compatibility)
+        channel = self.get_channel(channel_id, "matrix")
+        if channel:
+            old_status = channel.status
+            channel.status = new_status
+            channel.last_status_update = time.time()
             self.state.last_update = time.time()
             logger.info(
-                f"WorldState: Updated channel {channel_id} ({self.state.channels[channel_id].name}) status from '{old_status}' to '{new_status}'"
+                f"WorldState: Updated channel {channel_id} ({channel.name}) status from '{old_status}' to '{new_status}'"
             )
         elif room_name:
             # If channel not known, add it with the new status (e.g. for kicks from unknown rooms)
@@ -787,13 +826,14 @@ class WorldStateManager:
                         return True
         
         # Also check in messages for bot replies (as a secondary verification)
-        for channel in self.state.channels.values():
-            if channel.type == "matrix":
-                for msg in channel.recent_messages:
-                    if (msg.sender == settings.MATRIX_USER_ID and 
-                        msg.reply_to == original_event_id):
-                        logger.debug(f"Bot reply found in messages for event {original_event_id}: message_id {msg.id}")
-                        return True
+        for platform_channels in self.state.channels.values():
+            for channel in platform_channels.values():
+                if channel.type == "matrix":
+                    for msg in channel.recent_messages:
+                        if (msg.sender == settings.MATRIX_USER_ID and 
+                            msg.reply_to == original_event_id):
+                            logger.debug(f"Bot reply found in messages for event {original_event_id}: message_id {msg.id}")
+                            return True
         return False
 
     def get_daily_video_generation_count(self) -> int:

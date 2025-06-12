@@ -782,7 +782,7 @@ class WorldStateData:
         Sets up all necessary containers and tracking mechanisms for efficient
         operation across multiple platforms and conversation contexts.
         """
-        self.channels: Dict[str, Channel] = {}
+        self.channels: Dict[str, Dict[str, Channel]] = {}  # Nested: {platform: {channel_id: Channel}}
         self.action_history: List[ActionHistory] = []
         self.system_status: Dict[str, Any] = {}
         self.threads: Dict[
@@ -870,53 +870,8 @@ class WorldStateData:
             "codebase_structure_available": self.codebase_structure is not None,
             "last_update": self.last_update
         }
-    # Backward-compatible methods for direct WorldState usage
-    def add_channel(self, channel_id: str, channel_type: str, name: str, status: str = "active"):
-        """Add a new channel to the world state."""
-        ch = Channel(
-            id=channel_id,
-            type=channel_type,
-            name=name,
-            recent_messages=[],
-            last_checked=time.time(),
-            status=status,
-            last_status_update=time.time(),
-        )
-        self.channels[channel_id] = ch
-        self.last_update = time.time()
-
-    def add_message(self, message):
-        """Add a message to the world state, deduplicating and managing channel history. Accepts Message or dict."""
-        from .structures import Message
-        # Convert dict to Message if needed
-        if isinstance(message, dict):
-            message = Message(**message)
-        # Deduplicate
-        if message.id in self.seen_messages:
-            return
-        self.seen_messages.add(message.id)
-        # Determine channel_id
-        chan_id = message.channel_id or f"{message.channel_type}:unknown"
-        # Auto-create channel if missing
-        if chan_id not in self.channels:
-            self.add_channel(chan_id, message.channel_type, chan_id)
-        ch = self.channels[chan_id]
-        ch.recent_messages.append(message)
-        # Keep only last 50
-        if len(ch.recent_messages) > 50:
-            ch.recent_messages = ch.recent_messages[-50:]
-        self.last_update = time.time()
-        # Thread management
-        if message.channel_type == "farcaster":
-            thread_id = message.reply_to or message.id
-            self.threads.setdefault(thread_id, []).append(message)
-
-    def get_recent_messages(self, channel_id: str, limit: int = 10) -> List[Message]:
-        """Get up to `limit` most recent messages for a channel."""
-        ch = self.channels.get(channel_id)
-        if not ch:
-            return []
-        return ch.recent_messages[-limit:]
+    # Backward-compatible methods for direct WorldState usage - REMOVED
+    # These methods caused conflicts with the new nested structure
 
     def has_replied_to_cast(self, cast_hash: str) -> bool:
         """
@@ -973,51 +928,14 @@ class WorldStateData:
             self.action_history = self.action_history[-10:]
         self.last_update = time.time()
 
-    def to_dict_for_ai(self, include_channels: List[str] = None, max_messages_per_channel: int = None, message_limit_per_channel: int = None, max_actions: int = None) -> Dict[str, Any]:
-        """Convert world state to AI-friendly dict with optional limits."""
-        data: Dict[str, Any] = {}
-        # Channels
-        data["channels"] = {}
-        # Determine message limit
-        limit = message_limit_per_channel or max_messages_per_channel
-        for cid, ch in self.channels.items():
-            if include_channels and cid not in include_channels:
-                continue
-            msgs = ch.recent_messages
-            if limit is not None:
-                msgs = msgs[-limit:]
-            
-            # Add already_replied flag to messages
-            messages_for_payload = []
-            for msg in msgs:
-                # Check if we have already replied to this Farcaster cast
-                has_replied = self.has_replied_to_cast(msg.id) if msg.channel_type == 'farcaster' else False
-                
-                msg_dict = asdict(msg)
-                msg_dict['already_replied'] = has_replied  # Add the flag
-                messages_for_payload.append(msg_dict)
-            
-            data["channels"][cid] = {
-                "recent_messages": messages_for_payload
-            }
-        # Action history
-        actions = self.action_history
-        if max_actions is not None:
-            actions = actions[-max_actions:]
-        data["action_history"] = [asdict(act) for act in actions]
-        # Recent media actions
-        data["recent_media_actions"] = self.get_recent_media_actions()
-        return data
-
-    def get_observation_data(self) -> Dict[str, Any]:
-        """Alias for to_dict, for backward compatibility with direct world state use."""
-        return self.to_dict()
+    # Removed to_dict_for_ai method - use WorldStateManager and PayloadBuilder instead
 
     def get_all_messages(self) -> List[Message]:
         """Get all messages from all channels"""
         all_messages = []
-        for channel in self.channels.values():
-            all_messages.extend(channel.recent_messages)
+        for platform_channels in self.channels.values():
+            for channel in platform_channels.values():
+                all_messages.extend(channel.recent_messages)
         return sorted(all_messages, key=lambda x: x.timestamp or 0)
 
     def to_json(self) -> str:
@@ -1030,14 +948,17 @@ class WorldStateData:
         """Convert to dictionary for JSON serialization"""
         return {
             "channels": {
-                id: {
-                    "id": ch.id,
-                    "type": ch.type,
-                    "name": ch.name,
-                    "recent_messages": [asdict(msg) for msg in ch.recent_messages],
-                    "last_checked": ch.last_checked,
+                platform: {
+                    channel_id: {
+                        "id": ch.id,
+                        "type": ch.type,
+                        "name": ch.name,
+                        "recent_messages": [asdict(msg) for msg in ch.recent_messages],
+                        "last_checked": ch.last_checked,
+                    }
+                    for channel_id, ch in platform_channels.items()
                 }
-                for id, ch in self.channels.items()
+                for platform, platform_channels in self.channels.items()
             },
             "action_history": [asdict(action) for action in self.action_history],
             "system_status": self.system_status,
@@ -1064,10 +985,11 @@ class WorldStateData:
         cutoff_time = time.time() - lookback_seconds
 
         recent_messages = []
-        for channel in self.channels.values():
-            for msg in channel.recent_messages:
-                if msg.timestamp > cutoff_time:
-                    recent_messages.append(msg)
+        for platform_channels in self.channels.values():
+            for channel in platform_channels.values():
+                for msg in channel.recent_messages:
+                    if msg.timestamp > cutoff_time:
+                        recent_messages.append(msg)
 
         recent_actions = [
             action for action in self.action_history if action.timestamp > cutoff_time
@@ -1081,13 +1003,16 @@ class WorldStateData:
             "recent_messages": [asdict(msg) for msg in recent_messages],
             "recent_actions": [asdict(action) for action in recent_actions],
             "channels": {
-                id: {
-                    "name": ch.name,
-                    "type": ch.type,
-                    "message_count": len(ch.recent_messages),
-                    "recent_messages": [asdict(msg) for msg in ch.recent_messages],
+                platform: {
+                    channel_id: {
+                        "name": ch.name,
+                        "type": ch.type,
+                        "message_count": len(ch.recent_messages),
+                        "recent_messages": [asdict(msg) for msg in ch.recent_messages],
+                    }
+                    for channel_id, ch in platform_channels.items()
                 }
-                for id, ch in self.channels.items()
+                for platform, platform_channels in self.channels.items()
             },
             "system_status": self.system_status,
             "current_time": time.time(),

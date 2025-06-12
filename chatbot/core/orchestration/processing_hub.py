@@ -237,13 +237,17 @@ class ProcessingHub:
         channels = world_state_dict.get("channels", {})
         current_time = time.time()
         
-        for channel_id, channel_data in channels.items():
-            # Consider channels with recent activity (last hour)
-            recent_messages = channel_data.get("recent_messages", [])
-            if recent_messages:
-                last_message_time = recent_messages[-1].get("timestamp", 0)
-                if current_time - last_message_time < 3600:  # 1 hour
-                    active_channels.append(channel_id)
+        # Handle nested structure: channels[platform][channel_id]
+        for platform, platform_channels in channels.items():
+            # Check if platform_channels is a dict (it should be)
+            if isinstance(platform_channels, dict):
+                for channel_id, channel_data in platform_channels.items():
+                    # Consider channels with recent activity (last hour)
+                    recent_messages = channel_data.get("recent_messages", [])
+                    if recent_messages:
+                        last_message_time = recent_messages[-1].get("timestamp", 0)
+                        if current_time - last_message_time < 3600:  # 1 hour
+                            active_channels.append(channel_id)
         
         return active_channels
 
