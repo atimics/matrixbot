@@ -136,11 +136,22 @@ class IntegrationManager:
                         integration_id TEXT NOT NULL,
                         credential_key TEXT NOT NULL,
                         credential_value_encrypted BLOB NOT NULL,
+                        status TEXT DEFAULT 'active',
                         created_at REAL NOT NULL,
+                        updated_at REAL,
                         FOREIGN KEY (integration_id) REFERENCES integrations (id) ON DELETE CASCADE,
                         UNIQUE(integration_id, credential_key)
                     )
                 """)
+                
+                # Add status column to existing credentials table if it doesn't exist
+                try:
+                    await db.execute("ALTER TABLE credentials ADD COLUMN status TEXT DEFAULT 'active'")
+                    await db.execute("ALTER TABLE credentials ADD COLUMN updated_at REAL")
+                    logger.info("Added status and updated_at columns to credentials table")
+                except Exception:
+                    # Columns already exist, which is fine
+                    pass
                 
                 await db.commit()
             
@@ -434,22 +445,28 @@ class IntegrationManager:
         
         async def db_operation(db):
             cursor = await db.execute("""
-                SELECT credential_key, credential_value_encrypted
-                FROM credentials WHERE integration_id = ?
+                SELECT credential_key, credential_value_encrypted, id
+                FROM credentials 
+                WHERE integration_id = ? AND status = 'active'
             """, (integration_id,))
             return await cursor.fetchall()
             
         rows = await self._execute_db_operation(db_operation)
+        stale_credential_ids = []
             
         for row in rows:
-            cred_key, encrypted_value = row
+            cred_key, encrypted_value, credential_id = row
             try:
                 decrypted_value = self.cipher.decrypt(encrypted_value).decode()
                 credentials[cred_key] = decrypted_value
             except Exception as e:
                 logger.warning(f"Failed to decrypt credential '{cred_key}' for integration '{integration_id}': {e}")
-                logger.warning(f"This usually happens when the encryption key has changed. Credential will be skipped.")
-                # Skip this credential - it will need to be re-added with the new key
+                logger.info(f"Marking credential '{cred_key}' as stale due to decryption failure")
+                stale_credential_ids.append(credential_id)
+        
+        # Mark failed credentials as stale
+        if stale_credential_ids:
+            await self._mark_credentials_stale(stale_credential_ids)
             
         return credentials
         
@@ -467,9 +484,9 @@ class IntegrationManager:
                     encrypted_value = self.cipher.encrypt(value.encode())
                     credential_id = str(uuid.uuid4())
                     await db.execute("""
-                        INSERT INTO credentials (id, integration_id, credential_key, credential_value_encrypted, created_at)
-                        VALUES (?, ?, ?, ?, ?)
-                    """, (credential_id, integration_id, key, encrypted_value, time.time()))
+                        INSERT INTO credentials (id, integration_id, credential_key, credential_value_encrypted, status, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, 'active', ?, ?)
+                    """, (credential_id, integration_id, key, encrypted_value, time.time(), time.time()))
             
             await db.commit()
         
@@ -520,219 +537,69 @@ class IntegrationManager:
         
         await self._execute_db_operation(db_operation)
         
-    def get_active_integrations(self) -> Dict[str, Integration]:
-        """Get currently active integration instances"""
-        return self.active_integrations.copy()
-    
-    async def connect_all(self) -> Dict[str, bool]:
-        """Connect all active integrations (alias for connect_all_active)"""
-        return await self.connect_all_active()
-    
-    def get_observers(self) -> List[Integration]:
-        """Get list of active integration instances (observers)"""
-        return list(self.active_integrations.values())
-    
-    def get_available_integration_types(self) -> List[str]:
-        """Get list of available integration types"""
-        return list(self.integration_types.keys())
-    
-    # === SERVICE-ORIENTED MANAGEMENT ===
-    
-    async def get_integration_service(self, integration_id: str):
-        """
-        Get a service wrapper for an active integration.
-        
-        Args:
-            integration_id: The integration ID
+    async def _mark_credentials_stale(self, credential_ids: List[str]) -> None:
+        """Mark credentials as stale when decryption fails"""
+        if not credential_ids:
+            return
             
-        Returns:
-            Service wrapper instance or None
-        """
-        if integration_id not in self.active_integrations:
-            return None
-            
-        integration = self.active_integrations[integration_id]
-        integration_data = await self._load_integration_data(integration_id)
-        
-        if not integration_data:
-            return None
-            
-        integration_type = integration_data['integration_type']
-        
-        # Create appropriate service wrapper
-        if integration_type == 'matrix':
-            from ..integrations.matrix.service import MatrixService
-            service = MatrixService(
-                service_id=f"{integration_id}_service",
-                config=json.loads(integration_data['config']),
-                world_state_manager=self.world_state_manager
-            )
-            service._set_observer(integration)
-            service.is_connected = integration.is_connected
-            return service
-            
-        elif integration_type == 'farcaster':
-            from ..integrations.farcaster.service import FarcasterService
-            credentials = await self._load_credentials(integration_id)
-            service = FarcasterService(
-                service_id=f"{integration_id}_service",
-                config=json.loads(integration_data['config']),
-                api_key=credentials.get('api_key'),
-                signer_uuid=credentials.get('signer_uuid'),
-                bot_fid=credentials.get('bot_fid'),
-                world_state_manager=self.world_state_manager
-            )
-            service._set_observer(integration)
-            service.is_connected = integration.is_connected
-            return service
-            
-        return None
-    
-    async def get_all_services(self) -> Dict[str, Any]:
-        """
-        Get service wrappers for all active integrations.
-        
-        Returns:
-            Dict mapping integration_id -> service wrapper
-        """
-        services = {}
-        
-        for integration_id in self.active_integrations.keys():
-            service = await self.get_integration_service(integration_id)
-            if service:
-                services[integration_id] = service
-                
-        return services
-    
-    async def get_services_by_type(self, service_type: str) -> List[Any]:
-        """
-        Get all active services of a specific type.
-        
-        Args:
-            service_type: Type of service ('matrix', 'farcaster', etc.)
-            
-        Returns:
-            List of service wrapper instances
-        """
-        services = []
-        all_services = await self.get_all_services()
-        
-        for service in all_services.values():
-            if service.service_type == service_type:
-                services.append(service)
-                
-        return services
-    
-    async def connect_integration_with_service(self, integration_type: str, display_name: str,
-                                             config: Dict[str, Any], credentials: Dict[str, str],
-                                             user_id: Optional[str] = None) -> Tuple[str, Any]:
-        """
-        Add and connect an integration, returning both integration_id and service wrapper.
-        
-        Returns:
-            Tuple of (integration_id, service_wrapper)
-        """
-        # Add the integration
-        integration_id = await self.add_integration(
-            integration_type, display_name, config, credentials, user_id
-        )
-        
-        # Connect it
-        success = await self.connect_integration(integration_id, self.world_state_manager)
-        
-        if success:
-            # Get service wrapper
-            service = await self.get_integration_service(integration_id)
-            return integration_id, service
-        else:
-            raise IntegrationError(f"Failed to connect integration {integration_id}")
-    
-    async def remove_integration(self, integration_id: str) -> None:
-        """
-        Remove an integration completely (disconnect and delete from database).
-        
-        Args:
-            integration_id: The integration ID to remove
-        """
-        # First disconnect if active
-        await self.disconnect_integration(integration_id)
-        
-        # Remove from database
         async def db_operation(db):
-            # Delete credentials first (foreign key constraint)
-            await db.execute("""
-                DELETE FROM credentials WHERE integration_id = ?
-            """, (integration_id,))
-            
-            # Delete integration
-            await db.execute("""
-                DELETE FROM integrations WHERE id = ?
-            """, (integration_id,))
-            
+            placeholders = ','.join(['?' for _ in credential_ids])
+            await db.execute(f"""
+                UPDATE credentials 
+                SET status = 'stale', updated_at = ?
+                WHERE id IN ({placeholders})
+            """, [time.time()] + credential_ids)
             await db.commit()
-        
+            
         await self._execute_db_operation(db_operation)
-        logger.info(f"Removed integration {integration_id} from database")
+        logger.info(f"Marked {len(credential_ids)} credentials as stale")
     
-    async def list_available_service_types(self) -> List[Dict[str, Any]]:
-        """
-        List all available service types with their capabilities.
-        
-        Returns:
-            List of service type info dicts
-        """
-        service_types = []
-        
-        for integration_type, integration_class in self.integration_types.items():
-            capabilities = []
+    async def delete_stale_credentials(self, integration_id: str) -> int:
+        """Delete all stale credentials for an integration"""
+        async def db_operation(db):
+            cursor = await db.execute("""
+                DELETE FROM credentials 
+                WHERE integration_id = ? AND status = 'stale'
+            """, (integration_id,))
+            await db.commit()
+            return cursor.rowcount
             
-            # Determine capabilities based on integration type
-            if integration_type == 'matrix':
-                capabilities = [
-                    'messaging', 'rooms', 'direct_messages', 'file_sharing',
-                    'encryption', 'federation'
-                ]
-            elif integration_type == 'farcaster':
-                capabilities = [
-                    'social_messaging', 'feeds', 'trending', 'following',
-                    'reactions', 'channels', 'notifications', 'search'
-                ]
+        deleted_count = await self._execute_db_operation(db_operation)
+        logger.info(f"Deleted {deleted_count} stale credentials for integration {integration_id}")
+        return deleted_count
+    
+    async def list_stale_credentials(self, integration_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """List all stale credentials, optionally filtered by integration"""
+        async def db_operation(db):
+            if integration_id:
+                cursor = await db.execute("""
+                    SELECT c.id, c.integration_id, c.credential_key, c.created_at, c.updated_at, i.display_name
+                    FROM credentials c
+                    JOIN integrations i ON c.integration_id = i.id
+                    WHERE c.integration_id = ? AND c.status = 'stale'
+                    ORDER BY c.updated_at DESC
+                """, (integration_id,))
+            else:
+                cursor = await db.execute("""
+                    SELECT c.id, c.integration_id, c.credential_key, c.created_at, c.updated_at, i.display_name
+                    FROM credentials c
+                    JOIN integrations i ON c.integration_id = i.id
+                    WHERE c.status = 'stale'
+                    ORDER BY c.updated_at DESC
+                """)
+            return await cursor.fetchall()
             
-            service_types.append({
-                'type': integration_type,
-                'name': integration_type.title(),
-                'description': f"{integration_type.title()} integration service",
-                'capabilities': capabilities,
-                'class': integration_class.__name__
-            })
-        
-        return service_types
-    
-    async def start_all_services(self) -> None:
-        """Start all active services"""
-        # First, populate active_services with service wrappers from active_integrations
-        for integration_id, integration in self.active_integrations.items():
-            if integration_id not in self.active_services:
-                service = await self.get_integration_service(integration_id)
-                if service:
-                    self.active_services[integration_id] = service
-        
-        # Now start all services
-        for integration_id, service in self.active_services.items():
-            try:
-                await service.start()
-                logger.info(f"Started service for integration {integration_id}")
-            except Exception as e:
-                logger.error(f"Failed to start service for integration {integration_id}: {e}")
-    
-    async def stop_all_services(self) -> None:
-        """Stop all active services"""
-        for integration_id, service in self.active_services.items():
-            try:
-                await service.stop()
-                logger.info(f"Stopped service for integration {integration_id}")
-            except Exception as e:
-                logger.error(f"Failed to stop service for integration {integration_id}: {e}")
-        
-        # Clear the services after stopping them
-        self.active_services.clear()
+        rows = await self._execute_db_operation(db_operation)
+        return [
+            {
+                "id": row[0],
+                "integration_id": row[1],
+                "credential_key": row[2],
+                "created_at": row[3],
+                "updated_at": row[4],
+                "integration_name": row[5]
+            }
+            for row in rows
+        ]
+
+    # ...existing code...
