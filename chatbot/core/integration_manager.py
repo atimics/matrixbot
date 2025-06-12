@@ -343,29 +343,16 @@ class IntegrationManager:
             
     async def start_all_services(self) -> None:
         """Start services for all active integrations"""
-        for integration_id, integration in self.active_integrations.items():
-            try:
-                # Start the integration if it has a start method (legacy support)
-                if hasattr(integration, 'start') and callable(integration.start):
-                    await integration.start()
-                    logger.info(f"Started services for integration {integration_id}")
-                else:
-                    logger.debug(f"Integration {integration_id} does not have a start method")
-            except Exception as e:
-                logger.error(f"Error starting services for integration {integration_id}: {e}")
+        # All integrations are already connected via connect_all_active()
+        # The connect() method handles starting any necessary background services
+        logger.info(f"All services ready for {len(self.active_integrations)} active integrations")
                 
     async def stop_all_services(self) -> None:
         """Stop services for all active integrations"""
-        for integration_id, integration in self.active_integrations.items():
-            try:
-                # Stop the integration if it has a stop method (legacy support)
-                if hasattr(integration, 'stop') and callable(integration.stop):
-                    await integration.stop()
-                    logger.info(f"Stopped services for integration {integration_id}")
-                else:
-                    logger.debug(f"Integration {integration_id} does not have a stop method")
-            except Exception as e:
-                logger.error(f"Error stopping services for integration {integration_id}: {e}")
+        # Services are stopped when integrations are disconnected
+        # This method exists for API compatibility but delegates to disconnect_all()
+        await self.disconnect_all()
+        logger.info("All services stopped via disconnection")
             
     async def get_integration_status(self, integration_id: str) -> Optional[Dict[str, Any]]:
         """Get detailed status for a specific integration"""
@@ -384,7 +371,11 @@ class IntegrationManager:
                     "is_active": integration_data['is_active']
                 }
             return None
-            
+    
+    def get_active_integrations(self) -> Dict[str, Integration]:
+        """Get the dictionary of active integrations"""
+        return self.active_integrations
+
     async def list_integrations(self) -> List[Dict[str, Any]]:
         """List all configured integrations with their status"""
         integrations = []
@@ -425,16 +416,29 @@ class IntegrationManager:
             integration_class = self.integration_types[integration_type]
             
             if integration_type == 'matrix':
-                integration = integration_class(world_state_manager=self.world_state_manager)
+                integration = integration_class(
+                    integration_id="test",
+                    display_name="Test Integration",
+                    config=config,
+                    world_state_manager=self.world_state_manager
+                )
             elif integration_type == 'farcaster':
                 integration = integration_class(
+                    integration_id="test",
+                    display_name="Test Integration",
+                    config=config,
                     api_key=credentials.get('api_key'),
                     signer_uuid=credentials.get('signer_uuid'),
                     bot_fid=credentials.get('bot_fid'),
                     world_state_manager=self.world_state_manager
                 )
             else:
-                integration = integration_class()
+                # Generic constructor for future integrations
+                integration = integration_class(
+                    integration_id="test",
+                    display_name="Test Integration",
+                    config=config
+                )
             
             if hasattr(integration, 'set_credentials'):
                 await integration.set_credentials(credentials)
@@ -498,7 +502,7 @@ class IntegrationManager:
         
     async def update_credentials(self, integration_id: str, credentials: Dict[str, str]) -> None:
         """Update credentials for an existing integration"""
-        async with aiosqlite.connect(self.db_path) as db:
+        async def db_operation(db):
             # First remove existing credentials for this integration
             await db.execute("""
                 DELETE FROM credentials WHERE integration_id = ?
@@ -515,6 +519,8 @@ class IntegrationManager:
                     """, (credential_id, integration_id, key, encrypted_value, time.time(), time.time()))
             
             await db.commit()
+        
+        await self._execute_db_operation(db_operation)
         
         logger.info(f"Updated {len(credentials)} credentials for integration {integration_id}")
         

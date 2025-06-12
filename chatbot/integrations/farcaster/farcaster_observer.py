@@ -267,17 +267,7 @@ class FarcasterObserver(Integration):
         
         logger.info(f"Farcaster credentials updated with API key and bot FID: {self.bot_fid}")
 
-    # Legacy methods for backward compatibility
-    async def start(self):
-        """Legacy start method - use connect() instead."""
-        if not self.enabled:
-            logger.warning("Cannot start Farcaster observer: API client not initialized (missing API key).")
-            return
-        await self.connect()
-
-    async def stop(self):
-        """Legacy stop method - use disconnect() instead."""
-        await self.disconnect()
+    # Legacy methods removed - use connect() and disconnect() instead
 
     def schedule_post(
         self,

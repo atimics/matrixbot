@@ -243,17 +243,7 @@ class MatrixObserver(Integration):
         logger.info(f"Matrix credentials updated for {self.user_id}@{self.homeserver}")
 
     # Legacy methods for backward compatibility
-    async def start(self):
-        """Legacy start method - use connect() instead."""
-        if not self.enabled:
-            logger.info("MatrixObserver: Disabled due to missing configuration")
-            return
-        await self.connect()
-
-    # Note: legacy stop removed; use disconnect() or stop() defined later.
-    async def stop(self):
-        """Legacy stop method - use disconnect() instead."""
-        await self.disconnect()
+    # Legacy methods removed - use connect() and disconnect() instead
 
     async def _on_message(self, room: MatrixRoom, event):
         """Handle incoming Matrix messages and update room details"""
