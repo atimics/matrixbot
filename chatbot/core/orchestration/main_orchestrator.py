@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ...config import settings
-from ...core.ai_engine import AIDecisionEngine, ActionPlan
 from ...core.context import ContextManager
 from ...core.integration_manager import IntegrationManager
 from ...integrations.arweave_uploader_client import ArweaveUploaderClient
@@ -100,11 +99,30 @@ class MainOrchestrator:
         # Import the prompt builder
         from ...core.prompts import prompt_builder
         
+        # Ensure we have an API key
+        api_key = settings.OPENROUTER_API_KEY
+        if not api_key:
+            raise ValueError("OPENROUTER_API_KEY is required but not set")
+        
+        # Choose AI engine based on configuration
+        optimization_level = getattr(settings, 'AI_OPTIMIZATION_LEVEL', 'balanced')
+        
+        from ..ai_engine import AIDecisionEngine, OptimizationLevel
+        
+        # Validate optimization level
+        valid_levels = [OptimizationLevel.ORIGINAL, OptimizationLevel.BALANCED, OptimizationLevel.AGGRESSIVE]
+        if optimization_level not in valid_levels:
+            logger.warning(f"Invalid optimization level '{optimization_level}', using 'balanced'")
+            optimization_level = OptimizationLevel.BALANCED
+        
         self.ai_engine = AIDecisionEngine(
-            api_key=settings.OPENROUTER_API_KEY,
+            api_key=api_key,
             model=self.config.ai_model,
-            prompt_builder_instance=prompt_builder  # Inject the global prompt_builder instance
+            optimization_level=optimization_level,
+            prompt_builder_instance=prompt_builder,
+            config=self.config
         )
+        logger.info(f"MainOrchestrator: Using AIDecisionEngine with {optimization_level} optimization")
         
         # Initialize Arweave client for internal uploader service
         self.arweave_client = None
@@ -726,7 +744,7 @@ class MainOrchestrator:
         """Get the tool registry instance."""
         return self.tool_registry
 
-    def get_ai_engine(self) -> AIDecisionEngine:
+    def get_ai_engine(self):
         """Get the AI engine instance."""
         return self.ai_engine
 

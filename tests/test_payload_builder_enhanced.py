@@ -181,8 +181,8 @@ class TestPayloadBuilderNodeBasedPayload:
         builder = PayloadBuilder()
         # No node manager set
         
-        # Create a mock node manager for the test
-        mock_node_manager = Mock()
+        # Create a mock node manager for the test - use MagicMock instead of Mock
+        mock_node_manager = MagicMock()
         
         payload = builder.build_node_based_payload(
             sample_world_state_data,

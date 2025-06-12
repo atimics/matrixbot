@@ -15,9 +15,6 @@ from dataclasses import dataclass
 import httpx
 from pydantic_settings import BaseSettings
 
-from .prompts import prompt_builder
-from ..config import settings
-
 logger = logging.getLogger(__name__)
 
 
@@ -91,10 +88,6 @@ class AIDecisionEngine(BaseAIDecisionEngine):
         
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.info(f"Initialized AIDecisionEngine with {optimization_level} optimization")
-        
-        # Set up prompt_builder fallback
-        if not self.prompt_builder:
-            self.prompt_builder = prompt_builder
         
         # Load configuration if not provided
         if not self.config:
@@ -525,124 +518,6 @@ Max 1 action. Use "wait" if no action needed."""
             }
         ]
     
-    def _extract_json_from_response(self, ai_response: str) -> Dict[str, Any]:
-        """Extract JSON from AI response with robust parsing."""
-        try:
-            # Remove markdown code blocks if present
-            if ai_response.startswith("```json"):
-                ai_response = ai_response.strip("```json").strip("```").strip()
-            elif ai_response.startswith("```"):
-                ai_response = ai_response.strip("```").strip()
-            
-            # Try to parse directly first
-            try:
-                return json.loads(ai_response)
-            except json.JSONDecodeError:
-                pass
-            
-            # PRIORITY 1: Try to fix missing opening brace first (before pattern matching)
-            if ('"selected_actions"' in ai_response or '"observations"' in ai_response or 'observations"' in ai_response) and not ai_response.strip().startswith('{'):
-                # Check if it looks like JSON missing opening brace
-                if ai_response.strip().startswith('"') or ai_response.strip().startswith('observations"'):
-                    potential_json = '{' + ai_response.strip()
-                    # Fix malformed start (missing quote before observations)
-                    if potential_json.startswith('{observations"'):
-                        potential_json = '{"observations"' + potential_json[13:]
-                    try:
-                        result = json.loads(potential_json)
-                        # Prefer results with both observations and selected_actions
-                        if isinstance(result, dict) and 'observations' in result and 'selected_actions' in result:
-                            return result
-                    except json.JSONDecodeError:
-                        pass
-                
-                # Try to reconstruct the entire JSON structure
-                potential_json = '{\n' + ai_response.strip()
-                # Fix malformed start (missing quote before observations)
-                if potential_json.startswith('{\nobservations"'):
-                    potential_json = '{\n"observations"' + potential_json[15:]
-                try:
-                    result = json.loads(potential_json)
-                    if isinstance(result, dict) and ('observations' in result or 'selected_actions' in result):
-                        return result
-                except json.JSONDecodeError:
-                    pass
-                
-                # Try line-by-line reconstruction
-                lines = ai_response.split('\n')
-                for i, line in enumerate(lines):
-                    if ('"selected_actions"' in line or '"observations"' in line or 'observations"' in line) and not line.strip().startswith('{'):
-                        # Try to reconstruct JSON by adding opening brace
-                        potential_json = '{' + '\n'.join(lines[i:])
-                        # Fix malformed start (missing quote before observations)
-                        if potential_json.startswith('{observations"'):
-                            potential_json = '{"observations"' + potential_json[13:]
-                        try:
-                            result = json.loads(potential_json)
-                            if isinstance(result, dict) and 'observations' in result and 'selected_actions' in result:
-                                return result
-                        except json.JSONDecodeError:
-                            pass
-            
-            # PRIORITY 2: Look for complete JSON blocks between curly braces
-            json_blocks = []
-            brace_count = 0
-            start_pos = -1
-            
-            for i, char in enumerate(ai_response):
-                if char == '{':
-                    if brace_count == 0:
-                        start_pos = i
-                    brace_count += 1
-                elif char == '}':
-                    brace_count -= 1
-                    if brace_count == 0 and start_pos != -1:
-                        json_blocks.append(ai_response[start_pos:i+1])
-                        start_pos = -1
-            
-            # Sort by length (prefer larger objects)
-            json_blocks.sort(key=len, reverse=True)
-            
-            if json_blocks:
-                # First try to find a match with 'observations' and 'selected_actions'
-                for block in json_blocks:
-                    try:
-                        parsed = json.loads(block)
-                        if isinstance(parsed, dict) and 'observations' in parsed and 'selected_actions' in parsed:
-                            return parsed
-                    except json.JSONDecodeError:
-                        continue
-                
-                # If no perfect match, try to find one with 'observations'
-                for block in json_blocks:
-                    try:
-                        parsed = json.loads(block)
-                        if isinstance(parsed, dict) and 'observations' in parsed:
-                            return parsed
-                    except json.JSONDecodeError:
-                        continue
-                
-                # If no match with 'observations', try the largest valid JSON
-                for block in json_blocks:
-                    try:
-                        parsed = json.loads(block)
-                        if isinstance(parsed, dict):
-                            return parsed
-                    except json.JSONDecodeError:
-                        continue
-            
-            # If we reach here, no valid JSON was found - raise an exception
-            # This is expected behavior for completely invalid input
-            raise ValueError(f"No valid JSON found in response: {ai_response[:100]}...")
-            
-        except ValueError:
-            # Re-raise ValueError (our custom exception for no JSON found)
-            raise
-        except Exception as e:
-            # For other unexpected errors, also raise
-            raise ValueError(f"JSON extraction error: {str(e)}")
-    
-    
     def _dump_payload_to_file(self, payload: Dict[str, Any], payload_size: int, optimization_level: str) -> None:
         """Dump payload to file for analysis."""
         try:
@@ -717,8 +592,23 @@ Max 1 action. Use "wait" if no action needed."""
                         total_tokens = usage_info.get("total_tokens", 0)
                         self.logger.info(f"Token usage: {total_tokens:,} tokens")
                     
-                    # Parse JSON response using the extraction method
-                    return self._extract_json_from_response(ai_response)
+                    # Parse JSON response
+                    try:
+                        # Remove markdown code blocks if present
+                        if ai_response.startswith("```json"):
+                            ai_response = ai_response.strip("```json").strip("```").strip()
+                        elif ai_response.startswith("```"):
+                            ai_response = ai_response.strip("```").strip()
+                            
+                        return json.loads(ai_response)
+                    except json.JSONDecodeError as e:
+                        self.logger.error(f"Failed to parse AI response as JSON: {e}")
+                        self.logger.error(f"Raw response: {ai_response}")
+                        return {
+                            "observations": "AI response parsing error",
+                            "selected_actions": [{"action_type": "wait", "parameters": {}, "reasoning": "Response parsing failed", "priority": 1}],
+                            "reasoning": "Falling back to wait due to response parsing error"
+                        }
                         
             except Exception as e:
                 self.logger.error(f"API call failed: {e}")
@@ -728,46 +618,13 @@ Max 1 action. Use "wait" if no action needed."""
                     "reasoning": "Falling back to wait due to API error"
                 }
         
-        # Run the async function - handle event loop properly
+        # Run the async function
         try:
-            # Check if we're already in an event loop
-            try:
-                loop = asyncio.get_running_loop()
-                # We're in a running loop - this is common in async tests
-                # Create a new event loop in a thread for the API call
-                import concurrent.futures
-                import threading
-                
-                def run_in_new_loop():
-                    new_loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(new_loop)
-                    try:
-                        return new_loop.run_until_complete(_async_api_call())
-                    finally:
-                        new_loop.close()
-                
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(run_in_new_loop)
-                    try:
-                        return future.result(timeout=120)  # 2 minute timeout for API calls
-                    except concurrent.futures.TimeoutError:
-                        self.logger.warning("API call exceeded 2 minute timeout")
-                        return {
-                            "observations": "API call timeout",
-                            "selected_actions": [{"action_type": "wait", "parameters": {}, "reasoning": "API timeout recovery", "priority": 1}],
-                            "reasoning": "Falling back to wait due to API timeout"
-                        }
-                        
-            except RuntimeError:
-                # No event loop running, safe to use asyncio.run
-                return asyncio.run(_async_api_call())
-        except Exception as e:
-            self.logger.error(f"Error in async execution: {e}")
-            return {
-                "observations": f"Async execution error: {str(e)}",
-                "selected_actions": [{"action_type": "wait", "parameters": {}, "reasoning": "Async error recovery", "priority": 1}],
-                "reasoning": "Falling back to wait due to async execution error"
-            }
+            loop = asyncio.get_event_loop()
+            return loop.run_until_complete(_async_api_call())
+        except RuntimeError:
+            # No event loop running
+            return asyncio.run(_async_api_call())
 
     async def make_decision(self, world_state: Dict[str, Any], cycle_id: str):
         """
@@ -826,62 +683,3 @@ Max 1 action. Use "wait" if no action needed."""
                 observations="Error during decision making",
                 cycle_id=cycle_id,
             )
-            
-    @property
-    def base_system_prompt(self) -> str:
-        """Get the base system prompt with core sections."""
-        base_prompt = ""
-        
-        if self.prompt_builder:
-            try:
-                base_prompt = self.prompt_builder.build_system_prompt(
-                    include_sections=[
-                        "identity", 
-                        "interaction_style", 
-                        "world_state_context", 
-                        "tools_context", 
-                        "safety_guidelines",
-                        "matrix_context",
-                        "farcaster_context"
-                    ]
-                )
-            except Exception as e:
-                self.logger.warning(f"Error building system prompt: {e}")
-                base_prompt = ""
-        
-        # If prompt builder failed or returned empty, use enhanced fallback
-        if not base_prompt:
-            base_prompt = """You are a helpful AI assistant operating across Matrix and Farcaster platforms.
-
-## Cross-Platform Awareness
-You operate on both platforms simultaneously, maintaining platform balance and understanding the unique characteristics of each:
-
-### Matrix Platform
-- Real-time messaging in rooms
-- Rich markdown formatting support
-- Image sharing and media capabilities
-- Community-focused discussions
-
-### Farcaster Platform  
-- Decentralized social protocol
-- Cast-based interactions with FID identification
-- Home timeline and notifications
-- Trending content discovery
-- Channel-based communities
-
-## Node-Based System
-Your world state uses an expandable node structure:
-- Nodes can be expanded to view full details
-- Nodes can be collapsed to save space
-- Pin important nodes to keep them expanded
-- Maximum of 8 nodes can be expanded simultaneously
-- Use expand/collapse tools to manage information flow
-
-## Core Capabilities
-- Cross-platform message coordination
-- Context-aware responses
-- Media generation and sharing
-- Proactive conversation engagement
-- Platform-specific optimizations"""
-        
-        return base_prompt

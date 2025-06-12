@@ -406,11 +406,23 @@ class PayloadBuilder:
                 node_data = self._get_node_data_by_path(world_state_data, node_path, expanded=False)
                 if node_data is not None:
                     summary = metadata.ai_summary or f"Node {node_path} (no summary available)"
-                    collapsed_node_summaries[node_path] = {
+                    collapsed_summary = {
                         "summary": summary,
                         "data_changed": node_manager.is_data_changed(node_path, node_data),
                         "last_summary_update": metadata.last_summary_update_ts,
                     }
+                    
+                    # CRITICAL FIX: Include activity metrics for channel nodes so AI can make intelligent decisions
+                    if node_path.startswith("channels.") and isinstance(node_data, dict):
+                        # Add channel activity metrics to help AI prioritize which channels to expand
+                        collapsed_summary.update({
+                            "recent_message_count": node_data.get("msg_count", 0),
+                            "last_activity": node_data.get("last_activity"),
+                            "channel_name": node_data.get("name", "Unknown"),
+                        })
+                        logger.debug(f"Enhanced collapsed summary for {node_path}: {collapsed_summary['recent_message_count']} messages, last activity: {collapsed_summary['last_activity']}")
+                    
+                    collapsed_node_summaries[node_path] = collapsed_summary
 
         # Always include a summary of ALL available channels for AI discovery
         available_channels = self._build_available_channels_summary(world_state_data, node_manager)

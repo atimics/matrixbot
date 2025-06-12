@@ -88,7 +88,7 @@ class TestMediaActionTracking:
         mock_ctx.arweave_service = AsyncMock()
         # upload_image_data is called once for the image
         mock_ctx.arweave_service.upload_image_data = AsyncMock(return_value="ar://mocked_image_arweave_url")
-        mock_ctx.arweave_service.is_configured = AsyncMock(return_value=True)
+        mock_ctx.arweave_service.is_configured = MagicMock(return_value=True)  # This should be sync
 
         # Simulate settings required by GenerateImageTool
         with patch("chatbot.tools.media_generation_tools.settings") as mock_settings:

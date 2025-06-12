@@ -117,8 +117,9 @@ class TestAIDecisionEngine:
             result = await engine.make_decision({"test": "state"}, "test_cycle")
             
             assert result.cycle_id == "test_cycle"
-            assert len(result.selected_actions) == 0
-            assert "API Error" in result.reasoning
+            assert len(result.selected_actions) == 1  # Should have fallback wait action
+            assert result.selected_actions[0].action_type == "wait"
+            assert "api error" in result.reasoning.lower()
     
     @pytest.mark.asyncio
     async def test_make_decision_network_exception(self):
@@ -133,7 +134,8 @@ class TestAIDecisionEngine:
             result = await engine.make_decision({"test": "state"}, "test_cycle")
             
             assert result.cycle_id == "test_cycle"
-            assert len(result.selected_actions) == 0
+            assert len(result.selected_actions) == 1  # Should have fallback wait action
+            assert result.selected_actions[0].action_type == "wait"
             assert "error" in result.reasoning.lower()
     
     @pytest.mark.asyncio
@@ -158,7 +160,9 @@ class TestAIDecisionEngine:
             result = await engine.make_decision({"test": "state"}, "test_cycle")
             
             assert result.cycle_id == "test_cycle"
-            assert len(result.selected_actions) == 0
+            assert len(result.selected_actions) == 1  # Should have fallback wait action
+            assert result.selected_actions[0].action_type == "wait"
+            assert "error" in result.reasoning.lower()
     
     def test_cleanup(self):
         """Test cleanup method (if it exists)."""

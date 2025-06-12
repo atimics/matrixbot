@@ -127,7 +127,7 @@ class TestMatrixArweaveIntegration:
         # Mock the matrix client download response
         mock_download_response = MagicMock()
         mock_download_response.body = b"fake_image_data"
-        matrix_observer.client.download.return_value = mock_download_response
+        matrix_observer.client.download = AsyncMock(return_value=mock_download_response)
 
         # Mock arweave service upload to fail
         with patch.object(arweave_service, 'upload_image_data', new_callable=AsyncMock) as mock_upload:
@@ -144,7 +144,7 @@ class TestMatrixArweaveIntegration:
         mock_message = self._create_mock_message()
 
         # Mock the matrix client download to fail
-        matrix_observer.client.download.return_value = None
+        matrix_observer.client.download = AsyncMock(return_value=None)
 
         # Process the message - should handle failure gracefully
         await matrix_observer._on_message(mock_room, mock_message)
