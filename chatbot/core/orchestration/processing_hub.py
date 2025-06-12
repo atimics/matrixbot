@@ -27,7 +27,7 @@ class ProcessingConfig:
     enable_node_based_processing: bool = True
     
     # Observation settings
-    observation_interval: float = 2.0
+    observation_interval: float = 10.0  # Increased from 5.0 to reduce tight loop issues
     max_cycles_per_hour: int = 300
 
 
@@ -67,6 +67,10 @@ class ProcessingHub:
         # Processing coordination - prevent overlapping cycles
         self._processing_lock = asyncio.Lock()
         self._current_cycle_id = None
+        
+        # State tracking to prevent tight loops
+        self._recent_state_hashes = {}  # hash -> timestamp of last processing
+        self._state_cooldown_period = 30.0  # Don't reprocess same state for 30 seconds
         
         # Component availability tracking
         self.node_processor = None
@@ -146,6 +150,14 @@ class ProcessingHub:
 
                 # Check if state has changed
                 if current_hash != last_state_hash:
+                    # Check if we've recently processed this exact state
+                    current_time = time.time()
+                    if current_hash in self._recent_state_hashes:
+                        time_since_last = current_time - self._recent_state_hashes[current_hash]
+                        if time_since_last < self._state_cooldown_period:
+                            logger.debug(f"State hash recently processed {time_since_last:.1f}s ago, cooling down")
+                            continue
+                    
                     # Check if we're already processing a cycle
                     if self._processing_lock.locked():
                         logger.debug(f"Cycle already in progress ({self._current_cycle_id}), skipping cycle {self.cycle_count}")
@@ -155,20 +167,42 @@ class ProcessingHub:
                         self._current_cycle_id = f"cycle_{self.cycle_count}"
                         logger.info(f"World state changed, processing {self._current_cycle_id}")
 
+                        # Record that we're processing this state hash now to prevent immediate reprocessing
+                        self._recent_state_hashes[current_hash] = current_time
+                        
+                        # Clean up old state hashes (older than cooldown period)
+                        self._recent_state_hashes = {
+                            h: t for h, t in self._recent_state_hashes.items()
+                            if current_time - t < self._state_cooldown_period * 2
+                        }
+
+                        self.cycle_count += 1
+
                         # Get active channels to determine primary focus
                         active_channels = self._get_active_channels(current_state)
 
                         # Process using selected strategy
                         await self._process_world_state(active_channels)
 
-                        # Update tracking
+                        # Only update last_state_hash AFTER successful processing completion
+                        # This ensures we don't skip reprocessing if actions failed
                         last_state_hash = current_hash
-                        self.cycle_count += 1
+                        
+                        # Update final tracking
                         self.last_cycle_time = cycle_start
 
                         cycle_duration = time.time() - cycle_start
                         logger.info(f"{self._current_cycle_id} completed in {cycle_duration:.2f}s")
                         self._current_cycle_id = None
+
+                        # Add a cooldown period after processing to prevent tight loops
+                        # This gives time for any pending operations to complete and state to settle
+                        cooldown_time = 5.0  # Base cooldown of 5 seconds
+                        if cycle_duration > 10:  # If cycle took more than 10 seconds
+                            cooldown_time = min(15, cycle_duration * 0.3)  # 30% of cycle time, max 15 seconds
+                        
+                        logger.debug(f"Adding {cooldown_time:.1f}s cooldown after cycle to prevent tight loops")
+                        await asyncio.sleep(cooldown_time)
 
                         # Log rate limiting status every 10 cycles for monitoring
                         if self.cycle_count % 10 == 0:
