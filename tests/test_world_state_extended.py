@@ -21,10 +21,13 @@ class TestWorldStateExtended:
         
         state_dict = world_state.to_dict()
         
-        assert "matrix_room_1" in state_dict["channels"]
-        assert "farcaster_ch_1" in state_dict["channels"]
-        assert state_dict["channels"]["matrix_room_1"]["type"] == "matrix"
-        assert state_dict["channels"]["farcaster_ch_1"]["type"] == "farcaster"
+        # Check nested structure: channels[platform][channel_id]
+        assert "matrix" in state_dict["channels"]
+        assert "farcaster" in state_dict["channels"]
+        assert "matrix_room_1" in state_dict["channels"]["matrix"]
+        assert "farcaster_ch_1" in state_dict["channels"]["farcaster"]
+        assert state_dict["channels"]["matrix"]["matrix_room_1"]["type"] == "matrix"
+        assert state_dict["channels"]["farcaster"]["farcaster_ch_1"]["type"] == "farcaster"
     
     def test_message_ordering_and_limits(self):
         """Test that messages are ordered by timestamp and limited."""

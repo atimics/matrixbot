@@ -129,47 +129,51 @@ class ProactiveConversationEngine:
         opportunities = []
         current_time = time.time()
         
-        for channel_id, channel in world_state_data.channels.items():
-            if not channel.recent_messages:
+        # Handle nested structure: channels[platform][channel_id]
+        for platform, platform_channels in world_state_data.channels.items():
+            if not isinstance(platform_channels, dict):
                 continue
+            for channel_id, channel in platform_channels.items():
+                if not channel.recent_messages:
+                    continue
+                    
+                # Look for channels with sudden activity increases
+                recent_activity = self._analyze_channel_activity_pattern(channel)
                 
-            # Look for channels with sudden activity increases
-            recent_activity = self._analyze_channel_activity_pattern(channel)
-            
-            if recent_activity.get("activity_spike", False):
-                opportunities.append(ConversationOpportunity(
-                    opportunity_id=f"activity_spike_{channel_id}_{int(current_time)}",
-                    opportunity_type="activity_spike",
-                    priority=7,
-                    context={
-                        "channel_id": channel_id,
-                        "channel_name": channel.name,
-                        "activity_metrics": recent_activity,
-                        "recent_message_count": len(channel.recent_messages)
-                    },
-                    platform=channel.type or "unknown",
-                    channel_id=channel_id,
-                    expires_at=current_time + 1800,  # 30 minutes
-                    reasoning=f"Detected increased activity in {channel.name}: {recent_activity.get('spike_reason', 'activity increase')}"
-                ))
-            
-            # Look for channels going quiet that might benefit from engagement
-            if recent_activity.get("going_quiet", False):
-                opportunities.append(ConversationOpportunity(
-                    opportunity_id=f"quiet_channel_{channel_id}_{int(current_time)}",
-                    opportunity_type="quiet_channel",
-                    priority=5,
-                    context={
-                        "channel_id": channel_id,
-                        "channel_name": channel.name,
-                        "last_activity": recent_activity.get("last_activity_time"),
-                        "silence_duration": recent_activity.get("silence_duration", 0)
-                    },
-                    platform=channel.type or "unknown",
-                    channel_id=channel_id,
-                    expires_at=current_time + 3600,  # 1 hour
-                    reasoning=f"Channel {channel.name} has been quiet - opportunity to re-engage community"
-                ))
+                if recent_activity.get("activity_spike", False):
+                    opportunities.append(ConversationOpportunity(
+                        opportunity_id=f"activity_spike_{channel_id}_{int(current_time)}",
+                        opportunity_type="activity_spike",
+                        priority=7,
+                        context={
+                            "channel_id": channel_id,
+                            "channel_name": channel.name,
+                            "activity_metrics": recent_activity,
+                            "recent_message_count": len(channel.recent_messages)
+                        },
+                        platform=channel.type or "unknown",
+                        channel_id=channel_id,
+                        expires_at=current_time + 1800,  # 30 minutes
+                        reasoning=f"Detected increased activity in {channel.name}: {recent_activity.get('spike_reason', 'activity increase')}"
+                    ))
+                
+                # Look for channels going quiet that might benefit from engagement
+                if recent_activity.get("going_quiet", False):
+                    opportunities.append(ConversationOpportunity(
+                        opportunity_id=f"quiet_channel_{channel_id}_{int(current_time)}",
+                        opportunity_type="quiet_channel",
+                        priority=5,
+                        context={
+                            "channel_id": channel_id,
+                            "channel_name": channel.name,
+                            "last_activity": recent_activity.get("last_activity_time"),
+                            "silence_duration": recent_activity.get("silence_duration", 0)
+                        },
+                        platform=channel.type or "unknown",
+                        channel_id=channel_id,
+                        expires_at=current_time + 3600,  # 1 hour
+                        reasoning=f"Channel {channel.name} has been quiet - opportunity to re-engage community"
+                    ))
         
         return opportunities
     
@@ -452,15 +456,18 @@ class ProactiveConversationEngine:
         farcaster_topics = set()
         
         # Extract topics from each platform
-        for channel_id, channel in world_state_data.channels.items():
-            if channel.type == "matrix":
-                for message in channel.recent_messages[-5:]:  # Last 5 messages
-                    words = message.content.lower().split()
-                    matrix_topics.update(word for word in words if len(word) > 4)
-            elif channel.type == "farcaster":
-                for message in channel.recent_messages[-5:]:  # Last 5 messages
-                    words = message.content.lower().split()
-                    farcaster_topics.update(word for word in words if len(word) > 4)
+        for platform, platform_channels in world_state_data.channels.items():
+            if not isinstance(platform_channels, dict):
+                continue
+            for channel_id, channel in platform_channels.items():
+                if channel.type == "matrix":
+                    for message in channel.recent_messages[-5:]:  # Last 5 messages
+                        words = message.content.lower().split()
+                        matrix_topics.update(word for word in words if len(word) > 4)
+                elif channel.type == "farcaster":
+                    for message in channel.recent_messages[-5:]:  # Last 5 messages
+                        words = message.content.lower().split()
+                        farcaster_topics.update(word for word in words if len(word) > 4)
         
         # Find common topics
         common_topics = matrix_topics.intersection(farcaster_topics)
@@ -483,35 +490,38 @@ class ProactiveConversationEngine:
         current_time = time.time()
         
         # Look for users who have recently joined or started participating
-        for channel_id, channel in world_state_data.channels.items():
-            recent_users = set()
-            for message in channel.recent_messages[-10:]:  # Last 10 messages
-                if current_time - message.timestamp < 3600:  # Last hour
-                    recent_users.add(message.sender_username or message.sender)
-            
-            # Check if any users are new (haven't been seen in earlier messages)
-            historical_users = set()
-            for message in channel.recent_messages[:-10]:  # Earlier messages
-                historical_users.add(message.sender_username or message.sender)
-            
-            new_users = recent_users - historical_users
-            for user in new_users:
-                opportunities.append(ConversationOpportunity(
-                    opportunity_id=f"new_user_{channel_id}_{user}_{int(current_time)}",
-                    opportunity_type="new_user_welcome",
-                    priority=6,
-                    context={
-                        "channel_id": channel_id,
-                        "channel_name": channel.name,
-                        "new_user": user,
-                        "platform": channel.type
-                    },
-                    platform=channel.type or "unknown",
-                    channel_id=channel_id,
-                    user_id=user,
-                    expires_at=current_time + 7200,  # 2 hours
-                    reasoning=f"New user {user} detected in {channel.name} - opportunity to welcome"
-                ))
+        for platform, platform_channels in world_state_data.channels.items():
+            if not isinstance(platform_channels, dict):
+                continue
+            for channel_id, channel in platform_channels.items():
+                recent_users = set()
+                for message in channel.recent_messages[-10:]:  # Last 10 messages
+                    if current_time - message.timestamp < 3600:  # Last hour
+                        recent_users.add(message.sender_username or message.sender)
+                
+                # Check if any users are new (haven't been seen in earlier messages)
+                historical_users = set()
+                for message in channel.recent_messages[:-10]:  # Earlier messages
+                    historical_users.add(message.sender_username or message.sender)
+                
+                new_users = recent_users - historical_users
+                for user in new_users:
+                    opportunities.append(ConversationOpportunity(
+                        opportunity_id=f"new_user_{channel_id}_{user}_{int(current_time)}",
+                        opportunity_type="new_user_welcome",
+                        priority=6,
+                        context={
+                            "channel_id": channel_id,
+                            "channel_name": channel.name,
+                            "new_user": user,
+                            "platform": channel.type
+                        },
+                        platform=channel.type or "unknown",
+                        channel_id=channel_id,
+                        user_id=user,
+                        expires_at=current_time + 7200,  # 2 hours
+                        reasoning=f"New user {user} detected in {channel.name} - opportunity to welcome"
+                    ))
         
         return opportunities
     
@@ -527,32 +537,35 @@ class ProactiveConversationEngine:
         current_time = time.time()
         
         # Look for questions or discussions where we could contribute research/knowledge
-        for channel_id, channel in world_state_data.channels.items():
-            for message in channel.recent_messages[-5:]:  # Last 5 messages
-                if current_time - message.timestamp > 1800:  # Older than 30 minutes
-                    continue
-                    
-                # Simple heuristic: messages with question marks or specific keywords
-                content_lower = message.content.lower()
-                if ("?" in message.content or 
-                    any(word in content_lower for word in ["how", "what", "why", "when", "where", "research", "study"])):
-                    
-                    opportunities.append(ConversationOpportunity(
-                        opportunity_id=f"content_share_{channel_id}_{message.id}_{int(current_time)}",
-                        opportunity_type="content_sharing",
-                        priority=5,
-                        context={
-                            "channel_id": channel_id,
-                            "message_id": message.id,
-                            "original_message": message.content,
-                            "sender": message.sender_username or message.sender,
-                            "content_type": "research_response"
-                        },
-                        platform=channel.type or "unknown",
-                        channel_id=channel_id,
-                        expires_at=current_time + 3600,  # 1 hour
-                        reasoning=f"Question or research opportunity detected in message: {message.content[:50]}..."
-                    ))
+        for platform, platform_channels in world_state_data.channels.items():
+            if not isinstance(platform_channels, dict):
+                continue
+            for channel_id, channel in platform_channels.items():
+                for message in channel.recent_messages[-5:]:  # Last 5 messages
+                    if current_time - message.timestamp > 1800:  # Older than 30 minutes
+                        continue
+                        
+                    # Simple heuristic: messages with question marks or specific keywords
+                    content_lower = message.content.lower()
+                    if ("?" in message.content or 
+                        any(word in content_lower for word in ["how", "what", "why", "when", "where", "research", "study"])):
+                        
+                        opportunities.append(ConversationOpportunity(
+                            opportunity_id=f"content_share_{channel_id}_{message.id}_{int(current_time)}",
+                            opportunity_type="content_sharing",
+                            priority=5,
+                            context={
+                                "channel_id": channel_id,
+                                "message_id": message.id,
+                                "original_message": message.content,
+                                "sender": message.sender_username or message.sender,
+                                "content_type": "research_response"
+                            },
+                            platform=channel.type or "unknown",
+                            channel_id=channel_id,
+                            expires_at=current_time + 3600,  # 1 hour
+                            reasoning=f"Question or research opportunity detected in message: {message.content[:50]}..."
+                        ))
         
         return opportunities
     
