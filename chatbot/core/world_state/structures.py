@@ -855,10 +855,18 @@ class WorldStateData:
         Returns:
             Dictionary with metrics about channels, messages, actions, etc.
         """
-        total_messages = sum(len(ch.recent_messages) for ch in self.channels.values())
+        # Handle nested channel structure: channels[platform][channel_id]
+        total_messages = sum(
+            len(ch.recent_messages) 
+            for platform_channels in self.channels.values() 
+            for ch in platform_channels.values()
+        )
+        
+        # Count total channels across all platforms
+        total_channels = sum(len(platform_channels) for platform_channels in self.channels.values())
         
         return {
-            "channel_count": len(self.channels),
+            "channel_count": total_channels,
             "total_messages": total_messages,
             "action_history_count": len(self.action_history),
             "thread_count": len(self.threads),

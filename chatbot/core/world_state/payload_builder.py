@@ -94,7 +94,13 @@ class PayloadBuilder:
         if not primary_channel_id:
             return {}
 
-        primary_channel = world_state_data.channels.get(primary_channel_id)
+        # Find the primary channel in nested structure
+        primary_channel = None
+        for platform_channels in world_state_data.channels.values():
+            if primary_channel_id in platform_channels:
+                primary_channel = platform_channels[primary_channel_id]
+                break
+                
         if not primary_channel or not primary_channel.recent_messages:
             return {}
 

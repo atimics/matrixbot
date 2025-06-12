@@ -35,12 +35,14 @@ class TestWorldState:
     def test_add_channel(self):
         """Test adding a channel to world state."""
         world_state = WorldStateManager()
-        world_state.add_channel("matrix", "test_channel", "Test Channel")
+        world_state.add_channel("test_channel", "matrix", "Test Channel")
         
         state_dict = world_state.to_dict()
+        # Check the nested structure: channels[platform][channel_id]
         assert "matrix" in state_dict["channels"]
-        assert state_dict["channels"]["matrix"]["name"] == "Test Channel"
-        assert state_dict["channels"]["matrix"]["id"] == "matrix"
+        assert "test_channel" in state_dict["channels"]["matrix"]
+        assert state_dict["channels"]["matrix"]["test_channel"]["name"] == "Test Channel"
+        assert state_dict["channels"]["matrix"]["test_channel"]["id"] == "test_channel"
     
     def test_add_message(self):
         """Test adding a message to a channel."""
@@ -61,9 +63,10 @@ class TestWorldState:
         world_state.add_message("test_channel", message)
         
         state_dict = world_state.to_dict()
-        # Check the actual structure - channels are keyed by channel_id
-        assert "test_channel" in state_dict["channels"]
-        channel = state_dict["channels"]["test_channel"]
+        # Check the nested structure: channels[platform][channel_id]
+        assert "matrix" in state_dict["channels"]
+        assert "test_channel" in state_dict["channels"]["matrix"]
+        channel = state_dict["channels"]["matrix"]["test_channel"]
         assert len(channel["recent_messages"]) == 1
         assert channel["recent_messages"][0]["content"] == "Hello world"
 
