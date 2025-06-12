@@ -333,23 +333,26 @@ class PayloadBuilder:
 
         for node_path in all_node_paths:
             metadata = node_manager.get_node_metadata(node_path)
-            node_data = self._get_node_data_by_path(world_state_data, node_path)
-            if node_data is None:
-                continue
-
+            
             if metadata.is_expanded:
-                expanded_nodes[node_path] = {
-                    "data": node_data,
-                    "is_pinned": metadata.is_pinned,
-                    "last_expanded": metadata.last_expanded_ts,
-                }
+                # Request EXPANDED data for this node
+                node_data = self._get_node_data_by_path(world_state_data, node_path, expanded=True)
+                if node_data is not None:
+                    expanded_nodes[node_path] = {
+                        "data": node_data,
+                        "is_pinned": metadata.is_pinned,
+                        "last_expanded": metadata.last_expanded_ts,
+                    }
             else:
-                summary = metadata.ai_summary or f"Node {node_path} (no summary available)"
-                collapsed_node_summaries[node_path] = {
-                    "summary": summary,
-                    "data_changed": node_manager.is_data_changed(node_path, node_data),
-                    "last_summary_update": metadata.last_summary_update_ts,
-                }
+                # Request SUMMARY data for this node
+                node_data = self._get_node_data_by_path(world_state_data, node_path, expanded=False)
+                if node_data is not None:
+                    summary = metadata.ai_summary or f"Node {node_path} (no summary available)"
+                    collapsed_node_summaries[node_path] = {
+                        "summary": summary,
+                        "data_changed": node_manager.is_data_changed(node_path, node_data),
+                        "last_summary_update": metadata.last_summary_update_ts,
+                    }
 
         payload = {
             "current_processing_channel_id": primary_channel_id,
@@ -510,7 +513,7 @@ class PayloadBuilder:
             yield "system.notifications"
 
     def _get_node_data_by_path(
-        self, world_state_data: WorldStateData, node_path: str
+        self, world_state_data: WorldStateData, node_path: str, expanded: bool = False
     ) -> Any:
         """
         Get the actual data for a specific node path using a dispatcher.
@@ -518,6 +521,7 @@ class PayloadBuilder:
         Args:
             world_state_data: The world state to extract data from.
             node_path: The path to the node (e.g., "channels.matrix.!room_id").
+            expanded: Whether to return full details for the node.
         
         Returns:
             The data for that node, or None if not found.
@@ -526,7 +530,7 @@ class PayloadBuilder:
             path_parts = node_path.split(".")
             handler = self._node_data_handlers.get(path_parts[0])
             if handler:
-                return handler(world_state_data, path_parts)
+                return handler(world_state_data, path_parts, expanded=expanded)
             logger.warning(f"No handler found for node path prefix: {path_parts[0]}")
             return None
         except Exception as e:
@@ -535,11 +539,20 @@ class PayloadBuilder:
 
     # --- Node Data Handlers ---
 
-    def _get_channel_node_data(self, world_state_data: WorldStateData, path_parts: List[str]) -> Optional[Dict]:
+    def _get_channel_node_data(self, world_state_data: WorldStateData, path_parts: List[str], expanded: bool = False) -> Optional[Dict]:
         if len(path_parts) != 3: return None
         _, channel_type, channel_id = path_parts
         channel = world_state_data.channels.get(channel_id)
         if not channel or channel.type != channel_type: return None
+        
+        # Determine message list based on expansion status
+        if expanded:
+            # For expanded nodes, provide enhanced summaries with more messages and context
+            messages_for_payload = [msg.to_ai_summary_dict() for msg in channel.recent_messages[-8:]] # More messages but still summaries
+        else:
+            # For collapsed nodes, provide basic summaries
+            messages_for_payload = [msg.to_ai_summary_dict() for msg in channel.recent_messages[-3:]]
+
         return {
             "id": channel.id,
             "name": channel.name,
@@ -547,10 +560,10 @@ class PayloadBuilder:
             "status": channel.status,
             "msg_count": len(channel.recent_messages),
             "last_activity": channel.recent_messages[-1].timestamp if channel.recent_messages else channel.last_checked,
-            "recent_messages": [msg.to_ai_summary_dict() for msg in channel.recent_messages[-5:]],
+            "recent_messages": messages_for_payload,
         }
 
-    def _get_user_node_data(self, world_state_data: WorldStateData, path_parts: List[str]) -> Optional[Dict]:
+    def _get_user_node_data(self, world_state_data: WorldStateData, path_parts: List[str], expanded: bool = False) -> Optional[Dict]:
         if len(path_parts) < 3: return None
         _, user_type, user_id = path_parts[0], path_parts[1], path_parts[2]
         
@@ -598,7 +611,7 @@ class PayloadBuilder:
                     }
         return {"type": user_type, "id": user_id, "error": "User data not found"}
 
-    def _get_farcaster_node_data(self, world_state_data: WorldStateData, path_parts: List[str]) -> Optional[Dict]:
+    def _get_farcaster_node_data(self, world_state_data: WorldStateData, path_parts: List[str], expanded: bool = False) -> Optional[Dict]:
         if len(path_parts) < 2: return None
         node_type = path_parts[1]
         
@@ -630,17 +643,19 @@ class PayloadBuilder:
                 return world_state_data.search_cache.get(path_parts[2])
         return None
 
-    def _get_system_node_data(self, world_state_data: WorldStateData, path_parts: List[str]) -> Optional[Dict]:
+    def _get_system_node_data(self, world_state_data: WorldStateData, path_parts: List[str], expanded: bool = False) -> Optional[Dict]:
         if len(path_parts) < 2: return None
         component = path_parts[1]
         if component == "notifications": return {"pending_matrix_invites": world_state_data.pending_matrix_invites}
         if component == "rate_limits": return world_state_data.rate_limits
         if component == "status": return world_state_data.system_status
-        if component == "action_history": return [asdict(a) for a in world_state_data.action_history[-10:]]
+        if component == "action_history": 
+            # Use optimized action history to prevent large payloads
+            return self._build_action_history_payload(world_state_data, 10, optimize=True)
         return None
 
     # Simplified handlers for other node types
-    def _get_tool_node_data(self, world_state_data: WorldStateData, path_parts: List[str]) -> Optional[Dict]:
+    def _get_tool_node_data(self, world_state_data: WorldStateData, path_parts: List[str], expanded: bool = False) -> Optional[Dict]:
         if len(path_parts) < 2: return None
         if path_parts[1] == "cache":
             if len(path_parts) == 2:
@@ -672,7 +687,7 @@ class PayloadBuilder:
                 return {"tool_name": tool_name, "cached_results": tool_results, "total_cached": count}
         return None
 
-    def _get_memory_bank_node_data(self, world_state_data: WorldStateData, path_parts: List[str]) -> Optional[Dict]:
+    def _get_memory_bank_node_data(self, world_state_data: WorldStateData, path_parts: List[str], expanded: bool = False) -> Optional[Dict]:
         if len(path_parts) == 1:
             # Return overview of memory bank
             memory_stats = {}
@@ -702,7 +717,7 @@ class PayloadBuilder:
             return {"platform": platform, "user_memories": platform_memories}
         return None
 
-    def _get_thread_node_data(self, world_state_data: WorldStateData, path_parts: List[str]) -> Optional[Dict]:
+    def _get_thread_node_data(self, world_state_data: WorldStateData, path_parts: List[str], expanded: bool = False) -> Optional[Dict]:
         if len(path_parts) >= 3:
             thread_type, thread_id = path_parts[1], path_parts[2]
             thread_messages = world_state_data.threads.get(thread_id, [])

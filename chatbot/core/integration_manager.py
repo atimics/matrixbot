@@ -172,6 +172,10 @@ class IntegrationManager:
             
         logger.info(f"Registered integration types: {list(self.integration_types.keys())}")
         
+    def get_available_integration_types(self) -> List[str]:
+        """Get list of available integration types."""
+        return list(self.integration_types.keys())
+        
     async def add_integration(
         self,
         integration_type: str,
