@@ -416,29 +416,16 @@ class IntegrationManager:
             integration_class = self.integration_types[integration_type]
             
             if integration_type == 'matrix':
-                integration = integration_class(
-                    integration_id="test",
-                    display_name="Test Integration",
-                    config=config,
-                    world_state_manager=self.world_state_manager
-                )
+                integration = integration_class(world_state_manager=self.world_state_manager)
             elif integration_type == 'farcaster':
                 integration = integration_class(
-                    integration_id="test",
-                    display_name="Test Integration",
-                    config=config,
                     api_key=credentials.get('api_key'),
                     signer_uuid=credentials.get('signer_uuid'),
                     bot_fid=credentials.get('bot_fid'),
                     world_state_manager=self.world_state_manager
                 )
             else:
-                # Generic constructor for future integrations
-                integration = integration_class(
-                    integration_id="test",
-                    display_name="Test Integration",
-                    config=config
-                )
+                integration = integration_class()
             
             if hasattr(integration, 'set_credentials'):
                 await integration.set_credentials(credentials)
@@ -502,7 +489,7 @@ class IntegrationManager:
         
     async def update_credentials(self, integration_id: str, credentials: Dict[str, str]) -> None:
         """Update credentials for an existing integration"""
-        async def db_operation(db):
+        async with aiosqlite.connect(self.db_path) as db:
             # First remove existing credentials for this integration
             await db.execute("""
                 DELETE FROM credentials WHERE integration_id = ?
@@ -519,8 +506,6 @@ class IntegrationManager:
                     """, (credential_id, integration_id, key, encrypted_value, time.time(), time.time()))
             
             await db.commit()
-        
-        await self._execute_db_operation(db_operation)
         
         logger.info(f"Updated {len(credentials)} credentials for integration {integration_id}")
         

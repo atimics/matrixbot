@@ -61,7 +61,7 @@ class WorldStateManager:
         return self.state
 
     def add_channel(
-        self, channel_or_id, channel_type: str = None, name: str = None, status: str = "active"
+        self, channel_or_id, channel_type: Optional[str] = None, name: Optional[str] = None, status: str = "active"
     ):
         """Add a new channel to monitor
         
@@ -86,8 +86,8 @@ class WorldStateManager:
             
             self.state.channels[channel_id] = Channel(
                 id=channel_id,
-                type=channel_type,
                 name=name,
+                type=channel_type,
                 status=status,
                 last_status_update=time.time(),
             )
@@ -119,6 +119,11 @@ class WorldStateManager:
         else:
             raise TypeError("add_message expects (channel_id, message), (message_data, message), or (dict with channel_id and message)")
 
+        # Validate message exists
+        if message is None:
+            logger.error("WorldStateManager: Cannot add message - message is None")
+            return
+
         # Convert dict to Message if needed
         if isinstance(message, dict):
             message = Message(**message)
@@ -139,6 +144,18 @@ class WorldStateManager:
         if len(self.state.channels[channel_id].recent_messages) > 50:
             self.state.channels[channel_id].recent_messages = self.state.channels[channel_id].recent_messages[-50:]
         self.state.channels[channel_id].update_last_checked()
+        
+        # Thread management: group Farcaster messages by root cast
+        if message.channel_type == "farcaster":
+            thread_id = message.reply_to or message.id
+            self.state.threads.setdefault(thread_id, []).append(message)
+            logger.info(f"WorldStateManager: Added message to thread '{thread_id}'")
+
+        # Get channel reference for logging
+        channel = self.state.channels[channel_id]
+        logger.info(
+            f"WorldState: New message in {channel.name}: {message.sender}: {message.content[:100]}..."
+        )
 
     def add_message_compat(self, channel_id_or_dict, message=None):
         """Compatibility wrapper for tests that call add_message with (dict, message) or (message_data, message)."""
@@ -148,15 +165,6 @@ class WorldStateManager:
             return self.add_message(channel_id, message)
         # If called with (channel_id, message)
         return self.add_message(channel_id_or_dict, message)
-        # Thread management: group Farcaster messages by root cast
-        if message.channel_type == "farcaster":
-            thread_id = message.reply_to or message.id
-            self.state.threads.setdefault(thread_id, []).append(message)
-            logger.info(f"WorldStateManager: Added message to thread '{thread_id}'")
-
-        logger.info(
-            f"WorldState: New message in {channel.name}: {message.sender}: {message.content[:100]}..."
-        )
     
     def add_messages(self, messages: List[Message]) -> None:
         """Batch add multiple messages to the world state."""
