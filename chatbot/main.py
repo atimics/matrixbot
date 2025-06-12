@@ -39,8 +39,7 @@ async def main() -> None:
         processing_config=ProcessingConfig(
             enable_node_based_processing=True,  # Advanced node-based mode
             observation_interval=settings.OBSERVATION_INTERVAL,
-            max_cycles_per_hour=settings.MAX_CYCLES_PER_HOUR,
-            traditional_ai_model=settings.AI_MODEL,
+            max_cycles_per_hour=settings.MAX_CYCLES_PER_HOUR
         ),
         ai_model=settings.AI_MODEL,
     )
