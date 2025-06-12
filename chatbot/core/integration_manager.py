@@ -341,6 +341,32 @@ class IntegrationManager:
         for integration_id in integration_ids:
             await self.disconnect_integration(integration_id)
             
+    async def start_all_services(self) -> None:
+        """Start services for all active integrations"""
+        for integration_id, integration in self.active_integrations.items():
+            try:
+                # Start the integration if it has a start method (legacy support)
+                if hasattr(integration, 'start') and callable(integration.start):
+                    await integration.start()
+                    logger.info(f"Started services for integration {integration_id}")
+                else:
+                    logger.debug(f"Integration {integration_id} does not have a start method")
+            except Exception as e:
+                logger.error(f"Error starting services for integration {integration_id}: {e}")
+                
+    async def stop_all_services(self) -> None:
+        """Stop services for all active integrations"""
+        for integration_id, integration in self.active_integrations.items():
+            try:
+                # Stop the integration if it has a stop method (legacy support)
+                if hasattr(integration, 'stop') and callable(integration.stop):
+                    await integration.stop()
+                    logger.info(f"Stopped services for integration {integration_id}")
+                else:
+                    logger.debug(f"Integration {integration_id} does not have a stop method")
+            except Exception as e:
+                logger.error(f"Error stopping services for integration {integration_id}: {e}")
+            
     async def get_integration_status(self, integration_id: str) -> Optional[Dict[str, Any]]:
         """Get detailed status for a specific integration"""
         if integration_id in self.active_integrations:
@@ -601,5 +627,3 @@ class IntegrationManager:
             }
             for row in rows
         ]
-
-    # ...existing code...
