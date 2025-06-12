@@ -97,11 +97,14 @@ class PayloadBuilder:
         # Find the primary channel in nested structure
         primary_channel = None
         for platform_channels in world_state_data.channels.values():
-            if primary_channel_id in platform_channels:
-                primary_channel = platform_channels[primary_channel_id]
+            if isinstance(platform_channels, dict):
+                if primary_channel_id in platform_channels:
+                    primary_channel = platform_channels[primary_channel_id]
+                    break
+            elif hasattr(platform_channels, 'id') and platform_channels.id == primary_channel_id:
+                primary_channel = platform_channels
                 break
-                
-        if not primary_channel or not primary_channel.recent_messages:
+        if not primary_channel or not getattr(primary_channel, 'recent_messages', None):
             return {}
 
         thread_ids_in_channel: Set[str] = {
@@ -151,7 +154,14 @@ class PayloadBuilder:
         
         # Detect if we have many recently joined channels (potential data spike)
         current_time = time.time()
-        all_channels = [ch for platform_channels in world_state_data.channels.values() for ch in platform_channels.values()]
+        all_channels = []
+        for platform_channels in world_state_data.channels.values():
+            if isinstance(platform_channels, dict):
+                all_channels.extend(platform_channels.values())
+            else:
+                # Handle case where platform_channels is a single Channel object (shouldn't happen but be safe)
+                all_channels.append(platform_channels)
+        
         recent_channels = [
             ch for ch in all_channels 
             if ch.recent_messages and 
@@ -190,13 +200,21 @@ class PayloadBuilder:
             return (2 if ch_data.type == "farcaster" else 3, -last_activity)
 
         # Flatten channels from nested structure for sorting
-        all_channel_items = [
-            (channel_id, channel) 
-            for platform_channels in world_state_data.channels.values() 
-            for channel_id, channel in platform_channels.items()
-        ]
+        all_channel_items = []
+        for platform_channels in world_state_data.channels.values():
+            if isinstance(platform_channels, dict):
+                all_channel_items.extend([
+                    (channel_id, channel) 
+                    for channel_id, channel in platform_channels.items()
+                ])
+            else:
+                # Handle case where platform_channels is a single Channel object (shouldn't happen but be safe)
+                all_channel_items.append((platform_channels.id, platform_channels))
         sorted_channels = sorted(all_channel_items, key=sort_key)
 
+        # --- Legacy compatibility: provide flat channels dict if all IDs are unique ---
+        flat_channels = self._flatten_channels(world_state_data.channels)
+        unique_ids = len(flat_channels) == len(set(flat_channels.keys()))
         channels_payload = {}
         detailed_count = 0
         for ch_id, ch_data in sorted_channels:
@@ -262,9 +280,14 @@ class PayloadBuilder:
                         
                 channels_payload[ch_id] = summary
 
+        # If legacy/flat structure is expected, provide it
+        payload_channels = channels_payload
+        if unique_ids:
+            payload_channels = {ch_id: channels_payload[ch_id] for ch_id in flat_channels.keys() if ch_id in channels_payload}
+
         payload = {
             "current_processing_channel_id": primary_channel_id,
-            "channels": channels_payload,
+            "channels": payload_channels,
             "action_history": self._build_action_history_payload(
                 world_state_data, max_action_history, optimize_for_size
             ),
@@ -276,7 +299,7 @@ class PayloadBuilder:
                 "rate_limits": world_state_data.rate_limits,
             },
             "pending_matrix_invites": world_state_data.pending_matrix_invites,
-            "recent_media_actions": world_state_data.get_recent_media_actions(),
+            "recent_media_actions": world_state_data.get_recent_media_actions() or [],
             "payload_stats": {
                 "primary_channel": primary_channel_id,
                 "detailed_channels": detailed_count,
@@ -447,8 +470,12 @@ class PayloadBuilder:
 
     def _generate_channel_paths(self, world_state_data: WorldStateData):
         for platform, platform_channels in world_state_data.channels.items():
-            for channel_id, channel in platform_channels.items():
-                yield f"channels.{channel.type}.{channel_id}"
+            if isinstance(platform_channels, dict):
+                for channel_id, channel in platform_channels.items():
+                    yield f"channels.{channel.type}.{channel_id}"
+            else:
+                # Handle case where platform_channels is a single Channel object
+                yield f"channels.{platform_channels.type}.{platform_channels.id}"
 
     def _generate_farcaster_feed_paths(self, world_state_data: WorldStateData):
         # Check if any channel is of type farcaster
@@ -464,7 +491,13 @@ class PayloadBuilder:
         user_matrix_ids = set(world_state_data.matrix_users.keys())
 
         for platform_channels in world_state_data.channels.values():
-            for channel in platform_channels.values():
+            if isinstance(platform_channels, dict):
+                channels_iter = platform_channels.values()
+            elif hasattr(platform_channels, 'recent_messages'):
+                channels_iter = [platform_channels]
+            else:
+                continue
+            for channel in channels_iter:
                 for msg in channel.recent_messages[-10:]:  # Limit scan to recent messages
                     if msg.sender_fid: user_fids.add(str(msg.sender_fid))
                     if msg.sender_username: user_matrix_ids.add(msg.sender_username)
@@ -618,7 +651,7 @@ class PayloadBuilder:
                 }
         
         # Fallback for users not in the main dict
-        for channel in world_state_data.channels.values():
+        for channel in self._iter_all_channels(world_state_data.channels):
             for msg in reversed(channel.recent_messages[-5:]):
                 if user_type == "farcaster" and str(msg.sender_fid) == user_id:
                     return {
@@ -640,28 +673,24 @@ class PayloadBuilder:
     def _get_farcaster_node_data(self, world_state_data: WorldStateData, path_parts: List[str], expanded: bool = False) -> Optional[Dict]:
         if len(path_parts) < 2: return None
         node_type = path_parts[1]
-        
         if node_type == "feeds" and len(path_parts) >= 3:
             feed_type = path_parts[2]
             if feed_type == "trending":
                 return {"feed_type": "trending", "status": "Available via get_trending_casts tool"}
-            
             messages = []
             if feed_type == "home":
-                for ch in world_state_data.channels.values():
+                for ch in self._iter_all_channels(world_state_data.channels):
                     if ch.type == "farcaster" and "home" in ch.id:
                         messages.extend(ch.recent_messages[-5:])
             elif feed_type == "notifications":
-                for ch in world_state_data.channels.values():
+                for ch in self._iter_all_channels(world_state_data.channels):
                     if ch.type == "farcaster" and ("notification" in ch.id or "mention" in ch.id):
                         messages.extend(ch.recent_messages[-5:])
-            
             messages.sort(key=lambda m: m.timestamp, reverse=True)
             return {
                 "feed_type": feed_type,
                 "recent_activity": [m.to_ai_summary_dict() for m in messages[:10]]
             }
-            
         elif node_type == "search_cache":
             if len(path_parts) == 2:
                 return {"cached_searches": [d.get("query", "Unknown") for d in world_state_data.search_cache.values()]}
@@ -835,3 +864,44 @@ class PayloadBuilder:
     def _optimize_payload_size(payload: Dict[str, Any]) -> Dict[str, Any]:
         """Apply various optimizations to reduce payload size."""
         return PayloadBuilder._remove_empty_values(payload)
+
+    def _flatten_channels(self, channels_dict):
+        """Flatten nested channels dict to {channel_id: channel} for legacy compatibility."""
+        flat = {}
+        for platform_channels in channels_dict.values():
+            if isinstance(platform_channels, dict):
+                flat.update(platform_channels)
+            elif hasattr(platform_channels, 'id'):
+                flat[platform_channels.id] = platform_channels
+        return flat
+
+    def _iter_all_channels(self, channels_dict):
+        """Yield all Channel objects from possibly nested channels dict."""
+        for platform_channels in channels_dict.values():
+            if isinstance(platform_channels, dict):
+                for ch in platform_channels.values():
+                    yield ch
+            elif hasattr(platform_channels, 'recent_messages'):
+                yield platform_channels
+
+    # Update all usages of world_state_data.channels.values() to use _iter_all_channels
+    # Example for fallback user search:
+    def _get_user_fallback(self, world_state_data, user_type, user_id):
+        for channel in self._iter_all_channels(world_state_data.channels):
+            for msg in reversed(channel.recent_messages[-5:]):
+                if user_type == "farcaster" and str(msg.sender_fid) == user_id:
+                    return {
+                        "id": user_id,
+                        "type": user_type,
+                        "username": msg.sender_username,
+                        "display_name": msg.sender_display_name,
+                        "fid": msg.sender_fid
+                    }
+                if user_type == "matrix" and msg.sender_username == user_id:
+                    return {
+                        "id": user_id,
+                        "type": user_type,
+                        "username": msg.sender_username,
+                        "display_name": msg.sender_display_name
+                    }
+        return {"type": user_type, "id": user_id, "error": "User data not found"}

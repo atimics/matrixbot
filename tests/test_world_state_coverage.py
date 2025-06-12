@@ -42,10 +42,10 @@ class TestWorldStateCoverage:
             content="Test message",
             timestamp=time.time()
         )
-        
-        ws.add_message(message)
+        ws.add_message(message.channel_id, message)
         assert "test_msg" in ws.seen_messages
-        assert "test_channel" in ws.channels
+        assert "matrix" in ws.channels
+        assert "test_channel" in ws.channels["matrix"]
 
     def test_world_state_get_recent_messages(self):
         """Test getting recent messages"""
@@ -59,7 +59,7 @@ class TestWorldStateCoverage:
             recent_messages=[],
             last_checked=time.time()
         )
-        ws.channels["test_channel"] = channel
+        ws.channels.setdefault("matrix", {})["test_channel"] = channel
         
         # Add message
         message = Message(
@@ -70,8 +70,7 @@ class TestWorldStateCoverage:
             content="Hello",
             timestamp=time.time()
         )
-        
-        ws.add_message(message)
+        ws.add_message(message.channel_id, message)
         messages = ws.get_recent_messages("test_channel", limit=5)
         assert len(messages) == 1
         assert messages[0].content == "Hello"
@@ -107,7 +106,7 @@ class TestWorldStateCoverage:
             recent_messages=[],
             last_checked=time.time()
         )
-        ws.channels["test_ch"] = channel
+        ws.channels.setdefault("matrix", {})["test_ch"] = channel
         
         result = ws.to_dict()
         assert "channels" in result
@@ -129,7 +128,7 @@ class TestWorldStateCoverage:
             content="Hello",
             timestamp=time.time()
         )
-        ws.add_message(message)
+        ws.add_message(message.channel_id, message)
         
         result = ws.to_dict_for_ai()
         assert "channels" in result
@@ -147,7 +146,7 @@ class TestWorldStateCoverage:
             recent_messages=[],
             last_checked=time.time()
         )
-        ws.channels["test_channel"] = channel
+        ws.channels.setdefault("matrix", {})["test_channel"] = channel
         
         # Add multiple messages
         for i in range(5):
@@ -159,10 +158,10 @@ class TestWorldStateCoverage:
                 content=f"Message {i}",
                 timestamp=time.time() + i
             )
-            ws.add_message(message)
+            ws.add_message(message.channel_id, message)
         
-        result = ws.to_dict_for_ai(message_limit_per_channel=2)
-        channel_data = result["channels"]["test_channel"]
+        result = ws.to_dict_for_ai(limit=2)
+        channel_data = result["channels"]["matrix"]["test_channel"]
         assert len(channel_data["recent_messages"]) <= 2
 
     def test_world_state_add_action(self):
@@ -212,7 +211,7 @@ class TestWorldStateCoverage:
                 recent_messages=[],
                 last_checked=time.time()
             )
-            ws.channels[ch] = channel
+            ws.channels.setdefault("matrix", {})[ch] = channel
             
             message = Message(
                 id=f"msg_{ch}",
@@ -222,7 +221,7 @@ class TestWorldStateCoverage:
                 content=f"Message in {ch}",
                 timestamp=time.time()
             )
-            ws.add_message(message)
+            ws.add_message(ch, message)
         
         all_messages = ws.get_all_messages()
         assert len(all_messages) == 2
@@ -243,7 +242,7 @@ class TestWorldStateCoverage:
             content="Observation test",
             timestamp=time.time()
         )
-        ws.add_message(message)
+        ws.add_message(message.channel_id, message)
         
         obs_data = ws.get_observation_data()
         assert "channels" in obs_data

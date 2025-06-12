@@ -731,6 +731,56 @@ class NFTMintRecord:
 
 
 class WorldStateData:
+    def add_message(self, channel_id: str, message):
+        """Compatibility method for tests that call add_message on WorldStateData."""
+        from .manager import WorldStateManager
+        logger.warning("WorldStateData.add_message is deprecated - use WorldStateManager instead")
+        if isinstance(message, dict):
+            message = Message(**message)
+        # Fallback for None channel_id
+        if not channel_id:
+            channel_id = getattr(message, 'channel_id', None)
+        if not channel_id:
+            raise ValueError("channel_id must be provided or present in message")
+        channel_type = message.channel_type or "matrix"
+        if channel_type not in self.channels:
+            self.channels[channel_type] = {}
+        if channel_id not in self.channels[channel_type]:
+            from .structures import Channel
+            self.channels[channel_type][channel_id] = Channel(
+                id=channel_id,
+                name=channel_id,
+                type=channel_type
+            )
+        channel = self.channels[channel_type][channel_id]
+        channel.recent_messages.append(message)
+        if len(channel.recent_messages) > 50:
+            channel.recent_messages = channel.recent_messages[-50:]
+        channel.update_last_checked()
+        self.seen_messages.add(message.id)
+        self.last_update = time.time()
+
+    def to_dict_for_ai(self, limit: Optional[int] = None) -> Dict[str, Any]:
+        """Compatibility method for tests that call to_dict_for_ai on WorldStateData."""
+        logger.warning("WorldStateData.to_dict_for_ai is deprecated - use PayloadBuilder instead")
+        # Provide a basic implementation for backward compatibility
+        result = self.to_dict()
+        if limit:
+            # Apply basic limiting to recent_messages
+            for platform_channels in result["channels"].values():
+                if isinstance(platform_channels, dict):
+                    for channel_data in platform_channels.values():
+                        if "recent_messages" in channel_data and len(channel_data["recent_messages"]) > limit:
+                            channel_data["recent_messages"] = channel_data["recent_messages"][-limit:]
+        # Add recent_media_actions if available
+        try:
+            media_actions = self.get_recent_media_actions()
+            if media_actions:
+                result["recent_media_actions"] = media_actions
+        except Exception:
+            pass
+        return result
+
     def add_action_history(self, action_data: dict):
         """Compatibility method for tests that call add_action_history on WorldStateData."""
         from .manager import ActionHistory
@@ -965,6 +1015,14 @@ class WorldStateData:
                         "last_checked": ch.last_checked,
                     }
                     for channel_id, ch in platform_channels.items()
+                } if isinstance(platform_channels, dict) else {
+                    platform_channels.id: {
+                        "id": platform_channels.id,
+                        "type": platform_channels.type,
+                        "name": platform_channels.name,
+                        "recent_messages": [asdict(msg) for msg in platform_channels.recent_messages],
+                        "last_checked": platform_channels.last_checked,
+                    }
                 }
                 for platform, platform_channels in self.channels.items()
             },

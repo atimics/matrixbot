@@ -70,11 +70,12 @@ class TestIntegration:
         world_state = WorldStateManager()
         
         # Test adding a channel
-        world_state.add_channel("matrix", "test_room", "Test Room")
+        world_state.add_channel("test_room", "matrix", "Test Room")
         
         state_dict = world_state.to_dict()
         assert "matrix" in state_dict["channels"]
-        assert state_dict["channels"]["matrix"]["name"] == "Test Room"
+        assert "test_room" in state_dict["channels"]["matrix"]
+        assert state_dict["channels"]["matrix"]["test_room"]["name"] == "Test Room"
         
         # Test updating system status
         world_state.update_system_status({"test_status": True})

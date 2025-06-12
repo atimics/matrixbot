@@ -88,9 +88,10 @@ class TestAIBlindnessFix:
         world_state_data = orchestrator.world_state.to_dict()
         
         assert "channels" in world_state_data
-        assert channel_id in world_state_data["channels"]
+        assert "matrix" in world_state_data["channels"]
+        assert channel_id in world_state_data["channels"]["matrix"]
         
-        channel_data = world_state_data["channels"][channel_id]
+        channel_data = world_state_data["channels"]["matrix"][channel_id]
         messages = channel_data.get("recent_messages", [])
         
         # Find the bot's message
@@ -166,7 +167,7 @@ class TestAIBlindnessFix:
         
         # Verify WorldState
         world_state_data = orchestrator.world_state.to_dict()
-        channel_data = world_state_data["channels"][channel_id]
+        channel_data = world_state_data["channels"]["matrix"][channel_id]
         messages = channel_data.get("recent_messages", [])
         bot_messages = [msg for msg in messages if msg.get("sender") == settings.MATRIX_USER_ID]
         

@@ -260,7 +260,8 @@ class MatrixObserver(Integration):
         room_details = self._extract_room_details(room)
 
         # Auto-register room if not known
-        if room.room_id not in self.world_state.state.channels:
+        existing_channel = self.world_state.get_channel(room.room_id, "matrix")
+        if not existing_channel:
             logger.info(f"MatrixObserver: Auto-registering room {room.room_id}")
             self._register_room(room.room_id, room_details)
         else:
@@ -496,7 +497,8 @@ class MatrixObserver(Integration):
                 logger.info(f"MatrixObserver: Bot joined room {room_id}")
 
                 # Ensure the channel is registered in the world state
-                if room_id not in self.world_state.state.channels:
+                existing_channel = self.world_state.get_channel(room_id, "matrix")
+                if not existing_channel:
                     room_details = self._extract_room_details(room)
                     self._register_room(room_id, room_details)
 
@@ -580,7 +582,8 @@ class MatrixObserver(Integration):
             creation_time=room_details["creation_time"],
         )
 
-        self.world_state.state.channels[room_id] = channel
+        # Use WorldStateManager's add_channel method to handle nested structure correctly
+        self.world_state.add_channel(channel)
         logger.info(
             f"WorldState: Added matrix channel '{room_details['name']}' ({room_id})"
         )
@@ -593,8 +596,8 @@ class MatrixObserver(Integration):
 
     def _update_room_details(self, room_id: str, room_details: Dict[str, Any]):
         """Update existing room details"""
-        if room_id in self.world_state.state.channels:
-            channel = self.world_state.state.channels[room_id]
+        channel = self.world_state.get_channel(room_id, "matrix")
+        if channel:
             channel.name = room_details["name"]
             channel.member_count = room_details["member_count"]
             channel.topic = room_details["topic"]
@@ -1116,7 +1119,8 @@ class MatrixObserver(Integration):
                     self.channels_to_monitor.append(room_id)
 
                 # Register the room in world state if not already known
-                if room_id not in self.world_state.state.channels:
+                existing_channel = self.world_state.get_channel(room_id, "matrix")
+                if not existing_channel:
                     # Get room details after joining
                     if room_id in self.client.rooms:
                         room = self.client.rooms[room_id]
@@ -1245,7 +1249,8 @@ class MatrixObserver(Integration):
                     self.channels_to_monitor.append(actual_room_id)
 
                 # Register the room in world state
-                if actual_room_id not in self.world_state.state.channels:
+                existing_channel = self.world_state.get_channel(actual_room_id, "matrix")
+                if not existing_channel:
                     if actual_room_id in self.client.rooms:
                         room = self.client.rooms[actual_room_id]
                         room_details = self._extract_room_details(room)
