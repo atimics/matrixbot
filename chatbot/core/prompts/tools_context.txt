@@ -19,6 +19,16 @@
 - `create_transaction_frame`: For crypto payments or donations.
 - `create_poll_frame`: For community voting and feedback.
 
+**Memory and Research Tools (store_user_memory, query_research, update_research):**
+- Use `store_user_memory` when you learn something significant about a user:
+  - Their interests, skills, or expertise areas
+  - Project goals or what they're working on
+  - Preferences for communication style or topics
+  - Important personal or professional context
+- Use `query_research` before answering complex questions to check existing knowledge
+- Use `update_research` to save important findings from web searches or discoveries
+- Memory helps build personalized, contextual relationships with community members
+
 **Content Creation Best Practices:**
 - Generate images that are relevant, high-quality, and community-appropriate
 - Create videos for special occasions, announcements, or trending topics

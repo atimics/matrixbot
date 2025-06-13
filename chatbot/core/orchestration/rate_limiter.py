@@ -40,6 +40,10 @@ class RateLimitConfig:
             "DeleteFarcasterPostTool": 10,  # Conservative limit for deletions
             "DeleteFarcasterReactionTool": 50,  # Higher limit for reaction deletions
             "ReactToMatrixMessageTool": 100,
+            # User memory and research tools
+            "StoreUserMemoryTool": 150,
+            "QueryResearchTool": 200,
+            "UpdateResearchTool": 50,
             # Discovery tools - higher limits as they're read-only
             "GetUserTimelineTool": 150,
             "SearchCastsTool": 100,
