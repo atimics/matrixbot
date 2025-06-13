@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    container_name: matrixbot-test
+    environment:
+      PYTHONPATH: /app
+      LOG_LEVEL: DEBUG
+      CHATBOT_DB_PATH: ":memory:"
+      AI_DUMP_PAYLOADS_TO_FILE: "false"
+      NEYNAR_API_KEY: test_key_123
+      FARCASTER_BOT_FID: "123456"
+      FARCASTER_BOT_SIGNER_UUID: test-signer-uuid
+      FARCASTER_MIN_POST_INTERVAL_MINUTES: "5"
+      FARCASTER_DUPLICATE_CHECK_HOURS: "1"
+      FARCASTER_RECENT_POSTS_LIMIT: "10"
+      FARCASTER_API_TIMEOUT: "30.0"
+      FARCASTER_API_MAX_RETRIES: "3"
+      FARCASTER_API_BASE_DELAY: "1.0"
+      FARCASTER_API_MAX_DELAY: "60.0"
+    volumes:
+      - ./data/test_results:/app/data/test_results
+      - ./tests:/app/tests
+    command: |
+      sh -c "
+        echo 'Starting Farcaster rate limiting tests...' &&
+        pytest -v --tb=short --cov=chatbot.integrations.farcaster --cov-report=term-missing --cov-report=html:/app/data/test_results/coverage tests/test_farcaster_rate_limiting.py &&
+        echo 'Farcaster tests completed successfully!'
+      "

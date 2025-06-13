@@ -1083,13 +1083,42 @@ class PayloadBuilder:
         """Build Farcaster context section for AI awareness"""
         farcaster_context = {
             "status": "not_connected",
+            "network_status": "unknown",
             "rate_limits": {},
             "recent_posts": [],
             "can_post_now": False,
-            "time_until_next_post": 0
+            "time_until_next_post": 0,
+            "network_health": {}
         }
         
         try:
+            # Get network status from Farcaster integration if available
+            if self.world_state_manager:
+                farcaster_integration = None
+                for integration in self.world_state_manager.integrations:
+                    if hasattr(integration, 'integration_id') and integration.integration_id == 'farcaster':
+                        farcaster_integration = integration
+                        break
+                
+                if farcaster_integration and hasattr(farcaster_integration, 'api_client') and farcaster_integration.api_client:
+                    api_client = farcaster_integration.api_client
+                    
+                    # Get network status
+                    network_status = api_client.get_network_status()
+                    farcaster_context["network_status"] = "available" if network_status["is_available"] else "unavailable"
+                    farcaster_context["network_health"] = {
+                        "consecutive_failures": network_status["consecutive_failures"],
+                        "seconds_since_last_success": network_status["seconds_since_last_success"],
+                        "is_available": network_status["is_available"]
+                    }
+                    
+                    # Update status based on network availability
+                    if network_status["is_available"]:
+                        farcaster_context["status"] = "connected"
+                    else:
+                        farcaster_context["status"] = "network_issues"
+                        farcaster_context["can_post_now"] = False
+            
             # Get rate limit information
             rate_limits = world_state_data.rate_limits.get('farcaster_api', {})
             if rate_limits:
@@ -1099,15 +1128,22 @@ class PayloadBuilder:
                     "reset_time": rate_limits.get("reset_time"),
                     "last_updated": rate_limits.get("last_updated")
                 }
-                farcaster_context["can_post_now"] = rate_limits.get("remaining", 0) > 0
-                farcaster_context["status"] = "connected"
+                
+                # Only allow posting if network is available AND rate limits allow
+                if farcaster_context["network_status"] == "available":
+                    farcaster_context["can_post_now"] = rate_limits.get("remaining", 0) > 0
             
-            # Note: Recent posts would need to be fetched from the observer
-            # This is a placeholder for the structure
-            farcaster_context["recent_posts_note"] = "Recent posts checked automatically for rate limiting"
+            # Add guidance for AI
+            if farcaster_context["network_status"] == "unavailable":
+                farcaster_context["ai_guidance"] = "Farcaster network is currently unavailable. Avoid attempting to post until connectivity is restored."
+            elif not farcaster_context["can_post_now"]:
+                farcaster_context["ai_guidance"] = "Rate limits or timing constraints prevent posting. Consider this when deciding whether to attempt Farcaster actions."
+            else:
+                farcaster_context["ai_guidance"] = "Farcaster posting is available. Rate limiting and duplicate detection are active."
             
         except Exception as e:
             logger.error(f"Error building Farcaster context: {e}")
             farcaster_context["error"] = str(e)
+            farcaster_context["status"] = "error"
         
         return farcaster_context

@@ -4,12 +4,29 @@ Neynar API Client for Farcaster
 
 This module provides a client for interacting with the Neynar Farcaster API.
 """
+import asyncio
 import logging
+import time
 from typing import Any, Dict, List, Optional
 
 import httpx
 
 logger = logging.getLogger(__name__)
+
+
+class NeynarAPIError(Exception):
+    """Base exception for Neynar API errors."""
+    pass
+
+
+class NeynarNetworkError(NeynarAPIError):
+    """Network-related errors when connecting to Neynar API."""
+    pass
+
+
+class NeynarRateLimitError(NeynarAPIError):
+    """Rate limit exceeded error."""
+    pass
 
 
 class NeynarAPIClient:
@@ -25,6 +42,10 @@ class NeynarAPIClient:
         signer_uuid: Optional[str] = None,
         bot_fid: Optional[str] = None,
         base_url: Optional[str] = None,
+        max_retries: int = 3,
+        base_delay: float = 1.0,
+        max_delay: float = 60.0,
+        timeout: float = 30.0,
     ):
         if not api_key:
             raise ValueError("API key is required for NeynarAPIClient.")
@@ -32,7 +53,16 @@ class NeynarAPIClient:
         self.signer_uuid = signer_uuid
         self.bot_fid = bot_fid
         self.base_url = base_url or self.DEFAULT_BASE_URL
-        self._client = httpx.AsyncClient(timeout=30.0)
+        self.max_retries = max_retries
+        self.base_delay = base_delay
+        self.max_delay = max_delay
+        
+        # Create HTTP client with connection pooling and timeout settings
+        self._client = httpx.AsyncClient(
+            timeout=httpx.Timeout(timeout=timeout, connect=10.0),
+            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+            transport=httpx.AsyncHTTPTransport(retries=1),
+        )
         
         # Rate limit tracking
         self.rate_limit_info = {
@@ -40,6 +70,13 @@ class NeynarAPIClient:
             "remaining": None,
             "reset": None, # Could be timestamp or seconds
             "last_updated_client": 0.0
+        }
+        
+        # Network health tracking
+        self.network_health = {
+            "consecutive_failures": 0,
+            "last_success": time.time(),
+            "is_available": True,
         }
 
     def _get_headers(self, is_post: bool = False) -> Dict[str, str]:
@@ -51,6 +88,130 @@ class NeynarAPIClient:
             headers["content-type"] = "application/json"
         return headers
 
+    async def _make_request_with_retries(
+        self,
+        method: str,
+        endpoint: str,
+        params: Optional[Dict] = None,
+        json_data: Optional[Dict] = None,
+    ) -> httpx.Response:
+        """Make HTTP request with exponential backoff retry logic."""
+        url = f"{self.base_url}{endpoint}"
+        headers = self._get_headers(is_post=(method.upper() == "POST"))
+        
+        last_exception = None
+        
+        for attempt in range(self.max_retries + 1):
+            try:
+                logger.debug(
+                    f"Making {method.upper()} request to {url} (attempt {attempt + 1}/{self.max_retries + 1})"
+                )
+                
+                response = await self._client.request(
+                    method, url, params=params, json=json_data, headers=headers
+                )
+                
+                # Update network health on success
+                self.network_health["consecutive_failures"] = 0
+                self.network_health["last_success"] = time.time()
+                self.network_health["is_available"] = True
+                
+                self._update_rate_limits(response)
+                
+                # Handle rate limit responses
+                if response.status_code == 429:
+                    retry_after = response.headers.get("retry-after")
+                    if retry_after:
+                        retry_delay = int(retry_after)
+                    else:
+                        # Default to exponential backoff if no retry-after header
+                        retry_delay = min(self.base_delay * (2 ** attempt), self.max_delay)
+                    
+                    logger.warning(f"Rate limited by Neynar API. Retrying after {retry_delay} seconds.")
+                    
+                    if attempt < self.max_retries:
+                        await asyncio.sleep(retry_delay)
+                        continue
+                    else:
+                        raise NeynarRateLimitError(f"Rate limit exceeded after {self.max_retries} attempts")
+                
+                response.raise_for_status()
+                return response
+                
+            except httpx.ConnectError as e:
+                last_exception = e
+                self.network_health["consecutive_failures"] += 1
+                
+                # DNS resolution failures, connection timeouts, etc.
+                if "name resolution" in str(e).lower() or "dns" in str(e).lower():
+                    error_msg = f"DNS resolution failed for {url}: {e}"
+                    logger.warning(error_msg)
+                else:
+                    error_msg = f"Connection error for {url}: {e}"
+                    logger.warning(error_msg)
+                
+                if attempt < self.max_retries:
+                    delay = min(self.base_delay * (2 ** attempt), self.max_delay)
+                    logger.info(f"Retrying in {delay} seconds...")
+                    await asyncio.sleep(delay)
+                else:
+                    self.network_health["is_available"] = False
+                    raise NeynarNetworkError(f"Network error after {self.max_retries} attempts: {error_msg}")
+            
+            except httpx.TimeoutException as e:
+                last_exception = e
+                self.network_health["consecutive_failures"] += 1
+                
+                logger.warning(f"Timeout error for {method.upper()} {url}: {e}")
+                
+                if attempt < self.max_retries:
+                    delay = min(self.base_delay * (2 ** attempt), self.max_delay)
+                    logger.info(f"Retrying in {delay} seconds...")
+                    await asyncio.sleep(delay)
+                else:
+                    self.network_health["is_available"] = False
+                    raise NeynarNetworkError(f"Timeout error after {self.max_retries} attempts: {e}")
+            
+            except httpx.HTTPStatusError as e:
+                last_exception = e
+                
+                if e.response.status_code == 429:
+                    # Rate limit - handled above
+                    continue
+                elif 500 <= e.response.status_code < 600:
+                    # Server errors - retry
+                    self.network_health["consecutive_failures"] += 1
+                    logger.warning(f"Server error {e.response.status_code} for {method.upper()} {url}: {e.response.text}")
+                    
+                    if attempt < self.max_retries:
+                        delay = min(self.base_delay * (2 ** attempt), self.max_delay)
+                        logger.info(f"Retrying server error in {delay} seconds...")
+                        await asyncio.sleep(delay)
+                    else:
+                        raise NeynarAPIError(f"Server error after {self.max_retries} attempts: {e.response.status_code} - {e.response.text}")
+                else:
+                    # Client errors (4xx) - don't retry
+                    logger.error(f"Client error {e.response.status_code} for {method.upper()} {url}: {e.response.text}")
+                    raise NeynarAPIError(f"Client error: {e.response.status_code} - {e.response.text}")
+            
+            except httpx.RequestError as e:
+                last_exception = e
+                self.network_health["consecutive_failures"] += 1
+                
+                logger.warning(f"Request error for {method.upper()} {url}: {e}")
+                
+                if attempt < self.max_retries:
+                    delay = min(self.base_delay * (2 ** attempt), self.max_delay)
+                    logger.info(f"Retrying request error in {delay} seconds...")
+                    await asyncio.sleep(delay)
+                else:
+                    self.network_health["is_available"] = False
+                    raise NeynarNetworkError(f"Request error after {self.max_retries} attempts: {e}")
+        
+        # This should not be reached, but just in case
+        if last_exception:
+            raise NeynarNetworkError(f"Failed after {self.max_retries} attempts: {last_exception}")
+
     async def _make_request(
         self,
         method: str,
@@ -58,26 +219,8 @@ class NeynarAPIClient:
         params: Optional[Dict] = None,
         json_data: Optional[Dict] = None,
     ) -> httpx.Response:
-        url = f"{self.base_url}{endpoint}"
-        headers = self._get_headers(is_post=(method.upper() == "POST"))
-        logger.debug(
-            f"Making {method.upper()} request to {url} with params={params} json={json_data}"
-        )
-        try:
-            response = await self._client.request(
-                method, url, params=params, json=json_data, headers=headers
-            )
-            self._update_rate_limits(response)
-            response.raise_for_status()
-            return response
-        except httpx.HTTPStatusError as e:
-            logger.error(
-                f"HTTP error for {method.upper()} {url}: {e.response.status_code} - {e.response.text}"
-            )
-            raise
-        except httpx.RequestError as e:
-            logger.error(f"Request error for {method.upper()} {url}: {e}")
-            raise
+        """Wrapper for backward compatibility - now uses retry logic."""
+        return await self._make_request_with_retries(method, endpoint, params, json_data)
 
     def _update_rate_limits(self, response: httpx.Response):
         """
@@ -138,6 +281,34 @@ class NeynarAPIClient:
             logger.debug(f"NeynarAPIClient: Could not parse rate limit headers: {e}")
         except Exception as e:
             logger.error(f"NeynarAPIClient: Unexpected error updating rate limits: {e}", exc_info=True)
+
+    def is_network_available(self) -> bool:
+        """Check if the Neynar API is currently available."""
+        return self.network_health["is_available"]
+    
+    def get_network_status(self) -> Dict[str, Any]:
+        """Get detailed network status information."""
+        return {
+            "is_available": self.network_health["is_available"],
+            "consecutive_failures": self.network_health["consecutive_failures"],
+            "last_success": self.network_health["last_success"],
+            "seconds_since_last_success": time.time() - self.network_health["last_success"],
+            "rate_limits": self.rate_limit_info.copy(),
+        }
+    
+    async def health_check(self) -> bool:
+        """Perform a lightweight health check of the API."""
+        try:
+            # Use a simple endpoint that doesn't require authentication
+            response = await self._make_request_with_retries("GET", "/farcaster/channel/list", {"limit": 1})
+            return response.status_code == 200
+        except Exception as e:
+            logger.warning(f"Health check failed: {e}")
+            return False
+    
+    async def close(self):
+        """Close the HTTP client connection."""
+        await self._client.aclose()
 
     async def get_casts_by_fid(
         self, fid: int, limit: int = 25, include_replies: bool = True
@@ -519,7 +690,7 @@ class NeynarAPIClient:
         endpoint = "/farcaster/fungible/owner/relevant"
         params = {
             "contract_address": contract_address.strip(),
-            "networks": network,
+            "network": network,
         }
         if viewer_fid:
             params["viewer_fid"] = viewer_fid

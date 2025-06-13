@@ -23,7 +23,7 @@ from .farcaster_data_converter import (
     parse_farcaster_timestamp,
 )
 from .farcaster_scheduler import FarcasterScheduler
-from .neynar_api_client import NeynarAPIClient
+from .neynar_api_client import NeynarAPIClient, NeynarNetworkError, NeynarAPIError, NeynarRateLimitError
 
 logger = logging.getLogger(__name__)
 
@@ -61,8 +61,18 @@ class FarcasterObserver(Integration):
         self._enabled = bool(self.api_key)
         
         if self.api_key:
+            # Load network configuration from settings
+            from ...config import settings
+            
             self.api_client = NeynarAPIClient(
-                api_key=self.api_key, signer_uuid=self.signer_uuid, bot_fid=self.bot_fid
+                api_key=self.api_key,
+                signer_uuid=self.signer_uuid,
+                bot_fid=self.bot_fid,
+                base_url=settings.NEYNAR_API_BASE_URL,
+                max_retries=settings.FARCASTER_API_MAX_RETRIES,
+                base_delay=settings.FARCASTER_API_BASE_DELAY,
+                max_delay=settings.FARCASTER_API_MAX_DELAY,
+                timeout=settings.FARCASTER_API_TIMEOUT,
             )
             self.neynar_api_client = self.api_client  # Legacy compatibility
             if self.world_state_manager:
@@ -248,10 +258,18 @@ class FarcasterObserver(Integration):
         
         # Recreate API client with new credentials
         if self.api_key:
+            # Load network configuration from settings
+            from ...config import settings
+            
             self.api_client = NeynarAPIClient(
-                api_key=self.api_key, 
-                signer_uuid=self.signer_uuid, 
-                bot_fid=self.bot_fid
+                api_key=self.api_key,
+                signer_uuid=self.signer_uuid,
+                bot_fid=self.bot_fid,
+                base_url=settings.NEYNAR_API_BASE_URL,
+                max_retries=settings.FARCASTER_API_MAX_RETRIES,
+                base_delay=settings.FARCASTER_API_BASE_DELAY,
+                max_delay=settings.FARCASTER_API_MAX_DELAY,
+                timeout=settings.FARCASTER_API_TIMEOUT,
             )
             self.neynar_api_client = self.api_client  # Legacy compatibility
             
@@ -600,48 +618,92 @@ class FarcasterObserver(Integration):
         if not self.api_client:
             return {"success": False, "error": "API client not initialized"}
         
+        # Check network availability first
+        if not self.api_client.is_network_available():
+            error_msg = "Farcaster API is currently unavailable due to network issues"
+            logger.warning(error_msg)
+            return {
+                "success": False,
+                "error": error_msg,
+                "network_unavailable": True
+            }
+        
         logger.info(f"🎯 FarcasterObserver.post_cast action_id={action_id}, embeds: {embed_urls}")
         
-        # Check timing constraints (only for new posts, not replies)
-        if not reply_to:
-            timing_check = await self.check_post_timing()
-            if not timing_check["can_post"]:
-                error_msg = f"Rate limited: must wait {timing_check['minutes_remaining']} more minutes"
-                logger.warning(error_msg)
-                return {
-                    "success": False,
-                    "error": error_msg,
-                    "rate_limited": True,
-                    "time_remaining": timing_check["time_remaining_seconds"]
-                }
+        try:
+            # Check timing constraints (only for new posts, not replies)
+            if not reply_to:
+                timing_check = await self.check_post_timing()
+                if not timing_check["can_post"]:
+                    error_msg = f"Rate limited: must wait {timing_check['minutes_remaining']} more minutes"
+                    logger.warning(error_msg)
+                    return {
+                        "success": False,
+                        "error": error_msg,
+                        "rate_limited": True,
+                        "time_remaining": timing_check["time_remaining_seconds"]
+                    }
+                
+                # Check for similar recent posts
+                if await self.check_similar_recent_post(content):
+                    error_msg = "Similar post was made recently - avoiding duplicate"
+                    logger.warning(error_msg)
+                    return {
+                        "success": False,
+                        "error": error_msg,
+                        "duplicate_detected": True
+                    }
             
-            # Check for similar recent posts
-            if await self.check_similar_recent_post(content):
-                error_msg = "Similar post was made recently - avoiding duplicate"
-                logger.warning(error_msg)
-                return {
-                    "success": False,
-                    "error": error_msg,
-                    "duplicate_detected": True
-                }
-        
-        # Correctly form embeds list for Neynar API
-        embeds_payload: Optional[List[Dict[str,str]]] = None
-        if embed_urls:
-            embeds_payload = [{"url": url_str} for url_str in embed_urls]
+            # Correctly form embeds list for Neynar API
+            embeds_payload: Optional[List[Dict[str,str]]] = None
+            if embed_urls:
+                embeds_payload = [{"url": url_str} for url_str in embed_urls]
 
-        result = await self.api_client.publish_cast(
-            text=content, # Changed from content to text for Neynar API
-            signer_uuid=self.signer_uuid,
-            channel_id=channel, # Changed from channel to channel_id
-            parent=reply_to,
-            embeds=embeds_payload # Pass the correctly formatted embeds
-        )
-        
-        # Sync rate limits after API call
-        self._sync_rate_limits_to_world_state()
-        
-        return result
+            result = await self.api_client.publish_cast(
+                text=content, # Changed from content to text for Neynar API
+                signer_uuid=self.signer_uuid,
+                channel_id=channel, # Changed from channel to channel_id
+                parent=reply_to,
+                embeds=embeds_payload # Pass the correctly formatted embeds
+            )
+            
+            # Sync rate limits after API call
+            self._sync_rate_limits_to_world_state()
+            
+            return result
+            
+        except NeynarNetworkError as e:
+            error_msg = f"Network error posting cast: {e}"
+            logger.error(error_msg)
+            return {
+                "success": False,
+                "error": error_msg,
+                "network_error": True
+            }
+        except NeynarRateLimitError as e:
+            error_msg = f"Rate limit exceeded: {e}"
+            logger.warning(error_msg)
+            return {
+                "success": False,
+                "error": error_msg,
+                "rate_limited": True
+            }
+        except NeynarAPIError as e:
+            error_msg = f"API error posting cast: {e}"
+            logger.error(error_msg)
+            return {
+                "success": False,
+                "error": error_msg,
+                "api_error": True
+            }
+        except Exception as e:
+            error_msg = f"Unexpected error posting cast: {e}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                "success": False,
+                "error": error_msg,
+                "unexpected_error": True
+            }
 
     async def reply_to_cast(
         self,
@@ -1116,6 +1178,11 @@ class FarcasterObserver(Integration):
             return []
             
         try:
+            # Check if network is available
+            if not self.api_client.is_network_available():
+                logger.warning("Farcaster API not available, skipping recent posts check")
+                return []
+            
             # Get recent casts by our own FID
             data = await self.api_client.get_casts_by_fid(fid=self.bot_fid, limit=limit)
             casts = data.get("casts", [])
@@ -1133,8 +1200,14 @@ class FarcasterObserver(Integration):
             logger.debug(f"Retrieved {len(recent_posts)} recent own posts")
             return recent_posts
             
+        except NeynarNetworkError as e:
+            logger.warning(f"Network error fetching own recent posts: {e}")
+            return []
+        except NeynarAPIError as e:
+            logger.error(f"API error fetching own recent posts: {e}")
+            return []
         except Exception as e:
-            logger.error(f"Error fetching own recent posts: {e}")
+            logger.error(f"Unexpected error fetching own recent posts: {e}")
             return []
 
     async def check_post_timing(self) -> Dict[str, Any]:
@@ -1145,6 +1218,10 @@ class FarcasterObserver(Integration):
             
             recent_posts = await self.get_recent_own_posts(limit=1)
             if not recent_posts:
+                # If we can't get recent posts due to network issues, allow posting
+                # but log the situation
+                if self.api_client and not self.api_client.is_network_available():
+                    logger.warning("Network unavailable, allowing post but timing cannot be verified")
                 return {"can_post": True}
             
             last_post = recent_posts[0]
