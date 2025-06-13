@@ -33,8 +33,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      arweave-service:
-        condition: service_healthy
+      # Note: Storage service (arweave-service or s3-service) dependency is handled by profiles
+      # Use: docker-compose --profile arweave up  OR  docker-compose --profile s3 up
     networks:
       - ratichat_network
     env_file:
@@ -72,6 +72,32 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    profiles:
+      - arweave  # Only start when 'arweave' profile is specified
+
+  s3-service:
+    build:
+      context: ./s3-service
+      dockerfile: Dockerfile
+    container_name: s3_service
+    ports:
+      - "8001:8001"  # Same port as arweave-service (use one or the other)
+    environment:
+      - S3_API_KEY=${S3_API_KEY}
+      - S3_API_ENDPOINT=${S3_API_ENDPOINT}
+      - CLOUDFRONT_DOMAIN=${CLOUDFRONT_DOMAIN}
+      - S3_SERVICE_API_KEY=${S3_SERVICE_API_KEY:-}
+      - PYTHONUNBUFFERED=1
+    networks:
+      - ratichat_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health')\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    profiles:
+      - s3  # Only start when 's3' profile is specified
 
   ratichat_ui:
     build:

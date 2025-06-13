@@ -30,9 +30,9 @@ class TestMediaGalleryIntegration:
         context = MagicMock(spec=ActionContext)
         
         # Mock arweave service
-        context.arweave_service = AsyncMock()
-        context.arweave_service.is_configured.return_value = True
-        context.arweave_service.upload_image_data.return_value = "https://arweave.net/test-media-id"
+        context.arweave_service = MagicMock()  # Use MagicMock for the service itself
+        context.arweave_service.is_configured = MagicMock(return_value=True)  # Sync method
+        context.arweave_service.upload_image_data = AsyncMock(return_value="https://arweave.net/test-media-id")  # Async method
         
         # Mock world state manager
         context.world_state_manager = MagicMock()
