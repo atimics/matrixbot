@@ -7,12 +7,16 @@ from typing import Any, Dict, Optional
 
 class ActionContext:
     """
-    Provides context to tools during execution, including access to observers,
+    Provides context to tools during execution, including access to services,
     world state manager, and other shared resources.
+    
+    This class provides both the new service-oriented interface (via service_registry)
+    and maintains backward compatibility with direct observer access.
     """
 
     def __init__(
         self,
+        service_registry=None,
         matrix_observer=None,
         farcaster_observer=None,
         world_state_manager=None,
@@ -22,14 +26,38 @@ class ActionContext:
         base_nft_service=None,
         eligibility_service=None,
     ):
+        # New service-oriented approach
+        self.service_registry = service_registry
+        
+        # Legacy observer access for backward compatibility
         self.matrix_observer = matrix_observer
         self.farcaster_observer = farcaster_observer
+        
+        # Shared resources
         self.world_state_manager = world_state_manager
         self.context_manager = context_manager
         self.arweave_client = arweave_client
         self.arweave_service = arweave_service
         self.base_nft_service = base_nft_service
         self.eligibility_service = eligibility_service
+    
+    def get_messaging_service(self, service_id: str):
+        """Get a messaging service by ID"""
+        if self.service_registry:
+            return self.service_registry.get_messaging_service(service_id)
+        return None
+    
+    def get_media_service(self, service_id: str):
+        """Get a media service by ID"""
+        if self.service_registry:
+            return self.service_registry.get_media_service(service_id)
+        return None
+    
+    def get_social_service(self, service_id: str):
+        """Get a social service by ID"""
+        if self.service_registry:
+            return self.service_registry.get_social_service(service_id)
+        return None
 
 
 class ToolInterface(ABC):

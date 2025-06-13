@@ -31,6 +31,7 @@ from ..world_state.payload_builder import PayloadBuilder
 from .processing_hub import ProcessingHub, ProcessingConfig
 from .rate_limiter import RateLimiter, RateLimitConfig
 from ..proactive import ProactiveConversationEngine
+from ..history_recorder import HistoryRecorder
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,12 @@ class MainOrchestrator:
         self.payload_builder = PayloadBuilder()
         self.rate_limiter = RateLimiter(self.config.rate_limit_config)
         self.context_manager = ContextManager(self.world_state, self.config.db_path)
+        
+        # Initialize HistoryRecorder for persistent memory
+        self.history_recorder = HistoryRecorder(self.config.db_path)
+        
+        # Connect HistoryRecorder to WorldStateManager for memory persistence
+        self.world_state.set_history_recorder(self.history_recorder)
         
         # Integration management
         self.integration_manager = IntegrationManager(
@@ -133,6 +140,10 @@ class MainOrchestrator:
             )
             logger.info("Arweave client initialized for internal uploader service.")
         
+        # Initialize service registry for service-oriented architecture
+        from ..services import ServiceRegistry
+        self.service_registry = ServiceRegistry()
+        
         # Create action context for tool execution
         from ...tools.base import ActionContext
         from ...tools.arweave_service import ArweaveService
@@ -141,6 +152,7 @@ class MainOrchestrator:
         arweave_service_instance = ArweaveService(arweave_client=self.arweave_client)
         
         self.action_context = ActionContext(
+            service_registry=self.service_registry,
             world_state_manager=self.world_state,
             context_manager=self.context_manager,
             arweave_client=self.arweave_client,
@@ -274,6 +286,24 @@ class MainOrchestrator:
         self.tool_registry.register_tool(CreateMintFrameTool())
         self.tool_registry.register_tool(CreateAirdropClaimFrameTool())
         
+        # Service-oriented tools (new architecture)
+        from ...tools.service_oriented_matrix_tools import (
+            ServiceOrientedSendMatrixReplyTool,
+            ServiceOrientedReactToMatrixMessageTool
+        )
+        from ...tools.service_oriented_farcaster_tools import (
+            ServiceOrientedSendFarcasterPostTool,
+            ServiceOrientedLikeFarcasterPostTool
+        )
+        
+        # Register service-oriented Matrix tools
+        self.tool_registry.register_tool(ServiceOrientedSendMatrixReplyTool())
+        self.tool_registry.register_tool(ServiceOrientedReactToMatrixMessageTool())
+        
+        # Register service-oriented Farcaster tools
+        self.tool_registry.register_tool(ServiceOrientedSendFarcasterPostTool())
+        self.tool_registry.register_tool(ServiceOrientedLikeFarcasterPostTool())
+
         # Media generation tools
         self.tool_registry.register_tool(GenerateImageTool())
         self.tool_registry.register_tool(GenerateVideoTool())
@@ -320,6 +350,14 @@ class MainOrchestrator:
             # Initialize integration manager
             await self.integration_manager.initialize()
             
+            # Initialize HistoryRecorder for persistent memory
+            await self.history_recorder.initialize()
+            logger.info("HistoryRecorder initialized for persistent memory")
+            
+            # Restore persistent state from previous runs
+            await self.world_state.restore_persistent_state()
+            logger.info("Persistent state restored from previous runs")
+            
             # Register integrations from environment variables
             await self._register_integrations_from_env()
             
@@ -329,6 +367,9 @@ class MainOrchestrator:
             
             # Update legacy observer references for backward compatibility
             await self._update_legacy_observer_references()
+            
+            # Register integration services in the service registry
+            await self._register_integration_services()
             
             # Update action context with properly connected integrations
             await self._update_action_context_integrations()
@@ -478,6 +519,37 @@ class MainOrchestrator:
                         
         except Exception as e:
             logger.error(f"Error updating legacy observer references: {e}")
+
+    async def _register_integration_services(self) -> None:
+        """Register integration services in the service registry for service-oriented access."""
+        try:
+            active_integrations = self.integration_manager.get_active_integrations()
+            
+            # Register services based on active integrations
+            for integration_id, integration in active_integrations.items():
+                if hasattr(integration, 'integration_type'):
+                    if integration.integration_type == 'matrix':
+                        from ..services import MatrixService
+                        matrix_service = MatrixService(
+                            matrix_observer=integration,
+                            world_state_manager=self.world_state,
+                            context_manager=self.context_manager
+                        )
+                        self.service_registry.register_service(matrix_service)
+                        logger.info(f"Registered Matrix service for integration {integration_id}")
+                        
+                    elif integration.integration_type == 'farcaster':
+                        from ..services import FarcasterService
+                        farcaster_service = FarcasterService(
+                            farcaster_observer=integration,
+                            world_state_manager=self.world_state,
+                            context_manager=self.context_manager
+                        )
+                        self.service_registry.register_service(farcaster_service)
+                        logger.info(f"Registered Farcaster service for integration {integration_id}")
+                        
+        except Exception as e:
+            logger.error(f"Error registering integration services: {e}")
 
     async def _initialize_nft_services(self) -> None:
         """Initialize NFT and blockchain services if credentials are available."""

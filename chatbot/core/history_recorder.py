@@ -78,6 +78,10 @@ class HistoryRecorder:
                 )
                 await db.commit()
                 logger.info("HistoryRecorder: Database initialized")
+                
+            # Initialize memory tables
+            await self.initialize_memory_tables()
+            
         except Exception as e:
             logger.error(f"HistoryRecorder: Error initializing database: {e}")
 
@@ -514,3 +518,247 @@ class HistoryRecorder:
             error_msg = f"Error exporting state changes: {e}"
             logger.error(f"HistoryRecorder: {error_msg}")
             return error_msg
+
+    async def initialize_memory_tables(self):
+        """Initialize memory-related database tables."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                # User memories table
+                await db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS user_memories (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_platform_id TEXT NOT NULL,
+                        memory_id TEXT UNIQUE NOT NULL,
+                        timestamp REAL NOT NULL,
+                        content TEXT NOT NULL,
+                        source_message_id TEXT,
+                        source_cast_hash TEXT,
+                        related_entities TEXT,
+                        memory_type TEXT DEFAULT 'observation',
+                        importance REAL DEFAULT 0.5,
+                        ai_summary TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+                
+                # Research database table  
+                await db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS research_entries (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        topic TEXT UNIQUE NOT NULL,
+                        title TEXT NOT NULL,
+                        content TEXT NOT NULL,
+                        source_url TEXT,
+                        confidence_level INTEGER DEFAULT 5,
+                        last_updated REAL NOT NULL,
+                        last_verified REAL,
+                        tags TEXT,
+                        related_topics TEXT,
+                        verification_notes TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+                
+                await db.commit()
+                logger.info("HistoryRecorder: Memory persistence tables initialized")
+                
+        except Exception as e:
+            logger.error(f"HistoryRecorder: Error initializing memory tables: {e}")
+
+    async def store_user_memory(self, memory_entry) -> bool:
+        """
+        Store a user memory entry persistently.
+        
+        Args:
+            memory_entry: MemoryEntry object from world state structures
+            
+        Returns:
+            bool: True if successfully stored, False otherwise
+        """
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute(
+                    """
+                    INSERT OR REPLACE INTO user_memories (
+                        user_platform_id, memory_id, timestamp, content,
+                        source_message_id, source_cast_hash, related_entities,
+                        memory_type, importance, ai_summary, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        memory_entry.user_platform_id,
+                        memory_entry.memory_id,
+                        memory_entry.timestamp,
+                        memory_entry.content,
+                        memory_entry.source_message_id,
+                        memory_entry.source_cast_hash,
+                        json.dumps(memory_entry.related_entities),
+                        memory_entry.memory_type,
+                        memory_entry.importance,
+                        memory_entry.ai_summary,
+                        time.time()
+                    )
+                )
+                await db.commit()
+                logger.debug(f"HistoryRecorder: Stored memory for user {memory_entry.user_platform_id}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"HistoryRecorder: Error storing user memory: {e}")
+            return False
+
+    async def load_user_memories(self, user_platform_id: str, limit: int = 100):
+        """
+        Load user memories from persistent storage.
+        
+        Args:
+            user_platform_id: Platform-specific user identifier
+            limit: Maximum number of memories to load
+            
+        Returns:
+            List of MemoryEntry objects
+        """
+        try:
+            from .world_state.structures import MemoryEntry
+            
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute(
+                    """
+                    SELECT user_platform_id, memory_id, timestamp, content,
+                           source_message_id, source_cast_hash, related_entities,
+                           memory_type, importance, ai_summary
+                    FROM user_memories 
+                    WHERE user_platform_id = ?
+                    ORDER BY timestamp DESC
+                    LIMIT ?
+                    """,
+                    (user_platform_id, limit)
+                ) as cursor:
+                    rows = await cursor.fetchall()
+                    
+                memories = []
+                for row in rows:
+                    related_entities = json.loads(row[6]) if row[6] else []
+                    
+                    memory = MemoryEntry(
+                        user_platform_id=row[0],
+                        memory_id=row[1],
+                        timestamp=row[2],
+                        content=row[3],
+                        source_message_id=row[4],
+                        source_cast_hash=row[5],
+                        related_entities=related_entities,
+                        memory_type=row[7],
+                        importance=row[8],
+                        ai_summary=row[9]
+                    )
+                    memories.append(memory)
+                    
+                logger.debug(f"HistoryRecorder: Loaded {len(memories)} memories for user {user_platform_id}")
+                return memories
+                
+        except Exception as e:
+            logger.error(f"HistoryRecorder: Error loading user memories: {e}")
+            return []
+
+    async def store_research_entry(self, topic: str, research_data: dict) -> bool:
+        """
+        Store a research entry persistently.
+        
+        Args:
+            topic: Research topic key
+            research_data: Dictionary containing research information
+            
+        Returns:
+            bool: True if successfully stored, False otherwise
+        """
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute(
+                    """
+                    INSERT OR REPLACE INTO research_entries (
+                        topic, title, content, source_url, confidence_level,
+                        last_updated, last_verified, tags, related_topics,
+                        verification_notes
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        topic,
+                        research_data.get('title', ''),
+                        research_data.get('content', ''),
+                        research_data.get('source_url'),
+                        research_data.get('confidence_level', 5),
+                        research_data.get('last_updated', time.time()),
+                        research_data.get('last_verified'),
+                        json.dumps(research_data.get('tags', [])),
+                        json.dumps(research_data.get('related_topics', [])),
+                        research_data.get('verification_notes')
+                    )
+                )
+                await db.commit()
+                logger.debug(f"HistoryRecorder: Stored research entry for topic: {topic}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"HistoryRecorder: Error storing research entry: {e}")
+            return False
+
+    async def load_research_entries(self, limit: int = 1000) -> dict:
+        """
+        Load research entries from persistent storage.
+        
+        Args:
+            limit: Maximum number of entries to load
+            
+        Returns:
+            Dictionary of topic -> research_data
+        """
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute(
+                    """
+                    SELECT topic, title, content, source_url, confidence_level,
+                           last_updated, last_verified, tags, related_topics,
+                           verification_notes
+                    FROM research_entries
+                    ORDER BY last_updated DESC
+                    LIMIT ?
+                    """,
+                    (limit,)
+                ) as cursor:
+                    rows = await cursor.fetchall()
+                    
+                research_database = {}
+                for row in rows:
+                    topic = row[0]
+                    tags = json.loads(row[7]) if row[7] else []
+                    related_topics = json.loads(row[8]) if row[8] else []
+                    
+                    research_data = {
+                        'title': row[1],
+                        'content': row[2],
+                        'source_url': row[3],
+                        'confidence_level': row[4],
+                        'last_updated': row[5],
+                        'last_verified': row[6],
+                        'tags': tags,
+                        'related_topics': related_topics,
+                        'verification_notes': row[9]
+                    }
+                    research_database[topic] = research_data
+                    
+                logger.debug(f"HistoryRecorder: Loaded {len(research_database)} research entries")
+                return research_database
+                
+        except Exception as e:
+            logger.error(f"HistoryRecorder: Error loading research entries: {e}")
+            return {}
+
+    async def export_for_training(self, output_path: str, format: str = "jsonl") -> str:
+        """Export state changes for training purposes."""
+        return await self.export_state_changes_for_training(output_path, format)

@@ -699,8 +699,99 @@ class WorldStateManager:
     
     # === Memory Bank Management ===
     
+    def set_history_recorder(self, history_recorder):
+        """Set the history recorder for memory persistence."""
+        self.history_recorder = history_recorder
+        logger.info("WorldStateManager: Connected to HistoryRecorder for memory persistence")
+
+    async def persist_user_memory(self, memory_entry: MemoryEntry) -> bool:
+        """
+        Persist a user memory entry using the HistoryRecorder.
+        
+        Args:
+            memory_entry: MemoryEntry to persist
+            
+        Returns:
+            bool: True if successfully persisted
+        """
+        if hasattr(self, 'history_recorder') and self.history_recorder:
+            return await self.history_recorder.store_user_memory(memory_entry)
+        else:
+            logger.warning("WorldStateManager: No HistoryRecorder available for memory persistence")
+            return False
+
+    async def load_persisted_memories(self, user_platform_id: str) -> List[MemoryEntry]:
+        """
+        Load persisted memories for a user from the HistoryRecorder.
+        
+        Args:
+            user_platform_id: Platform-specific user identifier
+            
+        Returns:
+            List of MemoryEntry objects
+        """
+        if hasattr(self, 'history_recorder') and self.history_recorder:
+            return await self.history_recorder.load_user_memories(user_platform_id)
+        else:
+            logger.warning("WorldStateManager: No HistoryRecorder available for loading memories")
+            return []
+
+    async def persist_research_entry(self, topic: str, research_data: dict) -> bool:
+        """
+        Persist a research entry using the HistoryRecorder.
+        
+        Args:
+            topic: Research topic key
+            research_data: Research information dictionary
+            
+        Returns:
+            bool: True if successfully persisted
+        """
+        if hasattr(self, 'history_recorder') and self.history_recorder:
+            return await self.history_recorder.store_research_entry(topic, research_data)
+        else:
+            logger.warning("WorldStateManager: No HistoryRecorder available for research persistence")
+            return False
+
+    async def load_persisted_research(self) -> dict:
+        """
+        Load persisted research entries from the HistoryRecorder.
+        
+        Returns:
+            Dictionary of topic -> research_data
+        """
+        if hasattr(self, 'history_recorder') and self.history_recorder:
+            return await self.history_recorder.load_research_entries()
+        else:
+            logger.warning("WorldStateManager: No HistoryRecorder available for loading research")
+            return {}
+
+    async def restore_persistent_state(self):
+        """
+        Restore user memories and research data from persistent storage.
+        This should be called during startup to recover state across restarts.
+        """
+        try:
+            if not hasattr(self, 'history_recorder') or not self.history_recorder:
+                logger.warning("WorldStateManager: No HistoryRecorder available for state restoration")
+                return
+            
+            # Load research database
+            research_data = await self.load_persisted_research()
+            self.state.research_database.update(research_data)
+            logger.info(f"WorldStateManager: Restored {len(research_data)} research entries")
+            
+            # Load user memories for existing users
+            # Note: We'll load memories on-demand when users are accessed
+            # to avoid loading all user data at startup
+            
+            logger.info("WorldStateManager: Persistent state restoration completed")
+            
+        except Exception as e:
+            logger.error(f"WorldStateManager: Error restoring persistent state: {e}")
+
     def add_user_memory(self, user_platform_id: str, memory_entry: MemoryEntry):
-        """Add a memory entry for a specific user."""
+        """Add a memory entry for a specific user and persist it."""
         try:
             if user_platform_id not in self.state.user_memory_bank:
                 self.state.user_memory_bank[user_platform_id] = []
@@ -717,13 +808,43 @@ class WorldStateManager:
             self.state.last_update = time.time()
             logger.info(f"Added memory for user {user_platform_id}: {memory_entry.memory_type}")
             
+            # Persist memory asynchronously if HistoryRecorder is available
+            if hasattr(self, 'history_recorder') and self.history_recorder:
+                # Schedule persistence without blocking
+                import asyncio
+                try:
+                    asyncio.create_task(self.persist_user_memory(memory_entry))
+                    logger.debug(f"Scheduled memory persistence for user {user_platform_id}")
+                except RuntimeError:
+                    # No event loop running, persistence will happen later
+                    logger.debug(f"No event loop available, memory persistence deferred for user {user_platform_id}")
+            
         except Exception as e:
             logger.error(f"Error adding user memory: {e}", exc_info=True)
     
     def get_user_memories(self, user_platform_id: str, limit: int = 10) -> List[MemoryEntry]:
-        """Get recent memories for a user."""
+        """Get recent memories for a user, loading from persistent storage if needed."""
         memories = self.state.user_memory_bank.get(user_platform_id, [])
-        # Sort by timestamp (most recent first)
+        
+        # If no memories in memory and we have a history recorder, try loading from persistence
+        if not memories and hasattr(self, 'history_recorder') and self.history_recorder:
+            try:
+                import asyncio
+                # Try to load persisted memories
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # Schedule for later if we're in an async context
+                    logger.debug(f"Memories not in cache for {user_platform_id}, will load from persistence later")
+                else:
+                    # Load synchronously if no event loop is running
+                    persisted_memories = loop.run_until_complete(self.load_persisted_memories(user_platform_id))
+                    self.state.user_memory_bank[user_platform_id] = persisted_memories
+                    memories = persisted_memories
+                    logger.info(f"Loaded {len(memories)} persisted memories for user {user_platform_id}")
+            except Exception as e:
+                logger.debug(f"Could not load persisted memories for {user_platform_id}: {e}")
+        
+        # Sort by timestamp (most recent first) and return limited results
         sorted_memories = sorted(memories, key=lambda m: m.timestamp, reverse=True)
         return sorted_memories[:limit]
     
@@ -858,3 +979,67 @@ class WorldStateManager:
         
         logger.debug(f"WorldState: Found {video_count} videos generated today")
         return video_count
+
+    def record_matrix_reaction(self, room_id: str, event_id: str, reaction: str, reaction_event_id: str) -> None:
+        """
+        Record a Matrix reaction in the world state for deduplication tracking.
+        
+        Args:
+            room_id: Matrix room ID where the reaction was made
+            event_id: Event ID of the message that was reacted to
+            reaction: The reaction emoji/text
+            reaction_event_id: Event ID of the reaction itself
+        """
+        try:
+            # Add to action history for tracking
+            self.add_action_result(
+                action_type="react_to_matrix_message",
+                parameters={
+                    "room_id": room_id,
+                    "event_id": event_id,
+                    "reaction": reaction
+                },
+                result=f"success: {reaction_event_id}",
+            )
+            
+            logger.info(f"WorldState: Recorded Matrix reaction {reaction} to {event_id} in {room_id}")
+            
+        except Exception as e:
+            logger.error(f"Error recording Matrix reaction: {e}", exc_info=True)
+
+    def record_farcaster_like(self, cast_hash: str, like_hash: str) -> None:
+        """
+        Record a Farcaster like in the world state for deduplication tracking.
+        
+        Args:
+            cast_hash: Hash of the cast that was liked
+            like_hash: Hash of the like action
+        """
+        try:
+            # Add to action history for tracking
+            self.add_action_result(
+                action_type="like_farcaster_post",
+                parameters={"cast_hash": cast_hash},
+                result=f"success: {like_hash}",
+            )
+            
+            logger.info(f"WorldState: Recorded Farcaster like for cast {cast_hash}")
+            
+        except Exception as e:
+            logger.error(f"Error recording Farcaster like: {e}", exc_info=True)
+
+    def track_bot_reply_to_matrix_event(self, original_event_id: str, reply_event_id: str) -> None:
+        """
+        Track that the bot has replied to a specific Matrix event to prevent duplicate replies.
+        
+        Args:
+            original_event_id: The Matrix event ID that was replied to
+            reply_event_id: The Matrix event ID of the bot's reply
+        """
+        try:
+            # This is already handled by the add_action_result in the service,
+            # but we can add additional tracking if needed
+            logger.debug(f"WorldState: Tracked bot reply {reply_event_id} to event {original_event_id}")
+            
+        except Exception as e:
+            logger.error(f"Error tracking bot reply: {e}", exc_info=True)
