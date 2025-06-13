@@ -596,10 +596,34 @@ class FarcasterObserver(Integration):
         reply_to: Optional[str] = None,
         action_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Post a cast directly (not scheduled)."""
+        """Post a cast directly (not scheduled) with rate limiting checks."""
         if not self.api_client:
             return {"success": False, "error": "API client not initialized"}
+        
         logger.info(f"🎯 FarcasterObserver.post_cast action_id={action_id}, embeds: {embed_urls}")
+        
+        # Check timing constraints (only for new posts, not replies)
+        if not reply_to:
+            timing_check = await self.check_post_timing()
+            if not timing_check["can_post"]:
+                error_msg = f"Rate limited: must wait {timing_check['minutes_remaining']} more minutes"
+                logger.warning(error_msg)
+                return {
+                    "success": False,
+                    "error": error_msg,
+                    "rate_limited": True,
+                    "time_remaining": timing_check["time_remaining_seconds"]
+                }
+            
+            # Check for similar recent posts
+            if await self.check_similar_recent_post(content):
+                error_msg = "Similar post was made recently - avoiding duplicate"
+                logger.warning(error_msg)
+                return {
+                    "success": False,
+                    "error": error_msg,
+                    "duplicate_detected": True
+                }
         
         # Correctly form embeds list for Neynar API
         embeds_payload: Optional[List[Dict[str,str]]] = None
@@ -1084,3 +1108,122 @@ class FarcasterObserver(Integration):
         except Exception as e:
             logger.error(f"Error observing 'For You' feed: {e}", exc_info=True)
             return []
+
+    async def get_recent_own_posts(self, limit: int = 10) -> List[Dict]:
+        """Get recent posts by the bot itself to avoid duplicate content"""
+        if not self.api_client or not self.bot_fid:
+            logger.warning("Cannot get recent posts: API client or bot_fid not configured")
+            return []
+            
+        try:
+            # Get recent casts by our own FID
+            data = await self.api_client.get_casts_by_fid(fid=self.bot_fid, limit=limit)
+            casts = data.get("casts", [])
+            
+            # Convert to simplified format for rate limiting checks
+            recent_posts = []
+            for cast in casts:
+                recent_posts.append({
+                    "hash": cast.get("hash"),
+                    "text": cast.get("text", ""),
+                    "timestamp": cast.get("timestamp"),
+                    "author": cast.get("author", {})
+                })
+            
+            logger.debug(f"Retrieved {len(recent_posts)} recent own posts")
+            return recent_posts
+            
+        except Exception as e:
+            logger.error(f"Error fetching own recent posts: {e}")
+            return []
+
+    async def check_post_timing(self) -> Dict[str, Any]:
+        """Check if enough time has passed since last post"""
+        try:
+            from ...config import settings
+            min_interval_seconds = settings.FARCASTER_MIN_POST_INTERVAL_MINUTES * 60
+            
+            recent_posts = await self.get_recent_own_posts(limit=1)
+            if not recent_posts:
+                return {"can_post": True}
+            
+            last_post = recent_posts[0]
+            post_time_str = last_post.get("timestamp", "")
+            
+            if isinstance(post_time_str, str):
+                try:
+                    from datetime import datetime
+                    post_datetime = datetime.fromisoformat(post_time_str.replace('Z', '+00:00'))
+                    post_timestamp = int(post_datetime.timestamp())
+                except:
+                    return {"can_post": True}
+            else:
+                post_timestamp = int(post_time_str) if post_time_str else 0
+            
+            current_time = int(time.time())
+            time_since_last = current_time - post_timestamp
+            
+            if time_since_last < min_interval_seconds:
+                time_remaining = min_interval_seconds - time_since_last
+                minutes_remaining = time_remaining / 60
+                return {
+                    "can_post": False,
+                    "time_remaining_seconds": time_remaining,
+                    "minutes_remaining": round(minutes_remaining, 1),
+                    "last_post_time": post_time_str
+                }
+            
+            return {"can_post": True}
+            
+        except Exception as e:
+            logger.error(f"Error checking post timing: {e}")
+            return {"can_post": True}  # Default to allowing post on error
+
+    async def check_similar_recent_post(self, content: str) -> bool:
+        """Check if we recently posted similar content"""
+        try:
+            from ...config import settings
+            hours_back = settings.FARCASTER_DUPLICATE_CHECK_HOURS
+            
+            recent_posts = await self.get_recent_own_posts(limit=settings.FARCASTER_RECENT_POSTS_LIMIT)
+            
+            # Check posts from the configured time period
+            current_time = int(time.time())
+            cutoff_time = current_time - (hours_back * 3600)
+            
+            for post in recent_posts:
+                post_time_str = post.get("timestamp", "")
+                if isinstance(post_time_str, str):
+                    try:
+                        from datetime import datetime
+                        post_datetime = datetime.fromisoformat(post_time_str.replace('Z', '+00:00'))
+                        post_timestamp = int(post_datetime.timestamp())
+                    except:
+                        continue
+                else:
+                    post_timestamp = int(post_time_str) if post_time_str else 0
+                
+                if post_timestamp > cutoff_time:
+                    post_text = post.get("text", "")
+                    if self._content_similarity(content, post_text) > 0.7:
+                        logger.warning(f"Similar post found within {hours_back} hours: {post_text[:50]}...")
+                        return True
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error checking recent similar posts: {e}")
+            return False
+
+    def _content_similarity(self, content1: str, content2: str) -> float:
+        """Calculate simple content similarity based on common words"""
+        words1 = set(content1.lower().split())
+        words2 = set(content2.lower().split())
+        
+        if not words1 or not words2:
+            return 0.0
+        
+        intersection = words1.intersection(words2)
+        union = words1.union(words2)
+        
+        return len(intersection) / len(union) if union else 0.0

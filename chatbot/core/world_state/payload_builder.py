@@ -314,6 +314,7 @@ class PayloadBuilder:
             "user_profiling": self._build_user_profiling_payload(
                 world_state_data, optimize_for_size
             ),
+            "farcaster_context": self._build_farcaster_context(world_state_data),
         }
 
         # DEBUG: Log Matrix channels and their recent messages
@@ -522,7 +523,13 @@ class PayloadBuilder:
             for platform_channels in world_state_data.channels.values()
         )
         if has_farcaster:
-            yield from ["farcaster.feeds.home", "farcaster.feeds.notifications", "farcaster.feeds.trending"]
+            yield from [
+                "farcaster.feeds.home", 
+                "farcaster.feeds.notifications", 
+                "farcaster.feeds.trending",
+                "farcaster.rate_limits",
+                "farcaster.recent_posts"
+            ]
 
     def _generate_user_paths(self, world_state_data: WorldStateData):
         user_fids = set(world_state_data.farcaster_users.keys())
@@ -775,7 +782,24 @@ class PayloadBuilder:
     def _get_farcaster_node_data(self, world_state_data: WorldStateData, path_parts: List[str], expanded: bool = False) -> Optional[Dict]:
         if len(path_parts) < 2: return None
         node_type = path_parts[1]
-        if node_type == "feeds" and len(path_parts) >= 3:
+        
+        if node_type == "recent_posts":
+            # Return recent posts information for rate limiting awareness
+            return {
+                "status": "Available via Farcaster observer",
+                "note": "Recent posts are checked automatically for rate limiting and duplicate prevention"
+            }
+        elif node_type == "rate_limits":
+            # Return rate limiting status
+            rate_limits = world_state_data.rate_limits.get('farcaster_api', {})
+            return {
+                "remaining": rate_limits.get("remaining", 0),
+                "limit": rate_limits.get("limit", 0),
+                "reset_time": rate_limits.get("reset_time"),
+                "last_updated": rate_limits.get("last_updated"),
+                "can_post": rate_limits.get("remaining", 0) > 0
+            }
+        elif node_type == "feeds" and len(path_parts) >= 3:
             feed_type = path_parts[2]
             if feed_type == "trending":
                 return {"feed_type": "trending", "status": "Available via get_trending_casts tool"}
@@ -1054,3 +1078,36 @@ class PayloadBuilder:
                         "display_name": msg.sender_display_name
                     }
         return {"type": user_type, "id": user_id, "error": "User data not found"}
+
+    def _build_farcaster_context(self, world_state_data: WorldStateData) -> Dict[str, Any]:
+        """Build Farcaster context section for AI awareness"""
+        farcaster_context = {
+            "status": "not_connected",
+            "rate_limits": {},
+            "recent_posts": [],
+            "can_post_now": False,
+            "time_until_next_post": 0
+        }
+        
+        try:
+            # Get rate limit information
+            rate_limits = world_state_data.rate_limits.get('farcaster_api', {})
+            if rate_limits:
+                farcaster_context["rate_limits"] = {
+                    "remaining": rate_limits.get("remaining", 0),
+                    "limit": rate_limits.get("limit", 0),
+                    "reset_time": rate_limits.get("reset_time"),
+                    "last_updated": rate_limits.get("last_updated")
+                }
+                farcaster_context["can_post_now"] = rate_limits.get("remaining", 0) > 0
+                farcaster_context["status"] = "connected"
+            
+            # Note: Recent posts would need to be fetched from the observer
+            # This is a placeholder for the structure
+            farcaster_context["recent_posts_note"] = "Recent posts checked automatically for rate limiting"
+            
+        except Exception as e:
+            logger.error(f"Error building Farcaster context: {e}")
+            farcaster_context["error"] = str(e)
+        
+        return farcaster_context

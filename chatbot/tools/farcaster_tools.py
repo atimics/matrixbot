@@ -149,7 +149,31 @@ class SendFarcasterPostTool(ToolInterface):
             embeds.append({"url": embed_url})
             logger.info(f"Adding embed to Farcaster post: {embed_url}")
 
-        # Prevent duplicate posts with identical content
+        # Check timing constraints
+        timing_check = await context.farcaster_observer.check_post_timing()
+        if not timing_check["can_post"]:
+            error_msg = f"Must wait {timing_check['minutes_remaining']} more minutes before posting"
+            logger.warning(error_msg)
+            return {
+                "status": "failure",
+                "error": error_msg,
+                "action": "rate_limited",
+                "time_remaining": timing_check["time_remaining_seconds"],
+                "timestamp": time.time()
+            }
+
+        # Check for recent similar posts
+        if await context.farcaster_observer.check_similar_recent_post(content):
+            error_msg = "Similar post was made recently - avoiding duplicate"
+            logger.warning(error_msg)
+            return {
+                "status": "failure",
+                "error": error_msg,
+                "action": "duplicate_prevention",
+                "timestamp": time.time()
+            }
+
+        # Prevent duplicate posts with identical content (legacy check)
         if (
             context.world_state_manager
             and context.world_state_manager.has_sent_farcaster_post(content)

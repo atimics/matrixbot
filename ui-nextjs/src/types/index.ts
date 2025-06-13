@@ -110,6 +110,11 @@ export interface Configuration {
     max_cycles_per_hour?: number
     max_actions_per_hour?: number
   }
+  farcaster?: {
+    min_post_interval_minutes?: number
+    duplicate_check_hours?: number
+    recent_posts_limit?: number
+  }
   storage?: {
     history_retention_days?: number
   }
