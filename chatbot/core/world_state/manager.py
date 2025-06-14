@@ -406,6 +406,41 @@ class WorldStateManager:
                     return True
         return False
 
+    def get_last_farcaster_post(self) -> Optional[Dict[str, Any]]:
+        """
+        Get the bot's most recent successful Farcaster post for activity context.
+        
+        Returns:
+            Dictionary with content, timestamp, and other details of last post, or None
+        """
+        for action in reversed(self.state.action_history):
+            if action.action_type == "send_farcaster_post" and "success" in action.result:
+                return {
+                    "content": action.parameters.get("content", ""),
+                    "channel": action.parameters.get("channel"),
+                    "timestamp": action.timestamp,
+                    "cast_hash": action.parameters.get("cast_hash"),
+                    "embed_url": action.parameters.get("embed_url")
+                }
+        return None
+
+    def get_last_matrix_message(self) -> Optional[Dict[str, Any]]:
+        """
+        Get the bot's most recent Matrix message for activity context.
+        
+        Returns:
+            Dictionary with content, timestamp, and channel details of last message, or None
+        """
+        for action in reversed(self.state.action_history):
+            if action.action_type == "send_matrix_message" and "success" in action.result:
+                return {
+                    "content": action.parameters.get("content", ""),
+                    "room_id": action.parameters.get("room_id"),
+                    "timestamp": action.timestamp,
+                    "event_id": action.parameters.get("event_id")
+                }
+        return None
+
     def get_channel(self, channel_id: str, channel_type: Optional[str] = None) -> Optional[Channel]:
         """Get a channel by ID and optional type.
         

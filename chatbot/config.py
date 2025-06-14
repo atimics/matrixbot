@@ -104,7 +104,7 @@ class AppConfig(BaseSettings):
     OLLAMA_DEFAULT_SUMMARY_MODEL: Optional[str] = "llama3"
     # AI payload truncation settings - aggressively optimized to prevent 402/413 errors
     AI_CONVERSATION_HISTORY_LENGTH: int = 3  # Max messages per channel for AI payload (reduced from 7)
-    AI_ACTION_HISTORY_LENGTH: int = 2  # Max actions in history for AI payload (reduced from 3)
+    AI_ACTION_HISTORY_LENGTH: int = 15  # Max actions in history for AI payload (increased from 2 to prevent action loops)
     AI_THREAD_HISTORY_LENGTH: int = 2  # Max thread messages for AI payload (reduced from 3)
     AI_OTHER_CHANNELS_SUMMARY_COUNT: int = (
         1  # How many other active channels to summarize (reduced from 2)

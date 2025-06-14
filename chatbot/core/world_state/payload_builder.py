@@ -294,6 +294,7 @@ class PayloadBuilder:
             "thread_context": self._build_thread_context(
                 world_state_data, primary_channel_id, max_thread_messages, optimize_for_size
             ),
+            "bot_activity_context": self._build_bot_activity_context(world_state_data),
             "system_status": {
                 **world_state_data.system_status,
                 "rate_limits": world_state_data.rate_limits,
@@ -411,6 +412,7 @@ class PayloadBuilder:
                         "summary": summary,
                         "data_changed": node_manager.is_data_changed(node_path, node_data),
                         "last_summary_update": metadata.last_summary_update_ts,
+                        "node_path_for_tools": node_path,  # *** CRITICAL: Unambiguous path for AI tools ***
                     }
                     
                     # CRITICAL FIX: Include activity metrics for channel nodes so AI can make intelligent decisions
@@ -419,8 +421,15 @@ class PayloadBuilder:
                         collapsed_summary.update({
                             "recent_message_count": node_data.get("msg_count", 0),
                             "last_activity": node_data.get("last_activity"),
-                            "channel_name": node_data.get("name", "Unknown"),
+                            "display_name": node_data.get("name", "Unknown"),  # *** RENAMED from channel_name ***
+                            "channel_type": node_path.split('.')[1] if '.' in node_path else "unknown",  # matrix/farcaster
                         })
+                        # Update summary to be clearer about the separation
+                        if collapsed_summary["summary"] == f"Node {node_path} (no summary available)":
+                            display_name = collapsed_summary["display_name"]
+                            msg_count = collapsed_summary["recent_message_count"]
+                            collapsed_summary["summary"] = f"Channel '{display_name}' has {msg_count} messages available for review."
+                        
                         logger.debug(f"Enhanced collapsed summary for {node_path}: {collapsed_summary['recent_message_count']} messages, last activity: {collapsed_summary['last_activity']}")
                     
                     collapsed_node_summaries[node_path] = collapsed_summary
@@ -434,6 +443,7 @@ class PayloadBuilder:
                 "timestamp": world_state_data.last_update,
                 "rate_limits": world_state_data.rate_limits,
             },
+            "bot_activity_context": self._build_bot_activity_context(world_state_data),
             "available_channels": available_channels,  # NEW: Always visible for AI discovery
             "expanded_nodes": expanded_nodes,
             "collapsed_node_summaries": collapsed_node_summaries,
@@ -1147,3 +1157,83 @@ class PayloadBuilder:
             farcaster_context["status"] = "error"
         
         return farcaster_context
+
+    def _build_bot_activity_context(self, world_state_data: WorldStateData) -> Dict[str, Any]:
+        """
+        Build bot activity context showing the AI its own recent actions.
+        This helps prevent duplicate content and provides awareness of recent activity.
+        
+        Args:
+            world_state_data: The world state data
+            
+        Returns:
+            Dictionary containing bot's recent activity context
+        """
+        context = {
+            "last_farcaster_post": None,
+            "last_matrix_message": None,
+            "recent_failed_attempts": [],
+            "activity_summary": {
+                "farcaster_posts_today": 0,
+                "matrix_messages_today": 0,
+                "failed_attempts_last_hour": 0
+            }
+        }
+        
+        try:
+            # Get bot's last successful activities via world state manager methods
+            if hasattr(world_state_data, 'get_last_farcaster_post'):
+                context["last_farcaster_post"] = world_state_data.get_last_farcaster_post()
+            
+            if hasattr(world_state_data, 'get_last_matrix_message'):
+                context["last_matrix_message"] = world_state_data.get_last_matrix_message()
+            
+            # Analyze recent failed attempts for AI awareness
+            current_time = time.time()
+            one_hour_ago = current_time - 3600
+            today_start = current_time - 86400  # 24 hours ago
+            
+            farcaster_posts_today = 0
+            matrix_messages_today = 0
+            failed_attempts_last_hour = 0
+            
+            for action in world_state_data.action_history:
+                # Count today's successful posts
+                if action.timestamp > today_start:
+                    if action.action_type == "send_farcaster_post" and "success" in action.result:
+                        farcaster_posts_today += 1
+                    elif action.action_type == "send_matrix_message" and "success" in action.result:
+                        matrix_messages_today += 1
+                
+                # Track recent failed attempts for AI context
+                if action.timestamp > one_hour_ago and "failure" in action.result:
+                    if action.action_type in ["send_farcaster_post", "send_matrix_message"]:
+                        failed_attempts_last_hour += 1
+                        context["recent_failed_attempts"].append({
+                            "action": action.action_type,
+                            "reason": action.result,
+                            "timestamp": action.timestamp,
+                            "content_preview": (action.parameters.get("content", "")[:50] + "..." 
+                                              if len(action.parameters.get("content", "")) > 50 
+                                              else action.parameters.get("content", ""))
+                        })
+            
+            context["activity_summary"] = {
+                "farcaster_posts_today": farcaster_posts_today,
+                "matrix_messages_today": matrix_messages_today,
+                "failed_attempts_last_hour": failed_attempts_last_hour
+            }
+            
+            # Add AI guidance based on recent activity
+            if failed_attempts_last_hour > 2:
+                context["ai_guidance"] = f"High number of failed attempts ({failed_attempts_last_hour}) in the last hour. Review recent failures before attempting similar actions."
+            elif context["last_farcaster_post"] and current_time - context["last_farcaster_post"]["timestamp"] < 300:  # 5 minutes
+                context["ai_guidance"] = "Recently posted on Farcaster. Consider whether another post is necessary to avoid spam."
+            else:
+                context["ai_guidance"] = "No recent activity concerns. Normal posting guidelines apply."
+                
+        except Exception as e:
+            logger.error(f"Error building bot activity context: {e}")
+            context["error"] = str(e)
+        
+        return context

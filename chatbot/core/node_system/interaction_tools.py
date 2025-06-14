@@ -28,7 +28,10 @@ class NodeInteractionTools:
                         f"Expands a collapsed node in the world state to view its full details. "
                         f"Maximum {settings.MAX_EXPANDED_NODES} nodes can be expanded simultaneously. "
                         f"If the limit is reached, the oldest unpinned expanded node will be "
-                        f"automatically collapsed to make room. Provide the node_path from the summary view."
+                        f"automatically collapsed to make room. "
+                        f"CRITICAL: You MUST use the full, exact node_path from the "
+                        f"collapsed_node_summaries keys. DO NOT use channel names or abbreviated paths. "
+                        f"Example: 'channels.matrix.!zBaUOGAwGyzOEGWJFd:chat.ratimics.com'"
                     ),
                     "parameters": {
                         "type": "object",
@@ -36,9 +39,11 @@ class NodeInteractionTools:
                             "node_path": {
                                 "type": "string",
                                 "description": (
-                                    "The path identifier of the node to expand (e.g., "
-                                    "'channels.matrix.!room_id', 'users.farcaster.123', "
-                                    "'threads.farcaster.0xhash')"
+                                    "The EXACT path identifier from collapsed_node_summaries keys. "
+                                    "Copy the full path exactly as shown, including all prefixes. "
+                                    "Valid examples: 'channels.matrix.!room123:server.com', "
+                                    "'channels.farcaster.home', 'users.farcaster.12345'. "
+                                    "INVALID: channel names like 'Robot Laboratory' or bare room IDs."
                                 )
                             }
                         },

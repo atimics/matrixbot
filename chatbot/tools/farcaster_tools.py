@@ -157,6 +157,19 @@ class SendFarcasterPostTool(ToolInterface):
                                       f"{timing_check['minutes_remaining']} minute(s)")
             error_msg = f"Rate limited: must wait {time_msg} before posting"
             logger.warning(error_msg)
+            
+            # Record this rate limit failure in world state so AI is aware of the attempt
+            if context.world_state_manager:
+                context.world_state_manager.add_action_result(
+                    action_type=self.name,
+                    parameters={
+                        "content": content,
+                        "channel": channel,
+                        "embed_url": embed_url,
+                    },
+                    result=f"failure: {error_msg}",
+                )
+            
             return {
                 "status": "failure",
                 "error": error_msg,
@@ -170,6 +183,19 @@ class SendFarcasterPostTool(ToolInterface):
         if await context.farcaster_observer.check_similar_recent_post(content):
             error_msg = "Similar post was made recently - avoiding duplicate"
             logger.warning(error_msg)
+            
+            # Record this duplicate prevention failure in world state so AI is aware of the attempt
+            if context.world_state_manager:
+                context.world_state_manager.add_action_result(
+                    action_type=self.name,
+                    parameters={
+                        "content": content,
+                        "channel": channel,
+                        "embed_url": embed_url,
+                    },
+                    result=f"failure: {error_msg}",
+                )
+            
             return {
                 "status": "failure",
                 "error": error_msg,
@@ -184,6 +210,18 @@ class SendFarcasterPostTool(ToolInterface):
         ):
             error_msg = "Already sent Farcaster post with identical content. Skipping duplicate."
             logger.warning(error_msg)
+            
+            # Record this duplicate prevention failure in world state so AI is aware of the attempt
+            context.world_state_manager.add_action_result(
+                action_type=self.name,
+                parameters={
+                    "content": content,
+                    "channel": channel,
+                    "embed_url": embed_url,
+                },
+                result=f"failure: {error_msg}",
+            )
+            
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
         # If observer supports scheduling (has a real asyncio.Queue), enqueue; otherwise, execute immediately

@@ -121,6 +121,10 @@ class NodeManager:
             if metadata.is_expanded
         ]
     
+    def get_all_node_paths(self) -> List[str]:
+        """Get list of all known node paths."""
+        return list(self.node_metadata.keys())
+    
     def get_unpinned_expanded_nodes(self) -> List[str]:
         """Get list of currently expanded but unpinned node paths, sorted by LRU."""
         unpinned_expanded = [

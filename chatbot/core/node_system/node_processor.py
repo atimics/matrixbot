@@ -75,6 +75,7 @@ class NodeProcessor:
         context = context or {}
         cycle_start_time = time.time()
         actions_executed_count = 0
+        cycle_actions = []  # Track actions within this cycle for self-state awareness
         MAX_ACTIONS_PER_CYCLE = 3  # Safety break to prevent infinite loops
 
         logger.info(f"Starting iterative processing cycle {cycle_id}")
@@ -84,8 +85,14 @@ class NodeProcessor:
             await self._auto_expand_active_channels()
 
             while actions_executed_count < MAX_ACTIONS_PER_CYCLE:
-                # 1. Build payload based on the current state of the world
-                payload = await self._build_current_payload(primary_channel_id, context)
+                # 1. Build payload with current cycle context
+                cycle_context = {
+                    **context,
+                    "cycle_actions": cycle_actions,
+                    "actions_executed_this_cycle": actions_executed_count,
+                    "cycle_id": cycle_id
+                }
+                payload = await self._build_current_payload(primary_channel_id, cycle_context)
                 if not payload:
                     logger.warning("Failed to build payload, ending cycle.")
                     break
@@ -99,6 +106,15 @@ class NodeProcessor:
                 # The AI can return multiple actions, but we process them one by one.
                 # We primarily focus on the highest priority action.
                 action_to_execute = ai_actions[0]
+
+                # Track the action in cycle history
+                cycle_actions.append({
+                    "step": actions_executed_count + 1,
+                    "action_type": action_to_execute.action_type,
+                    "parameters": action_to_execute.parameters,
+                    "reasoning": action_to_execute.reasoning,
+                    "timestamp": time.time()
+                })
 
                 # 3. If the action is 'wait', the cycle is complete
                 if action_to_execute.action_type == "wait":
@@ -167,7 +183,7 @@ class NodeProcessor:
             node_interaction_tools = self.interaction_tools.get_tool_definitions()
             payload["tools"].extend(node_interaction_tools.values())
             
-            # Add processing context
+            # Add processing context with enhanced self-state awareness
             payload["processing_context"] = {
                 "mode": "iterative_action",
                 "primary_channel": primary_channel_id,
@@ -175,6 +191,15 @@ class NodeProcessor:
                 "node_stats": self.node_manager.get_expansion_status_summary(),
                 "instruction": "Based on the current world state, select the single most important action to take now. Choose 'wait' if no action is needed."
             }
+            
+            # Add self-state awareness to prevent repetitive actions
+            if "cycle_actions" in context:
+                payload["self_state"] = {
+                    "current_cycle_actions": context["cycle_actions"],
+                    "actions_executed_this_cycle": context.get("actions_executed_this_cycle", 0),
+                    "cycle_id": context.get("cycle_id"),
+                    "guidance": self._generate_self_state_guidance(context["cycle_actions"])
+                }
             
             return payload
         except Exception as e:
@@ -203,10 +228,14 @@ class NodeProcessor:
         
         # Log AI reasoning for selecting this action
         logger.info(f"AI reasoning: {action.reasoning}")
+        
+        # *** VERBOSE LOGGING FOR BUG DIAGNOSIS ***
+        logger.info(f"Executing action '{tool_name}' with args: {tool_args}")
 
         # Dispatch to the correct tool executor
         if tool_name in ["select_nodes_to_expand", "expand_node", "collapse_node", "pin_node", "unpin_node"]:
-            await self._execute_node_tool(tool_name, tool_args)
+            result = await self._execute_node_tool(tool_name, tool_args)
+            logger.info(f"Node tool '{tool_name}' result: {result}")
         elif tool_name == "refresh_summary":
             await self._execute_summary_refresh(tool_args)
         else:
@@ -331,6 +360,24 @@ class NodeProcessor:
             if not node_path:
                 return {"success": False, "error": "Missing node_path"}
             
+            # *** INPUT SANITIZATION FOR NODE PATH MISMATCH BUG ***
+            # Attempt to correct incomplete node paths
+            original_node_path = node_path
+            if node_path not in self.node_manager.node_metadata:
+                corrected_path = self._find_full_path(node_path)
+                if corrected_path:
+                    logger.warning(f"Corrected ambiguous node_path '{node_path}' to '{corrected_path}'")
+                    node_path = corrected_path
+                    tool_args["node_path"] = corrected_path  # Update args for consistency
+                else:
+                    # If no correction is found, fail gracefully
+                    all_known_paths = self.node_manager.get_all_node_paths()
+                    return {
+                        "success": False, 
+                        "error": f"Node path '{original_node_path}' not found or is ambiguous. Available paths: {all_known_paths[:5]}..."  # Limit output
+                    }
+            # *** END OF INPUT SANITIZATION ***
+            
             if tool_name == "expand_node":
                 success, auto_collapsed, message = self.node_manager.expand_node(node_path)
                 return {
@@ -357,6 +404,82 @@ class NodeProcessor:
         except Exception as e:
             logger.error(f"Error executing node tool {tool_name}: {e}")
             return {"success": False, "error": str(e)}
+    
+    def _generate_self_state_guidance(self, cycle_actions: List[Dict[str, Any]]) -> str:
+        """
+        Generate guidance for the AI based on its actions within the current cycle.
+        This helps prevent repetitive actions and provides self-awareness.
+        """
+        if not cycle_actions:
+            return "No actions taken in this cycle yet. Choose your first action carefully."
+        
+        last_action = cycle_actions[-1]
+        action_types = [action["action_type"] for action in cycle_actions]
+        
+        # Check for repetitive expand_node attempts
+        expand_attempts = [action for action in cycle_actions if action["action_type"] == "expand_node"]
+        if len(expand_attempts) > 1:
+            last_expand = expand_attempts[-1]
+            return f"WARNING: You attempted to expand node '{last_expand['parameters'].get('node_path')}' in step {last_expand['step']}. If it didn't work, the node path may be incorrect or the node is already expanded. Consider a different action."
+        
+        # Check for repeated actions of the same type
+        if len(set(action_types)) < len(action_types):
+            return f"WARNING: You have repeated the same action type ({last_action['action_type']}) multiple times in this cycle. Consider why the previous attempt didn't achieve your goal before retrying."
+        
+        # General guidance based on last action
+        if last_action["action_type"] == "expand_node":
+            return f"You just attempted to expand node '{last_action['parameters'].get('node_path')}'. The node should now be visible in expanded_nodes if successful."
+        elif last_action["action_type"] in ["send_farcaster_post", "send_matrix_message"]:
+            return f"You just attempted to {last_action['action_type']}. Check if the action was successful before attempting another post."
+        else:
+            return f"Previous action: {last_action['action_type']}. Consider the result before choosing your next action."
+
+    def _find_full_path(self, partial_path: str) -> Optional[str]:
+        """
+        Find the full node path from a partial path, channel name, or room ID.
+        This handles the alias/ID mismatch bug where AI uses human-readable names.
+        
+        Args:
+            partial_path: The partial path, channel name, or room ID provided by AI
+            
+        Returns:
+            The full node path if found, None otherwise
+        """
+        all_known_paths = self.node_manager.get_all_node_paths()
+        
+        # Strategy 1: Check if it's a suffix of a known path
+        for path in all_known_paths:
+            if path.endswith(partial_path):
+                return path
+        
+        # Strategy 2: Check if it's a Matrix room ID (starts with !)
+        if partial_path.startswith('!'):
+            for path in all_known_paths:
+                if f"channels.matrix.{partial_path}" == path:
+                    return path
+        
+        # Strategy 3: Check if it's a channel name by looking at world state
+        try:
+            world_state_data = self.world_state.get_world_state_data()
+            for platform, platform_channels in world_state_data.channels.items():
+                if isinstance(platform_channels, dict):
+                    for channel_id, channel in platform_channels.items():
+                        if channel.name == partial_path:
+                            # Found a channel with this name, construct the full path
+                            full_path = f"channels.{platform}.{channel_id}"
+                            if full_path in all_known_paths:
+                                return full_path
+        except Exception as e:
+            logger.error(f"Error searching for channel name '{partial_path}': {e}")
+        
+        # Strategy 4: Check if it's a Farcaster channel ID or name
+        if partial_path.startswith('farcaster:'):
+            for path in all_known_paths:
+                if f"channels.{partial_path}" == path:
+                    return path
+        
+        logger.warning(f"Could not find full path for '{partial_path}'. Available paths: {all_known_paths}")
+        return None
     
     async def _execute_summary_refresh(self, tool_args: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a summary refresh request."""
