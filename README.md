@@ -1,4 +1,4 @@
-# 🤖 Chatbot System
+# 🤖 RATi Chatbot System
 
 A sophisticated, context-aware chatbot system with dynamic tool-based architecture, multi-platform integration, and advanced conversation state management. Built for intelligent conversations across Matrix and Farcaster platforms with comprehensive AI-driven decision making.
 
