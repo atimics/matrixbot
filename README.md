@@ -7,6 +7,11 @@ A sophisticated, context-aware chatbot system with dynamic tool-based architectu
 [![License: CC BY-NC 4.0](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/)
 [![Code Quality](https://img.shields.io/badge/code%20quality-black%20%7C%20flake8%20%7C%20mypy-blue)](pyproject.toml)
 
+
+[![Tip in Crypto](https://tip.md/badge.svg)](https://tip.md/atimics)
+
+Follow our demo bot operating from the `develop` branch on Farcaster ][@immanence](https://farcaster.xyz/immanence).
+
 ## 📋 Table of Contents
 
 - [🌟 Key Features](#-key-features)
@@ -400,6 +405,8 @@ poetry run pytest tests/ -m "slow"      # Run only slow tests
 - **Performance Tests**: Load and stress testing
 
 See [Testing Guide](DEVELOPMENT.md#testing-guidelines) for detailed information.
+
+```
 tests/
 ├── test_ai_engine.py                 # AI decision engine testing
 ├── test_core.py                      # Core component unit tests
