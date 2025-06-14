@@ -10,7 +10,7 @@ A sophisticated, context-aware chatbot system with dynamic tool-based architectu
 
 [![Tip in Crypto](https://tip.md/badge.svg)](https://tip.md/atimics)
 
-Follow our demo bot operating from the `develop` branch on Farcaster ][@immanence](https://farcaster.xyz/immanence).
+Follow our demo bot operating from the `develop` branch on Farcaster [@immanence](https://farcaster.xyz/immanence).
 
 ## 📋 Table of Contents
 
