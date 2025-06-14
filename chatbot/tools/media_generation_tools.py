@@ -158,9 +158,14 @@ class GenerateImageTool(ToolInterface):
             if not image_url:
                 return {"status": "error", "message": "Failed to upload generated image to storage."}
 
+            # Generate unique media_id for explicit action chaining
+            media_id = f"media_img_{int(time.time() * 1000)}"
+            
+            # Record in world state with media_id
             context.world_state_manager.record_generated_media(
                 media_url=image_url, media_type="image", prompt=prompt,
-                service_used=service_used, aspect_ratio=aspect_ratio
+                service_used=service_used, aspect_ratio=aspect_ratio,
+                media_id=media_id  # Store the media_id for chaining
             )
 
             await _auto_post_to_gallery(context, "image", image_url, prompt, service_used)
@@ -168,11 +173,13 @@ class GenerateImageTool(ToolInterface):
             return {
                 "status": "success",
                 "message": f"Image generated using {service_used} and stored on {storage_service}.",
-                "image_url": image_url,
+                "media_id": media_id,  # Explicit media_id for chaining
+                "media_url": image_url,  # Also provide direct URL for backward compatibility
+                "image_url": image_url,  # Legacy field name
                 "arweave_image_url": image_url if storage_service == "arweave" else None,
                 "prompt_used": prompt,
                 "storage_service": storage_service,
-                "next_actions_suggestion": f"To share this image, use a tool like 'send_matrix_image' with the URL: {image_url}"
+                "next_actions_suggestion": f"To share this image, use 'send_farcaster_post' or 'send_matrix_image' with media_id: {media_id}"
             }
 
         except Exception as e:
@@ -261,9 +268,13 @@ class GenerateVideoTool(ToolInterface):
             if not video_url:
                 return {"status": "error", "message": "Failed to upload generated video to storage."}
 
+            # Generate unique media_id for explicit action chaining
+            media_id = f"media_vid_{int(time.time() * 1000)}"
+
             context.world_state_manager.record_generated_media(
                 media_url=video_url, media_type="video", prompt=prompt,
-                service_used="google_veo", aspect_ratio=aspect_ratio
+                service_used="google_veo", aspect_ratio=aspect_ratio,
+                media_id=media_id  # Store the media_id for chaining
             )
 
             await _auto_post_to_gallery(context, "video", video_url, prompt, "google_veo")
@@ -271,11 +282,13 @@ class GenerateVideoTool(ToolInterface):
             return {
                 "status": "success",
                 "message": f"Video generated and stored on {storage_service}.",
-                "video_url": video_url,
+                "media_id": media_id,  # Explicit media_id for chaining
+                "media_url": video_url,  # Also provide direct URL for backward compatibility
+                "video_url": video_url,  # Legacy field name
                 "arweave_video_url": video_url if storage_service == "arweave" else None,
                 "prompt_used": prompt,
                 "storage_service": storage_service,
-                "next_actions_suggestion": f"To share this video, use 'send_matrix_video_link' tool with the URL: {video_url}"
+                "next_actions_suggestion": f"To share this video, use 'send_farcaster_post' or 'send_matrix_video_link' with media_id: {media_id}"
             }
 
         except Exception as e:

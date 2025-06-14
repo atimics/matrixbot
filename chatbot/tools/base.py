@@ -2,6 +2,7 @@
 Base classes and interfaces for the dynamic tool system.
 """
 import logging
+import warnings
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 
@@ -32,9 +33,9 @@ class ActionContext:
         # New service-oriented approach
         self.service_registry = service_registry
         
-        # Legacy observer access for backward compatibility
-        self.matrix_observer = matrix_observer
-        self.farcaster_observer = farcaster_observer
+        # Legacy observer access for backward compatibility - stored privately
+        self._matrix_observer = matrix_observer
+        self._farcaster_observer = farcaster_observer
         
         # Shared resources
         self.world_state_manager = world_state_manager
@@ -51,6 +52,32 @@ class ActionContext:
             self.dual_storage_manager = DualStorageManager(arweave_service=arweave_service)
         except Exception as e:
             logger.warning(f"Failed to initialize dual storage manager: {e}")
+    
+    @property
+    def matrix_observer(self):
+        """
+        DEPRECATED: Direct access to matrix_observer is deprecated.
+        Use get_messaging_service('matrix') instead.
+        """
+        warnings.warn(
+            "Direct access to matrix_observer is deprecated. Use get_messaging_service('matrix') instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        return self._matrix_observer
+    
+    @property
+    def farcaster_observer(self):
+        """
+        DEPRECATED: Direct access to farcaster_observer is deprecated.
+        Use get_social_service('farcaster') instead.
+        """
+        warnings.warn(
+            "Direct access to farcaster_observer is deprecated. Use get_social_service('farcaster') instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        return self._farcaster_observer
     
     def get_messaging_service(self, service_id: str):
         """Get a messaging service by ID"""

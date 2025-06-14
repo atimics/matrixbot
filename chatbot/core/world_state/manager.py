@@ -648,7 +648,8 @@ class WorldStateManager:
         prompt: str,
         service_used: str,
         aspect_ratio: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        media_id: Optional[str] = None
     ) -> None:
         """
         Record AI-generated media in the image library for future reference.
@@ -660,6 +661,7 @@ class WorldStateManager:
             service_used: The AI service used (e.g., 'google_gemini', 'replicate')
             aspect_ratio: Aspect ratio of the media (e.g., '1:1', '16:9')
             metadata: Additional metadata about the generation
+            media_id: Unique identifier for explicit action chaining
         """
         media_entry = {
             "url": media_url,
@@ -668,14 +670,15 @@ class WorldStateManager:
             "service_used": service_used,
             "timestamp": time.time(),
             "aspect_ratio": aspect_ratio,
-            "metadata": metadata or {}
+            "metadata": metadata or {},
+            "media_id": media_id  # Add media_id for explicit chaining
         }
         
         self.state.generated_media_library.append(media_entry)
         self.state.last_update = time.time()
         
         logger.info(
-            f"WorldState: Added {media_type} to generated media library: {prompt[:50]}..."
+            f"WorldState: Added {media_type} to generated media library: {prompt[:50]}... (media_id: {media_id})"
         )
 
     def get_last_generated_media_url(self) -> Optional[str]:
@@ -1078,3 +1081,24 @@ class WorldStateManager:
             
         except Exception as e:
             logger.error(f"Error tracking bot reply: {e}", exc_info=True)
+
+    def get_media_url_by_id(self, media_id: str) -> Optional[str]:
+        """
+        Retrieve media URL by media_id for explicit action chaining.
+        
+        Args:
+            media_id: The unique media identifier
+            
+        Returns:
+            Media URL if found, None otherwise
+        """
+        if not media_id:
+            return None
+            
+        for media_entry in self.state.generated_media_library:
+            if media_entry.get("media_id") == media_id:
+                logger.debug(f"Retrieved media URL for {media_id}: {media_entry['url']}")
+                return media_entry["url"]
+        
+        logger.warning(f"Media ID {media_id} not found in generated media library")
+        return None

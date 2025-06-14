@@ -86,6 +86,10 @@ class SendFarcasterPostTool(ToolInterface):
                 "embed_url": {
                     "type": "string",
                     "description": "A URL to embed in the cast, such as an Arweave URL for an image/video page or a frame URL."
+                },
+                "media_id": {
+                    "type": "string",
+                    "description": "ID of previously generated media to attach (takes precedence over embed_url)"
                 }
             },
             "required": ["content"]
@@ -95,13 +99,14 @@ class SendFarcasterPostTool(ToolInterface):
         self, params: Dict[str, Any], context: ActionContext
     ) -> Dict[str, Any]:
         """
-       
+        Execute the Farcaster post action using service-oriented approach.
         """
         logger.info(f"Executing tool '{self.name}' with params: {params}")
 
-        # Check if Farcaster integration is available
-        if not context.farcaster_observer:
-            error_msg = "Farcaster integration (observer) not configured."
+        # Get Farcaster service from service registry
+        social_service = context.get_social_service("farcaster")
+        if not social_service or not await social_service.is_available():
+            error_msg = "Farcaster service is not available."
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
@@ -109,6 +114,17 @@ class SendFarcasterPostTool(ToolInterface):
         content = params.get("content", "")
         channel = params.get("channel")  # Optional
         embed_url = params.get("embed_url")  # Optional
+        media_id = params.get("media_id")  # Optional - takes precedence over embed_url
+
+        # Handle explicit media_id (takes precedence over embed_url)
+        if media_id and context.world_state_manager:
+            # Retrieve media URL from world state using media_id
+            media_url = context.world_state_manager.get_media_url_by_id(media_id)
+            if media_url:
+                embed_url = media_url
+                logger.info(f"Using media_id {media_id} resolved to URL: {media_url}")
+            else:
+                logger.warning(f"Media ID {media_id} not found in world state")
 
         # Allow empty content only if we have embed to attach
         if not content and not embed_url:
@@ -149,162 +165,49 @@ class SendFarcasterPostTool(ToolInterface):
             embeds.append({"url": embed_url})
             logger.info(f"Adding embed to Farcaster post: {embed_url}")
 
-        # Check timing constraints
-        timing_check = await context.farcaster_observer.check_post_timing()
-        if not timing_check["can_post"]:
-            # Use more precise timing message if available
-            time_msg = timing_check.get("time_remaining_formatted", 
-                                      f"{timing_check['minutes_remaining']} minute(s)")
-            error_msg = f"Rate limited: must wait {time_msg} before posting"
-            logger.warning(error_msg)
-            
-            # Record this rate limit failure in world state so AI is aware of the attempt
-            if context.world_state_manager:
-                context.world_state_manager.add_action_result(
-                    action_type=self.name,
-                    parameters={
-                        "content": content,
-                        "channel": channel,
-                        "embed_url": embed_url,
-                    },
-                    result=f"failure: {error_msg}",
-                )
-            
-            return {
-                "status": "failure",
-                "error": error_msg,
-                "action": "rate_limited",
-                "time_remaining": timing_check["time_remaining_seconds"],
-                "next_post_available": time.time() + timing_check["time_remaining_seconds"],
-                "timestamp": time.time()
-            }
-
-        # Check for recent similar posts
-        if await context.farcaster_observer.check_similar_recent_post(content):
-            error_msg = "Similar post was made recently - avoiding duplicate"
-            logger.warning(error_msg)
-            
-            # Record this duplicate prevention failure in world state so AI is aware of the attempt
-            if context.world_state_manager:
-                context.world_state_manager.add_action_result(
-                    action_type=self.name,
-                    parameters={
-                        "content": content,
-                        "channel": channel,
-                        "embed_url": embed_url,
-                    },
-                    result=f"failure: {error_msg}",
-                )
-            
-            return {
-                "status": "failure",
-                "error": error_msg,
-                "action": "duplicate_prevention",
-                "timestamp": time.time()
-            }
-
-        # Prevent duplicate posts with identical content (legacy check)
-        if (
-            context.world_state_manager
-            and context.world_state_manager.has_sent_farcaster_post(content)
-        ):
-            error_msg = "Already sent Farcaster post with identical content. Skipping duplicate."
-            logger.warning(error_msg)
-            
-            # Record this duplicate prevention failure in world state so AI is aware of the attempt
-            context.world_state_manager.add_action_result(
-                action_type=self.name,
-                parameters={
-                    "content": content,
-                    "channel": channel,
-                    "embed_url": embed_url,
-                },
-                result=f"failure: {error_msg}",
-            )
-            
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
-
-        # If observer supports scheduling (has a real asyncio.Queue), enqueue; otherwise, execute immediately
-        import asyncio
-
-        post_q = getattr(context.farcaster_observer, "post_queue", None)
-        if isinstance(post_q, asyncio.Queue):
-            try:
-                # Record scheduling and get action_id for tracking
-                action_id = None
-                if context.world_state_manager:
-                    action_id = context.world_state_manager.add_action_result(
-                        action_type=self.name,
-                        parameters={
-                            "content": content,
-                            "channel": channel,
-                            "embeds": embeds,
-                        },
-                        result="scheduled",
-                    )
-
-                # Note: The schedule_post method now handles embeds properly
-                context.farcaster_observer.schedule_post(
-                    content, channel, action_id, embeds
-                )
-                success_msg = "Scheduled Farcaster post via scheduler"
-                logger.info(success_msg)
-                return {
-                    "status": "scheduled",
-                    "message": success_msg,
-                    "content": content,
-                    "channel": channel,
-                    "action_id": action_id,  # Return action_id for tracking
-                    "timestamp": time.time(),
-                }
-            except Exception as e:
-                error_msg = f"Error scheduling Farcaster post: {e}"
-                logger.exception(error_msg)
-                return {
-                    "status": "failure",
-                    "error": error_msg,
-                    "timestamp": time.time(),
-                }
-        # Immediate execution fallback
+        # Create post using service
         try:
-            # Prepare embed URLs for the observer
-            embed_urls = [e['url'] for e in embeds if 'url' in e]
-
-            result = await context.farcaster_observer.post_cast(
+            result = await social_service.create_post(
                 content=content,
-                channel=channel,
-                embed_urls=embed_urls if embed_urls else None
+                embed_urls=[embed_url] if embed_url else [],
+                parent_url=None  # TODO: Add reply support to schema
             )
-            logger.info(f"Farcaster observer post_cast returned: {result}")
 
-            # Record this action in world state
+            # Record this action in world state if successful
+            if context.world_state_manager and result.get("status") == "success":
+                context.world_state_manager.add_action_result(
+                    action_type=self.name,
+                    parameters={
+                        "content": content,
+                        "channel": channel,
+                        "embed_url": embed_url,
+                    },
+                    result="success",
+                )
+
+            return result
+
+        except Exception as e:
+            error_msg = f"Error creating Farcaster post: {e}"
+            logger.exception(error_msg)
+            
+            # Record this error in world state
             if context.world_state_manager:
-                if result.get("success"):
-                    cast_hash = result.get("cast", {}).get("hash")
-                    context.world_state_manager.add_action_result(
-                        action_type=self.name,
-                        parameters={
-                            "content": content,
-                            "channel": channel,
-                            "cast_hash": cast_hash,
-                            "embed_url": embed_url,
-                        },
-                        result="success",
-                    )
-                else:
-                    context.world_state_manager.add_action_result(
-                        action_type=self.name,
-                        parameters={
-                            "content": content, 
-                            "channel": channel, 
-                            "embed_url": embed_url,
-                        },
-                        result=f"failure: {result.get('error', 'unknown')}",
-                    )
-
-            if result.get("success"):
-                return {"status": "success", **result}
-            else:
+                context.world_state_manager.add_action_result(
+                    action_type=self.name,
+                    parameters={
+                        "content": content,
+                        "channel": channel,
+                        "embed_url": embed_url,
+                    },
+                    result=f"failure: {error_msg}",
+                )
+            
+            return {
+                "status": "failure",
+                "error": error_msg,
+                "timestamp": time.time(),
+            }
                 return {
                     "status": "failure",
                     "error": result.get("error", "unknown"),
@@ -571,13 +474,14 @@ class LikeFarcasterPostTool(ToolInterface):
         self, params: Dict[str, Any], context: ActionContext
     ) -> Dict[str, Any]:
         """
-        Execute the Farcaster like action.
+        Execute the Farcaster like action using service-oriented approach.
         """
         logger.info(f"Executing tool '{self.name}' with params: {params}")
 
-        # Check if Farcaster integration is available
-        if not context.farcaster_observer:
-            error_msg = "Farcaster integration (observer) not configured."
+        # Get Farcaster service from service registry
+        social_service = context.get_social_service("farcaster")
+        if not social_service or not await social_service.is_available():
+            error_msg = "Farcaster service is not available."
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
@@ -600,13 +504,13 @@ class LikeFarcasterPostTool(ToolInterface):
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
         try:
-            # Use the observer's like_cast method
-            result = await context.farcaster_observer.like_cast(cast_hash)
-            logger.info(f"Farcaster observer like_cast returned: {result}")
+            # Use the service's react method
+            result = await social_service.react_to_post(cast_hash, "like")
+            logger.info(f"Farcaster service react_to_post returned: {result}")
 
             # Record this action in world state
             if context.world_state_manager:
-                if result.get("success"):
+                if result.get("status") == "success":
                     context.world_state_manager.add_action_result(
                         action_type=self.name,
                         parameters={"cast_hash": cast_hash},
@@ -619,7 +523,7 @@ class LikeFarcasterPostTool(ToolInterface):
                         result=f"failure: {result.get('error', 'unknown')}",
                     )
 
-            if result.get("success"):
+            if result.get("status") == "success":
                 success_msg = f"Successfully liked Farcaster cast: {cast_hash}"
                 logger.info(success_msg)
 
@@ -630,7 +534,7 @@ class LikeFarcasterPostTool(ToolInterface):
                     "timestamp": time.time(),
                 }
             else:
-                error_msg = f"Failed to like Farcaster cast via observer: {result.get('error', 'unknown error')}"
+                error_msg = f"Failed to like Farcaster cast: {result.get('error', 'unknown error')}"
                 logger.error(error_msg)
                 return {
                     "status": "failure",

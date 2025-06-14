@@ -41,7 +41,8 @@ class NodeProcessor:
         summary_service: "NodeSummaryService",
         interaction_tools: "NodeInteractionTools",
         tool_registry=None,
-        action_context=None
+        action_context=None,
+        action_executor=None
     ):
         self.world_state = world_state_manager
         self.payload_builder = payload_builder
@@ -51,6 +52,7 @@ class NodeProcessor:
         self.interaction_tools = interaction_tools
         self.tool_registry = tool_registry
         self.action_context = action_context
+        self.action_executor = action_executor
         
         logger.info("NodeProcessor initialized with node-based processing capabilities")
     
@@ -517,9 +519,24 @@ class NodeProcessor:
         tool_args: Dict[str, Any], 
         cycle_id: str
     ) -> Dict[str, Any]:
-        """Execute a platform-specific tool through the tool registry."""
+        """Execute a platform-specific tool through the ActionExecutor."""
         try:
-            # Use the tool registry and action context if provided
+            # Use ActionExecutor if available for centralized execution
+            if self.action_executor and self.action_context:
+                from ..orchestration.action_executor import ActionPlan
+                
+                action_plan = ActionPlan(tool_name, tool_args)
+                result = await self.action_executor.execute_action(action_plan, self.action_context)
+                
+                return {
+                    "success": result.get("status") == "success",
+                    "message": result.get("message", f"Tool {tool_name} executed"),
+                    "tool_name": tool_name,
+                    "cycle_id": cycle_id,
+                    "tool_result": result
+                }
+            
+            # Fallback to direct tool execution for backward compatibility
             if hasattr(self, 'tool_registry') and self.tool_registry:
                 tool_registry = self.tool_registry
             else:
@@ -538,7 +555,7 @@ class NodeProcessor:
                 logger.warning(f"Tool {tool_name} not found in registry")
                 return {"success": False, "error": f"Tool {tool_name} not found"}
             
-            # Execute the tool
+            # Execute the tool directly
             logger.info(f"Executing platform tool: {tool_name} with args {tool_args}")
             result = await tool_instance.execute(tool_args, action_context)
             

@@ -286,23 +286,9 @@ class MainOrchestrator:
         self.tool_registry.register_tool(CreateMintFrameTool())
         self.tool_registry.register_tool(CreateAirdropClaimFrameTool())
         
-        # Service-oriented tools (new architecture)
-        from ...tools.service_oriented_matrix_tools import (
-            ServiceOrientedSendMatrixReplyTool,
-            ServiceOrientedReactToMatrixMessageTool
-        )
-        from ...tools.service_oriented_farcaster_tools import (
-            ServiceOrientedSendFarcasterPostTool,
-            ServiceOrientedLikeFarcasterPostTool
-        )
-        
-        # Register service-oriented Matrix tools
-        self.tool_registry.register_tool(ServiceOrientedSendMatrixReplyTool())
-        self.tool_registry.register_tool(ServiceOrientedReactToMatrixMessageTool())
-        
-        # Register service-oriented Farcaster tools
-        self.tool_registry.register_tool(ServiceOrientedSendFarcasterPostTool())
-        self.tool_registry.register_tool(ServiceOrientedLikeFarcasterPostTool())
+        # Service-oriented tools (new architecture) - REMOVED
+        # Legacy tools now use service-oriented architecture internally
+        # No need for separate _v2 tools
 
         # Media generation tools
         self.tool_registry.register_tool(GenerateImageTool())
