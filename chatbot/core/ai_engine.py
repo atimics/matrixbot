@@ -202,9 +202,14 @@ Based on this world state, what actions (if any) should you take? Remember you c
                 ],
                 "tools": self._get_essential_tool_definitions(),
                 "temperature": 0.7,
-                "max_tokens": 3500,
-                "response_format": {"type": "json_object"}  # Force JSON response
+                "max_tokens": 3500
+                # Note: Removed response_format because Google models don't support it with function calling
             }
+            
+            # Only add response_format for models that support it with tools
+            # Google models don't support response_format with function calling
+            if not self.model.startswith("google/"):
+                payload["response_format"] = {"type": "json_object"}
             
             # Log payload size
             payload_size = len(json.dumps(payload).encode('utf-8'))
@@ -376,6 +381,8 @@ Based on this world state, what actions (if any) should you take? Remember you c
 You are an autonomous AI agent operating across Matrix and Farcaster platforms.
 
 ## Response Format (STRICT JSON ONLY)
+CRITICAL: You MUST respond with valid JSON in the exact format below. Do not include any text before or after the JSON.
+
 ```json
 {
   "observations": "Brief summary of notable world state changes requiring action",
@@ -393,11 +400,12 @@ You are an autonomous AI agent operating across Matrix and Farcaster platforms.
 
 ## Core Rules
 1. ALWAYS respond with valid JSON in the exact format above
-2. Maximum 3 actions per cycle
-3. Check recent_actions to avoid duplicates
-4. Skip actions on messages with "already_replied": true
-5. Use "wait" tool when no action needed
-6. Focus on primary_channel but consider all recent_messages
+2. NO TEXT BEFORE OR AFTER THE JSON
+3. Maximum 3 actions per cycle
+4. Check recent_actions to avoid duplicates
+5. Skip actions on messages with "already_replied": true
+6. Use "wait" tool when no action needed
+7. Focus on primary_channel but consider all recent_messages
 
 ## Decision Framework
 - **High Priority (8-10)**: Direct replies, urgent issues, new conversations
@@ -684,6 +692,34 @@ Max 1 action. Use "wait" if no action needed."""
         
         async def _async_api_call():
             try:
+                # Log the complete request payload for debugging 400 errors
+                payload_size_kb = len(json.dumps(payload).encode('utf-8')) / 1024
+                self.logger.info(f"API Request: {self.base_url}")
+                self.logger.info(f"Payload size: {payload_size_kb:.2f} KB")
+                self.logger.info(f"Model: {payload.get('model', 'not specified')}")
+                self.logger.info(f"Messages count: {len(payload.get('messages', []))}")
+                self.logger.info(f"Tools count: {len(payload.get('tools', []))}")
+                
+                # Log payload structure for debugging
+                if payload_size_kb < 50:  # Only log full payload if it's reasonably small
+                    self.logger.debug(f"Full payload: {json.dumps(payload, indent=2)}")
+                else:
+                    # Log just the essential parts
+                    debug_payload = {
+                        "model": payload.get("model"),
+                        "temperature": payload.get("temperature"),
+                        "max_tokens": payload.get("max_tokens"),
+                        "response_format": payload.get("response_format"),
+                        "messages": [
+                            {
+                                "role": msg.get("role"),
+                                "content_length": len(str(msg.get("content", "")))
+                            } for msg in payload.get("messages", [])
+                        ],
+                        "tools_count": len(payload.get("tools", []))
+                    }
+                    self.logger.debug(f"Payload structure: {json.dumps(debug_payload, indent=2)}")
+                
                 async with httpx.AsyncClient(timeout=60.0) as client:
                     response = await client.post(
                         self.base_url,
@@ -696,8 +732,33 @@ Max 1 action. Use "wait" if no action needed."""
                         },
                     )
                     
+                    # Enhanced error logging for 400 Bad Request
+                    if response.status_code == 400:
+                        error_details = {
+                            "status_code": response.status_code,
+                            "response_text": response.text,
+                            "request_model": payload.get("model"),
+                            "request_size_kb": payload_size_kb,
+                            "has_tools": bool(payload.get("tools")),
+                            "has_response_format": bool(payload.get("response_format")),
+                            "message_roles": [msg.get("role") for msg in payload.get("messages", [])]
+                        }
+                        self.logger.error(f"HTTP 400 Bad Request - Error details: {json.dumps(error_details, indent=2)}")
+                        
+                        # Try to parse error response for more details
+                        try:
+                            error_response = response.json()
+                            self.logger.error(f"OpenRouter error response: {json.dumps(error_response, indent=2)}")
+                        except:
+                            self.logger.error(f"Could not parse error response as JSON")
+                        
+                        return {
+                            "observations": f"API 400 error: {response.text[:200]}",
+                            "selected_actions": [{"action_type": "wait", "parameters": {}, "reasoning": "API 400 error recovery", "priority": 1}],
+                            "reasoning": "Falling back to wait due to API 400 Bad Request error"
+                        }
+                    
                     if response.status_code == 413:
-                        payload_size_kb = len(json.dumps(payload).encode('utf-8')) / 1024
                         self.logger.error(f"HTTP 413 Payload Too Large - payload was {payload_size_kb:.2f} KB")
                         return {
                             "observations": f"Payload too large ({payload_size_kb:.2f} KB)",
@@ -715,7 +776,7 @@ Max 1 action. Use "wait" if no action needed."""
                     usage_info = result.get("usage", {})
                     if usage_info:
                         total_tokens = usage_info.get("total_tokens", 0)
-                        self.logger.info(f"Token usage: {total_tokens:,} tokens")
+                        self.logger.info(f"API Success - Token usage: {total_tokens:,} tokens")
                     
                     # Parse JSON response using the extraction method
                     return self._extract_json_from_response(ai_response)

@@ -152,13 +152,17 @@ class SendFarcasterPostTool(ToolInterface):
         # Check timing constraints
         timing_check = await context.farcaster_observer.check_post_timing()
         if not timing_check["can_post"]:
-            error_msg = f"Must wait {timing_check['minutes_remaining']} more minutes before posting"
+            # Use more precise timing message if available
+            time_msg = timing_check.get("time_remaining_formatted", 
+                                      f"{timing_check['minutes_remaining']} minute(s)")
+            error_msg = f"Rate limited: must wait {time_msg} before posting"
             logger.warning(error_msg)
             return {
                 "status": "failure",
                 "error": error_msg,
                 "action": "rate_limited",
                 "time_remaining": timing_check["time_remaining_seconds"],
+                "next_post_available": time.time() + timing_check["time_remaining_seconds"],
                 "timestamp": time.time()
             }
 

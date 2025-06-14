@@ -635,13 +635,17 @@ class FarcasterObserver(Integration):
             if not reply_to:
                 timing_check = await self.check_post_timing()
                 if not timing_check["can_post"]:
-                    error_msg = f"Rate limited: must wait {timing_check['minutes_remaining']} more minutes"
+                    # Use more precise timing message if available
+                    time_msg = timing_check.get("time_remaining_formatted", 
+                                              f"{timing_check['minutes_remaining']} minute(s)")
+                    error_msg = f"Rate limited: must wait {time_msg}"
                     logger.warning(error_msg)
                     return {
                         "success": False,
                         "error": error_msg,
                         "rate_limited": True,
-                        "time_remaining": timing_check["time_remaining_seconds"]
+                        "time_remaining": timing_check["time_remaining_seconds"],
+                        "next_post_available": time.time() + timing_check["time_remaining_seconds"]
                     }
                 
                 # Check for similar recent posts
@@ -1243,10 +1247,18 @@ class FarcasterObserver(Integration):
             if time_since_last < min_interval_seconds:
                 time_remaining = min_interval_seconds - time_since_last
                 minutes_remaining = time_remaining / 60
+                
+                # Format more precise timing messages
+                if time_remaining >= 60:
+                    time_msg = f"{round(minutes_remaining, 1)} minute(s)"
+                else:
+                    time_msg = f"{int(time_remaining)} second(s)"
+                
                 return {
                     "can_post": False,
                     "time_remaining_seconds": time_remaining,
                     "minutes_remaining": round(minutes_remaining, 1),
+                    "time_remaining_formatted": time_msg,
                     "last_post_time": post_time_str
                 }
             

@@ -75,7 +75,7 @@ class AppConfig(BaseSettings):
     FARCASTER_BOT_USERNAME: Optional[str] = None  # Bot's username for filtering
     
     # Farcaster Rate Limiting and Context
-    FARCASTER_MIN_POST_INTERVAL_MINUTES: int = 5  # Minimum minutes between posts
+    FARCASTER_MIN_POST_INTERVAL_MINUTES: int = 1  # Minimum minutes between posts
     FARCASTER_DUPLICATE_CHECK_HOURS: int = 1  # Hours to look back for duplicate content
     FARCASTER_RECENT_POSTS_LIMIT: int = 10  # Number of recent posts to fetch for context
     

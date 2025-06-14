@@ -96,7 +96,7 @@ class TestFarcasterRateLimiting:
         observer.get_recent_own_posts = mock_observer.get_recent_own_posts
         
         with patch('chatbot.integrations.farcaster.farcaster_observer.settings') as mock_settings:
-            mock_settings.FARCASTER_MIN_POST_INTERVAL_MINUTES = 5
+            mock_settings.FARCASTER_MIN_POST_INTERVAL_MINUTES = 1
             
             result = await observer.check_post_timing()
             
@@ -118,7 +118,7 @@ class TestFarcasterRateLimiting:
         observer.get_recent_own_posts = mock_observer.get_recent_own_posts
         
         with patch('chatbot.integrations.farcaster.farcaster_observer.settings') as mock_settings:
-            mock_settings.FARCASTER_MIN_POST_INTERVAL_MINUTES = 5
+            mock_settings.FARCASTER_MIN_POST_INTERVAL_MINUTES = 1
             
             result = await observer.check_post_timing()
             
