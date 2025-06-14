@@ -9,7 +9,7 @@ import pytest
 import asyncio
 import time
 from unittest.mock import AsyncMock, Mock, patch
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from chatbot.integrations.farcaster.farcaster_observer import FarcasterObserver
 from chatbot.tools.farcaster_tools import SendFarcasterPostTool
@@ -125,6 +125,31 @@ class TestFarcasterRateLimiting:
             assert result["can_post"] is False
             assert "time_remaining_seconds" in result
             assert "minutes_remaining" in result
+            assert "time_remaining_formatted" in result  # New formatted field
+
+    @pytest.mark.asyncio
+    async def test_timing_message_formatting(self, mock_observer):
+        """Test that timing messages are formatted correctly for different durations."""
+        # Test with recent timestamp that should trigger rate limiting
+        recent_time = (datetime.now() - timedelta(seconds=30)).isoformat() + "Z"
+        mock_observer.get_recent_own_posts.return_value = [
+            {
+                "timestamp": recent_time,
+                "text": "Recent post"
+            }
+        ]
+        
+        observer = FarcasterObserver(api_key="test", bot_fid="12345")
+        observer.get_recent_own_posts = mock_observer.get_recent_own_posts
+        
+        with patch('chatbot.integrations.farcaster.farcaster_observer.settings') as mock_settings:
+            mock_settings.FARCASTER_MIN_POST_INTERVAL_MINUTES = 1
+            
+            result = await observer.check_post_timing()
+            
+            assert result["can_post"] is False
+            # Should show seconds for short durations
+            assert "second(s)" in result["time_remaining_formatted"]
 
     @pytest.mark.asyncio
     async def test_check_similar_recent_post(self, mock_observer):
