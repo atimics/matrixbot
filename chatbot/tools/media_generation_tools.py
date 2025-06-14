@@ -144,23 +144,35 @@ class GenerateImageTool(ToolInterface):
             if not image_data:
                 return {"status": "error", "message": "Failed to generate image data from any available service."}
 
-            image_arweave_url = await context.arweave_service.upload_image_data(image_data, "generated_image.png", "image/png")
-            if not image_arweave_url:
-                return {"status": "error", "message": "Failed to upload generated image to Arweave."}
+            # Use dual storage: S3 for fast delivery, optionally Arweave for NFT potential
+            if context.dual_storage_manager:
+                image_url = await context.dual_storage_manager.upload_media(
+                    image_data, "generated_image.png", "image/png"
+                )
+                storage_service = "s3" if context.dual_storage_manager.is_s3_available() else "arweave"
+            else:
+                # Fallback to direct Arweave upload
+                image_url = await context.arweave_service.upload_image_data(image_data, "generated_image.png", "image/png")
+                storage_service = "arweave"
+            
+            if not image_url:
+                return {"status": "error", "message": "Failed to upload generated image to storage."}
 
             context.world_state_manager.record_generated_media(
-                media_url=image_arweave_url, media_type="image", prompt=prompt,
+                media_url=image_url, media_type="image", prompt=prompt,
                 service_used=service_used, aspect_ratio=aspect_ratio
             )
 
-            await _auto_post_to_gallery(context, "image", image_arweave_url, prompt, service_used)
+            await _auto_post_to_gallery(context, "image", image_url, prompt, service_used)
 
             return {
                 "status": "success",
-                "message": f"Image generated using {service_used} and stored on Arweave.",
-                "arweave_image_url": image_arweave_url,
+                "message": f"Image generated using {service_used} and stored on {storage_service}.",
+                "image_url": image_url,
+                "arweave_image_url": image_url if storage_service == "arweave" else None,
                 "prompt_used": prompt,
-                "next_actions_suggestion": f"To share this image, use a tool like 'send_matrix_image' with the URL: {image_arweave_url}"
+                "storage_service": storage_service,
+                "next_actions_suggestion": f"To share this image, use a tool like 'send_matrix_image' with the URL: {image_url}"
             }
 
         except Exception as e:
@@ -232,27 +244,38 @@ class GenerateVideoTool(ToolInterface):
                 return {"status": "error", "message": "Failed to generate video from Google Veo."}
 
             video_data = video_list[0]
-            video_arweave_url = await context.arweave_service.upload_media_data(
-                video_data, 
-                "generated_video.mp4", 
-                "video/mp4"
-            )
-            if not video_arweave_url:
-                return {"status": "error", "message": "Failed to upload generated video to Arweave."}
+            
+            # Use dual storage: S3 for fast delivery, optionally Arweave for NFT potential
+            if context.dual_storage_manager:
+                video_url = await context.dual_storage_manager.upload_media(
+                    video_data, "generated_video.mp4", "video/mp4"
+                )
+                storage_service = "s3" if context.dual_storage_manager.is_s3_available() else "arweave"
+            else:
+                # Fallback to direct Arweave upload
+                video_url = await context.arweave_service.upload_media_data(
+                    video_data, "generated_video.mp4", "video/mp4"
+                )
+                storage_service = "arweave"
+            
+            if not video_url:
+                return {"status": "error", "message": "Failed to upload generated video to storage."}
 
             context.world_state_manager.record_generated_media(
-                media_url=video_arweave_url, media_type="video", prompt=prompt,
+                media_url=video_url, media_type="video", prompt=prompt,
                 service_used="google_veo", aspect_ratio=aspect_ratio
             )
 
-            await _auto_post_to_gallery(context, "video", video_arweave_url, prompt, "google_veo")
+            await _auto_post_to_gallery(context, "video", video_url, prompt, "google_veo")
 
             return {
                 "status": "success",
-                "message": "Video generated and stored on Arweave.",
-                "arweave_video_url": video_arweave_url,
+                "message": f"Video generated and stored on {storage_service}.",
+                "video_url": video_url,
+                "arweave_video_url": video_url if storage_service == "arweave" else None,
                 "prompt_used": prompt,
-                "next_actions_suggestion": f"To share this video, use 'send_matrix_video_link' tool with the URL: {video_arweave_url}"
+                "storage_service": storage_service,
+                "next_actions_suggestion": f"To share this video, use 'send_matrix_video_link' tool with the URL: {video_url}"
             }
 
         except Exception as e:

@@ -1,8 +1,11 @@
 """
 Base classes and interfaces for the dynamic tool system.
 """
+import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class ActionContext:
@@ -40,6 +43,14 @@ class ActionContext:
         self.arweave_service = arweave_service
         self.base_nft_service = base_nft_service
         self.eligibility_service = eligibility_service
+        
+        # Initialize dual storage manager
+        self.dual_storage_manager = None
+        try:
+            from ..integrations.dual_storage_manager import DualStorageManager
+            self.dual_storage_manager = DualStorageManager(arweave_service=arweave_service)
+        except Exception as e:
+            logger.warning(f"Failed to initialize dual storage manager: {e}")
     
     def get_messaging_service(self, service_id: str):
         """Get a messaging service by ID"""

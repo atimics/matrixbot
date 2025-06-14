@@ -190,6 +190,13 @@ class AppConfig(BaseSettings):
     GITHUB_TOKEN: Optional[str] = None
     GITHUB_USERNAME: Optional[str] = None
 
+    # S3 Storage Configuration (Primary media storage)
+    S3_API_KEY: Optional[str] = None  # S3 API key for authentication
+    S3_API_ENDPOINT: Optional[str] = None  # S3 service endpoint URL
+    CLOUDFRONT_DOMAIN: Optional[str] = None  # CloudFront domain for public URLs
+    S3_UPLOAD_TIMEOUT: float = 120.0  # Upload timeout in seconds
+    USE_S3_FOR_MEDIA: bool = True  # Use S3 as primary media storage (keep Arweave for NFTs)
+
 
 # Global settings instance
 def create_settings() -> AppConfig:
