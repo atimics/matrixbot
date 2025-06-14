@@ -44,6 +44,8 @@ services:
       - PYTHONUNBUFFERED=1
       - RATICHAT_DB_PATH=/app/data/ratichat.db
       - ARWEAVE_INTERNAL_UPLOADER_SERVICE_URL=http://arweave-service:8001
+      # S3 Storage Configuration (use environment variables from .env)
+      # S3_API_KEY, S3_API_ENDPOINT, CLOUDFRONT_DOMAIN will be loaded from .env
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
