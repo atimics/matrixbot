@@ -377,6 +377,31 @@ class FarcasterObserver(Integration):
             if self.ecosystem_token_service:
                 holder_feed_messages = await self.ecosystem_token_service.observe_monitored_holder_feeds()
                 new_messages.extend(holder_feed_messages)
+            
+            # *** ENHANCEMENT: Include bot's own recent casts for self-awareness ***
+            if self.bot_fid and (include_home_feed or include_for_you_feed):
+                try:
+                    bot_recent_casts = await self.get_recent_own_posts(limit=5)
+                    if bot_recent_casts:
+                        # Convert dict format to Message objects if needed
+                        for cast_data in bot_recent_casts:
+                            if isinstance(cast_data, dict):
+                                # Create a Message object from the cast data
+                                bot_message = Message(
+                                    id=cast_data.get('hash', ''),
+                                    channel_id="farcaster:bot_own_posts",
+                                    channel_type="farcaster",
+                                    sender=cast_data.get('author', {}).get('username', self.bot_username or ''),
+                                    content=cast_data.get('text', ''),
+                                    timestamp=cast_data.get('timestamp', time.time()),
+                                    sender_fid=str(self.bot_fid),
+                                    sender_username=self.bot_username,
+                                    cast_hash=cast_data.get('hash'),
+                                )
+                                new_messages.append(bot_message)
+                        logger.info(f"Added {len(bot_recent_casts)} bot's own recent casts to feed for self-awareness")
+                except Exception as e:
+                    logger.warning(f"Failed to fetch bot's own recent casts: {e}")
                         
             unique_messages_dict = {msg.id: msg for msg in new_messages}
             new_messages = list(unique_messages_dict.values())

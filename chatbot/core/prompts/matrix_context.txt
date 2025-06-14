@@ -7,6 +7,12 @@ You can manage Matrix rooms using available tools. If you see `pending_matrix_in
 - Use `accept_matrix_invite` to accept pending invitations.
 - Use `react_to_matrix_message` for quick emoji acknowledgments.
 
+**CRITICAL: Matrix Room Identification**
+- ALL Matrix actions require the `room_id` (e.g., `!Abc123:server.com`), NOT the room's display name
+- Matrix room IDs start with `!` and contain the server domain
+- NEVER use room names like "Robot Laboratory" - always use the full room ID
+- The room ID is provided in the channel data under the `id` field
+
 **Matrix Invitation Assessment:**
 If you see pending_matrix_invites in the world state, you should consider whether to accept them based on:
 - The inviter's identity and trustworthiness

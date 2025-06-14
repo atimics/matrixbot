@@ -606,6 +606,7 @@ class PayloadBuilder:
                     yield f"memory_bank.{platform}"
 
     def _generate_thread_paths(self, world_state_data: WorldStateData):
+        # Generate paths for existing thread conversations
         if world_state_data.threads:
             active_threads = []
             two_hours_ago = time.time() - 7200
@@ -614,6 +615,17 @@ class PayloadBuilder:
                     active_threads.append(thread_id)
             for thread_id in active_threads[:3]: # Limit to 3 most active
                 yield f"threads.farcaster.{thread_id}"
+        
+        # *** ENHANCEMENT: Generate paths for individual Farcaster casts that can be expanded into threads ***
+        # Look through recent Farcaster messages and create expandable thread nodes for root casts
+        for platform_channels in world_state_data.channels.values():
+            if isinstance(platform_channels, dict):
+                for channel_id, channel in platform_channels.items():
+                    if channel.type == "farcaster" and channel.recent_messages:
+                        # Create thread expansion nodes for recent root casts (non-replies)
+                        for msg in channel.recent_messages[-10:]:  # Last 10 messages
+                            if msg.id and not msg.reply_to:  # Root cast (not a reply)
+                                yield f"threads.farcaster.{msg.id}"
 
     def _generate_system_paths(self, world_state_data: WorldStateData):
         yield from ["system.rate_limits", "system.status", "system.action_history"]
@@ -911,12 +923,52 @@ class PayloadBuilder:
     def _get_thread_node_data(self, world_state_data: WorldStateData, path_parts: List[str], expanded: bool = False) -> Optional[Dict]:
         if len(path_parts) >= 3:
             thread_type, thread_id = path_parts[1], path_parts[2]
-            thread_messages = world_state_data.threads.get(thread_id, [])
-            return {
-                "thread_id": thread_id,
-                "type": thread_type,
-                "messages": [msg.to_ai_summary_dict() for msg in thread_messages[-5:]]  # Use summaries instead of full data
-            }
+            
+            # Check if this is an existing thread in world state
+            if thread_id in world_state_data.threads:
+                thread_messages = world_state_data.threads[thread_id]
+                return {
+                    "thread_id": thread_id,
+                    "type": thread_type,
+                    "message_count": len(thread_messages),
+                    "messages": [msg.to_ai_summary_dict() for msg in thread_messages[-5:]]  # Use summaries instead of full data
+                }
+            
+            # *** ENHANCEMENT: Handle individual cast thread expansion ***
+            elif thread_type == "farcaster" and expanded:
+                # This is a request to expand a specific cast into its conversation thread
+                # For collapsed view, just return basic info about the cast
+                root_cast = self._find_cast_by_id(world_state_data, thread_id)
+                if root_cast:
+                    if expanded:
+                        # When expanded, we would fetch the full conversation
+                        # For now, return a placeholder that indicates this cast can be expanded
+                        return {
+                            "thread_id": thread_id,
+                            "type": "farcaster_cast_thread",
+                            "root_cast": root_cast.to_ai_summary_dict(),
+                            "conversation_available": True,
+                            "note": "This cast can be expanded to view its full conversation thread. Use 'expand_node' to see all replies."
+                        }
+                    else:
+                        # Collapsed view - just show the root cast
+                        return {
+                            "thread_id": thread_id,
+                            "type": "farcaster_cast_thread", 
+                            "root_cast": root_cast.to_ai_summary_dict(),
+                            "conversation_available": True
+                        }
+        return None
+
+    def _find_cast_by_id(self, world_state_data: WorldStateData, cast_id: str) -> Optional[Any]:
+        """Find a Farcaster cast by its ID across all channels."""
+        for platform_channels in world_state_data.channels.values():
+            if isinstance(platform_channels, dict):
+                for channel_id, channel in platform_channels.items():
+                    if channel.type == "farcaster":
+                        for msg in channel.recent_messages:
+                            if msg.id == cast_id:
+                                return msg
         return None
 
     # --- User Profiling and Payload Optimization Helpers ---

@@ -75,12 +75,15 @@ class NodeManager:
         self.system_events.append(event)
     
     def _initialize_default_pins(self):
-        """Initialize default pinned nodes."""
+        """Initialize default pinned nodes and expand them for guaranteed visibility."""
         for node_path in self.default_pinned_nodes:
-            self.get_node_metadata(node_path).is_pinned = True
+            metadata = self.get_node_metadata(node_path)
+            metadata.is_pinned = True
+            metadata.is_expanded = True  # *** ENHANCEMENT: Auto-expand pinned nodes ***
+            metadata.update_expanded_timestamp()
             self._log_system_event(
                 "auto_pin",
-                f"Node '{node_path}' auto-pinned as critical integration point.",
+                f"Node '{node_path}' auto-pinned and expanded as critical integration point.",
                 [node_path]
             )
     

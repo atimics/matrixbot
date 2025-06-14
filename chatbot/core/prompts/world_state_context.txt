@@ -41,6 +41,14 @@ The system uses a two-step approach for large datasets:
 - `channels.matrix.{room_id}`: Individual Matrix room content
 - `channels.farcaster.{channel_id}`: Individual Farcaster channel content
 - `users.farcaster.{fid}`: Individual user profile information
+- `threads.farcaster.{cast_hash}`: Individual Farcaster cast conversations (expandable)
+
+**Farcaster Threading Model:**
+- Each Farcaster cast can be expanded into its full conversation thread
+- Use `expand_node` on `threads.farcaster.{cast_hash}` to see all replies to a cast
+- This provides complete conversational context before replying
+- Root casts (non-replies) automatically generate expandable thread nodes
+- Expanding a thread shows chronological replies and conversation flow
 
 **Rate Limit Awareness:**
 - Your actions are subject to rate limits (per-tool, per-channel, and global).
