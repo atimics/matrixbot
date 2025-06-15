@@ -367,19 +367,37 @@ class NodeManager:
         current_time = time.time()
         auto_expanded = []
         
-        # Sort channels by activity (most recent first)
+        # Sort channels by activity (most recent first) with special priority for notifications
+        def priority_sort_key(item):
+            channel_id, last_activity = item
+            # Give high priority to notification-related feeds
+            if 'notifications' in channel_id or 'mentions' in channel_id:
+                return (current_time + 3600, last_activity)  # Add 1 hour to make them prioritized
+            return (last_activity, last_activity)
+        
         sorted_channels = sorted(
             channel_activity_data.items(),
-            key=lambda x: x[1],
+            key=priority_sort_key,
             reverse=True
         )
         
         for channel_id, last_activity in sorted_channels:
-            # Only consider channels active in the last 10 minutes
-            if current_time - last_activity > 600:  # 10 minutes
+            # Special handling for high-priority feeds (notifications, mentions)
+            is_high_priority = any(keyword in channel_id for keyword in ['notifications', 'mentions', 'home'])
+            
+            # Different time windows based on priority
+            time_threshold = 1800 if is_high_priority else 600  # 30 min for high-priority, 10 min for others
+            
+            # Only consider channels active within the threshold
+            if current_time - last_activity > time_threshold:
                 continue
                 
-            node_path = f"channels.{channel_id}"
+            # Handle different node path formats
+            if channel_id.startswith('farcaster.feeds.'):
+                node_path = channel_id  # Use the full path for farcaster feeds
+            else:
+                node_path = f"channels.{channel_id}"
+                
             metadata = self.get_node_metadata(node_path)
             
             # Skip if already expanded or manually pinned
@@ -390,11 +408,16 @@ class NodeManager:
             success, auto_collapsed, message = self.expand_node(node_path)
             if success:
                 auto_expanded.append(channel_id)
-                # Mark as auto-expanded (not manually pinned)
-                metadata.is_pinned = False  # Auto-expanded nodes are not pinned
+                # Mark as auto-expanded (not manually pinned) unless it's high-priority
+                if is_high_priority:
+                    # Pin high-priority feeds like notifications to keep them expanded
+                    metadata.is_pinned = True
+                    logger.info(f"Auto-expanded and pinned high-priority feed: {channel_id}")
+                else:
+                    metadata.is_pinned = False  # Auto-expanded nodes are not pinned
                 
-                # Stop if we've expanded enough active channels
-                if len(auto_expanded) >= 3:  # Limit auto-expansion to 3 most active
+                # Stop if we've expanded enough active channels (but prioritize high-priority feeds)
+                if len(auto_expanded) >= 5:  # Increased limit to allow more feeds
                     break
         
         return auto_expanded

@@ -9,7 +9,7 @@ import time
 from chatbot.tools.base import ToolInterface, ActionContext
 from chatbot.tools.registry import ToolRegistry
 from chatbot.tools.core_tools import WaitTool
-from chatbot.tools.matrix_tools import SendMatrixReplyTool, SendMatrixMessageTool
+from chatbot.tools.matrix import SendMatrixReplyTool, SendMatrixMessageTool
 from chatbot.tools.farcaster_tools import SendFarcasterPostTool, SendFarcasterReplyTool
 
 

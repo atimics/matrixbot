@@ -206,7 +206,7 @@ class MainOrchestrator:
             CreateMintFrameTool,
             CreateAirdropClaimFrameTool,
         )
-        from ...tools.matrix_tools import (
+        from ...tools.matrix import (
             AcceptMatrixInviteTool,
             IgnoreMatrixInviteTool,
             JoinMatrixRoomTool,
@@ -853,7 +853,7 @@ class MainOrchestrator:
     async def _execute_matrix_action_directly(self, action) -> None:
         """Execute matrix actions directly for test compatibility."""
         try:
-            from ...tools.matrix_tools import SendMatrixReplyTool, SendMatrixMessageTool
+            from ...tools.matrix import SendMatrixReplyTool, SendMatrixMessageTool
             
             # Get matrix observer from integration manager
             active_integrations = self.integration_manager.get_active_integrations()

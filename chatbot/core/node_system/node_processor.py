@@ -710,15 +710,29 @@ class NodeProcessor:
             farcaster_data = getattr(world_state_data, 'farcaster', {})
             feeds = farcaster_data.get('feeds', {})
             for feed_name, feed_data in feeds.items():
-                if isinstance(feed_data, dict) and 'casts' in feed_data:
-                    feed_casts = feed_data['casts']
-                    if feed_casts:
-                        # Get timestamp of most recent cast
+                if isinstance(feed_data, dict):
+                    # Handle different feed data structures
+                    feed_messages = None
+                    if 'casts' in feed_data:
+                        feed_messages = feed_data['casts']
+                    elif 'messages' in feed_data:
+                        feed_messages = feed_data['messages']
+                    elif isinstance(feed_data, list):
+                        # Sometimes feed_data might be a direct list of messages
+                        feed_messages = feed_data
+                    
+                    if feed_messages:
+                        # Get timestamp of most recent message
                         latest_timestamp = max(
-                            cast.get('timestamp', 0) for cast in feed_casts
-                            if isinstance(cast, dict)
+                            (cast.get('timestamp', 0) if isinstance(cast, dict) else 0) 
+                            for cast in feed_messages
                         )
                         channel_activity[f"farcaster.feeds.{feed_name}"] = latest_timestamp
+                        
+                        # Special handling for high-priority feeds like notifications
+                        if feed_name in ['notifications', 'mentions', 'home']:
+                            # Always prioritize notifications and mentions for expansion
+                            channel_activity[f"farcaster.feeds.{feed_name}"] = current_time
             
             # Auto-expand active channels if we found any activity
             if channel_activity:

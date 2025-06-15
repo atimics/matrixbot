@@ -15,7 +15,7 @@ import pytest
 
 from chatbot.core.world_state.manager import WorldStateManager
 from chatbot.core.world_state.structures import Message, ActionHistory
-from chatbot.tools.matrix_tools import SendMatrixReplyTool
+from chatbot.tools.matrix import SendMatrixReplyTool
 from chatbot.tools.base import ActionContext
 
 

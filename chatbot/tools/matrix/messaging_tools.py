@@ -87,7 +87,8 @@ class SendMatrixReplyTool(ToolInterface):
             if not reply_to_event_id:
                 logger.info(f"reply_to_id missing, falling back to regular message in {room_id}")
                 result = await matrix_service.send_message(
-                    room_id, content
+                    channel_id=room_id,
+                    content=content
                 )
                 
                 if result.get("status") == "success":
@@ -114,7 +115,9 @@ class SendMatrixReplyTool(ToolInterface):
             
             # Send reply using the service layer
             result = await matrix_service.send_reply(
-                room_id, content, reply_to_event_id
+                channel_id=room_id,
+                content=content,
+                reply_to_id=reply_to_event_id
             )
             
             if result.get("status") == "success":
@@ -217,7 +220,8 @@ class SendMatrixMessageTool(ToolInterface):
         try:
             # Send message using the service layer
             result = await matrix_service.send_message(
-                room_id, content
+                channel_id=room_id,
+                content=content
             )
 
             if result.get("status") == "success":

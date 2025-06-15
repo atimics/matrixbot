@@ -14,7 +14,7 @@ from chatbot.config import settings
 from chatbot.integrations.google_ai_media_client import GoogleAIMediaClient
 from chatbot.integrations.replicate_client import ReplicateClient
 from chatbot.tools.base import ActionContext, ToolInterface
-from chatbot.tools.matrix_tools import SendMatrixImageTool, SendMatrixVideoTool, SendMatrixVideoLinkTool
+from chatbot.tools.matrix import SendMatrixImageTool, SendMatrixVideoTool, SendMatrixVideoLinkTool
 
 logger = logging.getLogger(__name__)
 
