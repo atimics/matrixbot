@@ -1,18 +1,7 @@
 """
 Processing Hub
 
-Central hub for handling different processing strategies (traditio    def start_processing_loop(self) -> asyncio.Task:
-        """Start the main processing loop as a background task."""
-        if self.running:
-            logger.warning("Processing hub already running")
-            return None
-
-        logger.info("Starting processing hub...")
-        self.running = True
-        
-        # Start the event loop as a background task
-        task = asyncio.create_task(self._main_event_loop())
-        return task)
+Central hub for handling different processing strategies (traditional event-based and node-based)
 and managing the main event loop logic.
 """
 
@@ -95,23 +84,18 @@ class ProcessingHub:
         """Set the node-based processing component."""
         self.node_processor = processor
         
-    async def start_processing_loop(self) -> None:
-        """Start the main processing event loop."""
+    def start_processing_loop(self) -> asyncio.Task:
+        """Start the main processing loop as a background task."""
         if self.running:
             logger.warning("Processing hub already running")
-            return
+            return None
 
         logger.info("Starting processing hub...")
         self.running = True
         
-        try:
-            await self._main_event_loop()
-        except Exception as e:
-            logger.error(f"Error in processing hub: {e}")
-            raise
-        finally:
-            self.running = False
-            logger.info("Processing hub stopped")
+        # Start the event loop as a background task
+        task = asyncio.create_task(self._main_event_loop())
+        return task
 
     def stop_processing_loop(self):
         """Stop the processing loop."""
