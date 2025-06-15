@@ -60,6 +60,9 @@ class MatrixObserver(Integration):
         self.client: Optional[AsyncClient] = None
         self.sync_task: Optional[asyncio.Task] = None
         self.channels_to_monitor = []
+        
+        # Processing hub connection for trigger generation
+        self.processing_hub = None
 
         # Create store directory for Matrix client data
         self.store_path = Path("matrix_store")
@@ -394,6 +397,32 @@ class MatrixObserver(Integration):
             f"MatrixObserver: New message in {room.display_name or room.room_id}: "
             f"{event.sender}: {log_content}"
         )
+
+        # Generate triggers for processing hub if connected
+        if self.processing_hub:
+            from ...core.orchestration.processing_hub import Trigger
+            
+            # Check for direct mention
+            if settings.MATRIX_USER_ID in content:
+                trigger = Trigger(
+                    type='mention',
+                    priority=9,
+                    channel_id=room.room_id,
+                    context={'message_id': event.event_id, 'sender': event.sender}
+                )
+                self.processing_hub.add_trigger(trigger)
+            # Check if it's an actively monitored ("expanded") channel
+            elif self.world_state.is_channel_expanded(room.room_id, "matrix"):
+                trigger = Trigger(
+                    type='new_message',
+                    priority=7,
+                    channel_id=room.room_id,
+                    context={'message_id': event.event_id, 'sender': event.sender}
+                )
+                self.processing_hub.add_trigger(trigger)
+            else:
+                # Message is in a non-active channel. Just log it, don't trigger a full cycle.
+                logger.debug(f"Logged low-priority message in {room.room_id}, no trigger generated.")
 
     async def _on_invite(self, room, event):
         """Handle incoming Matrix room invites"""

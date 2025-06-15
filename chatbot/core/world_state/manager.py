@@ -462,6 +462,52 @@ class WorldStateManager:
         
         return None
 
+    def is_channel_expanded(self, channel_id: str, channel_type: Optional[str] = None) -> bool:
+        """
+        Determine if a channel is actively monitored or "expanded" for trigger generation.
+        
+        A channel is considered expanded if:
+        - It has recent activity (messages in the last hour)
+        - It has been explicitly marked as monitored
+        - The bot has recent interaction history in the channel
+        
+        Args:
+            channel_id: The channel ID to check
+            channel_type: Optional platform type to narrow search
+            
+        Returns:
+            True if the channel should generate high-priority triggers, False otherwise
+        """
+        channel = self.get_channel(channel_id, channel_type)
+        if not channel:
+            return False
+        
+        current_time = time.time()
+        
+        # Check for recent messages (last hour)
+        if channel.recent_messages:
+            last_message_time = channel.recent_messages[-1].timestamp
+            if current_time - last_message_time < 3600:  # 1 hour
+                return True
+        
+        # Check if channel was recently updated (indicates active monitoring)
+        if hasattr(channel, 'last_checked') and channel.last_checked:
+            if current_time - channel.last_checked < 1800:  # 30 minutes
+                return True
+        
+        # Check for recent bot activity in this channel
+        recent_actions = [
+            action for action in self.state.action_history
+            if (action.parameters.get('channel_id') == channel_id or 
+                action.parameters.get('room_id') == channel_id) and
+            current_time - action.timestamp < 3600  # 1 hour
+        ]
+        
+        if recent_actions:
+            return True
+        
+        return False
+
     def add_pending_matrix_invite(self, invite_info: Dict[str, Any]) -> None:
         """
         Add a pending Matrix room invite to the world state.
@@ -1102,3 +1148,49 @@ class WorldStateManager:
         
         logger.warning(f"Media ID {media_id} not found in generated media library")
         return None
+
+    def is_channel_expanded(self, channel_id: str, channel_type: Optional[str] = None) -> bool:
+        """
+        Determine if a channel is actively monitored or "expanded" for trigger generation.
+        
+        A channel is considered expanded if:
+        - It has recent activity (messages in the last hour)
+        - It has been explicitly marked as monitored
+        - The bot has recent interaction history in the channel
+        
+        Args:
+            channel_id: The channel ID to check
+            channel_type: Optional platform type to narrow search
+            
+        Returns:
+            True if the channel should generate high-priority triggers, False otherwise
+        """
+        channel = self.get_channel(channel_id, channel_type)
+        if not channel:
+            return False
+        
+        current_time = time.time()
+        
+        # Check for recent messages (last hour)
+        if channel.recent_messages:
+            last_message_time = channel.recent_messages[-1].timestamp
+            if current_time - last_message_time < 3600:  # 1 hour
+                return True
+        
+        # Check if channel was recently updated (indicates active monitoring)
+        if hasattr(channel, 'last_checked') and channel.last_checked:
+            if current_time - channel.last_checked < 1800:  # 30 minutes
+                return True
+        
+        # Check for recent bot activity in this channel
+        recent_actions = [
+            action for action in self.state.action_history
+            if (action.parameters.get('channel_id') == channel_id or 
+                action.parameters.get('room_id') == channel_id) and
+            current_time - action.timestamp < 3600  # 1 hour
+        ]
+        
+        if recent_actions:
+            return True
+        
+        return False

@@ -610,10 +610,10 @@ class MainOrchestrator:
                 self.matrix_observer.add_channel(room_id, "Robot Laboratory")
                 await self.matrix_observer.start()
                 
-                # Connect state change notifications
-                self.matrix_observer.on_state_change = self.processing_hub.trigger_state_change
+                # Connect processing hub for trigger generation
+                self.matrix_observer.processing_hub = self.processing_hub
                 
-                # Connect proactive conversation engine to state changes
+                # Connect legacy state change callback for backward compatibility
                 self.matrix_observer.on_state_change = self._on_world_state_change
                 
                 logger.info("Matrix observer initialized and started")
@@ -632,10 +632,10 @@ class MainOrchestrator:
                 )
                 await self.farcaster_observer.start()
                 
-                # Connect state change notifications
-                self.farcaster_observer.on_state_change = self.processing_hub.trigger_state_change
+                # Connect processing hub for trigger generation
+                self.farcaster_observer.processing_hub = self.processing_hub
                 
-                # Connect proactive conversation engine to state changes  
+                # Connect legacy state change callback for backward compatibility
                 self.farcaster_observer.on_state_change = self._on_world_state_change
                 
                 self.world_state.update_system_status({"farcaster_connected": True})

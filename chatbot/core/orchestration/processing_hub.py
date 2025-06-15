@@ -173,6 +173,11 @@ class ProcessingHub:
             logger.warning(f"Processing lock is active. Skipping trigger batch.")
             return
 
+        # Validate node processor is available
+        if not self.node_processor:
+            logger.warning("Node processor not available - cannot process triggers")
+            return
+
         async with self._processing_lock:
             self.cycle_count += 1
             self._current_cycle_id = f"cycle_{self.cycle_count}"
