@@ -34,14 +34,19 @@ class Trigger:
     """Represents a trigger for processing."""
     type: str
     priority: int = 0  # Higher values = higher priority
-    data: Dict[str, Any] = field(default_factory=dict, compare=False, hash=False)
     timestamp: float = field(default_factory=time.time)
+    # Remove data field from comparison and hashing to allow deduplication by type
+    data: Dict[str, Any] = field(default_factory=dict, compare=False, hash=False)
     
-    def __post_init__(self):
-        # Convert data dict to frozendict-like behavior for hashing
-        if hasattr(self, '_data_frozen'):
-            return
-        object.__setattr__(self, '_data_frozen', True)
+    def __hash__(self):
+        # Hash only by type to deduplicate triggers of the same type
+        return hash(self.type)
+    
+    def __eq__(self, other):
+        # Consider triggers equal if they have the same type
+        if not isinstance(other, Trigger):
+            return False
+        return self.type == other.type
 
 
 class ProcessingHub:
@@ -49,7 +54,7 @@ class ProcessingHub:
     Central hub for managing processing workflows.
     
     Coordinates between traditional event-based processing and the new node-based system.
-    Manages triggers, rate limiting, and processing cycles.
+    Manages triggers, rate limiting, and processing cycles using a scheduled approach.
     """
     
     def __init__(
@@ -68,8 +73,19 @@ class ProcessingHub:
         self.running = False
         self._processing_lock = asyncio.Lock()
         
-        # Trigger queue for event-driven processing
-        self.trigger_queue = asyncio.Queue(maxsize=config.max_queue_size)
+        # Scheduling system
+        self.next_scheduled_time = None
+        self.scheduled_task = None
+        self.pending_triggers = set()
+        
+        # Trigger scheduling configuration
+        self.trigger_delays = {
+            "mention": 1.0,       # 1 second for mentions (high priority)
+            "new_message": 2.0,   # 2 seconds for new messages
+            "proactive": 5.0,     # 5 seconds for proactive triggers
+            "periodic": 10.0,     # 10 seconds for periodic updates
+            "default": 3.0        # 3 seconds default delay
+        }
         
         # Component availability tracking
         self.node_processor = None
@@ -78,7 +94,6 @@ class ProcessingHub:
         self.total_triggers_processed = 0
         self.processing_errors = 0
         self.last_cycle_time = None
-        self.pending_triggers = set()
         
         # Active conversations tracking
         self.active_conversations = set()
@@ -96,9 +111,9 @@ class ProcessingHub:
         logger.info("Starting processing hub...")
         self.running = True
         
-        # Start the event loop as a background task
-        logger.info("Creating background task for trigger-based event loop...")
-        task = asyncio.create_task(self._main_event_loop())
+        # Start the scheduled processing loop as a background task
+        logger.info("Creating background task for scheduled processing loop...")
+        task = asyncio.create_task(self._scheduled_processing_loop())
         logger.info(f"Background task created successfully: {task}")
         return task
 
@@ -107,12 +122,54 @@ class ProcessingHub:
         self.running = False
         
     def add_trigger(self, trigger: Trigger):
-        """Add a trigger to the processing queue."""
+        """Add a trigger and schedule processing (but only if no sooner processing is already scheduled)."""
+        # Calculate when this trigger wants to be processed
+        delay = self.trigger_delays.get(trigger.type, self.trigger_delays["default"])
+        desired_time = time.time() + delay
+        
+        # Add trigger to pending set for deduplication
+        self.pending_triggers.add(trigger)
+        
+        # Only schedule/reschedule if no processing is scheduled or if this would be sooner
+        should_schedule = (
+            self.next_scheduled_time is None or 
+            desired_time < self.next_scheduled_time
+        )
+        
+        if should_schedule:
+            self._schedule_processing(desired_time, trigger.type)
+        
+        logger.info(f"Trigger added: {trigger.type} (Priority: {trigger.priority}, "
+                   f"Delay: {delay}s, Scheduled for: {should_schedule})")
+
+    def _schedule_processing(self, scheduled_time: float, trigger_type: str):
+        """Schedule processing for a specific time."""
+        # Cancel any existing scheduled task
+        if self.scheduled_task and not self.scheduled_task.done():
+            self.scheduled_task.cancel()
+            
+        self.next_scheduled_time = scheduled_time
+        delay = max(0, scheduled_time - time.time())
+        
+        logger.info(f"Scheduling processing in {delay:.2f}s due to {trigger_type} trigger")
+        self.scheduled_task = asyncio.create_task(self._delayed_process_triggers(delay))
+
+    async def _delayed_process_triggers(self, delay: float):
+        """Wait for the delay then process all pending triggers."""
         try:
-            self.trigger_queue.put_nowait(trigger)
-            logger.info(f"Trigger added to queue: {trigger.type} (Priority: {trigger.priority})")
-        except asyncio.QueueFull:
-            logger.warning(f"Trigger queue full, dropping trigger: {trigger.type}")
+            await asyncio.sleep(delay)
+            
+            # Collect all pending triggers
+            triggers_to_process = self.pending_triggers.copy()
+            self.pending_triggers.clear()
+            self.next_scheduled_time = None
+            
+            if triggers_to_process:
+                await self._process_triggers(triggers_to_process)
+        except asyncio.CancelledError:
+            logger.debug("Scheduled processing was cancelled (replaced by higher priority trigger)")
+        except Exception as e:
+            logger.error(f"Error in delayed processing: {e}", exc_info=True)
 
     def add_generic_trigger(self, trigger_type: str, priority: int = 0, data: Optional[Dict] = None):
         """Add a generic trigger to the queue."""
@@ -123,50 +180,33 @@ class ProcessingHub:
         )
         self.add_trigger(generic_trigger)
 
-    async def _main_event_loop(self) -> None:
-        """Main event loop for processing triggers from the queue."""
+    async def _scheduled_processing_loop(self) -> None:
+        """Main processing loop that runs scheduled processing cycles."""
         try:
-            logger.info("Starting trigger-based event loop...")
+            logger.info("Starting scheduled processing loop...")
             
             while self.running:
                 try:
-                    # Wait for triggers or poll interval timeout
-                    try:
-                        # Wait for the first trigger with a timeout
-                        first_trigger = await asyncio.wait_for(
-                            self.trigger_queue.get(),
-                            timeout=self.config.observation_interval
-                        )
-                        triggers = {first_trigger}  # Use a set to auto-deduplicate
-                    except asyncio.TimeoutError:
-                        # Polling interval reached, no triggers. Continue to next iteration.
-                        logger.debug("Event loop polling timeout reached, continuing...")
-                        continue
-
-                    # Drain any other triggers that arrived in the meantime
-                    while not self.trigger_queue.empty():
-                        try:
-                            triggers.add(self.trigger_queue.get_nowait())
-                        except asyncio.QueueEmpty:
-                            break
+                    # Just wait and let the trigger-based scheduling handle everything
+                    await asyncio.sleep(self.config.observation_interval)
                     
-                    # Now, process the collected triggers
-                    await self._process_triggers(triggers)
-
+                    # Optional: Do a periodic cleanup or status check here
+                    # For now, just ensure we're still running
+                    
                 except asyncio.CancelledError:
-                    logger.info("Event loop cancelled.")
+                    logger.info("Scheduled processing loop cancelled.")
                     break
                 except Exception as e:
-                    logger.error(f"Error in event loop cycle: {e}", exc_info=True)
+                    logger.error(f"Error in scheduled processing loop: {e}", exc_info=True)
                     await asyncio.sleep(5)  # Cooldown on error
                     
         except asyncio.CancelledError:
-            logger.info("Main event loop cancelled.")
+            logger.info("Scheduled processing loop cancelled.")
         except Exception as e:
-            logger.error(f"Fatal error in main event loop: {e}", exc_info=True)
+            logger.error(f"Fatal error in scheduled processing loop: {e}", exc_info=True)
         finally:
             self.running = False
-            logger.info("Processing hub event loop stopped")
+            logger.info("Processing hub scheduled loop stopped")
 
     async def _process_triggers(self, triggers: Set[Trigger]):
         """Deduplicates and processes a batch of triggers."""
@@ -240,12 +280,13 @@ class ProcessingHub:
         """Get current processing hub status."""
         return {
             "running": self.running,
-            "queue_size": self.trigger_queue.qsize(),
-            "max_queue_size": self.config.max_queue_size,
+            "next_scheduled_time": self.next_scheduled_time,
+            "pending_triggers": len(self.pending_triggers),
             "processing_locked": self._processing_lock.locked(),
             "config": {
                 "enable_node_based_processing": self.config.enable_node_based_processing,
                 "observation_interval": self.config.observation_interval,
+                "trigger_delays": self.trigger_delays,
             }
         }
 
@@ -261,9 +302,15 @@ class ProcessingHub:
         Returns:
             Dict containing processing hub status information
         """
+        next_scheduled_str = None
+        if self.next_scheduled_time:
+            import datetime
+            next_scheduled_str = datetime.datetime.fromtimestamp(self.next_scheduled_time).isoformat()
+            
         return {
             "running": self.running,
             "last_cycle": self.last_cycle_time.isoformat() if self.last_cycle_time else None,
+            "next_scheduled": next_scheduled_str,
             "total_triggers_processed": self.total_triggers_processed,
             "pending_triggers": len(self.pending_triggers),
             "active_conversations": len(self.active_conversations),
