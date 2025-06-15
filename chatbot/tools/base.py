@@ -14,15 +14,14 @@ class ActionContext:
     Provides context to tools during execution, including access to services,
     world state manager, and other shared resources.
     
-    This class provides both the new service-oriented interface (via service_registry)
-    and maintains backward compatibility with direct observer access.
+    This class provides a clean service-oriented interface via the service_registry
+    that allows tools to access platform services (messaging, social, media) in a
+    decoupled manner.
     """
 
     def __init__(
         self,
         service_registry=None,
-        matrix_observer=None,
-        farcaster_observer=None,
         world_state_manager=None,
         context_manager=None,
         arweave_client=None,
@@ -30,12 +29,8 @@ class ActionContext:
         base_nft_service=None,
         eligibility_service=None,
     ):
-        # New service-oriented approach
+        # Service-oriented approach
         self.service_registry = service_registry
-        
-        # Legacy observer access for backward compatibility - stored privately
-        self._matrix_observer = matrix_observer
-        self._farcaster_observer = farcaster_observer
         
         # Shared resources
         self.world_state_manager = world_state_manager
@@ -52,42 +47,6 @@ class ActionContext:
             self.dual_storage_manager = DualStorageManager(arweave_service=arweave_service)
         except Exception as e:
             logger.warning(f"Failed to initialize dual storage manager: {e}")
-    
-    @property
-    def matrix_observer(self):
-        """
-        DEPRECATED: Direct access to matrix_observer is deprecated.
-        Use get_messaging_service('matrix') instead.
-        """
-        warnings.warn(
-            "Direct access to matrix_observer is deprecated. Use get_messaging_service('matrix') instead.",
-            DeprecationWarning,
-            stacklevel=2
-        )
-        return self._matrix_observer
-    
-    @matrix_observer.setter
-    def matrix_observer(self, value):
-        """Set the matrix observer for backward compatibility."""
-        self._matrix_observer = value
-    
-    @property
-    def farcaster_observer(self):
-        """
-        DEPRECATED: Direct access to farcaster_observer is deprecated.
-        Use get_social_service('farcaster') instead.
-        """
-        warnings.warn(
-            "Direct access to farcaster_observer is deprecated. Use get_social_service('farcaster') instead.",
-            DeprecationWarning,
-            stacklevel=2
-        )
-        return self._farcaster_observer
-    
-    @farcaster_observer.setter
-    def farcaster_observer(self, value):
-        """Set the farcaster observer for backward compatibility."""
-        self._farcaster_observer = value
     
     def get_messaging_service(self, service_id: str):
         """Get a messaging service by ID"""

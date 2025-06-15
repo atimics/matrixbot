@@ -9,7 +9,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..world_state.manager import WorldStateManager
@@ -17,6 +17,15 @@ if TYPE_CHECKING:
     from .rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, eq=True)  # frozen=True makes it hashable for sets
+class Trigger:
+    """Represents an important event that should prompt the bot to act."""
+    type: str  # e.g., 'new_message', 'mention', 'reaction', 'system_event'
+    priority: int  # 1 (low) to 10 (high)
+    channel_id: Optional[str] = None
+    context: Dict[str, Any] = field(default_factory=dict, hash=False, compare=False)
 
 
 @dataclass
@@ -27,7 +36,7 @@ class ProcessingConfig:
     enable_node_based_processing: bool = True
     
     # Observation settings
-    observation_interval: float = 10.0  # Increased from 5.0 to reduce tight loop issues
+    observation_interval: float = 10.0  # Polling interval for trigger queue
     max_cycles_per_hour: int = 300
 
 
@@ -58,19 +67,15 @@ class ProcessingHub:
         self.running = False
         self.cycle_count = 0
         self.last_cycle_time = 0
-        self.current_processing_mode = "traditional"
+        self.current_processing_mode = "node_based"
         self.payload_size_history: List[int] = []
         
-        # Event coordination
-        self.state_changed_event = asyncio.Event()
+        # Trigger-based processing
+        self.trigger_queue = asyncio.Queue()
         
         # Processing coordination - prevent overlapping cycles
         self._processing_lock = asyncio.Lock()
         self._current_cycle_id = None
-        
-        # State tracking to prevent tight loops
-        self._recent_state_hashes = {}  # hash -> timestamp of last processing
-        self._state_cooldown_period = 30.0  # Don't reprocess same state for 30 seconds
         
         # Component availability tracking
         self.node_processor = None
@@ -101,223 +106,126 @@ class ProcessingHub:
         """Stop the processing loop."""
         self.running = False
         
+    def add_trigger(self, trigger: Trigger):
+        """Add a trigger to the processing queue."""
+        try:
+            self.trigger_queue.put_nowait(trigger)
+            logger.info(f"Trigger added to queue: {trigger.type} (Priority: {trigger.priority})")
+        except asyncio.QueueFull:
+            logger.warning(f"Trigger queue full, dropping trigger: {trigger.type}")
+    
     def trigger_state_change(self):
-        """Trigger immediate processing when world state changes."""
-        if self.state_changed_event and not self.state_changed_event.is_set():
-            # Only trigger if we're not already processing
-            if not self._processing_lock.locked():
-                self.state_changed_event.set()
-                logger.debug("State change event triggered")
-            else:
-                logger.debug(f"State change ignored - cycle {self._current_cycle_id} already in progress")
+        """Trigger immediate processing when world state changes (legacy compatibility)."""
+        # For backward compatibility, generate a generic state change trigger
+        generic_trigger = Trigger(
+            type='state_change',
+            priority=5,
+            context={'source': 'legacy_trigger'}
+        )
+        self.add_trigger(generic_trigger)
 
     async def _main_event_loop(self) -> None:
-        """Main event loop for processing world state changes."""
-        logger.info("Starting main event loop...")
-        last_state_hash = None
-
+        """Main event loop for processing triggers from the queue."""
+        logger.info("Starting trigger-based event loop...")
+        
         while self.running:
             try:
-                # Wait for state change event or timeout
+                # Wait for triggers or poll interval timeout
                 try:
-                    await asyncio.wait_for(
-                        self.state_changed_event.wait(),
-                        timeout=self.config.observation_interval,
+                    # Wait for the first trigger with a timeout
+                    first_trigger = await asyncio.wait_for(
+                        self.trigger_queue.get(),
+                        timeout=self.config.observation_interval
                     )
-                    self.state_changed_event.clear()
-                    logger.info("State change event triggered")
+                    triggers = {first_trigger}  # Use a set to auto-deduplicate
                 except asyncio.TimeoutError:
-                    # Periodic check even if no events
-                    pass
-
-                cycle_start = time.time()
-
-                # Check rate limiting
-                can_process, wait_time = self.rate_limiter.can_process_cycle(cycle_start)
-
-                if not can_process:
-                    if wait_time > 0:
-                        logger.debug(f"Rate limiting: waiting {wait_time:.2f}s before next cycle")
-                        await asyncio.sleep(min(wait_time, self.config.observation_interval))
+                    # Polling interval reached, no triggers. Continue to next iteration.
                     continue
 
-                # Record the cycle for rate limiting
-                self.rate_limiter.record_cycle(cycle_start)
+                # Drain any other triggers that arrived in the meantime
+                while not self.trigger_queue.empty():
+                    try:
+                        triggers.add(self.trigger_queue.get_nowait())
+                    except asyncio.QueueEmpty:
+                        break
+                
+                # Now, process the collected triggers
+                await self._process_triggers(triggers)
 
-                # Get current world state
-                current_state = self.world_state.to_dict()
-                current_hash = self._hash_state(current_state)
-
-                # Check if state has changed
-                if current_hash != last_state_hash:
-                    # Check if we've recently processed this exact state
-                    current_time = time.time()
-                    if current_hash in self._recent_state_hashes:
-                        time_since_last = current_time - self._recent_state_hashes[current_hash]
-                        if time_since_last < self._state_cooldown_period:
-                            logger.debug(f"State hash recently processed {time_since_last:.1f}s ago, cooling down")
-                            continue
-                    
-                    # Check if we're already processing a cycle
-                    if self._processing_lock.locked():
-                        logger.debug(f"Cycle already in progress ({self._current_cycle_id}), skipping cycle {self.cycle_count}")
-                        continue
-                    
-                    async with self._processing_lock:
-                        self._current_cycle_id = f"cycle_{self.cycle_count}"
-                        logger.info(f"World state changed, processing {self._current_cycle_id}")
-
-                        # Record that we're processing this state hash now to prevent immediate reprocessing
-                        self._recent_state_hashes[current_hash] = current_time
-                        
-                        # Clean up old state hashes (older than cooldown period)
-                        self._recent_state_hashes = {
-                            h: t for h, t in self._recent_state_hashes.items()
-                            if current_time - t < self._state_cooldown_period * 2
-                        }
-
-                        self.cycle_count += 1
-
-                        # Get active channels to determine primary focus
-                        active_channels = self._get_active_channels(current_state)
-
-                        # Process using selected strategy
-                        await self._process_world_state(active_channels)
-
-                        # Only update last_state_hash AFTER successful processing completion
-                        # This ensures we don't skip reprocessing if actions failed
-                        last_state_hash = current_hash
-                        
-                        # Update final tracking
-                        self.last_cycle_time = cycle_start
-
-                        cycle_duration = time.time() - cycle_start
-                        logger.info(f"{self._current_cycle_id} completed in {cycle_duration:.2f}s")
-                        self._current_cycle_id = None
-
-                        # Add a cooldown period after processing to prevent tight loops
-                        # This gives time for any pending operations to complete and state to settle
-                        cooldown_time = 5.0  # Base cooldown of 5 seconds
-                        if cycle_duration > 10:  # If cycle took more than 10 seconds
-                            cooldown_time = min(15, cycle_duration * 0.3)  # 30% of cycle time, max 15 seconds
-                        
-                        logger.debug(f"Adding {cooldown_time:.1f}s cooldown after cycle to prevent tight loops")
-                        await asyncio.sleep(cooldown_time)
-
-                        # Log rate limiting status every 10 cycles for monitoring
-                        if self.cycle_count % 10 == 0:
-                            self._log_rate_limit_status()
-
+            except asyncio.CancelledError:
+                logger.info("Event loop cancelled.")
+                break
             except Exception as e:
-                logger.error(f"Error in event loop cycle {self.cycle_count}: {e}")
-                await asyncio.sleep(5)
+                logger.error(f"Error in event loop cycle: {e}", exc_info=True)
+                await asyncio.sleep(5)  # Cooldown on error
 
-    async def _process_world_state(self, active_channels: List[str]) -> None:
-        """
-        Process world state using the node-based strategy.
-        """
-        try:
-            if not self.node_processor:
-                logger.error("Node processor not available - system requires node-based processing")
-                return
-                
-            await self._process_with_node_based_strategy(active_channels)
-                
-        except Exception as e:
-            logger.error(f"Error in node-based processing: {e}")
-            raise
-
-    async def _process_with_node_based_strategy(self, active_channels: List[str]) -> None:
-        """Process using the node-based interactive exploration approach."""
-        self.current_processing_mode = "node_based"
-        
-        if not self.node_processor:
-            logger.error("Node processor not available")
+    async def _process_triggers(self, triggers: Set[Trigger]):
+        """Deduplicates and processes a batch of triggers."""
+        if not triggers:
             return
+
+        # Sort by priority to determine the primary reason for this cycle
+        highest_priority_trigger = max(triggers, key=lambda t: t.priority)
+        logger.info(f"Processing {len(triggers)} triggers. Highest priority: {highest_priority_trigger.type}")
+
+        # Prevent re-processing if a cycle is already locked
+        if self._processing_lock.locked():
+            logger.warning(f"Processing lock is active. Skipping trigger batch.")
+            return
+
+        async with self._processing_lock:
+            self.cycle_count += 1
+            self._current_cycle_id = f"cycle_{self.cycle_count}"
             
-        try:
-            # Determine primary channel
-            primary_channel_id = self._get_primary_channel(active_channels)
+            # Check rate limiting
+            cycle_start = time.time()
+            can_process, wait_time = self.rate_limiter.can_process_cycle(cycle_start)
+
+            if not can_process:
+                if wait_time > 0:
+                    logger.debug(f"Rate limiting: waiting {wait_time:.2f}s before next cycle")
+                    await asyncio.sleep(min(wait_time, self.config.observation_interval))
+                return
+
+            # Record the cycle for rate limiting
+            self.rate_limiter.record_cycle(cycle_start)
             
-            # Process with node-based approach
-            cycle_id = f"cycle_{self.cycle_count}"
-            result = await self.node_processor.process_cycle(
-                cycle_id=cycle_id,
-                primary_channel_id=primary_channel_id,
-                context={
-                    "active_channels": active_channels,
-                    "cycle_count": self.cycle_count,
-                    "processing_mode": "node_based"
-                }
-            )
+            # The primary channel is determined by the highest priority trigger
+            primary_channel_id = highest_priority_trigger.channel_id
+
+            # Pass all trigger data to the processor for full context
+            trigger_context = [
+                {
+                    'type': t.type,
+                    'priority': t.priority,
+                    'channel_id': t.channel_id,
+                    'context': t.context
+                } for t in triggers
+            ]
             
-            if result.get("actions_executed", 0) > 0:
-                logger.info(f"Node processor executed {result['actions_executed']} actions")
-            else:
-                logger.debug("Node processor found no actions to execute")
+            logger.info(f"Starting {self._current_cycle_id} triggered by {highest_priority_trigger.type}")
+            
+            try:
+                await self.node_processor.process_cycle(
+                    cycle_id=self._current_cycle_id,
+                    primary_channel_id=primary_channel_id,
+                    context={"triggers": trigger_context}
+                )
+
+                # Update final tracking
+                self.last_cycle_time = cycle_start
                 
-        except Exception as e:
-            logger.error(f"Error in node-based processing: {e}")
-            raise
-
-    def _get_primary_channel(self, active_channels: List[str]) -> Optional[str]:
-        """Get the primary (most recently active) channel."""
-        if not active_channels:
-            return None
-            
-        # Sort by recent activity to get most active channel as primary
-        channel_activity = []
-        for channel_id in active_channels:
-            channel_data = self.world_state.get_channel(channel_id)
-            if channel_data and channel_data.recent_messages:
-                last_msg_time = channel_data.recent_messages[-1].timestamp
-                channel_activity.append((channel_id, last_msg_time))
-
-        if channel_activity:
-            # Primary channel is the one with most recent activity
-            channel_activity.sort(key=lambda x: x[1], reverse=True)
-            return channel_activity[0][0]
-            
-        return None
-
-    def _get_active_channels(self, world_state_dict: Dict[str, Any]) -> List[str]:
-        """Extract active channels from world state."""
-        active_channels = []
-        
-        channels = world_state_dict.get("channels", {})
-        current_time = time.time()
-        
-        # Handle nested structure: channels[platform][channel_id]
-        for platform, platform_channels in channels.items():
-            # Check if platform_channels is a dict (it should be)
-            if isinstance(platform_channels, dict):
-                for channel_id, channel_data in platform_channels.items():
-                    # Consider channels with recent activity (last hour)
-                    recent_messages = channel_data.get("recent_messages", [])
-                    if recent_messages:
-                        last_message_time = recent_messages[-1].get("timestamp", 0)
-                        if current_time - last_message_time < 3600:  # 1 hour
-                            active_channels.append(channel_id)
-        
-        return active_channels
-
-    def _hash_state(self, state_dict: Dict[str, Any]) -> str:
-        """Generate a hash of the world state for change detection."""
-        import hashlib
-        import json
-        
-        # Create a deterministic representation
-        state_str = json.dumps(state_dict, sort_keys=True, default=str)
-        return hashlib.md5(state_str.encode()).hexdigest()
-
-    def _log_rate_limit_status(self):
-        """Log current rate limiting status."""
-        try:
-            current_time = time.time()
-            status = self.rate_limiter.get_rate_limit_status(current_time)
-            logger.info(f"Rate limit status: {status['cycles_per_hour']}/{status['max_cycles_per_hour']} cycles/hour")
-        except Exception as e:
-            logger.error(f"Error logging rate limit status: {e}")
+                cycle_duration = time.time() - cycle_start
+                logger.info(f"{self._current_cycle_id} completed in {cycle_duration:.2f}s")
+                
+                # Log rate limiting status every 10 cycles for monitoring
+                if self.cycle_count % 10 == 0:
+                    self._log_rate_limit_status()
+                    
+            except Exception as e:
+                logger.error(f"Error in {self._current_cycle_id}: {e}", exc_info=True)
+            finally:
+                self._current_cycle_id = None
 
     def get_processing_status(self) -> Dict[str, Any]:
         """Get comprehensive processing status."""
@@ -328,6 +236,7 @@ class ProcessingHub:
             "last_cycle_time": self.last_cycle_time,
             "processing_in_progress": self._processing_lock.locked(),
             "current_cycle_id": self._current_cycle_id,
+            "pending_triggers": self.trigger_queue.qsize(),
             "payload_size_history": self.payload_size_history[-5:],  # Last 5 estimates
             "node_processor_available": self.node_processor is not None,
             "config": {
@@ -340,3 +249,12 @@ class ProcessingHub:
         """Get current rate limiting status."""
         current_time = time.time()
         return self.rate_limiter.get_rate_limit_status(current_time)
+
+    def _log_rate_limit_status(self):
+        """Log current rate limiting status."""
+        try:
+            current_time = time.time()
+            status = self.rate_limiter.get_rate_limit_status(current_time)
+            logger.info(f"Rate limit status: {status['cycles_per_hour']}/{status['max_cycles_per_hour']} cycles/hour")
+        except Exception as e:
+            logger.error(f"Error logging rate limit status: {e}")
