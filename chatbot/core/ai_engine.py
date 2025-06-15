@@ -426,7 +426,7 @@ CRITICAL: You MUST respond with valid JSON in the exact format below. Do not inc
 - **Multiple actions**: Combine different types of engagement (like + reply, react + store memory, etc.)
 
 ## Platform Guidelines
-- Matrix: Use send_matrix_reply for conversations, send_matrix_message for announcements
+- Matrix: Use send_matrix_reply for conversations, send_matrix_message for announcements, react_to_matrix_message for emoji reactions
 - Farcaster: Use send_farcaster_reply for responses, send_farcaster_post for new content
 - Always check recent_messages for conversation context
 - Expand nodes only when you need more detailed information"""
@@ -440,7 +440,7 @@ Take action when opportunities exist. Use "wait" only if no valuable engagement 
     def _get_essential_tools(self) -> List[str]:
         """Return list of essential tool names."""
         return [
-            "wait", "send_matrix_message", "send_matrix_reply",
+            "wait", "send_matrix_message", "send_matrix_reply", "react_to_matrix_message",
             "send_farcaster_post", "send_farcaster_reply", "like_farcaster_post",
             "generate_image", "web_search", "expand_node", "collapse_node", "describe_image"
         ]
@@ -486,6 +486,22 @@ Take action when opportunities exist. Use "wait" only if no valuable engagement 
                             "format_as_markdown": {"type": "boolean"}
                         },
                         "required": ["channel_id", "content", "format_as_markdown"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "react_to_matrix_message",
+                    "description": "React to a Matrix message with an emoji. Use this to express emotions or acknowledgments without sending a full message.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "room_id": {"type": "string", "description": "The room ID where the message is located"},
+                            "event_id": {"type": "string", "description": "The event ID of the message to react to"},
+                            "emoji": {"type": "string", "description": "The emoji to react with (e.g., '👍', '❤️', '😀')"}
+                        },
+                        "required": ["room_id", "event_id", "emoji"]
                     }
                 }
             },

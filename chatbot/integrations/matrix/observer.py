@@ -291,9 +291,9 @@ class MatrixObserver(Integration):
             from ...core.world_state import WorldStateManager
             self.world_state = WorldStateManager()
         # Skip our own messages
-        logger.debug(f"MatrixObserver: Comparing event.sender='{event.sender}' with self.user_id='{self.user_id}'")
+        logger.info(f"MatrixObserver: Comparing event.sender='{event.sender}' with self.user_id='{self.user_id}'")
         if event.sender == self.user_id:
-            logger.debug(f"MatrixObserver: Skipping own message from {event.sender}")
+            logger.info(f"MatrixObserver: Skipping own message from {event.sender}")
             return
 
         # Extract comprehensive room details
