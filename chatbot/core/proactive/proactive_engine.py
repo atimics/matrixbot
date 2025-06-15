@@ -114,6 +114,9 @@ class ProactiveConversationEngine:
             # 6. Detect community engagement opportunities
             opportunities.extend(self._detect_community_opportunities(world_state_data))
             
+            # 7. Detect automatic image processing opportunities
+            opportunities.extend(self._detect_image_analysis_opportunities(world_state_data))
+            
             # Filter and prioritize opportunities
             opportunities = self._filter_and_prioritize_opportunities(opportunities, current_time)
             
@@ -331,6 +334,57 @@ class ProactiveConversationEngine:
         # Look for opportunities to share relevant content/research
         content_opportunities = self._detect_content_sharing_opportunities(world_state_data)
         opportunities.extend(content_opportunities)
+        
+        return opportunities
+    
+    def _detect_image_analysis_opportunities(self, world_state_data: WorldStateData) -> List[ConversationOpportunity]:
+        """Detect opportunities for automatic image analysis and processing."""
+        opportunities = []
+        current_time = time.time()
+        
+        # Get recently described images to avoid reprocessing
+        media_context = world_state_data.get_media_context()
+        recently_described = set(media_context.get("images_recently_described", []))
+        
+        # Analyze recent messages across all platforms for image content
+        for platform, platform_channels in world_state_data.channels.items():
+            if not isinstance(platform_channels, dict):
+                continue
+                
+            for channel_id, channel in platform_channels.items():
+                if not channel.recent_messages:
+                    continue
+                    
+                for message in channel.recent_messages:
+                    # Skip old messages (older than 2 hours)
+                    if message.timestamp < current_time - 7200:
+                        continue
+                    
+                    # Check if message has image URLs that haven't been analyzed
+                    if hasattr(message, 'image_urls') and message.image_urls:
+                        for image_url in message.image_urls:
+                            # Skip already analyzed images
+                            if image_url in recently_described:
+                                continue
+                                
+                            opportunities.append(ConversationOpportunity(
+                                opportunity_id=f"auto_image_analysis_{hash(image_url)}_{int(current_time)}",
+                                opportunity_type="auto_image_analysis",
+                                priority=6,  # Medium-high priority for automatic processing
+                                context={
+                                    "image_url": image_url,
+                                    "message_id": message.id,
+                                    "sender": message.sender,
+                                    "channel_id": channel_id,
+                                    "channel_name": getattr(channel, 'name', channel_id),
+                                    "message_content": message.content,
+                                    "platform": platform
+                                },
+                                platform=platform,
+                                channel_id=channel_id,
+                                expires_at=current_time + 1800,  # 30 minutes to process
+                                reasoning=f"New image detected from {message.sender} - automatic analysis opportunity"
+                            ))
         
         return opportunities
     
