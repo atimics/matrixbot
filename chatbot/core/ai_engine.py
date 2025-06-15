@@ -165,7 +165,7 @@ class AIDecisionEngine(BaseAIDecisionEngine):
         user_prompt = f"""Current World State:
 {json.dumps(world_state, indent=2)}
 
-Based on this world state, what actions (if any) should you take? Remember you can take up to {self.max_actions_per_cycle} actions this cycle, or choose to wait and observe."""
+Based on this world state, what actions should you take? You can take up to {self.max_actions_per_cycle} actions this cycle. Look for opportunities to engage meaningfully across all channels, not just the primary one. Be proactive and take multiple actions when valuable opportunities exist - don't default to waiting unless there are truly no meaningful engagement possibilities."""
 
         payload = {
             "model": self.model,
@@ -408,16 +408,22 @@ CRITICAL: You MUST respond with valid JSON in the exact format below. Do not inc
 ## Core Rules
 1. ALWAYS respond with valid JSON in the exact format above
 2. NO TEXT BEFORE OR AFTER THE JSON
-3. Maximum 3 actions per cycle
-4. Check recent_actions to avoid duplicates
+3. **Take up to 3 actions per cycle** - use this capacity when meaningful opportunities exist
+4. Check recent_actions to avoid duplicates  
 5. Skip actions on messages with "already_replied": true
-6. Use "wait" tool when no action needed
-7. Focus on primary_channel but consider all recent_messages
+6. **Be proactive across all channels** - look for engagement opportunities in Matrix, Farcaster, and other platforms
+7. Only use "wait" when there are truly no valuable opportunities across any channel
 
 ## Decision Framework
-- **High Priority (8-10)**: Direct replies, urgent issues, new conversations
-- **Medium Priority (5-7)**: Proactive engagement, content creation
-- **Low Priority (1-4)**: Maintenance, optional interactions
+- **High Priority (8-10)**: Direct replies, urgent issues, new conversations, proactive valuable contributions
+- **Medium Priority (5-7)**: Cross-channel engagement, content creation, community building
+- **Low Priority (1-4)**: Maintenance, optional interactions, wait-and-observe
+
+## Engagement Philosophy  
+- **Multi-channel awareness**: Consider opportunities across all active channels, not just the primary one
+- **Value-driven action**: Prioritize actions that genuinely help, inform, entertain, or build community
+- **Proactive engagement**: Don't just react - create conversations, ask questions, share insights
+- **Multiple actions**: Combine different types of engagement (like + reply, react + store memory, etc.)
 
 ## Platform Guidelines
 - Matrix: Use send_matrix_reply for conversations, send_matrix_message for announcements
@@ -429,7 +435,7 @@ CRITICAL: You MUST respond with valid JSON in the exact format below. Do not inc
         """Minimal system prompt for aggressive optimization."""
         return """AI Agent: Respond with JSON only.
 Format: {"observations": "...", "selected_actions": [{"action_type": "tool", "parameters": {}, "reasoning": "...", "priority": 5}], "reasoning": "..."}
-Max 1 action. Use "wait" if no action needed."""
+Take action when opportunities exist. Use "wait" only if no valuable engagement possibilities."""
     
     def _get_essential_tools(self) -> List[str]:
         """Return list of essential tool names."""
@@ -446,7 +452,7 @@ Max 1 action. Use "wait" if no action needed."""
                 "type": "function",
                 "function": {
                     "name": "wait",
-                    "description": "Wait until the next observation cycle. Use when no action needed.",
+                    "description": "Observe without taking action. Only use when there are truly no valuable engagement opportunities across any channel.",
                     "parameters": {"type": "object", "properties": {"duration": {"type": "number", "default": 0}}}
                 }
             },

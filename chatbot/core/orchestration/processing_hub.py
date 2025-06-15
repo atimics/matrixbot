@@ -29,13 +29,19 @@ class ProcessingConfig:
     max_queue_size: int = 1000
 
 
-@dataclass
+@dataclass(frozen=True)
 class Trigger:
     """Represents a trigger for processing."""
     type: str
     priority: int = 0  # Higher values = higher priority
-    data: Dict[str, Any] = field(default_factory=dict)
+    data: Dict[str, Any] = field(default_factory=dict, compare=False, hash=False)
     timestamp: float = field(default_factory=time.time)
+    
+    def __post_init__(self):
+        # Convert data dict to frozendict-like behavior for hashing
+        if hasattr(self, '_data_frozen'):
+            return
+        object.__setattr__(self, '_data_frozen', True)
 
 
 class ProcessingHub:

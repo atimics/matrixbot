@@ -119,29 +119,58 @@ class MatrixObserver(Integration):
         self.client.add_event_callback(self._on_membership_change, RoomMemberEvent)
 
         try:
-            # Try to load saved token
+            # Try to load saved token with improved verification
             if await self._load_token():
                 logger.info("MatrixObserver: Using saved authentication token")
             else:
-                # Login with password and device configuration
+                # Login with password and device configuration with retry logic
                 logger.info("MatrixObserver: Logging in with password...")
-                response = await self.client.login(
-                    password=self.password, device_name=device_name
-                )
-                if isinstance(response, LoginResponse):
-                    logger.info(
-                        f"MatrixObserver: Login successful as {response.user_id}"
-                    )
-                    logger.info(f"MatrixObserver: Device ID: {response.device_id}")
-                    
-                    # Update our user_id with the actual value from the server
-                    self.user_id = response.user_id
-                    logger.info(f"MatrixObserver: Updated user_id to {self.user_id}")
-                    
-                    await self._save_token()
-                else:
-                    logger.error(f"MatrixObserver: Login failed: {response}")
-                    raise IntegrationConnectionError(f"Login failed: {response}")
+                
+                login_success = False
+                max_login_attempts = 3
+                
+                for attempt in range(max_login_attempts):
+                    try:
+                        response = await self.client.login(
+                            password=self.password, device_name=device_name
+                        )
+                        
+                        if isinstance(response, LoginResponse):
+                            logger.info(f"MatrixObserver: Login successful as {response.user_id}")
+                            logger.info(f"MatrixObserver: Device ID: {response.device_id}")
+                            
+                            # Update our user_id with the actual value from the server
+                            self.user_id = response.user_id
+                            logger.info(f"MatrixObserver: Updated user_id to {self.user_id}")
+                            
+                            await self._save_token()
+                            login_success = True
+                            break
+                        else:
+                            logger.error(f"MatrixObserver: Login failed: {response}")
+                            if attempt < max_login_attempts - 1:
+                                wait_time = 2 ** attempt * 5  # 5, 10, 20 seconds
+                                logger.info(f"MatrixObserver: Retrying login in {wait_time}s...")
+                                await asyncio.sleep(wait_time)
+                            continue
+                            
+                    except Exception as login_error:
+                        error_str = str(login_error)
+                        
+                        # Handle rate limiting during login
+                        if '429' in error_str or 'rate' in error_str.lower():
+                            if attempt < max_login_attempts - 1:
+                                wait_time = 60  # Wait 1 minute for rate limits
+                                logger.warning(f"MatrixObserver: Login rate limited, waiting {wait_time}s...")
+                                await asyncio.sleep(wait_time)
+                                continue
+                        
+                        logger.error(f"MatrixObserver: Login attempt {attempt + 1} failed: {login_error}")
+                        if attempt == max_login_attempts - 1:
+                            raise login_error
+                
+                if not login_success:
+                    raise IntegrationConnectionError("Failed to login after multiple attempts")
 
             # Update world state
             self.world_state.update_system_status({"matrix_connected": True})
@@ -407,6 +436,9 @@ class MatrixObserver(Integration):
         if self.processing_hub:
             from ...core.orchestration.processing_hub import Trigger
             
+            logger.debug(f"MatrixObserver: Checking trigger conditions for message from {event.sender}")
+            logger.debug(f"MatrixObserver: self.user_id = '{self.user_id}', content = '{content[:100]}'")
+            
             # Check for direct mention (use self.user_id instead of settings.MATRIX_USER_ID)
             if self.user_id and self.user_id in content:
                 logger.info(f"MatrixObserver: Direct mention detected for {self.user_id} in message: {content[:50]}...")
@@ -416,7 +448,8 @@ class MatrixObserver(Integration):
                     data={'channel_id': room.room_id, 'message_id': event.event_id, 'sender': event.sender}
                 )
                 self.processing_hub.add_trigger(trigger)
-            # Check if it's an actively monitored ("expanded") channel
+                logger.info(f"MatrixObserver: Added mention trigger to processing hub")
+            # Check if it's an actively monitored ("expanded") channel (only if not a mention)
             elif self.world_state.is_channel_expanded(room.room_id, "matrix"):
                 logger.info(f"MatrixObserver: New message in expanded channel {room.room_id}")
                 trigger = Trigger(
@@ -425,10 +458,15 @@ class MatrixObserver(Integration):
                     data={'channel_id': room.room_id, 'message_id': event.event_id, 'sender': event.sender}
                 )
                 self.processing_hub.add_trigger(trigger)
+                logger.info(f"MatrixObserver: Added new_message trigger to processing hub")
             else:
                 # Message is in a non-active channel. Just log it, don't trigger a full cycle.
                 logger.debug(f"MatrixObserver: Message in non-expanded channel {room.room_id}, no trigger generated.")
-
+                # Let's also debug why it's not expanded
+                is_expanded = self.world_state.is_channel_expanded(room.room_id, "matrix")
+                logger.debug(f"MatrixObserver: Channel {room.room_id} is_expanded = {is_expanded}")
+        else:
+            logger.warning(f"MatrixObserver: No processing_hub connected, cannot generate triggers")
     async def _on_invite(self, room, event):
         """Handle incoming Matrix room invites"""
         from nio import InviteMemberEvent
@@ -655,20 +693,58 @@ class MatrixObserver(Integration):
             self.client.user_id = token_data["user_id"]
             self.client.device_id = token_data["device_id"]
 
-            # Verify token is still valid
-            response = await self.client.whoami()
-            if hasattr(response, "user_id") and response.user_id:
-                logger.info(
-                    f"MatrixObserver: Token verified for user {response.user_id}"
-                )
-                return True
-            else:
-                logger.warning(f"MatrixObserver: Saved token is invalid: {response}")
-                return False
+            # Verify token is still valid with improved error handling
+            return await self._verify_token_with_backoff()
 
         except Exception as e:
             logger.warning(f"MatrixObserver: Failed to load token: {e}")
             return False
+
+    async def _verify_token_with_backoff(self, max_retries: int = 3) -> bool:
+        """Verify token with exponential backoff for rate limiting"""
+        for attempt in range(max_retries):
+            try:
+                response = await self.client.whoami()
+                if hasattr(response, "user_id") and response.user_id:
+                    logger.info(f"MatrixObserver: Token verified for user {response.user_id}")
+                    return True
+                else:
+                    logger.warning(f"MatrixObserver: Token verification returned invalid response: {response}")
+                    return False
+                    
+            except Exception as whoami_error:
+                error_str = str(whoami_error)
+                
+                # Check for authentication errors that indicate invalid token
+                if any(auth_error in error_str.lower() for auth_error in [
+                    'm_unknown_token', 'm_forbidden', 'unauthorized', 'invalid_token'
+                ]):
+                    logger.error(f"MatrixObserver: Token is invalid/expired: {whoami_error}")
+                    return False
+                
+                # Check for rate limiting
+                if '429' in error_str or 'rate' in error_str.lower():
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** attempt * 5  # 5, 10, 20 seconds
+                        logger.info(f"MatrixObserver: Rate limited during token verification, waiting {wait_time}s (attempt {attempt + 1}/{max_retries})")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    else:
+                        logger.warning(f"MatrixObserver: Rate limited during token verification, assuming token is valid")
+                        return True
+                
+                # For other errors (network, etc.), retry with backoff
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    logger.warning(f"MatrixObserver: Token verification failed (attempt {attempt + 1}/{max_retries}): {whoami_error}")
+                    await asyncio.sleep(wait_time)
+                    continue
+                else:
+                    # On final attempt, assume token might be valid but server is having issues
+                    logger.warning(f"MatrixObserver: Token verification failed after {max_retries} attempts, assuming valid: {whoami_error}")
+                    return True
+                    
+        return False
 
     async def _save_token(self):
         """Save authentication token for reuse"""
@@ -678,6 +754,7 @@ class MatrixObserver(Integration):
                 "user_id": self.client.user_id,
                 "device_id": self.client.device_id,
                 "homeserver": self.homeserver,
+                "saved_at": time.time(),  # Add timestamp for token age tracking
             }
 
             with open("matrix_token.json", "w") as f:
@@ -691,13 +768,124 @@ class MatrixObserver(Integration):
         except Exception as e:
             logger.error(f"MatrixObserver: Failed to save token: {e}")
 
-    async def _sync_forever(self):
-        """Background sync task that runs the Matrix client sync"""
+    async def _handle_auth_error(self, error: Exception) -> bool:
+        """
+        Handle authentication errors by attempting to re-authenticate
+        Returns True if re-authentication was successful, False otherwise
+        """
+        error_str = str(error)
+        
+        # Check if this is an authentication error
+        if not any(auth_error in error_str.lower() for auth_error in [
+            'm_unknown_token', 'm_forbidden', 'unauthorized', 'invalid_token'
+        ]):
+            return False
+            
+        logger.warning(f"MatrixObserver: Authentication error detected, attempting re-login: {error}")
+        
         try:
-            await self.client.sync_forever(timeout=30000, full_state=True)
-        except Exception as e:
-            logger.error(f"MatrixObserver: Sync error: {e}")
-            self.world_state.update_system_status({"matrix_connected": False})
+            # Clear the invalid token
+            self.client.access_token = ""
+            
+            # Attempt fresh login
+            response = await self.client.login(
+                password=self.password, 
+                device_name=settings.DEVICE_NAME
+            )
+            
+            if isinstance(response, LoginResponse):
+                logger.info(f"MatrixObserver: Re-authentication successful as {response.user_id}")
+                await self._save_token()
+                return True
+            else:
+                logger.error(f"MatrixObserver: Re-authentication failed: {response}")
+                return False
+                
+        except Exception as reauth_error:
+            logger.error(f"MatrixObserver: Re-authentication attempt failed: {reauth_error}")
+            return False
+
+    async def _sync_forever(self):
+        """Background sync task that runs the Matrix client sync with improved error handling"""
+        retry_count = 0
+        max_retries = 5
+        base_delay = 1
+        
+        while retry_count < max_retries:
+            try:
+                # Store rate limit information in world state
+                self.world_state.set_rate_limits("matrix", {
+                    "status": "active",
+                    "last_sync_attempt": time.time(),
+                    "retry_count": retry_count
+                })
+                
+                await self.client.sync_forever(timeout=30000, full_state=True)
+                # If we get here, sync completed normally (shouldn't happen in sync_forever)
+                break
+                
+            except Exception as e:
+                error_str = str(e)
+                retry_count += 1
+                
+                logger.error(f"MatrixObserver: Sync error (attempt {retry_count}/{max_retries}): {e}")
+                
+                # Update world state with error info
+                self.world_state.set_rate_limits("matrix", {
+                    "status": "error",
+                    "last_error": error_str,
+                    "last_error_time": time.time(),
+                    "retry_count": retry_count
+                })
+                
+                # Handle authentication errors
+                if await self._handle_auth_error(e):
+                    logger.info("MatrixObserver: Re-authentication successful, retrying sync...")
+                    retry_count = 0  # Reset retry count after successful re-auth
+                    continue
+                
+                # Handle rate limiting with exponential backoff
+                if '429' in error_str or 'rate' in error_str.lower():
+                    # Extract retry-after if available
+                    retry_after = 60  # Default fallback
+                    if hasattr(e, 'retry_after_ms') and e.retry_after_ms:
+                        retry_after = e.retry_after_ms / 1000
+                    elif 'sleeping for' in error_str:
+                        # Extract from nio client message format
+                        import re
+                        match = re.search(r'sleeping for (\d+)ms', error_str)
+                        if match:
+                            retry_after = int(match.group(1)) / 1000
+                    
+                    logger.info(f"MatrixObserver: Rate limited, waiting {retry_after}s before retry")
+                    
+                    # Update world state with rate limit info
+                    self.world_state.set_rate_limits("matrix", {
+                        "status": "rate_limited",
+                        "retry_after": retry_after,
+                        "retry_after_until": time.time() + retry_after,
+                        "last_rate_limit": time.time()
+                    })
+                    
+                    await asyncio.sleep(retry_after)
+                    continue
+                
+                # For other errors, use exponential backoff
+                if retry_count < max_retries:
+                    delay = min(base_delay * (2 ** (retry_count - 1)), 300)  # Cap at 5 minutes
+                    logger.info(f"MatrixObserver: Retrying sync in {delay}s...")
+                    await asyncio.sleep(delay)
+                    continue
+                else:
+                    logger.error(f"MatrixObserver: Max retries exceeded, giving up on sync")
+                    break
+        
+        # If we exit the loop, update world state
+        self.world_state.update_system_status({"matrix_connected": False})
+        self.world_state.set_rate_limits("matrix", {
+            "status": "disconnected",
+            "last_disconnect": time.time()
+        })
 
     async def stop(self):
         """Stop the Matrix observer"""

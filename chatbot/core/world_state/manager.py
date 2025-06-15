@@ -43,7 +43,7 @@ class WorldStateManager:
     handling all the common operations needed by the orchestration system.
     """
 
-    def __init__(self):
+    def __init__(self, matrix_user_id: Optional[str] = None):
         self.state = WorldStateData()
         
         # Initialize system status
@@ -53,7 +53,26 @@ class WorldStateManager:
             "last_observation_cycle": 0,
             "total_cycles": 0,
         }
+        
+        # Tool cache cleanup tracking
+        self._last_cache_cleanup = time.time()
+        self._cache_cleanup_interval = 300  # 5 minutes
+        
+        # Action indexing for faster lookups
+        self._action_indexes = {
+            'reply_to_hash': {},  # cast_hash -> [action_ids]
+            'cast_hash': {},      # cast_hash -> [action_ids]
+            'quoted_cast_hash': {},  # cast_hash -> [action_ids]
+        }
+        
+        # Configuration (can be injected for better testability)
+        self._matrix_user_id = matrix_user_id
+        
         logger.info("WorldStateManager: Initialized empty world state")
+
+    def set_matrix_user_id(self, matrix_user_id: str):
+        """Set the Matrix user ID for bot identification."""
+        self._matrix_user_id = matrix_user_id
 
     @property
     def world_state(self):
@@ -70,6 +89,10 @@ class WorldStateManager:
             channel_type: Channel type (required if channel_or_id is string)
             name: Channel name (required if channel_or_id is string)
             status: Channel status (default: "active")
+            
+        Raises:
+            ValueError: If required parameters are missing or invalid
+            TypeError: If channel_or_id is not a Channel object or string
         """
         if isinstance(channel_or_id, Channel):
             # Adding a Channel object directly
@@ -81,11 +104,15 @@ class WorldStateManager:
             logger.info(
                 f"WorldState: Added {channel.type} channel '{channel.name}' ({channel.id}) with status '{channel.status}'"
             )
-        else:
+        elif isinstance(channel_or_id, str):
             # Adding by parameters
             channel_id = channel_or_id
+            if not channel_id.strip():
+                raise ValueError("channel_id cannot be empty")
             if channel_type is None or name is None:
                 raise ValueError("channel_type and name are required when adding by parameters")
+            if not channel_type.strip() or not name.strip():
+                raise ValueError("channel_type and name cannot be empty")
             
             # Initialize platform dict if it doesn't exist
             if channel_type not in self.state.channels:
@@ -104,10 +131,49 @@ class WorldStateManager:
             logger.info(
                 f"WorldState: Added {channel_type} channel '{name}' ({channel_id}) with status '{status}'"
             )
+        else:
+            raise TypeError("channel_or_id must be a Channel object or string")
 
     def add_message(self, *args, **kwargs):
         """Add a new message to a channel. Accepts (channel_id, message), (message_data, message), or (dict) for test compatibility."""
-        from .structures import Message
+        channel_id, message = self._parse_add_message_args(*args, **kwargs)
+        
+        # Validate message exists
+        if message is None:
+            logger.error("WorldStateManager: Cannot add message - message is None")
+            return
+
+        # Convert dict to Message if needed
+        if isinstance(message, dict):
+            from .structures import Message
+            message = Message(**message)
+        
+        # Deduplicate across channels
+        if message.id in self.state.seen_messages:
+            logger.debug(f"WorldStateManager: Deduplicated message {message.id}")
+            return
+        self.state.seen_messages.add(message.id)
+        
+        # Handle None channel_id gracefully
+        if not channel_id:
+            channel_id = message.channel_id or f"{message.channel_type}:unknown"
+            logger.warning(f"None channel_id provided, using fallback: {channel_id}")
+        
+        # Get or create channel
+        channel = self._get_or_create_channel_for_message(channel_id, message)
+        if channel is None:
+            logger.error(f"Failed to create or retrieve channel {channel_id}")
+            return
+        
+        # Add message to channel
+        self._add_message_to_channel(channel, message)
+        
+        # Handle Farcaster thread management
+        if message.channel_type == "farcaster":
+            self._add_message_to_thread(message)
+
+    def _parse_add_message_args(self, *args, **kwargs):
+        """Parse the various argument formats supported by add_message."""
         # Accept (channel_id, message), (message_data, message), or (dict with keys 'channel_id' and 'message'
         if len(args) == 2:
             channel_id, message = args
@@ -126,52 +192,37 @@ class WorldStateManager:
                 message = d
         else:
             raise TypeError("add_message expects (channel_id, message), (message_data, message), or (dict with channel_id and message)")
-
-        # Validate message exists
-        if message is None:
-            logger.error("WorldStateManager: Cannot add message - message is None")
-            return
-
-        # Convert dict to Message if needed
-        if isinstance(message, dict):
-            message = Message(**message)
-        # Deduplicate across channels
-        if message.id in self.state.seen_messages:
-            logger.debug(f"WorldStateManager: Deduplicated message {message.id}")
-            return
-        self.state.seen_messages.add(message.id)
-        # Handle None channel_id gracefully
-        if not channel_id:
-            channel_id = message.channel_id or f"{message.channel_type}:unknown"
-            logger.warning(f"None channel_id provided, using fallback: {channel_id}")
         
+        return channel_id, message
+
+    def _get_or_create_channel_for_message(self, channel_id: str, message) -> Optional[Channel]:
+        """Get existing channel or create it for the message."""
         # Check if channel exists using the new nested structure
         channel = self.get_channel(channel_id, message.channel_type)
         if channel is None:
             # Auto-create channel if it doesn't exist
             self.add_channel(channel_id, channel_type=message.channel_type, name=channel_id)
             channel = self.get_channel(channel_id, message.channel_type)
-        
-        if channel is None:
-            logger.error(f"Failed to create or retrieve channel {channel_id}")
-            return
-            
+        return channel
+
+    def _add_message_to_channel(self, channel: Channel, message):
+        """Add message to channel and manage message limits."""
         channel.recent_messages.append(message)
         # Limit to 50 messages per channel
         if len(channel.recent_messages) > 50:
             channel.recent_messages = channel.recent_messages[-50:]
         channel.update_last_checked()
         
-        # Thread management: group Farcaster messages by root cast
-        if message.channel_type == "farcaster":
-            thread_id = message.reply_to or message.id
-            self.state.threads.setdefault(thread_id, []).append(message)
-            logger.info(f"WorldStateManager: Added message to thread '{thread_id}'")
-
         # Log the message addition
         logger.info(
             f"WorldState: New message in {channel.name}: {message.sender}: {message.content[:100]}..."
         )
+
+    def _add_message_to_thread(self, message):
+        """Add Farcaster message to thread tracking."""
+        thread_id = message.reply_to or message.id
+        self.state.threads.setdefault(thread_id, []).append(message)
+        logger.info(f"WorldStateManager: Added message to thread '{thread_id}'")
 
     def add_message_compat(self, channel_id_or_dict, message=None):
         """Compatibility wrapper for tests that call add_message with (dict, message) or (message_data, message)."""
@@ -199,6 +250,11 @@ class WorldStateManager:
         action_id: Optional[str] = None,
     ) -> str:
         """Record the result of an executed action. Returns the action_id for tracking."""
+        if not action_type:
+            raise ValueError("action_type cannot be empty")
+        if parameters is None:
+            parameters = {}
+            
         if not action_id:
             # Generate a unique ID for new actions
             action_id = f"{action_type}_{int(time.time() * 1000)}_{id(parameters)}"
@@ -212,10 +268,16 @@ class WorldStateManager:
         )
 
         self.state.action_history.append(action)
+        
+        # Update action indexes for faster lookups
+        self._update_action_indexes(action)
 
         # Keep only last 100 actions
         if len(self.state.action_history) > 100:
+            # When removing old actions, we should ideally clean up indexes too
+            # For simplicity, we'll rebuild indexes when size limit is hit
             self.state.action_history = self.state.action_history[-100:]
+            self._rebuild_action_indexes()
 
         self.state.last_update = time.time()
 
@@ -223,6 +285,43 @@ class WorldStateManager:
             f"WorldState: Action completed - {action_type}: {result} (ID: {action_id})"
         )
         return action_id
+
+    def _update_action_indexes(self, action: ActionHistory):
+        """Update search indexes for the new action."""
+        try:
+            if action.action_type == "send_farcaster_reply":
+                reply_to_hash = action.parameters.get("reply_to_hash")
+                if reply_to_hash:
+                    if reply_to_hash not in self._action_indexes['reply_to_hash']:
+                        self._action_indexes['reply_to_hash'][reply_to_hash] = []
+                    self._action_indexes['reply_to_hash'][reply_to_hash].append(action.action_id)
+            
+            elif action.action_type == "like_farcaster_post":
+                cast_hash = action.parameters.get("cast_hash")
+                if cast_hash:
+                    if cast_hash not in self._action_indexes['cast_hash']:
+                        self._action_indexes['cast_hash'][cast_hash] = []
+                    self._action_indexes['cast_hash'][cast_hash].append(action.action_id)
+            
+            elif action.action_type == "quote_farcaster_post":
+                quoted_cast_hash = action.parameters.get("quoted_cast_hash")
+                if quoted_cast_hash:
+                    if quoted_cast_hash not in self._action_indexes['quoted_cast_hash']:
+                        self._action_indexes['quoted_cast_hash'][quoted_cast_hash] = []
+                    self._action_indexes['quoted_cast_hash'][quoted_cast_hash].append(action.action_id)
+        except Exception as e:
+            logger.warning(f"Failed to update action indexes: {e}")
+
+    def _rebuild_action_indexes(self):
+        """Rebuild action indexes from current action history."""
+        self._action_indexes = {
+            'reply_to_hash': {},
+            'cast_hash': {},
+            'quoted_cast_hash': {},
+        }
+        
+        for action in self.state.action_history:
+            self._update_action_indexes(action)
 
     def update_action_result(
         self, action_id: str, new_result: str, cast_hash: Optional[str] = None
@@ -351,14 +450,21 @@ class WorldStateManager:
         Check if the AI has already replied to a specific cast.
         This now checks for successful or scheduled actions.
         """
-        for action in self.state.action_history:
-            if action.action_type == "send_farcaster_reply":
-                reply_to_hash = action.parameters.get("reply_to_hash")
-                if reply_to_hash == cast_hash:
+        if not cast_hash:
+            return False
+            
+        # Use index for faster lookup
+        action_ids = self._action_indexes['reply_to_hash'].get(cast_hash, [])
+        
+        for action_id in action_ids:
+            # Find the action in history
+            for action in self.state.action_history:
+                if action.action_id == action_id:
                     # Consider it replied if the action was successful OR is still scheduled.
                     # This prevents re-queueing a reply while one is already pending.
                     if action.result != "failure":
                         return True
+                    break
         return False
 
     def has_quoted_cast(self, cast_hash: str) -> bool:
@@ -371,12 +477,11 @@ class WorldStateManager:
         Returns:
             True if the AI has already quoted this cast
         """
-        for action in self.state.action_history:
-            if action.action_type == "quote_farcaster_post":
-                quoted_cast_hash = action.parameters.get("quoted_cast_hash")
-                if quoted_cast_hash == cast_hash:
-                    return True
-        return False
+        if not cast_hash:
+            return False
+            
+        # Use index for faster lookup
+        return cast_hash in self._action_indexes['quoted_cast_hash']
 
     def has_liked_cast(self, cast_hash: str) -> bool:
         """
@@ -388,12 +493,11 @@ class WorldStateManager:
         Returns:
             True if the AI has already liked this cast
         """
-        for action in self.state.action_history:
-            if action.action_type == "like_farcaster_post":
-                liked_cast_hash = action.parameters.get("cast_hash")
-                if liked_cast_hash == cast_hash:
-                    return True
-        return False
+        if not cast_hash:
+            return False
+            
+        # Use index for faster lookup
+        return cast_hash in self._action_indexes['cast_hash']
 
     def has_sent_farcaster_post(self, content: str) -> bool:
         """
@@ -484,29 +588,68 @@ class WorldStateManager:
         
         current_time = time.time()
         
-        # Check for recent messages (last hour)
-        if channel.recent_messages:
-            last_message_time = channel.recent_messages[-1].timestamp
-            if current_time - last_message_time < 3600:  # 1 hour
-                return True
-        
-        # Check if channel was recently updated (indicates active monitoring)
-        if hasattr(channel, 'last_checked') and channel.last_checked:
-            if current_time - channel.last_checked < 1800:  # 30 minutes
-                return True
-        
-        # Check for recent bot activity in this channel
+        return (
+            self._has_recent_messages(channel, current_time) or
+            self._was_recently_checked(channel, current_time) or
+            self._has_recent_bot_activity(channel_id, current_time)
+        )
+
+    def _has_recent_messages(self, channel: Channel, current_time: float) -> bool:
+        """Check if channel has recent messages (last hour)."""
+        if not channel.recent_messages:
+            return False
+        last_message_time = channel.recent_messages[-1].timestamp
+        return current_time - last_message_time < 3600  # 1 hour
+
+    def _was_recently_checked(self, channel: Channel, current_time: float) -> bool:
+        """Check if channel was recently updated (indicates active monitoring)."""
+        if not (hasattr(channel, 'last_checked') and channel.last_checked):
+            return False
+        return current_time - channel.last_checked < 1800  # 30 minutes
+
+    def _has_recent_bot_activity(self, channel_id: str, current_time: float) -> bool:
+        """Check for recent bot activity in this channel."""
         recent_actions = [
             action for action in self.state.action_history
             if (action.parameters.get('channel_id') == channel_id or 
                 action.parameters.get('room_id') == channel_id) and
             current_time - action.timestamp < 3600  # 1 hour
         ]
+        return len(recent_actions) > 0
+
+    def set_rate_limits(self, platform: str, limits: Dict[str, Any]) -> None:
+        """
+        Set rate limiting information for a platform.
         
-        if recent_actions:
-            return True
+        Args:
+            platform: The platform name (e.g., 'matrix', 'farcaster')
+            limits: Dictionary containing rate limit information
+        """
+        if not hasattr(self.state, 'platform_rate_limits'):
+            self.state.platform_rate_limits = {}
         
-        return False
+        self.state.platform_rate_limits[platform] = {
+            **limits,
+            'last_updated': time.time()
+        }
+        
+        logger.info(f"WorldState: Updated rate limits for {platform}: {limits}")
+        self.state.last_update = time.time()
+
+    def get_rate_limits(self, platform: str) -> Optional[Dict[str, Any]]:
+        """
+        Get rate limiting information for a platform.
+        
+        Args:
+            platform: The platform name (e.g., 'matrix', 'farcaster')
+            
+        Returns:
+            Dictionary containing rate limit information, or None if not set
+        """
+        if not hasattr(self.state, 'platform_rate_limits'):
+            return None
+        
+        return self.state.platform_rate_limits.get(platform)
 
     def add_pending_matrix_invite(self, invite_info: Dict[str, Any]) -> None:
         """
@@ -708,7 +851,20 @@ class WorldStateManager:
             aspect_ratio: Aspect ratio of the media (e.g., '1:1', '16:9')
             metadata: Additional metadata about the generation
             media_id: Unique identifier for explicit action chaining
+            
+        Raises:
+            ValueError: If required parameters are invalid
         """
+        # Input validation
+        if not media_url or not media_url.strip():
+            raise ValueError("media_url cannot be empty")
+        if not media_type or media_type not in ['image', 'video']:
+            raise ValueError("media_type must be 'image' or 'video'")
+        if not prompt or not prompt.strip():
+            raise ValueError("prompt cannot be empty")
+        if not service_used or not service_used.strip():
+            raise ValueError("service_used cannot be empty")
+        
         media_entry = {
             "url": media_url,
             "type": media_type,
@@ -764,6 +920,11 @@ class WorldStateManager:
     
     def update_user_sentiment(self, platform: str, user_identifier: str, sentiment_data: SentimentData):
         """Update sentiment data for a user."""
+        if not platform or not user_identifier:
+            raise ValueError("platform and user_identifier cannot be empty")
+        if sentiment_data is None:
+            raise ValueError("sentiment_data cannot be None")
+            
         try:
             if platform == "farcaster":
                 user = self.get_or_create_farcaster_user(user_identifier)
@@ -774,12 +935,15 @@ class WorldStateManager:
                 user.sentiment = sentiment_data
                 logger.info(f"Updated sentiment for Matrix user {user_identifier}: {sentiment_data.label} ({sentiment_data.score})")
             else:
-                logger.warning(f"Unknown platform for sentiment update: {platform}")
-                return
+                raise ValueError(f"Unknown platform for sentiment update: {platform}")
                 
             self.state.last_update = time.time()
+        except (KeyError, AttributeError) as e:
+            logger.error(f"Error updating user sentiment for {platform}:{user_identifier}: {e}", exc_info=True)
+            raise
         except Exception as e:
-            logger.error(f"Error updating user sentiment: {e}", exc_info=True)
+            logger.error(f"Unexpected error updating user sentiment: {e}", exc_info=True)
+            raise
     
     # === Memory Bank Management ===
     
@@ -876,6 +1040,11 @@ class WorldStateManager:
 
     def add_user_memory(self, user_platform_id: str, memory_entry: MemoryEntry):
         """Add a memory entry for a specific user and persist it."""
+        if not user_platform_id or not user_platform_id.strip():
+            raise ValueError("user_platform_id cannot be empty")
+        if memory_entry is None:
+            raise ValueError("memory_entry cannot be None")
+            
         try:
             if user_platform_id not in self.state.user_memory_bank:
                 self.state.user_memory_bank[user_platform_id] = []
@@ -903,8 +1072,12 @@ class WorldStateManager:
                     # No event loop running, persistence will happen later
                     logger.debug(f"No event loop available, memory persistence deferred for user {user_platform_id}")
             
+        except (AttributeError, TypeError) as e:
+            logger.error(f"Error adding user memory for {user_platform_id}: {e}", exc_info=True)
+            raise
         except Exception as e:
-            logger.error(f"Error adding user memory: {e}", exc_info=True)
+            logger.error(f"Unexpected error adding user memory: {e}", exc_info=True)
+            raise
     
     def get_user_memories(self, user_platform_id: str, limit: int = 10) -> List[MemoryEntry]:
         """Get recent memories for a user, loading from persistent storage if needed."""
@@ -967,6 +1140,9 @@ class WorldStateManager:
     
     def cache_tool_result(self, tool_name: str, params_key: str, result: Dict[str, Any]):
         """Cache a tool result for later retrieval."""
+        if not tool_name or not params_key:
+            raise ValueError("tool_name and params_key cannot be empty")
+            
         cache_key = f"{tool_name}:{params_key}"
         self.state.tool_cache[cache_key] = {
             "result": result,
@@ -975,17 +1151,28 @@ class WorldStateManager:
             "params_key": params_key
         }
         
-        # Clean up old cache entries (keep only last 24 hours)
-        cutoff_time = time.time() - (24 * 3600)
+        # Periodic cleanup instead of on every write
+        current_time = time.time()
+        if current_time - self._last_cache_cleanup > self._cache_cleanup_interval:
+            self._cleanup_expired_cache_entries(current_time)
+            self._last_cache_cleanup = current_time
+        
+        self.state.last_update = time.time()
+        logger.debug(f"Cached tool result: {cache_key}")
+
+    def _cleanup_expired_cache_entries(self, current_time: float, max_age_hours: int = 24):
+        """Clean up expired cache entries efficiently."""
+        cutoff_time = current_time - (max_age_hours * 3600)
         keys_to_remove = [
             key for key, value in self.state.tool_cache.items()
             if value.get("timestamp", 0) < cutoff_time
         ]
+        
         for key in keys_to_remove:
             del self.state.tool_cache[key]
         
-        self.state.last_update = time.time()
-        logger.debug(f"Cached tool result: {cache_key}")
+        if keys_to_remove:
+            logger.debug(f"Cleaned up {len(keys_to_remove)} expired cache entries")
     
     def get_cached_tool_result(self, tool_name: str, params_key: str, max_age_seconds: int = 3600) -> Optional[Dict[str, Any]]:
         """Retrieve a cached tool result if it's still fresh."""
@@ -1017,7 +1204,8 @@ class WorldStateManager:
         Returns:
             True if the bot has successfully replied to this event
         """
-        from ...config import settings
+        if not original_event_id:
+            return False
         
         # First check in action_history for successful send_matrix_reply actions
         for action in self.state.action_history:
@@ -1031,14 +1219,15 @@ class WorldStateManager:
                         return True
         
         # Also check in messages for bot replies (as a secondary verification)
-        for platform_channels in self.state.channels.values():
-            for channel in platform_channels.values():
-                if channel.type == "matrix":
-                    for msg in channel.recent_messages:
-                        if (msg.sender == settings.MATRIX_USER_ID and 
-                            msg.reply_to == original_event_id):
-                            logger.debug(f"Bot reply found in messages for event {original_event_id}: message_id {msg.id}")
-                            return True
+        if self._matrix_user_id:
+            for platform_channels in self.state.channels.values():
+                for channel in platform_channels.values():
+                    if channel.type == "matrix":
+                        for msg in channel.recent_messages:
+                            if (msg.sender == self._matrix_user_id and 
+                                msg.reply_to == original_event_id):
+                                logger.debug(f"Bot reply found in messages for event {original_event_id}: message_id {msg.id}")
+                                return True
         return False
 
     def get_daily_video_generation_count(self) -> int:
@@ -1148,49 +1337,3 @@ class WorldStateManager:
         
         logger.warning(f"Media ID {media_id} not found in generated media library")
         return None
-
-    def is_channel_expanded(self, channel_id: str, channel_type: Optional[str] = None) -> bool:
-        """
-        Determine if a channel is actively monitored or "expanded" for trigger generation.
-        
-        A channel is considered expanded if:
-        - It has recent activity (messages in the last hour)
-        - It has been explicitly marked as monitored
-        - The bot has recent interaction history in the channel
-        
-        Args:
-            channel_id: The channel ID to check
-            channel_type: Optional platform type to narrow search
-            
-        Returns:
-            True if the channel should generate high-priority triggers, False otherwise
-        """
-        channel = self.get_channel(channel_id, channel_type)
-        if not channel:
-            return False
-        
-        current_time = time.time()
-        
-        # Check for recent messages (last hour)
-        if channel.recent_messages:
-            last_message_time = channel.recent_messages[-1].timestamp
-            if current_time - last_message_time < 3600:  # 1 hour
-                return True
-        
-        # Check if channel was recently updated (indicates active monitoring)
-        if hasattr(channel, 'last_checked') and channel.last_checked:
-            if current_time - channel.last_checked < 1800:  # 30 minutes
-                return True
-        
-        # Check for recent bot activity in this channel
-        recent_actions = [
-            action for action in self.state.action_history
-            if (action.parameters.get('channel_id') == channel_id or 
-                action.parameters.get('room_id') == channel_id) and
-            current_time - action.timestamp < 3600  # 1 hour
-        ]
-        
-        if recent_actions:
-            return True
-        
-        return False

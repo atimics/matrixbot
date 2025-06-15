@@ -368,6 +368,19 @@ class MainOrchestrator:
             # Register integrations from environment variables
             await self._register_integrations_from_env()
             
+            # Set up processing hub early - it doesn't depend on integrations
+            logger.info("Setting up processing components...")
+            self._setup_processing_components()
+            logger.info("Processing components setup complete")
+            
+            # Start the processing loop early as a background task
+            logger.info("Starting processing hub background task...")
+            self.processing_task = self.processing_hub.start_processing_loop()
+            if self.processing_task:
+                logger.info(f"Processing hub task started successfully: {self.processing_task}")
+            else:
+                logger.warning("Processing hub task was not created!")
+            
             # Connect all active integrations and start their services
             await self.integration_manager.connect_all_active()
             await self.integration_manager.start_all_services()
@@ -387,23 +400,14 @@ class MainOrchestrator:
             # Initialize NFT and blockchain services
             await self._initialize_nft_services()
             
-            # Set up processing hub with traditional processor
-            logger.info("Setting up processing components...")
-            self._setup_processing_components()
-            logger.info("Processing components setup complete")
+            # Connect processing hub to observers for trigger generation
+            self._connect_processing_hub_to_observers()
+            logger.info("Processing hub connected to observers")
             
             # Start the proactive conversation engine
             logger.info("Starting proactive conversation engine...")
             await self.proactive_engine.start()
             logger.info("Proactive conversation engine started")
-            
-            # Start the processing loop as a background task
-            logger.info("Starting processing hub background task...")
-            self.processing_task = self.processing_hub.start_processing_loop()
-            if self.processing_task:
-                logger.info(f"Processing hub task started successfully: {self.processing_task}")
-            else:
-                logger.warning("Processing hub task was not created!")
             
         except Exception as e:
             logger.error(f"Error starting main orchestrator: {e}", exc_info=True)
@@ -1131,3 +1135,23 @@ class MainOrchestrator:
                     logger.info("✓ Matrix integration removed successfully")
                 except Exception as e:
                     logger.error(f"Failed to remove Matrix integration: {e}")
+        
+    def _connect_processing_hub_to_observers(self):
+        """Connect the processing hub to observers for trigger generation."""
+        try:
+            # Connect Matrix observer
+            if hasattr(self, 'matrix_observer') and self.matrix_observer:
+                self.matrix_observer.processing_hub = self.processing_hub
+                logger.info("Connected processing hub to Matrix observer")
+            else:
+                logger.debug("No Matrix observer available to connect processing hub")
+                
+            # Connect Farcaster observer  
+            if hasattr(self, 'farcaster_observer') and self.farcaster_observer:
+                self.farcaster_observer.processing_hub = self.processing_hub
+                logger.info("Connected processing hub to Farcaster observer")
+            else:
+                logger.debug("No Farcaster observer available to connect processing hub")
+                
+        except Exception as e:
+            logger.error(f"Error connecting processing hub to observers: {e}")
