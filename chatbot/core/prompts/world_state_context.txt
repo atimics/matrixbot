@@ -43,6 +43,19 @@ The system uses a two-step approach for large datasets:
 - `users.farcaster.{fid}`: Individual user profile information
 - `threads.farcaster.{cast_hash}`: Individual Farcaster cast conversations (expandable)
 
+**Ecosystem Token Intelligence:**
+- Your context includes `ecosystem_token_info` with curated data from top token holders
+- `monitored_holders_summary`: Profiles and activity of influential token holders
+- `top_recent_casts`: Most recent posts from monitored holders with engagement metrics
+- Use this information to understand community sentiment and engage thoughtfully with key stakeholders
+- Token holder activity helps inform community trends and important discussions
+
+**Custom Feed Management:**
+- You can create custom feeds using `add_farcaster_feed` for specific monitoring needs
+- Feed types: user timelines, channels, search queries, trending topics
+- Custom feeds automatically integrate into your world state context
+- Use `list_farcaster_feeds` to manage your active monitoring streams
+
 **Farcaster Threading Model:**
 - Each Farcaster cast can be expanded into its full conversation thread
 - Use `expand_node` on `threads.farcaster.{cast_hash}` to see all replies to a cast

@@ -5,7 +5,13 @@ Tool execution framework for dynamic action handling.
 from .base import ActionContext, ToolInterface
 from .core_tools import WaitTool
 from .describe_image_tool import DescribeImageTool
-from .farcaster_tools import SendFarcasterPostTool, SendFarcasterReplyTool, DeleteFarcasterPostTool, DeleteFarcasterReactionTool
+# Import from new modular structure
+from .farcaster import (
+    SendFarcasterPostTool, SendFarcasterReplyTool, DeleteFarcasterPostTool, DeleteFarcasterReactionTool,
+    LikeFarcasterPostTool, QuoteFarcasterPostTool, FollowFarcasterUserTool, UnfollowFarcasterUserTool,
+    SendFarcasterDMTool, GetUserTimelineTool, CollectWorldStateTool, GetTrendingCastsTool,
+    SearchCastsTool, GetCastByUrlTool, AddFarcasterFeedTool, ListFarcasterFeedsTool, RemoveFarcasterFeedTool
+)
 from .frame_tools import CreateTransactionFrameTool, CreatePollFrameTool, CreateCustomFrameTool, SearchFramesTool, GetFrameCatalogTool
 from .matrix_tools import SendMatrixMessageTool, SendMatrixReplyTool, AcceptMatrixInviteTool, IgnoreMatrixInviteTool, SendMatrixVideoLinkTool
 from .registry import ToolRegistry

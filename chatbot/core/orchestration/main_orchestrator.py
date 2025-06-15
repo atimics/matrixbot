@@ -178,7 +178,7 @@ class MainOrchestrator:
         """Register all available tools with the tool registry."""
         from ...tools.core_tools import WaitTool
         from ...tools.describe_image_tool import DescribeImageTool
-        from ...tools.farcaster_tools import (
+        from ...tools.farcaster import (
             FollowFarcasterUserTool,
             GetUserTimelineTool,
             LikeFarcasterPostTool,
@@ -193,6 +193,9 @@ class MainOrchestrator:
             GetTrendingCastsTool,
             SearchCastsTool,
             GetCastByUrlTool,
+            AddFarcasterFeedTool,
+            ListFarcasterFeedsTool,
+            RemoveFarcasterFeedTool,
         )
         from ...tools.frame_tools import (
             CreateTransactionFrameTool,
@@ -274,6 +277,11 @@ class MainOrchestrator:
         self.tool_registry.register_tool(GetTrendingCastsTool())
         self.tool_registry.register_tool(GetCastByUrlTool())
         self.tool_registry.register_tool(CollectWorldStateTool())
+        
+        # Farcaster feed management tools
+        self.tool_registry.register_tool(AddFarcasterFeedTool())
+        self.tool_registry.register_tool(ListFarcasterFeedsTool())
+        self.tool_registry.register_tool(RemoveFarcasterFeedTool())
         
         # Farcaster Frame tools
         self.tool_registry.register_tool(CreateTransactionFrameTool())

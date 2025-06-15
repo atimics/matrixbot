@@ -75,6 +75,7 @@ class MatrixObserver(Integration):
             return
 
         logger.info(f"MatrixObserver: Initialized for {self.user_id}@{self.homeserver}")
+        logger.debug(f"MatrixObserver: User ID set to: '{self.user_id}' (type: {type(self.user_id)})")
 
     @property
     def enabled(self) -> bool:
@@ -253,7 +254,9 @@ class MatrixObserver(Integration):
             from ...core.world_state import WorldStateManager
             self.world_state = WorldStateManager()
         # Skip our own messages
+        logger.debug(f"MatrixObserver: Comparing event.sender='{event.sender}' with self.user_id='{self.user_id}'")
         if event.sender == self.user_id:
+            logger.debug(f"MatrixObserver: Skipping own message from {event.sender}")
             return
 
         # Extract comprehensive room details

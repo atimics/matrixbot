@@ -66,6 +66,11 @@ class ActionContext:
         )
         return self._matrix_observer
     
+    @matrix_observer.setter
+    def matrix_observer(self, value):
+        """Set the matrix observer for backward compatibility."""
+        self._matrix_observer = value
+    
     @property
     def farcaster_observer(self):
         """
@@ -78,6 +83,11 @@ class ActionContext:
             stacklevel=2
         )
         return self._farcaster_observer
+    
+    @farcaster_observer.setter
+    def farcaster_observer(self, value):
+        """Set the farcaster observer for backward compatibility."""
+        self._farcaster_observer = value
     
     def get_messaging_service(self, service_id: str):
         """Get a messaging service by ID"""

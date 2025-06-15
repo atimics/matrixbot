@@ -208,28 +208,6 @@ class SendFarcasterPostTool(ToolInterface):
                 "error": error_msg,
                 "timestamp": time.time(),
             }
-                return {
-                    "status": "failure",
-                    "error": result.get("error", "unknown"),
-                    "timestamp": time.time(),
-                }
-        except Exception as e:
-            error_msg = f"Error executing send_farcaster_post: {e}"
-            logger.exception(error_msg)
-
-            # Record this action failure in world state
-            if context.world_state_manager:
-                context.world_state_manager.add_action_result(
-                    action_type=self.name,
-                    parameters={
-                        "content": content, 
-                        "channel": channel,
-                        "embed_url": embed_url,
-                    },
-                    result=f"failure: {str(e)}",
-                )
-
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
 
 class SendFarcasterReplyTool(ToolInterface):
@@ -595,13 +573,14 @@ class QuoteFarcasterPostTool(ToolInterface):
         self, params: Dict[str, Any], context: ActionContext
     ) -> Dict[str, Any]:
         """
-        Execute the Farcaster quote cast action.
+        Execute the Farcaster quote cast action using service-oriented approach.
         """
         logger.info(f"Executing tool '{self.name}' with params: {params}")
 
-        # Check if Farcaster integration is available
-        if not context.farcaster_observer:
-            error_msg = "Farcaster integration (observer) not configured."
+        # Get Farcaster service from service registry
+        social_service = context.get_social_service("farcaster")
+        if not social_service or not await social_service.is_available():
+            error_msg = "Farcaster service is not available."
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
@@ -633,31 +612,19 @@ class QuoteFarcasterPostTool(ToolInterface):
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
         try:
-            # First, get the details of the cast to be quoted to retrieve the author's FID
-            cast_details_result = await context.farcaster_observer.get_cast_details(quoted_cast_hash)
-            if not cast_details_result.get("cast"):
-                error_msg = f"Could not retrieve details for cast to be quoted: {quoted_cast_hash}"
-                logger.error(error_msg)
-                return {"status": "failure", "error": error_msg, "timestamp": time.time()}
-
-            quoted_cast_author_fid = cast_details_result["cast"]["author"]["fid"]
-            if not quoted_cast_author_fid:
-                error_msg = f"Could not find author FID for cast {quoted_cast_hash}"
-                logger.error(error_msg)
-                return {"status": "failure", "error": error_msg, "timestamp": time.time()}
-
-            # Use the observer's quote_cast method
-            result = await context.farcaster_observer.quote_cast(
-                content, quoted_cast_hash, quoted_cast_author_fid, channel
+            # For now, use create_post with parent_url as quote functionality
+            # TODO: Implement proper quote functionality in service layer
+            result = await social_service.create_post(
+                content=f"{content}",  # Quote content
+                embed_urls=[],
+                parent_url=quoted_cast_hash  # This acts as a quote reference
             )
-            logger.info(f"Farcaster observer quote_cast returned: {result}")
+            logger.info(f"Farcaster service create_post (quote) returned: {result}")
 
             # Record this action in world state
             if context.world_state_manager:
-                if result.get("success"):
-                    cast_hash = result.get("cast", {}).get(
-                        "hash", result.get("cast_hash", "unknown")
-                    )
+                if result.get("status") == "success":
+                    cast_hash = result.get("cast_hash", "unknown")
                     context.world_state_manager.add_action_result(
                         action_type=self.name,
                         parameters={
@@ -679,23 +646,22 @@ class QuoteFarcasterPostTool(ToolInterface):
                         result=f"failure: {result.get('error', 'unknown')}",
                     )
 
-            if result.get("success"):
+            if result.get("status") == "success":
                 cast_hash = result.get("cast_hash", "unknown")
-                quoted_cast = result.get("quoted_cast", quoted_cast_hash)
-                success_msg = f"Successfully posted quote cast (hash: {cast_hash}) quoting {quoted_cast}"
+                success_msg = f"Successfully posted quote cast (hash: {cast_hash}) quoting {quoted_cast_hash}"
                 logger.info(success_msg)
 
                 return {
                     "status": "success",
                     "message": success_msg,
                     "cast_hash": cast_hash,
-                    "quoted_cast_hash": quoted_cast,
+                    "quoted_cast_hash": quoted_cast_hash,
                     "channel": channel,
                     "sent_content": content,  # For AI Blindness Fix
                     "timestamp": time.time(),
                 }
             else:
-                error_msg = f"Failed to post quote cast via observer: {result.get('error', 'unknown error')}"
+                error_msg = f"Failed to post quote cast via service: {result.get('error', 'unknown error')}"
                 logger.error(error_msg)
                 return {
                     "status": "failure",
@@ -752,16 +718,22 @@ class FollowFarcasterUserTool(ToolInterface):
         self, params: Dict[str, Any], context: ActionContext
     ) -> Dict[str, Any]:
         logger.info(f"Executing tool '{self.name}' with params: {params}")
-        if not context.farcaster_observer:
-            err = "Farcaster integration not configured."
-            logger.error(err)
-            return {"status": "failure", "error": err, "timestamp": time.time()}
+        
+        # Get Farcaster service from service registry
+        social_service = context.get_social_service("farcaster")
+        if not social_service or not await social_service.is_available():
+            error_msg = "Farcaster service is not available."
+            logger.error(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+            
         fid = params.get("fid")
         if fid is None:
             err = "Missing required parameter: fid"
             logger.error(err)
             return {"status": "failure", "error": err, "timestamp": time.time()}
-        result = await context.farcaster_observer.follow_user(fid)
+            
+        # Use service method to follow user
+        result = await social_service.follow_user(fid)
         if result.get("success"):
             return {"status": "success", "fid": fid, "timestamp": time.time()}
         return {
@@ -1615,206 +1587,7 @@ class GetCastByUrlTool(ToolInterface):
             }
 
 
-class DeleteFarcasterPostTool(ToolInterface):
-    """
-    Tool for deleting a Farcaster post (cast) by hash.
-    """
-
-    @property
-    def name(self) -> str:
-        return "delete_farcaster_post"
-
-    @property
-    def description(self) -> str:
-        return "Delete a Farcaster cast by its hash. Use this to remove a post you previously made."
-
-    @property
-    def parameters_schema(self) -> Dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "cast_hash": {
-                    "type": "string",
-                    "description": "The hash of the cast to delete"
-                }
-            },
-            "required": ["cast_hash"]
-        }
-
-    async def execute(
-        self, params: Dict[str, Any], context: ActionContext
-    ) -> Dict[str, Any]:
-        """
-        Execute the Farcaster delete cast action.
-        """
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
-
-        # Check if Farcaster integration is available
-        if not context.farcaster_observer:
-            error_msg = "Farcaster integration (observer) not configured."
-            logger.error(error_msg)
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
-
-        # Extract and validate parameters
-        cast_hash = params.get("cast_hash")
-
-        if not cast_hash:
-            error_msg = "Missing required parameter 'cast_hash' for Farcaster delete"
-            logger.error(error_msg)
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
-
-        try:
-            # Use the observer's delete_cast method
-            result = await context.farcaster_observer.delete_cast(cast_hash)
-            logger.info(f"Farcaster observer delete_cast returned: {result}")
-
-            # Record this action in world state
-            if context.world_state_manager:
-                if result.get("success"):
-                    context.world_state_manager.add_action_result(
-                        action_type=self.name,
-                        parameters={"cast_hash": cast_hash},
-                        result="success",
-                    )
-                else:
-                    context.world_state_manager.add_action_result(
-                        action_type=self.name,
-                        parameters={"cast_hash": cast_hash},
-                        result=f"failure: {result.get('error', 'unknown')}",
-                    )
-
-            if result.get("success"):
-                success_msg = f"Successfully deleted Farcaster cast: {cast_hash}"
-                logger.info(success_msg)
-                return {
-                    "status": "success",
-                    "message": success_msg,
-                    "cast_hash": cast_hash,
-                    "timestamp": time.time(),
-                }
-            else:
-                error_msg = f"Failed to delete Farcaster cast: {result.get('error', 'unknown error')}"
-                logger.error(error_msg)
-                return {
-                    "status": "failure",
-                    "error": error_msg,
-                    "cast_hash": cast_hash,
-                    "timestamp": time.time(),
-                }
-
-        except Exception as e:
-            error_msg = f"Error executing {self.name}: {str(e)}"
-            logger.exception(error_msg)
-
-            # Record this action failure in world state
-            if context.world_state_manager:
-                context.world_state_manager.add_action_result(
-                    action_type=self.name,
-                    parameters={"cast_hash": cast_hash},
-                    result=f"failure: {str(e)}",
-                )
-
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
-
-
-class DeleteFarcasterReactionTool(ToolInterface):
-    """
-    Tool for deleting a reaction (like/recast) from a Farcaster post.
-    """
-
-    @property
-    def name(self) -> str:
-        return "delete_farcaster_reaction"
-
-    @property
-    def description(self) -> str:
-        return "Delete a reaction (like or recast) from a Farcaster cast. Use this to remove a like or recast you previously made."
-
-    @property
-    def parameters_schema(self) -> Dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "cast_hash": {
-                    "type": "string",
-                    "description": "The hash of the cast to remove reaction from"
-                }
-            },
-            "required": ["cast_hash"]
-        }
-
-    async def execute(
-        self, params: Dict[str, Any], context: ActionContext
-    ) -> Dict[str, Any]:
-        """
-        Execute the Farcaster delete reaction action.
-        """
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
-
-        # Check if Farcaster integration is available
-        if not context.farcaster_observer:
-            error_msg = "Farcaster integration (observer) not configured."
-            logger.error(error_msg)
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
-
-        # Extract and validate parameters
-        cast_hash = params.get("cast_hash")
-
-        if not cast_hash:
-            error_msg = "Missing required parameter 'cast_hash' for Farcaster reaction delete"
-            logger.error(error_msg)
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
-
-        try:
-            # Use the observer's delete_reaction method
-            result = await context.farcaster_observer.delete_reaction(cast_hash)
-            logger.info(f"Farcaster observer delete_reaction returned: {result}")
-
-            # Record this action in world state
-            if context.world_state_manager:
-                if result.get("success"):
-                    context.world_state_manager.add_action_result(
-                        action_type=self.name,
-                        parameters={"cast_hash": cast_hash},
-                        result="success",
-                    )
-                else:
-                    context.world_state_manager.add_action_result(
-                        action_type=self.name,
-                        parameters={"cast_hash": cast_hash},
-                        result=f"failure: {result.get('error', 'unknown')}",
-                    )
-
-            if result.get("success"):
-                success_msg = f"Successfully deleted reaction from Farcaster cast: {cast_hash}"
-                logger.info(success_msg)
-                return {
-                    "status": "success",
-                    "message": success_msg,
-                    "cast_hash": cast_hash,
-                    "timestamp": time.time(),
-                }
-            else:
-                error_msg = f"Failed to delete reaction from Farcaster cast: {result.get('error', 'unknown error')}"
-                logger.error(error_msg)
-                return {
-                    "status": "failure",
-                    "error": error_msg,
-                    "cast_hash": cast_hash,
-                    "timestamp": time.time(),
-                }
-
-        except Exception as e:
-            error_msg = f"Error executing {self.name}: {str(e)}"
-            logger.exception(error_msg)
-
-            # Record this action failure in world state
-            if context.world_state_manager:
-                context.world_state_manager.add_action_result(
-                    action_type=self.name,
-                    parameters={"cast_hash": cast_hash},
-                    result=f"failure: {str(e)}",
-                )
-
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+# Legacy file - Use the new modular structure in /chatbot/tools/farcaster/ instead
+# This file is kept for backward compatibility during migration
+# All tool classes above have been moved to the appropriate modules with service-oriented architecture
 

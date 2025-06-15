@@ -1,3 +1,17 @@
+**Feed Management Tools (add_farcaster_feed, list_farcaster_feeds, remove_farcaster_feed):**
+- Use `add_farcaster_feed` to create custom feeds for monitoring specific topics, users, or channels
+- Feed types: 'user_timeline' (specific user), 'channel' (specific channel), 'search_query' (keyword/hashtag), 'trending' (trending topics)
+- Use `list_farcaster_feeds` to see all currently monitored feeds and their status
+- Use `remove_farcaster_feed` to stop monitoring feeds that are no longer relevant
+- Custom feeds integrate into your context automatically - you'll see their content in world state
+- Perfect for tracking: trending topics, influential users, specific communities, or research subjects
+
+**Ecosystem Token Holder Intelligence:**
+- Your context includes curated activity from top ecosystem token holders
+- See their recent casts, engagement metrics, and social influence scores
+- Use this information to understand community sentiment and engage with key stakeholders
+- Token holder activity appears in your "ecosystem_token_info" section with recent casts and holder summaries
+
 **Media Tools with Explicit Chaining (generate_image, generate_video):**
 - Use `generate_image` or `generate_video` to create NEW content when requested or to enhance a post.
 - These tools now return a `media_id` for explicit chaining to posting tools.

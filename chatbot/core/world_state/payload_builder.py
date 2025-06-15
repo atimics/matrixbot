@@ -13,6 +13,7 @@ and testable.
 
 import json
 import logging
+from typing import List
 import time
 from dataclasses import asdict
 from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING, Generator
@@ -51,6 +52,7 @@ class PayloadBuilder:
         """
         self.world_state_manager = world_state_manager
         self.node_manager = node_manager
+        self.logger = logging.getLogger(__name__)
         # Dispatcher for node data retrieval, improving maintainability
         self._node_data_handlers = {
             "channels": self._get_channel_node_data,
@@ -352,10 +354,9 @@ class PayloadBuilder:
                 "token_metadata": asdict(world_state_data.token_metadata)
                 if world_state_data.token_metadata
                 else None,
-                "monitored_holders_activity": [
-                    asdict(h)
-                    for h in world_state_data.monitored_token_holders.values()
-                ],
+                "monitored_holders_summary": self._summarize_token_holders_for_ai(
+                    world_state_data.monitored_token_holders
+                ),
             },
             "research_knowledge": {
                 "available_topics": list(world_state_data.research_database.keys()),
@@ -1119,173 +1120,283 @@ class PayloadBuilder:
         
         return available_channels
 
-    # Update all usages of world_state_data.channels.values() to use _iter_all_channels
-    # Example for fallback user search:
-    def _get_user_fallback(self, world_state_data, user_type, user_id):
-        for channel in self._iter_all_channels(world_state_data.channels):
-            for msg in reversed(channel.recent_messages[-5:]):
-                if user_type == "farcaster" and str(msg.sender_fid) == user_id:
-                    return {
-                        "id": user_id,
-                        "type": user_type,
-                        "username": msg.sender_username,
-                        "display_name": msg.sender_display_name,
-                        "fid": msg.sender_fid
-                    }
-                if user_type == "matrix" and msg.sender_username == user_id:
-                    return {
-                        "id": user_id,
-                        "type": user_type,
-                        "username": msg.sender_username,
-                        "display_name": msg.sender_display_name
-                    }
-        return {"type": user_type, "id": user_id, "error": "User data not found"}
-
-    def _build_farcaster_context(self, world_state_data: WorldStateData) -> Dict[str, Any]:
-        """Build Farcaster context section for AI awareness"""
-        farcaster_context = {
-            "status": "not_connected",
-            "network_status": "unknown",
-            "rate_limits": {},
-            "recent_posts": [],
-            "can_post_now": False,
-            "time_until_next_post": 0,
-            "network_health": {}
-        }
-        
-        try:
-            # Get network status from Farcaster integration if available
-            if self.world_state_manager:
-                farcaster_integration = None
-                for integration in self.world_state_manager.integrations:
-                    if hasattr(integration, 'integration_id') and integration.integration_id == 'farcaster':
-                        farcaster_integration = integration
-                        break
-                
-                if farcaster_integration and hasattr(farcaster_integration, 'api_client') and farcaster_integration.api_client:
-                    api_client = farcaster_integration.api_client
-                    
-                    # Get network status
-                    network_status = api_client.get_network_status()
-                    farcaster_context["network_status"] = "available" if network_status["is_available"] else "unavailable"
-                    farcaster_context["network_health"] = {
-                        "consecutive_failures": network_status["consecutive_failures"],
-                        "seconds_since_last_success": network_status["seconds_since_last_success"],
-                        "is_available": network_status["is_available"]
-                    }
-                    
-                    # Update status based on network availability
-                    if network_status["is_available"]:
-                        farcaster_context["status"] = "connected"
-                    else:
-                        farcaster_context["status"] = "network_issues"
-                        farcaster_context["can_post_now"] = False
-            
-            # Get rate limit information
-            rate_limits = world_state_data.rate_limits.get('farcaster_api', {})
-            if rate_limits:
-                farcaster_context["rate_limits"] = {
-                    "remaining": rate_limits.get("remaining", 0),
-                    "limit": rate_limits.get("limit", 0),
-                    "reset_time": rate_limits.get("reset_time"),
-                    "last_updated": rate_limits.get("last_updated")
-                }
-                
-                # Only allow posting if network is available AND rate limits allow
-                if farcaster_context["network_status"] == "available":
-                    farcaster_context["can_post_now"] = rate_limits.get("remaining", 0) > 0
-            
-            # Add guidance for AI
-            if farcaster_context["network_status"] == "unavailable":
-                farcaster_context["ai_guidance"] = "Farcaster network is currently unavailable. Avoid attempting to post until connectivity is restored."
-            elif not farcaster_context["can_post_now"]:
-                farcaster_context["ai_guidance"] = "Rate limits or timing constraints prevent posting. Consider this when deciding whether to attempt Farcaster actions."
-            else:
-                farcaster_context["ai_guidance"] = "Farcaster posting is available. Rate limiting and duplicate detection are active."
-            
-        except Exception as e:
-            logger.error(f"Error building Farcaster context: {e}")
-            farcaster_context["error"] = str(e)
-            farcaster_context["status"] = "error"
-        
-        return farcaster_context
-
-    def _build_bot_activity_context(self, world_state_data: WorldStateData) -> Dict[str, Any]:
+    def _summarize_token_holders_for_ai(self, monitored_holders: Dict) -> Dict[str, Any]:
         """
-        Build bot activity context showing the AI its own recent actions.
-        This helps prevent duplicate content and provides awareness of recent activity.
+        Create an AI-optimized summary of token holders and their recent activity.
         
         Args:
-            world_state_data: The world state data
+            monitored_holders: Dictionary of MonitoredTokenHolder objects
             
         Returns:
-            Dictionary containing bot's recent activity context
+            Compact summary suitable for AI context
         """
-        context = {
-            "last_farcaster_post": None,
-            "last_matrix_message": None,
-            "recent_failed_attempts": [],
-            "activity_summary": {
-                "farcaster_posts_today": 0,
-                "matrix_messages_today": 0,
-                "failed_attempts_last_hour": 0
+        if not monitored_holders:
+            return {
+                "total_holders_monitored": 0,
+                "recent_activity_summary": "No token holders currently monitored",
+                "top_recent_casts": []
             }
+        
+        # Collect recent casts from all holders
+        all_recent_casts = []
+        active_holders = []
+        
+        for holder_fid, holder in monitored_holders.items():
+            # Create holder summary
+            holder_summary = {
+                "fid": holder.fid,
+                "username": holder.username or f"FID_{holder.fid}",
+                "display_name": holder.display_name,
+                "recent_casts_count": len(holder.recent_casts),
+                "last_activity": holder.last_activity_timestamp,
+                "social_influence_score": holder.social_influence_score
+            }
+            
+            # Add token holding data if available
+            if holder.token_holder_data:
+                holder_summary["token_balance"] = holder.token_holder_data.balance
+                holder_summary["rank"] = holder.token_holder_data.rank
+            
+            active_holders.append(holder_summary)
+            
+            # Collect recent casts for AI context
+            for cast in holder.recent_casts[-3:]:  # Last 3 casts per holder
+                cast_summary = {
+                    "author": holder.username or f"FID_{holder.fid}",
+                    "author_display_name": holder.display_name,
+                    "content": cast.content[:150] + "..." if len(cast.content) > 150 else cast.content,
+                    "timestamp": cast.timestamp,
+                    "engagement": {
+                        "likes": cast.metadata.get("reactions", {}).get("likes_count", 0) if cast.metadata else 0,
+                        "recasts": cast.metadata.get("reactions", {}).get("recasts_count", 0) if cast.metadata else 0,
+                        "replies": cast.metadata.get("replies_count", 0) if cast.metadata else 0
+                    }
+                }
+                all_recent_casts.append(cast_summary)
+        
+        # Sort by timestamp and take the most recent
+        all_recent_casts.sort(key=lambda x: x["timestamp"], reverse=True)
+        top_recent_casts = all_recent_casts[:10]  # Top 10 most recent
+        
+        # Sort holders by activity/influence
+        active_holders.sort(key=lambda x: (
+            x.get("social_influence_score", 0),
+            x.get("last_activity", 0)
+        ), reverse=True)
+        
+        return {
+            "total_holders_monitored": len(monitored_holders),
+            "active_holders_summary": active_holders[:5],  # Top 5 most influential/active
+            "recent_activity_summary": f"Monitoring {len(monitored_holders)} top token holders with {len(all_recent_casts)} recent casts",
+            "top_recent_casts": top_recent_casts,
+            "last_updated": max([h.last_activity_timestamp or 0 for h in monitored_holders.values()]) if monitored_holders else 0
         }
+    
+    def _build_bot_activity_context(self, world_state_data: 'WorldStateData') -> Dict[str, Any]:
+        """
+        Build enhanced bot activity context to prevent repetitive responses and loops.
         
+        This method provides the AI with context about recent bot actions to help it:
+        - Avoid sending duplicate or repetitive messages
+        - Understand conversation flow and context
+        - Prevent feedback loops
+        - Make more informed decisions about when to respond
+        """
         try:
-            # Get bot's last successful activities via world state manager methods
-            if hasattr(world_state_data, 'get_last_farcaster_post'):
-                context["last_farcaster_post"] = world_state_data.get_last_farcaster_post()
+            import time
+            from datetime import datetime, timedelta
             
-            if hasattr(world_state_data, 'get_last_matrix_message'):
-                context["last_matrix_message"] = world_state_data.get_last_matrix_message()
-            
-            # Analyze recent failed attempts for AI awareness
             current_time = time.time()
-            one_hour_ago = current_time - 3600
-            today_start = current_time - 86400  # 24 hours ago
+            recent_cutoff = current_time - 300  # Last 5 minutes
             
-            farcaster_posts_today = 0
-            matrix_messages_today = 0
-            failed_attempts_last_hour = 0
-            
-            for action in world_state_data.action_history:
-                # Count today's successful posts
-                if action.timestamp > today_start:
-                    if action.action_type == "send_farcaster_post" and "success" in action.result:
-                        farcaster_posts_today += 1
-                    elif action.action_type == "send_matrix_message" and "success" in action.result:
-                        matrix_messages_today += 1
-                
-                # Track recent failed attempts for AI context
-                if action.timestamp > one_hour_ago and "failure" in action.result:
-                    if action.action_type in ["send_farcaster_post", "send_matrix_message"]:
-                        failed_attempts_last_hour += 1
-                        context["recent_failed_attempts"].append({
-                            "action": action.action_type,
-                            "reason": action.result,
-                            "timestamp": action.timestamp,
-                            "content_preview": (action.parameters.get("content", "")[:50] + "..." 
-                                              if len(action.parameters.get("content", "")) > 50 
-                                              else action.parameters.get("content", ""))
-                        })
-            
-            context["activity_summary"] = {
-                "farcaster_posts_today": farcaster_posts_today,
-                "matrix_messages_today": matrix_messages_today,
-                "failed_attempts_last_hour": failed_attempts_last_hour
+            bot_activity = {
+                'recent_messages': [],
+                'channel_activity': {},
+                'conversation_patterns': {},
+                'last_user_interactions': {},
+                'repetitive_content_detection': {}
             }
             
-            # Add AI guidance based on recent activity
-            if failed_attempts_last_hour > 2:
-                context["ai_guidance"] = f"High number of failed attempts ({failed_attempts_last_hour}) in the last hour. Review recent failures before attempting similar actions."
-            elif context["last_farcaster_post"] and current_time - context["last_farcaster_post"]["timestamp"] < 300:  # 5 minutes
-                context["ai_guidance"] = "Recently posted on Farcaster. Consider whether another post is necessary to avoid spam."
-            else:
-                context["ai_guidance"] = "No recent activity concerns. Normal posting guidelines apply."
+            # Bot identifiers to check for
+            bot_identifiers = ['@ratichat:chat.ratimics.com', 'ratichat']
+            
+            # Analyze recent bot messages across all channels
+            for channel_type in ['matrix', 'farcaster']:
+                if channel_type not in world_state_data.channels:
+                    continue
+                    
+                for channel_id, channel_data in world_state_data.channels[channel_type].items():
+                    messages = channel_data.recent_messages if hasattr(channel_data, 'recent_messages') else []
+                    if not messages:
+                        continue
+                    
+                    channel_name = channel_data.name if hasattr(channel_data, 'name') else channel_id
+                    bot_messages_in_channel = []
+                    user_messages_in_channel = []
+                    last_user_message_time = 0
+                    
+                    # Analyze messages in this channel
+                    for msg in messages:
+                        msg_time = msg.timestamp if hasattr(msg, 'timestamp') else 0
+                        sender = msg.sender if hasattr(msg, 'sender') else ''
+                        content = msg.content.strip() if hasattr(msg, 'content') and msg.content else ''
+                        
+                        if sender in bot_identifiers:
+                            # This is a bot message
+                            if msg_time > recent_cutoff:
+                                bot_messages_in_channel.append({
+                                    'timestamp': msg_time,
+                                    'content': content[:150],  # First 150 chars
+                                    'channel': channel_name,
+                                    'channel_id': channel_id,
+                                    'channel_type': channel_type
+                                })
+                        else:
+                            # This is a user message
+                            user_messages_in_channel.append(msg)
+                            if msg_time > last_user_message_time:
+                                last_user_message_time = msg_time
+                    
+                    # Store channel-specific activity
+                    if bot_messages_in_channel:
+                        bot_activity['channel_activity'][channel_id] = {
+                            'channel_name': channel_name,
+                            'channel_type': channel_type,
+                            'recent_bot_messages': len(bot_messages_in_channel),
+                            'last_bot_message_time': max(msg['timestamp'] for msg in bot_messages_in_channel),
+                            'last_user_message_time': last_user_message_time,
+                            'time_since_last_user_message': current_time - last_user_message_time if last_user_message_time > 0 else None
+                        }
+                        
+                        # Add to overall recent messages
+                        bot_activity['recent_messages'].extend(bot_messages_in_channel)
+                    
+                    # Track last user interaction per channel
+                    if last_user_message_time > 0:
+                        bot_activity['last_user_interactions'][channel_id] = {
+                            'channel_name': channel_name,
+                            'last_user_message_time': last_user_message_time,
+                            'time_since_last_user': current_time - last_user_message_time
+                        }
+                    
+                    # Detect repetitive content patterns
+                    recent_bot_content = [msg['content'] for msg in bot_messages_in_channel[-5:]]  # Last 5 bot messages
+                    if len(recent_bot_content) >= 2:
+                        # Check for similar content
+                        similar_messages = []
+                        for i, content1 in enumerate(recent_bot_content):
+                            for j, content2 in enumerate(recent_bot_content[i+1:], i+1):
+                                if self._messages_are_similar(content1, content2):
+                                    similar_messages.append((i, j, content1[:100]))
+                        
+                        if similar_messages:
+                            bot_activity['repetitive_content_detection'][channel_id] = {
+                                'channel_name': channel_name,
+                                'similar_message_pairs': len(similar_messages),
+                                'examples': similar_messages[:3]  # First 3 examples
+                            }
+            
+            # Sort recent messages by timestamp (most recent first)
+            bot_activity['recent_messages'].sort(key=lambda x: x['timestamp'], reverse=True)
+            bot_activity['recent_messages'] = bot_activity['recent_messages'][:10]  # Keep only last 10
+            
+            # Generate conversation pattern analysis
+            for channel_id, activity in bot_activity['channel_activity'].items():
+                pattern_flags = []
                 
+                # Check for potential conversation loops
+                if activity['recent_bot_messages'] >= 3:
+                    pattern_flags.append('high_bot_activity')
+                
+                if activity['time_since_last_user_message'] and activity['time_since_last_user_message'] > 600:  # 10 minutes
+                    pattern_flags.append('no_recent_user_response')
+                
+                if channel_id in bot_activity['repetitive_content_detection']:
+                    pattern_flags.append('repetitive_content')
+                
+                if pattern_flags:
+                    bot_activity['conversation_patterns'][channel_id] = {
+                        'channel_name': activity['channel_name'],
+                        'pattern_flags': pattern_flags,
+                        'recommendation': self._get_conversation_recommendation(pattern_flags)
+                    }
+            
+            # Generate summary
+            total_recent_messages = len(bot_activity['recent_messages'])
+            channels_with_activity = len(bot_activity['channel_activity'])
+            channels_with_patterns = len(bot_activity['conversation_patterns'])
+            
+            summary = f"Bot sent {total_recent_messages} messages recently across {channels_with_activity} channels"
+            if channels_with_patterns > 0:
+                summary += f". {channels_with_patterns} channels show conversation patterns requiring attention"
+            
+            return {
+                'recent_bot_messages': bot_activity['recent_messages'],
+                'channel_activity_summary': bot_activity['channel_activity'],
+                'conversation_patterns': bot_activity['conversation_patterns'],
+                'last_user_interactions': bot_activity['last_user_interactions'],
+                'repetitive_content_alerts': bot_activity['repetitive_content_detection'],
+                'activity_summary': summary,
+                'total_recent_messages': total_recent_messages,
+                'analysis_timestamp': current_time
+            }
+            
         except Exception as e:
-            logger.error(f"Error building bot activity context: {e}")
-            context["error"] = str(e)
+            self.logger.error(f"Error building bot activity context: {e}")
+            return {
+                'recent_bot_messages': [],
+                'channel_activity_summary': {},
+                'conversation_patterns': {},
+                'last_user_interactions': {},
+                'repetitive_content_alerts': {},
+                'activity_summary': "Unable to analyze recent bot activity",
+                'total_recent_messages': 0,
+                'analysis_timestamp': time.time(),
+                'error': str(e)
+            }
+    
+    def _messages_are_similar(self, content1: str, content2: str, threshold: float = 0.7) -> bool:
+        """Check if two message contents are similar (basic similarity check)."""
+        if not content1 or not content2:
+            return False
         
-        return context
+        # Simple similarity check - can be enhanced with more sophisticated algorithms
+        content1_lower = content1.lower().strip()
+        content2_lower = content2.lower().strip()
+        
+        # Exact match
+        if content1_lower == content2_lower:
+            return True
+        
+        # Check if one is a substring of the other (for similar prompts)
+        if len(content1_lower) > 20 and len(content2_lower) > 20:
+            shorter = content1_lower if len(content1_lower) < len(content2_lower) else content2_lower
+            longer = content2_lower if len(content1_lower) < len(content2_lower) else content1_lower
+            
+            if shorter in longer:
+                return True
+        
+        # Basic word overlap check
+        words1 = set(content1_lower.split())
+        words2 = set(content2_lower.split())
+        
+        if len(words1) > 3 and len(words2) > 3:  # Only for messages with substantial content
+            overlap = len(words1.intersection(words2))
+            total_unique = len(words1.union(words2))
+            similarity = overlap / total_unique if total_unique > 0 else 0
+            return similarity >= threshold
+        
+        return False
+    
+    def _get_conversation_recommendation(self, pattern_flags: List[str]) -> str:
+        """Generate recommendation based on conversation patterns."""
+        if 'repetitive_content' in pattern_flags and 'no_recent_user_response' in pattern_flags:
+            return "WAIT - Avoid sending more messages until user responds"
+        elif 'repetitive_content' in pattern_flags:
+            return "VARY_RESPONSE - Try a different approach or wait for user input"
+        elif 'high_bot_activity' in pattern_flags and 'no_recent_user_response' in pattern_flags:
+            return "PAUSE - Consider waiting for user engagement"
+        elif 'high_bot_activity' in pattern_flags:
+            return "MODERATE - Reduce message frequency"
+        else:
+            return "NORMAL - Continue normal conversation flow"
