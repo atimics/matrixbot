@@ -73,10 +73,11 @@ class LikeFarcasterPostTool(ToolInterface):
                 "timestamp": time.time()
             }
 
-        # Authoritative pre-condition check using Farcaster observer
-        if hasattr(context, 'farcaster_observer') and context.farcaster_observer:
+        # Authoritative pre-condition check using Farcaster service
+        social_service = context.get_social_service("farcaster")
+        if social_service and await social_service.is_available():
             try:
-                has_liked = await context.farcaster_observer.has_liked_cast(cast_hash)
+                has_liked = await social_service.has_liked_post(cast_hash)
                 if has_liked:
                     warning_msg = f"Authoritative check confirms we have already liked cast {cast_hash}"
                     logger.warning(warning_msg)
@@ -200,10 +201,11 @@ class FollowFarcasterUserTool(ToolInterface):
                 "timestamp": time.time()
             }
         
-        # Authoritative pre-condition check using Farcaster observer
-        if hasattr(context, 'farcaster_observer') and context.farcaster_observer:
+        # Authoritative pre-condition check using Farcaster service
+        social_service = context.get_social_service("farcaster")
+        if social_service and await social_service.is_available():
             try:
-                is_following = await context.farcaster_observer.is_following_user(fid)
+                is_following = await social_service.is_following_user(fid)
                 if is_following:
                     warning_msg = f"Authoritative check confirms we are already following user {fid}"
                     logger.warning(warning_msg)

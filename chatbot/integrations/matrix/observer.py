@@ -750,10 +750,23 @@ class MatrixObserver(Integration):
             return {"success": False, "error": "Matrix client not connected"}
 
         try:
+            # Handle formatted content dictionary from format_for_matrix
+            if isinstance(content, dict) and 'plain' in content:
+                # Properly unpack the formatted content dictionary
+                message_content = {
+                    "msgtype": "m.text",
+                    "body": content.get("plain", "Error: message content unavailable."),
+                    "format": "org.matrix.custom.html",
+                    "formatted_body": content.get("html", ""),
+                }
+            else:
+                # Fallback for plain string content
+                message_content = {"msgtype": "m.text", "body": str(content)}
+                
             response = await self.client.room_send(
                 room_id=room_id,
                 message_type="m.room.message",
-                content={"msgtype": "m.text", "body": content},
+                content=message_content,
             )
 
             if isinstance(response, RoomSendResponse):
@@ -791,12 +804,23 @@ class MatrixObserver(Integration):
             content = content[:3997] + "..."
 
         try:
-            # Format as a reply with Matrix reply formatting
-            reply_content = {
-                "msgtype": "m.text",
-                "body": content,
-                "m.relates_to": {"m.in_reply_to": {"event_id": reply_to_event_id}},
-            }
+            # Handle formatted content dictionary from format_for_matrix
+            if isinstance(content, dict) and 'plain' in content:
+                # Properly unpack the formatted content dictionary
+                reply_content = {
+                    "msgtype": "m.text",
+                    "body": content.get("plain", "Error: message content unavailable."),
+                    "format": "org.matrix.custom.html",
+                    "formatted_body": content.get("html", ""),
+                    "m.relates_to": {"m.in_reply_to": {"event_id": reply_to_event_id}},
+                }
+            else:
+                # Fallback for plain string content
+                reply_content = {
+                    "msgtype": "m.text",
+                    "body": str(content),
+                    "m.relates_to": {"m.in_reply_to": {"event_id": reply_to_event_id}},
+                }
 
             logger.info(f"Sending reply with content: {reply_content}")
 
