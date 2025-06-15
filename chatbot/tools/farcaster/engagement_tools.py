@@ -59,15 +59,36 @@ class LikeFarcasterPostTool(ToolInterface):
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
-        # Check if we've already liked this cast
+        # Check if we've already liked this cast (local state check)
         if context.world_state_manager and context.world_state_manager.has_liked_cast(
             cast_hash
         ):
-            error_msg = (
-                f"Already liked cast {cast_hash}. Cannot like the same cast twice."
-            )
-            logger.warning(error_msg)
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+            warning_msg = f"Already liked cast {cast_hash}. Cannot like the same cast twice."
+            logger.warning(warning_msg)
+            return {
+                "status": "skipped",
+                "message": warning_msg,
+                "cast_hash": cast_hash,
+                "reason": "already_liked_local",
+                "timestamp": time.time()
+            }
+
+        # Authoritative pre-condition check using Farcaster observer
+        if hasattr(context, 'farcaster_observer') and context.farcaster_observer:
+            try:
+                has_liked = await context.farcaster_observer.has_liked_cast(cast_hash)
+                if has_liked:
+                    warning_msg = f"Authoritative check confirms we have already liked cast {cast_hash}"
+                    logger.warning(warning_msg)
+                    return {
+                        "status": "skipped",
+                        "message": warning_msg,
+                        "cast_hash": cast_hash,
+                        "reason": "already_liked_authoritative",
+                        "timestamp": time.time()
+                    }
+            except Exception as e:
+                logger.warning(f"Could not perform authoritative like check for cast {cast_hash}: {e}")
 
         try:
             # Use the service's react method
@@ -166,15 +187,71 @@ class FollowFarcasterUserTool(ToolInterface):
             err = "Missing required parameter: fid"
             logger.error(err)
             return {"status": "failure", "error": err, "timestamp": time.time()}
+        
+        # Enhanced idempotency check: verify if we're already following this user
+        if context.world_state_manager and context.world_state_manager.is_following_user(fid):
+            warning_msg = f"Already following user {fid}. Cannot follow the same user twice."
+            logger.warning(warning_msg)
+            return {
+                "status": "skipped",
+                "message": warning_msg,
+                "fid": fid,
+                "reason": "already_following",
+                "timestamp": time.time()
+            }
+        
+        # Authoritative pre-condition check using Farcaster observer
+        if hasattr(context, 'farcaster_observer') and context.farcaster_observer:
+            try:
+                is_following = await context.farcaster_observer.is_following_user(fid)
+                if is_following:
+                    warning_msg = f"Authoritative check confirms we are already following user {fid}"
+                    logger.warning(warning_msg)
+                    return {
+                        "status": "skipped",
+                        "message": warning_msg,
+                        "fid": fid,
+                        "reason": "already_following_authoritative",
+                        "timestamp": time.time()
+                    }
+            except Exception as e:
+                logger.warning(f"Could not perform authoritative follow check for user {fid}: {e}")
             
         # Use service method to follow user
         result = await social_service.follow_user(fid)
+        
+        # Record this action in world state
+        if context.world_state_manager:
+            if result.get("success"):
+                context.world_state_manager.add_action_result(
+                    action_type=self.name,
+                    parameters={"fid": fid},
+                    result="success",
+                )
+            else:
+                context.world_state_manager.add_action_result(
+                    action_type=self.name,
+                    parameters={"fid": fid},
+                    result=f"failure: {result.get('error', 'unknown')}",
+                )
+        
         if result.get("success"):
-            return {"status": "success", "fid": fid, "timestamp": time.time()}
+            success_msg = f"Successfully followed Farcaster user: {fid}"
+            logger.info(success_msg)
+            return {
+                "status": "success",
+                "message": success_msg,
+                "fid": fid,
+                "timestamp": time.time()
+            }
+        
+        error_msg = f"Failed to follow Farcaster user: {result.get('error', 'unknown error')}"
+        logger.error(error_msg)
         return {
             "status": "failure",
-            "error": result.get("error"),
-            "timestamp": time.time(),
+            "error": error_msg,
+            "fid": fid,
+            "timestamp": time.time()
         }
 
 

@@ -38,6 +38,7 @@ class DecisionResult:
     selected_actions: List[ActionPlan]
     reasoning: str
     observations: str
+    thought: str  # AI's step-by-step thinking process
     cycle_id: str
 
 

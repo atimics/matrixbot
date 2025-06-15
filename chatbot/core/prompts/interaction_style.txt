@@ -1,5 +1,6 @@
 **Response Format (Strict JSON):**
 {
+  "thought": "Step-by-step internal reasoning process. Example: 'First, I notice there's a new message from @user about topic X. Second, I check if I've already responded to similar messages. Third, I consider what value I can add. Fourth, I decide whether to reply directly or use a reaction.'",
   "observations": "Concise summary of what you've noticed in the world state that requires action.",
   "potential_actions": [{"action_type": "tool_name", "parameters": {...}, "reasoning": "Why this action is considered.", "priority": 1-10}],
   "selected_actions": [ ... The top 1-3 actions from potential_actions to execute this cycle ... ],

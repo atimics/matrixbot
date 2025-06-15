@@ -582,6 +582,64 @@ class ContentSharingStrategy(EngagementStrategy):
         )
 
 
+class AutoImageAnalysisStrategy(EngagementStrategy):
+    """Strategy for automatically analyzing images in conversations."""
+    
+    def __init__(self):
+        super().__init__(
+            name="auto_image_analysis",
+            description="Automatically analyze images posted in conversations to provide context and enable discussion"
+        )
+    
+    def can_handle(self, opportunity: ConversationOpportunity) -> bool:
+        """Check if this strategy can handle image analysis opportunities."""
+        return opportunity.opportunity_type == "auto_image_analysis"
+    
+    def generate_engagement_plan(self, opportunity: ConversationOpportunity) -> EngagementPlan:
+        """Generate a plan to analyze an image and potentially respond."""
+        context = opportunity.context
+        image_url = context.get("image_url")
+        sender = context.get("sender")
+        message_content = context.get("message_content", "")
+        
+        # Determine analysis approach based on context
+        if message_content.strip():
+            # If there's accompanying text, analyze in context
+            analysis_prompt = f"Analyze this image in the context of the message: '{message_content}'"
+        else:
+            # If it's just an image, provide general description
+            analysis_prompt = "Describe this image and identify any interesting or notable elements"
+        
+        action_sequence = [
+            {
+                "tool": "describe_image",
+                "parameters": {
+                    "image_url": image_url,
+                    "prompt_text": analysis_prompt
+                },
+                "rationale": f"Automatically analyze image from {sender}"
+            }
+        ]
+        
+        # Optionally add a follow-up response if the image is particularly interesting
+        # This would be determined by the describe_image result
+        
+        return EngagementPlan(
+            plan_id=f"auto_analysis_{opportunity.opportunity_id}",
+            opportunity=opportunity,
+            strategy_name=self.name,
+            action_sequence=action_sequence,
+            timing_preference="immediate",  # Process images quickly
+            success_metrics={
+                "image_analyzed": True,
+                "response_relevance": "high",
+                "community_engagement": "optional"
+            },
+            estimated_impact=5,  # Medium impact - provides context
+            confidence=0.8  # High confidence in analysis capability
+        )
+
+
 class EngagementStrategyRegistry:
     """Registry for managing engagement strategies."""
     
@@ -597,7 +655,8 @@ class EngagementStrategyRegistry:
             QuietChannelStrategy(),
             NewUserWelcomeStrategy(),
             CrossPlatformBridgeStrategy(),
-            ContentSharingStrategy()
+            ContentSharingStrategy(),
+            AutoImageAnalysisStrategy()
         ]
         
         for strategy in default_strategies:
