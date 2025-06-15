@@ -11,8 +11,8 @@ from .service_registry import (
     SocialServiceInterface,
     ServiceRegistry
 )
-from .matrix_service import MatrixService
 from .farcaster_service import FarcasterService
+from .matrix_service import MatrixService
 
 __all__ = [
     'ServiceInterface',
@@ -20,6 +20,6 @@ __all__ = [
     'MediaServiceInterface',
     'SocialServiceInterface',
     'ServiceRegistry',
-    'MatrixService',
-    'FarcasterService'
+    'FarcasterService',
+    'MatrixService'
 ]

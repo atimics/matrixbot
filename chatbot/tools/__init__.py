@@ -12,8 +12,13 @@ from .farcaster import (
     SendFarcasterDMTool, GetUserTimelineTool, CollectWorldStateTool, GetTrendingCastsTool,
     SearchCastsTool, GetCastByUrlTool, AddFarcasterFeedTool, ListFarcasterFeedsTool, RemoveFarcasterFeedTool
 )
+# Import from new Matrix modular structure  
+from .matrix import (
+    SendMatrixReplyTool, SendMatrixMessageTool, SendMatrixImageTool, SendMatrixVideoTool, SendMatrixVideoLinkTool,
+    JoinMatrixRoomTool, LeaveMatrixRoomTool, AcceptMatrixInviteTool, IgnoreMatrixInviteTool,
+    ReactToMatrixMessageTool
+)
 from .frame_tools import CreateTransactionFrameTool, CreatePollFrameTool, CreateCustomFrameTool, SearchFramesTool, GetFrameCatalogTool
-from .matrix_tools import SendMatrixMessageTool, SendMatrixReplyTool, AcceptMatrixInviteTool, IgnoreMatrixInviteTool, SendMatrixVideoLinkTool
 from .registry import ToolRegistry
 
 __all__ = [
@@ -22,15 +27,23 @@ __all__ = [
     "ToolRegistry",
     "WaitTool",
     "DescribeImageTool",
+    # Matrix tools
     "SendMatrixReplyTool",
     "SendMatrixMessageTool",
+    "SendMatrixImageTool",
+    "SendMatrixVideoTool",
+    "SendMatrixVideoLinkTool",
+    "JoinMatrixRoomTool",
+    "LeaveMatrixRoomTool",
     "AcceptMatrixInviteTool",
     "IgnoreMatrixInviteTool",
-    "SendMatrixVideoLinkTool",
+    "ReactToMatrixMessageTool",
+    # Farcaster tools
     "SendFarcasterPostTool",
     "SendFarcasterReplyTool",
     "DeleteFarcasterPostTool",
     "DeleteFarcasterReactionTool",
+    # Frame tools
     "CreateTransactionFrameTool",
     "CreatePollFrameTool",
     "CreateCustomFrameTool",

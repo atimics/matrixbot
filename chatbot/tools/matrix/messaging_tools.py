@@ -1,0 +1,248 @@
+"""
+Matrix messaging tools - Send messages and replies using the observer directly.
+"""
+import logging
+import time
+from typing import Any, Dict
+
+from ...config import settings
+from ..base import ActionContext, ToolInterface
+
+logger = logging.getLogger(__name__)
+
+
+class SendMatrixReplyTool(ToolInterface):
+    """
+    Tool for sending replies to specific messages in Matrix channels using the observer directly.
+    """
+
+    @property
+    def name(self) -> str:
+        return "send_matrix_reply"
+
+    @property
+    def description(self) -> str:
+        return ("Reply to a specific message in a Matrix channel. If reply_to_id is not provided, will send as a regular message to the channel. "
+                "Recently generated media (within 5 minutes) will be automatically attached as a separate image message if no explicit image_url is provided.")
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "channel_id": "string (Matrix room ID) - The room where the reply should be sent",
+            "content": "string - The message content to send as a reply (supports markdown formatting)",
+            "reply_to_id": "string (optional) - The event ID of the message to reply to. If not provided, sends as regular message",
+            "format_as_markdown": "boolean (optional, default: true) - Whether to format the content as markdown",
+            "image_url": "string (optional) - URL of an image to attach. If not provided, recently generated media will be auto-attached",
+        }
+
+    async def execute(
+        self, params: Dict[str, Any], context: ActionContext
+    ) -> Dict[str, Any]:
+        """
+        Execute the Matrix reply action using the observer directly.
+        """
+        logger.info(f"Executing tool '{self.name}' with params: {params}")
+
+        # Get Matrix messaging service from service registry
+        matrix_service = context.get_messaging_service("matrix")
+        if not matrix_service or not await matrix_service.is_available():
+            error_msg = "Matrix messaging service is not available."
+            logger.error(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+        # Extract and validate parameters
+        room_id = params.get("channel_id")
+        content = params.get("content")
+        reply_to_event_id = params.get("reply_to_id")
+        format_as_markdown = params.get("format_as_markdown", True)
+        image_url = params.get("image_url")
+
+        missing_params = []
+        if not room_id:
+            missing_params.append("channel_id")
+        if not content:
+            missing_params.append("content")
+
+        if missing_params:
+            error_msg = f"Missing required parameters for Matrix reply: {', '.join(missing_params)}"
+            logger.error(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+        # Auto-attachment: Check for recently generated media if no image_url provided
+        if not image_url and context.world_state_manager:
+            recent_media_url = context.world_state_manager.get_last_generated_media_url()
+            if recent_media_url:
+                # Check if the media was generated recently (within last 5 minutes)
+                if hasattr(context.world_state_manager.state, 'generated_media_library'):
+                    media_library = context.world_state_manager.state.generated_media_library
+                    if media_library:
+                        last_media = media_library[-1]
+                        media_age = time.time() - last_media.get('timestamp', 0)
+                        if media_age <= 300:  # 5 minutes
+                            image_url = recent_media_url
+                            logger.info(f"Auto-attaching recently generated media to Matrix reply: {image_url}")
+
+        try:
+            # If reply_to_id is missing but we have channel_id and content, fall back to regular message
+            if not reply_to_event_id:
+                logger.info(f"reply_to_id missing, falling back to regular message in {room_id}")
+                result = await matrix_service.send_message(
+                    room_id, content
+                )
+                
+                if result.get("status") == "success":
+                    # Handle auto-attached image for fallback message
+                    image_event_id = None
+                    if image_url:
+                        media_service = context.get_media_service("matrix")
+                        if media_service:
+                            image_result = await media_service.send_image(
+                                channel_id=room_id,
+                                image_url=image_url
+                            )
+                            if image_result.get("status") == "success":
+                                image_event_id = image_result.get("event_id")
+                                logger.info(f"Auto-attached image to Matrix fallback message: {image_event_id}")
+                    
+                    result.update({
+                        "fallback_to_message": True,
+                        "auto_attached_image": image_url if image_url else None,
+                        "image_event_id": image_event_id,
+                    })
+                
+                return result
+            
+            # Send reply using the service layer
+            result = await matrix_service.send_reply(
+                room_id, content, reply_to_event_id
+            )
+            
+            if result.get("status") == "success":
+                # Handle auto-attached image for reply
+                image_event_id = None
+                if image_url:
+                    media_service = context.get_media_service("matrix")
+                    if media_service:
+                        image_result = await media_service.send_image(
+                            channel_id=room_id,
+                            image_url=image_url
+                        )
+                        if image_result.get("status") == "success":
+                            image_event_id = image_result.get("event_id")
+                            logger.info(f"Auto-attached image to Matrix reply: {image_event_id}")
+                
+                result.update({
+                    "auto_attached_image": image_url if image_url else None,
+                    "image_event_id": image_event_id,
+                    "sent_content": content,  # For AI Blindness Fix
+                })
+            
+            return result
+
+        except Exception as e:
+            error_msg = f"Error executing {self.name}: {str(e)}"
+            logger.exception(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+
+class SendMatrixMessageTool(ToolInterface):
+    """
+    Tool for sending new messages to Matrix channels using the service layer.
+    """
+
+    @property
+    def name(self) -> str:
+        return "send_matrix_message"
+
+    @property
+    def description(self) -> str:
+        return ("Send a new message to a Matrix channel. Use this when you want to start a new conversation or make an announcement. "
+                "Recently generated media (within 5 minutes) will be automatically attached as a separate image message if no explicit image_url is provided.")
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "channel_id": "string (Matrix room ID) - The room where the message should be sent",
+            "content": "string - The message content to send (supports markdown formatting)",
+            "format_as_markdown": "boolean (optional, default: true) - Whether to format the content as markdown",
+            "image_url": "string (optional) - URL of an image to attach. If not provided, recently generated media will be auto-attached",
+        }
+
+    async def execute(
+        self, params: Dict[str, Any], context: ActionContext
+    ) -> Dict[str, Any]:
+        """
+        Execute the Matrix message action using the service layer.
+        """
+        logger.info(f"Executing tool '{self.name}' with params: {params}")
+
+        # Get Matrix messaging service from service registry
+        matrix_service = context.get_messaging_service("matrix")
+        if not matrix_service or not await matrix_service.is_available():
+            error_msg = "Matrix messaging service is not available."
+            logger.error(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+        # Extract and validate parameters
+        room_id = params.get("channel_id")
+        content = params.get("content")
+        format_as_markdown = params.get("format_as_markdown", True)
+        image_url = params.get("image_url")
+
+        missing_params = []
+        if not room_id:
+            missing_params.append("channel_id")
+        if not content:
+            missing_params.append("content")
+
+        if missing_params:
+            error_msg = f"Missing required parameters for Matrix message: {', '.join(missing_params)}"
+            logger.error(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+        # Auto-attachment: Check for recently generated media if no image_url provided
+        if not image_url and context.world_state_manager:
+            recent_media_url = context.world_state_manager.get_last_generated_media_url()
+            if recent_media_url:
+                # Check if the media was generated recently (within last 5 minutes)
+                if hasattr(context.world_state_manager.state, 'generated_media_library'):
+                    media_library = context.world_state_manager.state.generated_media_library
+                    if media_library:
+                        last_media = media_library[-1]
+                        media_age = time.time() - last_media.get('timestamp', 0)
+                        if media_age <= 300:  # 5 minutes
+                            image_url = recent_media_url
+                            logger.info(f"Auto-attaching recently generated media to Matrix message: {image_url}")
+
+        try:
+            # Send message using the service layer
+            result = await matrix_service.send_message(
+                room_id, content
+            )
+
+            if result.get("status") == "success":
+                # Handle auto-attached image
+                image_event_id = None
+                if image_url:
+                    media_service = context.get_media_service("matrix")
+                    if media_service:
+                        image_result = await media_service.send_image(
+                            channel_id=room_id,
+                            image_url=image_url
+                        )
+                        if image_result.get("status") == "success":
+                            image_event_id = image_result.get("event_id")
+                            logger.info(f"Auto-attached image to Matrix message: {image_event_id}")
+                
+                result.update({
+                    "auto_attached_image": image_url if image_url else None,
+                    "image_event_id": image_event_id,
+                    "sent_content": content,  # For AI Blindness Fix
+                })
+            
+            return result
+
+        except Exception as e:
+            error_msg = f"Error executing {self.name}: {str(e)}"
+            logger.exception(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
