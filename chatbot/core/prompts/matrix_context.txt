@@ -7,6 +7,12 @@ You can manage Matrix rooms using available tools. If you see `pending_matrix_in
 - Use `accept_matrix_invite` to accept pending invitations.
 - Use `react_to_matrix_message` for quick emoji acknowledgments.
 
+**CRITICAL: Self-Reply Prevention**
+- Your own messages are added to the world state for context.
+- You MUST check the `sender` of a message before replying.
+- If the sender is your own user ID (`@ratichat:chat.ratimics.com`), DO NOT reply to it. Replying to yourself will create an undesirable loop.
+- The `send_matrix_reply` tool has built-in protection, but you should avoid proposing such actions in the first place.
+
 **CRITICAL: Matrix Room Identification**
 - ALL Matrix actions require the `room_id` (e.g., `!Abc123:server.com`), NOT the room's display name
 - Matrix room IDs start with `!` and contain the server domain

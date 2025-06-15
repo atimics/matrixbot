@@ -119,22 +119,21 @@ class SendMatrixReplyTool(ToolInterface):
                 if result.get("success"):
                     event_id = result.get("event_id", "unknown")
                     success_msg = f"Sent Matrix message (fallback from reply) to {room_id} (event: {event_id})"
-                    logger.info(success_msg)
-
-                    # Record the sent message in world state for AI blindness fix
-                    if context.world_state_manager:
-                        from ..core.world_state.structures import Message
-                        bot_message = Message(
-                            id=event_id,
-                            channel_id=room_id,
-                            channel_type="matrix",
-                            sender=settings.MATRIX_USER_ID,
-                            content=content,
-                            timestamp=time.time(),
-                            reply_to=None  # This is a fallback message, not a reply
-                        )
-                        context.world_state_manager.add_message(room_id, bot_message)
-                        logger.debug(f"Recorded sent Matrix fallback message in world state: {event_id}")
+                    logger.info(success_msg)                # Record the sent message in world state for AI blindness fix
+                if context.world_state_manager:
+                    from ..core.world_state.structures import Message
+                    bot_message = Message(
+                        id=event_id,
+                        channel_id=room_id,
+                        channel_type="matrix",
+                        sender=settings.MATRIX_USER_ID,
+                        content=content,
+                        timestamp=time.time(),
+                        reply_to=None,  # This is a fallback message, not a reply
+                        metadata={"is_from_bot": True}
+                    )
+                    context.world_state_manager.add_message(room_id, bot_message)
+                    logger.debug(f"Recorded sent Matrix fallback message in world state: {event_id}")
 
                     # Record the sent message in context manager for AI blindness fix
                     if context.context_manager:
@@ -222,7 +221,8 @@ class SendMatrixReplyTool(ToolInterface):
                         sender=settings.MATRIX_USER_ID,  # Use bot user ID from settings
                         content=content,
                         timestamp=time.time(),
-                        reply_to=reply_to_event_id
+                        reply_to=reply_to_event_id,
+                        metadata={"is_from_bot": True}
                     )
                     context.world_state_manager.add_message(room_id, bot_message)
                     logger.debug(f"Recorded sent Matrix reply in world state: {event_id}")
@@ -375,7 +375,8 @@ class SendMatrixMessageTool(ToolInterface):
                         sender=settings.MATRIX_USER_ID,
                         content=content,
                         timestamp=time.time(),
-                        reply_to=None  # This is a regular message, not a reply
+                        reply_to=None,  # This is a regular message, not a reply
+                        metadata={"is_from_bot": True}
                     )
                     context.world_state_manager.add_message(room_id, bot_message)
                     logger.debug(f"Recorded sent Matrix message in world state: {event_id}")
