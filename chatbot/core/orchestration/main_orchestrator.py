@@ -91,6 +91,9 @@ class MainOrchestrator:
             config=self.config.processing_config
         )
         
+        # Initialize processing task reference
+        self.processing_task = None
+        
         # Proactive conversation engine (Initiative C)
         self.proactive_engine = ProactiveConversationEngine(
             world_state_manager=self.world_state,
@@ -390,8 +393,8 @@ class MainOrchestrator:
             # Start the proactive conversation engine
             await self.proactive_engine.start()
             
-            # Start the processing loop
-            await self.processing_hub.start_processing_loop()
+            # Start the processing loop as a background task
+            self.processing_task = self.processing_hub.start_processing_loop()
             
         except Exception as e:
             logger.error(f"Error starting main orchestrator: {e}")
@@ -409,6 +412,14 @@ class MainOrchestrator:
 
         # Stop processing hub
         self.processing_hub.stop_processing_loop()
+        
+        # Cancel processing task if it exists
+        if hasattr(self, 'processing_task') and self.processing_task:
+            self.processing_task.cancel()
+            try:
+                await self.processing_task
+            except asyncio.CancelledError:
+                pass
         
         # Stop proactive conversation engine
         if self.proactive_engine:

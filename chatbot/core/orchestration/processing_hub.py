@@ -1,7 +1,18 @@
 """
 Processing Hub
 
-Central hub for handling different processing strategies (traditional vs node-based)
+Central hub for handling different processing strategies (traditio    def start_processing_loop(self) -> asyncio.Task:
+        """Start the main processing loop as a background task."""
+        if self.running:
+            logger.warning("Processing hub already running")
+            return None
+
+        logger.info("Starting processing hub...")
+        self.running = True
+        
+        # Start the event loop as a background task
+        task = asyncio.create_task(self._main_event_loop())
+        return task)
 and managing the main event loop logic.
 """
 
@@ -128,36 +139,43 @@ class ProcessingHub:
         """Main event loop for processing triggers from the queue."""
         logger.info("Starting trigger-based event loop...")
         
-        while self.running:
-            try:
-                # Wait for triggers or poll interval timeout
+        try:
+            while self.running:
                 try:
-                    # Wait for the first trigger with a timeout
-                    first_trigger = await asyncio.wait_for(
-                        self.trigger_queue.get(),
-                        timeout=self.config.observation_interval
-                    )
-                    triggers = {first_trigger}  # Use a set to auto-deduplicate
-                except asyncio.TimeoutError:
-                    # Polling interval reached, no triggers. Continue to next iteration.
-                    continue
-
-                # Drain any other triggers that arrived in the meantime
-                while not self.trigger_queue.empty():
+                    # Wait for triggers or poll interval timeout
                     try:
-                        triggers.add(self.trigger_queue.get_nowait())
-                    except asyncio.QueueEmpty:
-                        break
-                
-                # Now, process the collected triggers
-                await self._process_triggers(triggers)
+                        # Wait for the first trigger with a timeout
+                        first_trigger = await asyncio.wait_for(
+                            self.trigger_queue.get(),
+                            timeout=self.config.observation_interval
+                        )
+                        triggers = {first_trigger}  # Use a set to auto-deduplicate
+                    except asyncio.TimeoutError:
+                        # Polling interval reached, no triggers. Continue to next iteration.
+                        continue
 
-            except asyncio.CancelledError:
-                logger.info("Event loop cancelled.")
-                break
-            except Exception as e:
-                logger.error(f"Error in event loop cycle: {e}", exc_info=True)
-                await asyncio.sleep(5)  # Cooldown on error
+                    # Drain any other triggers that arrived in the meantime
+                    while not self.trigger_queue.empty():
+                        try:
+                            triggers.add(self.trigger_queue.get_nowait())
+                        except asyncio.QueueEmpty:
+                            break
+                    
+                    # Now, process the collected triggers
+                    await self._process_triggers(triggers)
+
+                except asyncio.CancelledError:
+                    logger.info("Event loop cancelled.")
+                    break
+                except Exception as e:
+                    logger.error(f"Error in event loop cycle: {e}", exc_info=True)
+                    await asyncio.sleep(5)  # Cooldown on error
+                    
+        except asyncio.CancelledError:
+            logger.info("Main event loop cancelled.")
+        finally:
+            self.running = False
+            logger.info("Processing hub event loop stopped")
 
     async def _process_triggers(self, triggers: Set[Trigger]):
         """Deduplicates and processes a batch of triggers."""
