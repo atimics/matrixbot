@@ -1092,3 +1092,63 @@ class NodeProcessor:
                 "properties": {},
                 "required": []
             }
+    
+    async def process_triggers(self, trigger_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Process triggers by converting them into processing cycles.
+        
+        Args:
+            trigger_data: List of trigger dictionaries with type, priority, data, and timestamp
+            
+        Returns:
+            Dict containing processing results
+        """
+        if not trigger_data:
+            logger.info("No triggers to process")
+            return {"triggers_processed": 0, "cycles_executed": 0}
+        
+        logger.info(f"Processing {len(trigger_data)} triggers")
+        
+        # Sort triggers by priority (highest first)
+        sorted_triggers = sorted(trigger_data, key=lambda t: t.get('priority', 0), reverse=True)
+        
+        # Generate a cycle ID based on the primary trigger
+        primary_trigger = sorted_triggers[0]
+        cycle_id = f"trigger-{primary_trigger['type']}-{int(time.time())}"
+        
+        # Extract context from triggers
+        context = {
+            "triggers": trigger_data,
+            "primary_trigger_type": primary_trigger['type'],
+            "trigger_count": len(trigger_data)
+        }
+        
+        # Determine primary channel if any trigger specifies one
+        primary_channel_id = None
+        for trigger in trigger_data:
+            if 'channel_id' in trigger.get('data', {}):
+                primary_channel_id = trigger['data']['channel_id']
+                break
+        
+        try:
+            # Process the cycle
+            cycle_result = await self.process_cycle(
+                cycle_id=cycle_id,
+                primary_channel_id=primary_channel_id,
+                context=context
+            )
+            
+            logger.info(f"Trigger processing completed for cycle {cycle_id}")
+            return {
+                "triggers_processed": len(trigger_data),
+                "cycles_executed": 1,
+                "cycle_result": cycle_result
+            }
+            
+        except Exception as e:
+            logger.error(f"Error processing triggers in cycle {cycle_id}: {e}", exc_info=True)
+            return {
+                "triggers_processed": 0,
+                "cycles_executed": 0,
+                "error": str(e)
+            }

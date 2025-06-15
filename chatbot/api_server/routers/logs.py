@@ -53,20 +53,20 @@ async def get_action_history(orchestrator: MainOrchestrator = Depends(get_orches
     """Get recent action history."""
     try:
         actions = []
-        for action in orchestrator.world_state.state.action_history.actions[-20:]:  # Last 20 actions
+        for action in orchestrator.world_state.state.action_history[-20:]:  # Last 20 actions
             actions.append({
                 "id": action.id,
-                "type": action.type,
-                "description": action.description,
-                "timestamp": action.timestamp.isoformat() if action.timestamp else None,
-                "channel_id": action.channel_id,
-                "status": action.status,
-                "metadata": action.metadata
+                "type": action.action_type,
+                "description": getattr(action, 'description', f"{action.action_type} action"),
+                "timestamp": action.timestamp,
+                "channel_id": getattr(action, 'channel_id', None),
+                "status": getattr(action, 'status', 'completed'),
+                "metadata": getattr(action, 'metadata', action.parameters)
             })
         
         return {
             "actions": actions,
-            "total_actions": len(orchestrator.world_state.state.action_history.actions),
+            "total_actions": len(orchestrator.world_state.state.action_history),
             "timestamp": datetime.now().isoformat()
         }
     except Exception as e:

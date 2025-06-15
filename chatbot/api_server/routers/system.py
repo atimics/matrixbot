@@ -40,9 +40,18 @@ async def get_system_status(orchestrator: MainOrchestrator = Depends(get_orchest
         
         # Get basic metrics
         logger.info("Getting world state metrics")
+        
+        # Handle nested channel structure: channels[platform][channel_id]
+        total_channels = sum(len(platform_channels) for platform_channels in orchestrator.world_state.state.channels.values())
+        total_messages = sum(
+            len(ch.recent_messages) 
+            for platform_channels in orchestrator.world_state.state.channels.values() 
+            for ch in platform_channels.values()
+        )
+        
         world_state_metrics = {
-            "channels_count": len(orchestrator.world_state.state.channels),
-            "total_messages": sum(len(ch.recent_messages) for ch in orchestrator.world_state.state.channels.values()),
+            "channels_count": total_channels,
+            "total_messages": total_messages,
             "action_history_count": len(orchestrator.world_state.state.action_history),
             "pending_invites": len(orchestrator.world_state.get_pending_matrix_invites()),
             "generated_media_count": len(orchestrator.world_state.state.generated_media_library),

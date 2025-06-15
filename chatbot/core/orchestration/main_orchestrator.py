@@ -41,14 +41,14 @@ class OrchestratorConfig:
     """Configuration for the main orchestrator."""
 
     # Database and storage
-    db_path: str = "chatbot.db"
+    db_path: str = field(default_factory=lambda: settings.CHATBOT_DB_PATH)
     
     # Processing configuration
     processing_config: ProcessingConfig = field(default_factory=ProcessingConfig)
     rate_limit_config: RateLimitConfig = field(default_factory=RateLimitConfig)
     
     # AI Model settings
-    ai_model: str = "openai/gpt-4o-mini"
+    ai_model: str = field(default_factory=lambda: settings.AI_MODEL)
 
 
 class MainOrchestrator:
@@ -388,19 +388,27 @@ class MainOrchestrator:
             await self._initialize_nft_services()
             
             # Set up processing hub with traditional processor
+            logger.info("Setting up processing components...")
             self._setup_processing_components()
+            logger.info("Processing components setup complete")
             
             # Start the proactive conversation engine
+            logger.info("Starting proactive conversation engine...")
             await self.proactive_engine.start()
+            logger.info("Proactive conversation engine started")
             
             # Start the processing loop as a background task
+            logger.info("Starting processing hub background task...")
             self.processing_task = self.processing_hub.start_processing_loop()
+            if self.processing_task:
+                logger.info(f"Processing hub task started successfully: {self.processing_task}")
+            else:
+                logger.warning("Processing hub task was not created!")
             
         except Exception as e:
-            logger.error(f"Error starting main orchestrator: {e}")
-            raise
-        finally:
+            logger.error(f"Error starting main orchestrator: {e}", exc_info=True)
             await self.stop()
+            raise
 
     async def stop(self) -> None:
         """Stop the entire orchestrator system."""
@@ -762,13 +770,21 @@ class MainOrchestrator:
             processing_status = await self.processing_hub.get_processing_status()
             
             # Get world state metrics
+            # Handle nested channel structure: channels[platform][channel_id]
+            total_channels = sum(len(platform_channels) for platform_channels in self.world_state.state.channels.values())
+            total_messages = sum(
+                len(ch.recent_messages) 
+                for platform_channels in self.world_state.state.channels.values() 
+                for ch in platform_channels.values()
+            )
+            
             world_state_metrics = {
-                "channels_count": len(self.world_state.state.channels),
-                "total_messages": sum(len(ch.messages) for ch in self.world_state.state.channels.values()),
-                "action_history_count": len(self.world_state.state.action_history.actions),
+                "channels_count": total_channels,
+                "total_messages": total_messages,
+                "action_history_count": len(self.world_state.state.action_history),
                 "pending_invites": len(self.world_state.get_pending_matrix_invites()),
                 "generated_media_count": len(self.world_state.state.generated_media_library),
-                "research_entries": len(self.world_state.state.research_database.entries)
+                "research_entries": len(self.world_state.state.research_database)
             }
             
             # Get tool stats

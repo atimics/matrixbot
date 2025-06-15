@@ -133,6 +133,11 @@ class MatrixObserver(Integration):
                         f"MatrixObserver: Login successful as {response.user_id}"
                     )
                     logger.info(f"MatrixObserver: Device ID: {response.device_id}")
+                    
+                    # Update our user_id with the actual value from the server
+                    self.user_id = response.user_id
+                    logger.info(f"MatrixObserver: Updated user_id to {self.user_id}")
+                    
                     await self._save_token()
                 else:
                     logger.error(f"MatrixObserver: Login failed: {response}")
@@ -402,27 +407,27 @@ class MatrixObserver(Integration):
         if self.processing_hub:
             from ...core.orchestration.processing_hub import Trigger
             
-            # Check for direct mention
-            if settings.MATRIX_USER_ID in content:
+            # Check for direct mention (use self.user_id instead of settings.MATRIX_USER_ID)
+            if self.user_id and self.user_id in content:
+                logger.info(f"MatrixObserver: Direct mention detected for {self.user_id} in message: {content[:50]}...")
                 trigger = Trigger(
                     type='mention',
                     priority=9,
-                    channel_id=room.room_id,
-                    context={'message_id': event.event_id, 'sender': event.sender}
+                    data={'channel_id': room.room_id, 'message_id': event.event_id, 'sender': event.sender}
                 )
                 self.processing_hub.add_trigger(trigger)
             # Check if it's an actively monitored ("expanded") channel
             elif self.world_state.is_channel_expanded(room.room_id, "matrix"):
+                logger.info(f"MatrixObserver: New message in expanded channel {room.room_id}")
                 trigger = Trigger(
                     type='new_message',
                     priority=7,
-                    channel_id=room.room_id,
-                    context={'message_id': event.event_id, 'sender': event.sender}
+                    data={'channel_id': room.room_id, 'message_id': event.event_id, 'sender': event.sender}
                 )
                 self.processing_hub.add_trigger(trigger)
             else:
                 # Message is in a non-active channel. Just log it, don't trigger a full cycle.
-                logger.debug(f"Logged low-priority message in {room.room_id}, no trigger generated.")
+                logger.debug(f"MatrixObserver: Message in non-expanded channel {room.room_id}, no trigger generated.")
 
     async def _on_invite(self, room, event):
         """Handle incoming Matrix room invites"""

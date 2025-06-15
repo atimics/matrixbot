@@ -68,6 +68,15 @@ class ProcessingHub:
         # Component availability tracking
         self.node_processor = None
         
+        # Processing statistics
+        self.total_triggers_processed = 0
+        self.processing_errors = 0
+        self.last_cycle_time = None
+        self.pending_triggers = set()
+        
+        # Active conversations tracking
+        self.active_conversations = set()
+        
     def set_node_processor(self, processor):
         """Set the node-based processing component."""
         self.node_processor = processor
@@ -82,7 +91,9 @@ class ProcessingHub:
         self.running = True
         
         # Start the event loop as a background task
+        logger.info("Creating background task for trigger-based event loop...")
         task = asyncio.create_task(self._main_event_loop())
+        logger.info(f"Background task created successfully: {task}")
         return task
 
     def stop_processing_loop(self):
@@ -108,9 +119,9 @@ class ProcessingHub:
 
     async def _main_event_loop(self) -> None:
         """Main event loop for processing triggers from the queue."""
-        logger.info("Starting trigger-based event loop...")
-        
         try:
+            logger.info("Starting trigger-based event loop...")
+            
             while self.running:
                 try:
                     # Wait for triggers or poll interval timeout
@@ -123,6 +134,7 @@ class ProcessingHub:
                         triggers = {first_trigger}  # Use a set to auto-deduplicate
                     except asyncio.TimeoutError:
                         # Polling interval reached, no triggers. Continue to next iteration.
+                        logger.debug("Event loop polling timeout reached, continuing...")
                         continue
 
                     # Drain any other triggers that arrived in the meantime
@@ -144,6 +156,8 @@ class ProcessingHub:
                     
         except asyncio.CancelledError:
             logger.info("Main event loop cancelled.")
+        except Exception as e:
+            logger.error(f"Fatal error in main event loop: {e}", exc_info=True)
         finally:
             self.running = False
             logger.info("Processing hub event loop stopped")
@@ -208,8 +222,13 @@ class ProcessingHub:
             logger.info(f"Executing node-based processing for {len(trigger_data)} triggers")
             await self.node_processor.process_triggers(trigger_data)
             
+            # Update processing statistics
+            self.total_triggers_processed += len(trigger_data)
+            self.last_cycle_time = time.time()
+            
         except Exception as e:
             logger.error(f"Error in node-based processing: {e}", exc_info=True)
+            self.processing_errors += 1
 
     def get_status(self) -> Dict[str, Any]:
         """Get current processing hub status."""
@@ -228,6 +247,22 @@ class ProcessingHub:
         """Get current rate limiting status."""
         current_time = time.time()
         return self.rate_limiter.get_rate_limit_status(current_time)
+
+    def get_processing_status(self) -> Dict[str, any]:
+        """
+        Get the current processing status for API reporting.
+        
+        Returns:
+            Dict containing processing hub status information
+        """
+        return {
+            "running": self.running,
+            "last_cycle": self.last_cycle_time.isoformat() if self.last_cycle_time else None,
+            "total_triggers_processed": self.total_triggers_processed,
+            "pending_triggers": len(self.pending_triggers),
+            "active_conversations": len(self.active_conversations),
+            "processing_errors": self.processing_errors
+        }
 
     def _log_rate_limit_status(self):
         """Log current rate limiting status."""

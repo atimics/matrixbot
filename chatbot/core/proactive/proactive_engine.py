@@ -423,10 +423,12 @@ class ProactiveConversationEngine:
         recent_messages = []
         current_time = time.time()
         
-        for channel in world_state_data.channels.values():
-            for message in channel.recent_messages:
-                if current_time - message.timestamp < 7200:  # Last 2 hours
-                    recent_messages.append(message)
+        # Handle nested channel structure: channels[platform][channel_id]
+        for platform_channels in world_state_data.channels.values():
+            for channel in platform_channels.values():
+                for message in channel.recent_messages:
+                    if current_time - message.timestamp < 7200:  # Last 2 hours
+                        recent_messages.append(message)
         
         # Extract keywords (simple approach - can be enhanced with NLP)
         for message in recent_messages:
