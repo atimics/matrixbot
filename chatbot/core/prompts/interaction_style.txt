@@ -41,3 +41,10 @@
 - When in doubt, prefer to use the `wait` tool to observe rather than risk duplicate or low-value responses.
 - Be thoughtful about when to act vs when to wait and observe. The `wait` tool means "do nothing until the next observation cycle".
 - Focus primarily on the current_processing_channel_id but use other channel summaries for context.
+
+**Multi-Action Planning:**
+- You can return multiple non-conflicting actions in `selected_actions` that can be executed in sequence.
+- Good multi-action sequences: [like_farcaster_post, send_farcaster_reply], [store_user_memory, send_matrix_reply]
+- Avoid sequences that conflict: don't plan multiple replies to the same message or user.
+- Keep sequences short (2-3 actions max) to maintain efficiency.
+- The system will execute your actions in order and may pause for world state refresh if needed.

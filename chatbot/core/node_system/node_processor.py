@@ -99,55 +99,83 @@ class NodeProcessor:
                     logger.warning("Failed to build payload, ending cycle.")
                     break
 
-                # 2. Get the single next action from the AI
+                # 2. Get actions from the AI (can return multiple non-conflicting actions)
                 ai_actions = await self._get_next_actions(payload, cycle_id, actions_executed_count)
                 if not ai_actions:
                     logger.info("AI returned no actions, ending cycle.")
                     break
 
-                # The AI can return multiple actions, but we process them one by one.
-                # We primarily focus on the highest priority action.
-                action_to_execute = ai_actions[0]
-
-                # Track the action in cycle history
-                cycle_actions.append({
-                    "step": actions_executed_count + 1,
-                    "action_type": action_to_execute.action_type,
-                    "parameters": action_to_execute.parameters,
-                    "reasoning": action_to_execute.reasoning,
-                    "timestamp": time.time()
-                })
-
-                # 3. If the action is 'wait', the cycle is complete
-                if action_to_execute.action_type == "wait":
-                    logger.info(f"AI chose to 'wait'. Cycle {cycle_id} complete.")
-                    await self._execute_platform_tool(action_to_execute.action_type, action_to_execute.parameters, cycle_id)
-                    actions_executed_count += 1
-                    break
-
-                # 4. Execute the chosen action
-                logger.info(f"Cycle {cycle_id}, Step {actions_executed_count + 1}: Executing action '{action_to_execute.action_type}'")
-                await self._execute_action(action_to_execute, cycle_id)
-                actions_executed_count += 1
+                # 3. Process all actions returned by the AI
+                # The AI can now plan sequences of non-conflicting actions
+                actions_requiring_world_state_refresh = ["send_matrix_reply", "send_farcaster_reply", "generate_image"]
+                world_state_changed = False
                 
-                # After an action, the world state has changed. The loop will now
-                # build a new payload reflecting this change for the next AI decision.
+                for i, action_to_execute in enumerate(ai_actions):
+                    # Track the action in cycle history
+                    cycle_actions.append({
+                        "step": actions_executed_count + 1,
+                        "action_type": action_to_execute.action_type,
+                        "parameters": action_to_execute.parameters,
+                        "reasoning": action_to_execute.reasoning,
+                        "timestamp": time.time()
+                    })
+
+                    # If the action is 'wait', end the entire cycle
+                    if action_to_execute.action_type == "wait":
+                        logger.info(f"AI chose to 'wait'. Cycle {cycle_id} complete.")
+                        await self._execute_platform_tool(action_to_execute.action_type, action_to_execute.parameters, cycle_id)
+                        actions_executed_count += 1
+                        return await self._finalize_cycle(cycle_id, cycle_start_time, actions_executed_count)
+
+                    # Execute the chosen action
+                    logger.info(f"Cycle {cycle_id}, Step {actions_executed_count + 1}: Executing action '{action_to_execute.action_type}' ({i+1}/{len(ai_actions)})")
+                    execution_result = await self._execute_action(action_to_execute, cycle_id)
+                    actions_executed_count += 1
+                    
+                    # Check if this action significantly changed the world state
+                    if (action_to_execute.action_type in actions_requiring_world_state_refresh or
+                        execution_result.get("status") == "failure"):
+                        world_state_changed = True
+                        logger.info(f"Action {action_to_execute.action_type} changed world state, will refresh for next LLM call")
+                        break  # Break out of action sequence to get fresh AI decision
+                    
+                    # Safety check: don't exceed max actions per cycle
+                    if actions_executed_count >= MAX_ACTIONS_PER_CYCLE:
+                        logger.warning(f"Reached maximum actions per cycle ({MAX_ACTIONS_PER_CYCLE}), ending cycle")
+                        break
+                
+                # If we processed all actions without world state changes, the AI planned well!
+                if not world_state_changed and len(ai_actions) > 1:
+                    logger.info(f"Successfully executed {len(ai_actions)} actions in sequence without world state refresh")
+                
+                # Continue to next iteration (will build fresh payload if world state changed)
 
             # Finalize cycle
-            await self._update_node_summaries()
-            self._log_node_system_events()
-
-            cycle_duration = time.time() - cycle_start_time
-            logger.info(f"Completed iterative cycle {cycle_id} in {cycle_duration:.2f}s - {actions_executed_count} actions executed")
-            
-            return {
-                "cycle_id": cycle_id,
-                "success": True,
-                "actions_executed": actions_executed_count,
-                "cycle_duration": cycle_duration
-            }
+            return await self._finalize_cycle(cycle_id, cycle_start_time, actions_executed_count)
 
         except Exception as e:
+            logger.error(f"Error in iterative processing cycle {cycle_id}: {e}", exc_info=True)
+            return {
+                "cycle_id": cycle_id,
+                "success": False,
+                "error": str(e),
+                "actions_executed": actions_executed_count,
+            }
+    
+    async def _finalize_cycle(self, cycle_id: str, cycle_start_time: float, actions_executed_count: int) -> Dict[str, Any]:
+        """Helper method to finalize a processing cycle."""
+        await self._update_node_summaries()
+        self._log_node_system_events()
+
+        cycle_duration = time.time() - cycle_start_time
+        logger.info(f"Completed iterative cycle {cycle_id} in {cycle_duration:.2f}s - {actions_executed_count} actions executed")
+        
+        return {
+            "cycle_id": cycle_id,
+            "success": True,
+            "actions_executed": actions_executed_count,
+            "cycle_duration": cycle_duration
+        }
             logger.error(f"Error in iterative processing cycle {cycle_id}: {e}", exc_info=True)
             return {
                 "cycle_id": cycle_id,

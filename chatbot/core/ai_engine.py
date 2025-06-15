@@ -870,8 +870,13 @@ Max 1 action. Use "wait" if no action needed."""
                 selected_actions=selected_actions,
                 reasoning=decision_data.get("reasoning", ""),
                 observations=decision_data.get("observations", ""),
+                thought=decision_data.get("thought", ""),
                 cycle_id=cycle_id,
             )
+            
+            # Log the AI's thought process for debugging
+            if result.thought:
+                self.logger.info(f"AI Thought Process (Cycle {cycle_id}): {result.thought}")
             
             self.logger.info(
                 f"AIDecisionEngine: Cycle {cycle_id} complete - "
@@ -886,6 +891,7 @@ Max 1 action. Use "wait" if no action needed."""
                 selected_actions=[],
                 reasoning=f"Error: {str(e)}",
                 observations="Error during decision making",
+                thought="",
                 cycle_id=cycle_id,
             )
             
