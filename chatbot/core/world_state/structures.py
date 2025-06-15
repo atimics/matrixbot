@@ -950,6 +950,9 @@ class WorldStateData:
         self.project_plan: Dict[str, DevelopmentTask] = {}  # task_id -> DevelopmentTask  
         self.github_repository_state: Optional[TargetRepositoryContext] = None
         
+        # Goal Management System - Long-term strategic objectives
+        self.active_goals: List[Goal] = []
+        
         # Backward compatibility placeholders
         self.user_details: Dict[str, Any] = {}
         self.bot_media: Dict[str, Any] = {}  # alias for bot_media_on_farcaster
@@ -982,8 +985,53 @@ class WorldStateData:
             "target_repository_count": len(self.target_repositories),
             "active_tasks": len([t for t in self.development_tasks.values() if t.status in ["approved", "implementation_in_progress"]]),
             "codebase_structure_available": self.codebase_structure is not None,
+            "active_goals_count": len(self.active_goals),
             "last_update": self.last_update
         }
+
+    # Goal Management System Methods
+    def add_goal(self, goal: Goal):
+        """Add a new goal to active goals."""
+        self.active_goals.append(goal)
+        logger.info(f"Added new goal: {goal.title} (ID: {goal.id})")
+        
+    def update_goal_progress(self, goal_id: str, update: str, metrics: Optional[Dict[str, Any]] = None):
+        """Update progress on a specific goal."""
+        for goal in self.active_goals:
+            if goal.id == goal_id:
+                goal.add_progress_update(update, metrics)
+                logger.info(f"Updated goal {goal.title}: {update}")
+                return True
+        return False
+        
+    def get_active_goals_summary(self) -> List[Dict[str, Any]]:
+        """Get summary of all active goals for AI context."""
+        return [goal.get_progress_summary() for goal in self.active_goals if goal.status == "active"]
+        
+    def complete_goal(self, goal_id: str, completion_note: str = ""):
+        """Mark a goal as completed."""
+        for goal in self.active_goals:
+            if goal.id == goal_id:
+                goal.mark_completed(completion_note)
+                logger.info(f"Completed goal: {goal.title}")
+                return True
+        return False
+        
+    def get_goal_by_id(self, goal_id: str) -> Optional[Goal]:
+        """Get a specific goal by ID."""
+        for goal in self.active_goals:
+            if goal.id == goal_id:
+                return goal
+        return None
+    
+    def remove_goal(self, goal_id: str) -> bool:
+        """Remove a goal from active goals."""
+        for i, goal in enumerate(self.active_goals):
+            if goal.id == goal_id:
+                removed_goal = self.active_goals.pop(i)
+                logger.info(f"Removed goal: {removed_goal.title} (ID: {goal_id})")
+                return True
+        return False
     # Backward-compatible methods for direct WorldState usage - REMOVED
     # These methods caused conflicts with the new nested structure
 

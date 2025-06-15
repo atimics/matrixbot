@@ -234,6 +234,11 @@ class MainOrchestrator:
             StoreUserMemoryTool,
             GetUserProfileTool
         )
+        from ...tools.world_state_tools import (
+            QueryChannelActivityTool,
+            FindMessagesFromUserTool,
+            CheckActionHistoryTool
+        )
         from ...tools.proactive_conversation_tools import (
             InitiateProactiveConversationTool,
             DetectConversationOpportunitiesTool,
@@ -249,6 +254,11 @@ class MainOrchestrator:
         self.tool_registry.register_tool(WebSearchTool())
         self.tool_registry.register_tool(UpdateResearchTool())
         self.tool_registry.register_tool(QueryResearchTool())
+        
+        # World state query tools
+        self.tool_registry.register_tool(QueryChannelActivityTool())
+        self.tool_registry.register_tool(FindMessagesFromUserTool())
+        self.tool_registry.register_tool(CheckActionHistoryTool())
         
         # Matrix tools
         self.tool_registry.register_tool(SendMatrixMessageTool())

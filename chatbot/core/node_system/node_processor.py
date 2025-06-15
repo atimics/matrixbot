@@ -134,7 +134,7 @@ class NodeProcessor:
                     
                     # Check if this action significantly changed the world state
                     if (action_to_execute.action_type in actions_requiring_world_state_refresh or
-                        execution_result.get("status") == "failure"):
+                        (execution_result and execution_result.get("status") == "failure")):
                         world_state_changed = True
                         logger.info(f"Action {action_to_execute.action_type} changed world state, will refresh for next LLM call")
                         break  # Break out of action sequence to get fresh AI decision
@@ -176,13 +176,6 @@ class NodeProcessor:
             "actions_executed": actions_executed_count,
             "cycle_duration": cycle_duration
         }
-            logger.error(f"Error in iterative processing cycle {cycle_id}: {e}", exc_info=True)
-            return {
-                "cycle_id": cycle_id,
-                "success": False,
-                "error": str(e),
-                "actions_executed": actions_executed_count,
-            }
     
     async def _build_current_payload(self, primary_channel_id: Optional[str], context: Dict[str, Any]) -> Dict[str, Any]:
         """Build a single, unified payload for the current state of the world."""
@@ -194,6 +187,9 @@ class NodeProcessor:
                 node_manager=self.node_manager,
                 primary_channel_id=primary_channel_id or ""
             )
+            
+            # Store reference to world_state_data for AI engine template substitution
+            payload["_world_state_data_ref"] = world_state_data
 
             # Add all available tools to the payload
             payload["tools"] = []
@@ -251,7 +247,7 @@ class NodeProcessor:
             logger.error(f"Error in AI action selection for cycle {cycle_id}, step {step}: {e}", exc_info=True)
             return []
 
-    async def _execute_action(self, action, cycle_id: str):
+    async def _execute_action(self, action, cycle_id: str) -> Dict[str, Any]:
         """Executes a single action and updates the world state."""
         tool_name = action.action_type
         tool_args = action.parameters
@@ -262,14 +258,21 @@ class NodeProcessor:
         # *** VERBOSE LOGGING FOR BUG DIAGNOSIS ***
         logger.info(f"Executing action '{tool_name}' with args: {tool_args}")
 
-        # Dispatch to the correct tool executor
-        if tool_name in ["select_nodes_to_expand", "expand_node", "collapse_node", "pin_node", "unpin_node"]:
-            result = await self._execute_node_tool(tool_name, tool_args)
-            logger.info(f"Node tool '{tool_name}' result: {result}")
-        elif tool_name == "refresh_summary":
-            await self._execute_summary_refresh(tool_args)
-        else:
-            await self._execute_platform_tool(tool_name, tool_args, cycle_id)
+        try:
+            # Dispatch to the correct tool executor
+            if tool_name in ["select_nodes_to_expand", "expand_node", "collapse_node", "pin_node", "unpin_node"]:
+                result = await self._execute_node_tool(tool_name, tool_args)
+                logger.info(f"Node tool '{tool_name}' result: {result}")
+                return {"status": "success", "result": result}
+            elif tool_name == "refresh_summary":
+                await self._execute_summary_refresh(tool_args)
+                return {"status": "success", "result": "Summary refreshed"}
+            else:
+                result = await self._execute_platform_tool(tool_name, tool_args, cycle_id)
+                return {"status": "success", "result": result}
+        except Exception as e:
+            logger.error(f"Error executing action '{tool_name}': {e}", exc_info=True)
+            return {"status": "failure", "error": str(e)}
     
     # Old methods removed - now using two-step approach with:
     # _build_node_selection_payload, _ai_select_nodes_to_expand

@@ -153,7 +153,13 @@ class AIDecisionEngine(BaseAIDecisionEngine):
             prompt_sections.append("farcaster_context")
 
         tool_descriptions = world_state.get("available_tools", "No tools available.")
-        system_prompt = self.prompt_builder.build_system_prompt(include_sections=prompt_sections)
+        
+        # Get world state data reference for template substitution
+        world_state_data_ref = world_state.get("_world_state_data_ref")
+        system_prompt = self.prompt_builder.build_system_prompt(
+            include_sections=prompt_sections,
+            world_state_data=world_state_data_ref
+        )
         system_prompt += f"\n\n## Available Tools\n{tool_descriptions}"
 
         user_prompt = f"""Current World State:

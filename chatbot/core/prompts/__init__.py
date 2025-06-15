@@ -68,7 +68,8 @@ class PromptBuilder:
     def build_system_prompt(
         self, 
         include_sections: Optional[List[str]] = None,
-        custom_context: Optional[str] = None
+        custom_context: Optional[str] = None,
+        world_state_data=None
     ) -> str:
         """
         Build a complete system prompt from components.
@@ -76,6 +77,7 @@ class PromptBuilder:
         Args:
             include_sections: List of section names to include. If None, includes all.
             custom_context: Additional context to append to the prompt.
+            world_state_data: WorldStateData instance for template substitution.
             
         Returns:
             Complete system prompt string.
@@ -88,12 +90,42 @@ class PromptBuilder:
         for section_name in include_sections:
             section_content = self.sections.get(section_name, "")
             if section_content:
+                # Perform template substitution for world_state_context
+                if section_name == "world_state_context" and world_state_data:
+                    section_content = self._substitute_world_state_placeholders(section_content, world_state_data)
+                
                 prompt_parts.append(f"## {section_name.replace('_', ' ').title()}\n{section_content}")
         
         if custom_context:
             prompt_parts.append(f"## Additional Context\n{custom_context}")
         
         return "\n\n".join(prompt_parts)
+    
+    def _substitute_world_state_placeholders(self, content: str, world_state_data) -> str:
+        """Substitute placeholders in world state context with actual data."""
+        try:
+            # Get active goals summary
+            if hasattr(world_state_data, 'get_active_goals_summary'):
+                active_goals = world_state_data.get_active_goals_summary()
+                if active_goals:
+                    goals_text = "\n".join([
+                        f"- {goal['title']} (Priority: {goal['priority']}, Status: {goal['status']})"
+                        for goal in active_goals
+                    ])
+                else:
+                    goals_text = "No active goals currently set."
+            else:
+                goals_text = "Goals system not available."
+            
+            # Replace placeholder
+            content = content.replace("{active_goals_summary}", goals_text)
+            
+        except Exception as e:
+            logger.warning(f"Error substituting world state placeholders: {e}")
+            # Fallback: remove the placeholder
+            content = content.replace("{active_goals_summary}", "Goals information unavailable.")
+        
+        return content
     
     def get_section(self, section_name: str) -> str:
         """Get a specific prompt section."""
