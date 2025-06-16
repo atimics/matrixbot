@@ -442,7 +442,7 @@ Take action when opportunities exist. Use "wait" only if no valuable engagement 
         return [
             "wait", "send_matrix_message", "send_matrix_reply", "react_to_matrix_message",
             "send_farcaster_post", "send_farcaster_reply", "like_farcaster_post",
-            "generate_image", "web_search", "expand_node", "collapse_node", "describe_image"
+            "generate_image", "generate_video", "web_search", "expand_node", "collapse_node", "describe_image"
         ]
     
     def _get_essential_tool_definitions(self) -> List[Dict[str, Any]]:
