@@ -114,12 +114,19 @@ class Integration(ABC):
     
     def _set_error(self, error: str) -> None:
         """Set error state with consistent logging"""
-        self.last_error = error
-        logger.error(f"{self.display_name}: {error}")
+        # If this is also a BaseObserver, use its status system
+        if hasattr(self, '_set_status'):
+            self._set_status(self._status, error)
+        else:
+            # Fallback for pure Integration classes
+            logger.error(f"{self.display_name}: {error}")
     
     def _clear_error(self) -> None:
         """Clear error state"""
-        self.last_error = None
+        # If this is also a BaseObserver, use its status system
+        if hasattr(self, '_set_status'):
+            self._set_status(self._status, None)
+        # For pure Integration classes, no action needed as they don't track last_error
 
 
 class IntegrationError(Exception):

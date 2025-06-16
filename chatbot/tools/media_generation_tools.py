@@ -25,14 +25,15 @@ async def _auto_post_to_gallery(
     media_url: str,
     prompt: str,
     service_used: str,
-) -> None:
+) -> bool:  # Changed return type
     """
     Best-effort attempt to auto-post generated media to the configured Matrix gallery.
     Failures are logged as warnings and do not fail the parent tool.
+    Returns True if successful or not configured, False on failure.
     """
     if not settings.MATRIX_MEDIA_GALLERY_ROOM_ID:
         logger.debug("MATRIX_MEDIA_GALLERY_ROOM_ID not set, skipping auto-post to gallery.")
-        return
+        return True # Not an error if not configured
 
     try:
         caption = (
@@ -55,16 +56,20 @@ async def _auto_post_to_gallery(
                 "title": f"{service_used.title()} Generated Video"
             }
         else:
-            return
+            return True  # Unknown media type, but not an error
 
         result = await tool.execute(params, context)
         if result.get("status") == "success":
             logger.info(f"Successfully auto-posted generated {media_type} to Matrix gallery.")
+            return True
         else:
             logger.warning(f"Failed to auto-post generated {media_type} to gallery: {result.get('error')}")
+            return False
 
     except Exception as e:
         logger.warning(f"Exception during media gallery auto-post: {e}", exc_info=True)
+        return False
+        return False
 
 
 class GenerateImageTool(ToolInterface):
@@ -77,9 +82,9 @@ class GenerateImageTool(ToolInterface):
     @property
     def description(self) -> str:
         return (
-            "Generates an image from a text prompt and stores it on Arweave. "
-            "The image is automatically posted to a dedicated gallery channel for reference. "
-            "To share the image elsewhere, use the returned `arweave_image_url` with another tool like 'send_matrix_image' or 'send_farcaster_post'."
+            "Generates an image from a text prompt and stores it on cloud storage. "
+            "Returns a media_id and image_url that can be used with 'send_matrix_image' or 'send_farcaster_post' "
+            "to share the image in specific channels. The image is stored permanently for future reference."
         )
 
     @property
@@ -104,6 +109,8 @@ class GenerateImageTool(ToolInterface):
         """Execute the image generation tool."""
         prompt = params.get("prompt", "")
         aspect_ratio = params.get("aspect_ratio", "1:1")
+        gallery_post_status = "skipped"
+        gallery_post_error = None
 
         if not prompt.strip():
             return {"status": "error", "message": "Prompt cannot be empty"}
@@ -124,7 +131,11 @@ class GenerateImageTool(ToolInterface):
                         service_used = "google_gemini"
                         logger.info(f"Generated image using Google Gemini: {prompt[:50]}...")
                 except Exception as e:
-                    logger.warning(f"Google Gemini image generation failed: {e}")
+                    # Check if it's the known multi-modal output limitation
+                    if "Multi-modal output is not supported" in str(e):
+                        logger.debug("Google Gemini multi-modal output not supported, falling back to Replicate")
+                    else:
+                        logger.warning(f"Google Gemini image generation failed: {e}")
 
             # Fallback to Replicate if Gemini failed or was not used
             if not image_data and settings.REPLICATE_API_TOKEN:
@@ -168,17 +179,29 @@ class GenerateImageTool(ToolInterface):
                 media_id=media_id  # Store the media_id for chaining
             )
 
-            await _auto_post_to_gallery(context, "image", image_url, prompt, service_used)
+            gallery_post_successful = await _auto_post_to_gallery(context, "image", image_url, prompt, service_used)
+            if settings.MATRIX_MEDIA_GALLERY_ROOM_ID: # Only update status if gallery is configured
+                if gallery_post_successful:
+                    gallery_post_status = "success"
+                else:
+                    gallery_post_status = "failed"
+                    # Attempt to get a more specific error if possible, otherwise use a generic one
+                    # This part might need adjustment based on how errors are actually reported by SendMatrixImageTool
+                    gallery_post_error = "Failed to post to gallery room. Check logs for details."
+                    # A more specific error might be available if _auto_post_to_gallery could return it
+                    # For now, we'll use a generic message.
 
             return {
                 "status": "success",
-                "message": f"Image generated using {service_used} and stored on {storage_service}.",
+                "message": f"Image generated using {service_used} and stored on {storage_service}. Gallery post: {gallery_post_status}.",
                 "media_id": media_id,  # Explicit media_id for chaining
                 "media_url": image_url,  # Also provide direct URL for backward compatibility
                 "image_url": image_url,  # Legacy field name
                 "arweave_image_url": image_url if storage_service == "arweave" else None,
                 "prompt_used": prompt,
                 "storage_service": storage_service,
+                "gallery_post_status": gallery_post_status,
+                "gallery_post_error": gallery_post_error,
                 "next_actions_suggestion": f"To share this image, use 'send_farcaster_post' or 'send_matrix_image' with media_id: {media_id}"
             }
 

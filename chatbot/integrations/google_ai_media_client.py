@@ -23,7 +23,7 @@ class GoogleAIMediaClient:
     def __init__(
         self,
         api_key: str,
-        default_gemini_image_model: str = "gemini-1.5-flash-latest",
+        default_gemini_image_model: str = "gemini-2.0-flash-preview-image-generation",
         default_veo_video_model: str = "veo-2.0-generate-001",
     ):
         """
@@ -84,9 +84,8 @@ class GoogleAIMediaClient:
         temperature: float = 0.9,
     ) -> Optional[bytes]:
         """
-        Generate an image using a Gemini model with image generation capabilities.
-        Note: Ensure 'default_gemini_image_model' supports image generation.
-              Models like "gemini-1.5-flash-latest" are suitable if enabled for image gen.
+        Generate an image using Gemini 2.0 Flash Preview Image Generation model.
+        Uses the updated API with response_modalities configuration.
 
         Args:
             prompt: Text description for image generation.
@@ -96,16 +95,13 @@ class GoogleAIMediaClient:
         Returns:
             Image bytes or None if failed.
         """
-        enhanced_prompt = (
-            f"{prompt}\n\n"
-            f"Generate an image with an aspect ratio of {aspect_ratio}. "
-            f"Only respond with the image, no accompanying text or description."
-        )
+        # Enhanced prompt that works well with the new model
+        enhanced_prompt = f"{prompt} (aspect ratio: {aspect_ratio})"
 
         generation_config_obj = types.GenerateContentConfig(
             temperature=temperature,
             safety_settings=self.gemini_safety_settings,
-            response_modalities=["IMAGE", "TEXT"],
+            response_modalities=["TEXT", "IMAGE"],  # Required for image generation
         )
 
         try:
@@ -118,16 +114,20 @@ class GoogleAIMediaClient:
             # Check if response has candidates with content
             if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
                 for part in response.candidates[0].content.parts:
+                    # Look for inline_data containing image bytes
                     if hasattr(part, "inline_data") and part.inline_data and \
                        hasattr(part.inline_data, "data") and part.inline_data.data:
+                        logger.info(f"GoogleAIMediaClient: Successfully generated image using Gemini 2.0 Flash Preview")
                         return part.inline_data.data
             
+            # If no image data found, log details
             warning_message = "GoogleAIMediaClient: No image data found in Gemini response."
-            if response.text: # `.text` concatenates text from all parts
-                warning_message += f" Response text: {response.text}"
+            if hasattr(response, 'text') and response.text:
+                warning_message += f" Response text: {response.text[:100]}..."
             logger.warning(warning_message)
 
-            if response.prompt_feedback and response.prompt_feedback.block_reason:
+            # Check for any blocking or finish reasons
+            if hasattr(response, 'prompt_feedback') and response.prompt_feedback and response.prompt_feedback.block_reason:
                 block_reason_msg = str(response.prompt_feedback.block_reason)
                 if hasattr(response.prompt_feedback, 'block_reason_message') and response.prompt_feedback.block_reason_message:
                      block_reason_msg = response.prompt_feedback.block_reason_message
@@ -135,16 +135,23 @@ class GoogleAIMediaClient:
             
             if response.candidates:
                 for candidate in response.candidates:
-                    if candidate.finish_reason not in (None, types.FinishReason.STOP, types.FinishReason.FINISH_REASON_UNSPECIFIED):
-                        logger.warning(f"GoogleAIMediaClient: Gemini generation candidate finished with reason: {candidate.finish_reason} ({candidate.finish_message or ''})")
+                    if hasattr(candidate, 'finish_reason') and candidate.finish_reason not in (None, types.FinishReason.STOP, types.FinishReason.FINISH_REASON_UNSPECIFIED):
+                        finish_msg = candidate.finish_message if hasattr(candidate, 'finish_message') else ''
+                        logger.warning(f"GoogleAIMediaClient: Gemini generation candidate finished with reason: {candidate.finish_reason} ({finish_msg})")
             return None
 
-        except genai.errors.APIError as e: # Catch specific API errors from the SDK
-            logger.error(f"GoogleAIMediaClient: Gemini image generation failed with APIError: {e}")
-            return None
-        except Exception as e: # Catch any other unexpected errors
-            logger.exception(f"GoogleAIMediaClient: Unexpected error in Gemini image generation: {e}")
-            return None
+        except Exception as e:
+            # Check if it's the specific "Multi-modal output is not supported" error
+            error_message = str(e)
+            if "Multi-modal output is not supported" in error_message:
+                logger.info(f"GoogleAIMediaClient: Gemini 2.0 Flash Preview Image Generation is not available in this region or configuration. Falling back to Replicate.")
+                return None
+            elif "APIError" in str(type(e)):
+                logger.error(f"GoogleAIMediaClient: Gemini image generation failed with API error: {error_message}")
+                return None
+            else:
+                logger.exception(f"GoogleAIMediaClient: Unexpected error in Gemini image generation: {e}")
+                return None
 
     async def compose_image_with_references(
         self,
