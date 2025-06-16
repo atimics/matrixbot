@@ -21,7 +21,6 @@ class Integration(ABC):
         self.display_name = display_name
         self.config = config
         self.is_connected = False
-        self.last_error: Optional[str] = None
         self._enabled = True
         
     @property
