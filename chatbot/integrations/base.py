@@ -8,6 +8,7 @@ This provides a unified way to manage different service integrations.
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 import logging
+from .base_observer import BaseObserver, ObserverStatus
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,19 @@ class Integration(ABC):
         self.config = config
         self.is_connected = False
         self.last_error: Optional[str] = None
+        self._enabled = True
+        
+    @property
+    def enabled(self) -> bool:
+        """Check if integration is enabled"""
+        return self._enabled
+    
+    @enabled.setter
+    def enabled(self, value: bool) -> None:
+        """Set integration enabled state"""
+        self._enabled = value
+        if not value:
+            self.is_connected = False
         
     @abstractmethod
     async def connect(self) -> bool:
@@ -95,8 +109,18 @@ class Integration(ABC):
             "integration_type": self.integration_type,
             "display_name": self.display_name,
             "is_connected": self.is_connected,
+            "enabled": self._enabled,
             "last_error": self.last_error,
         }
+    
+    def _set_error(self, error: str) -> None:
+        """Set error state with consistent logging"""
+        self.last_error = error
+        logger.error(f"{self.display_name}: {error}")
+    
+    def _clear_error(self) -> None:
+        """Clear error state"""
+        self.last_error = None
 
 
 class IntegrationError(Exception):

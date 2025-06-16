@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 
 from ...core.world_state import Message
 from ..base import Integration, IntegrationError, IntegrationConnectionError
+from ..base_observer import BaseObserver, ObserverStatus
 from .farcaster_data_converter import (
     convert_api_casts_to_messages,
     convert_api_notifications_to_messages,
@@ -28,7 +29,7 @@ from .neynar_api_client import NeynarAPIClient, NeynarNetworkError, NeynarAPIErr
 logger = logging.getLogger(__name__)
 
 
-class FarcasterObserver(Integration):
+class FarcasterObserver(Integration, BaseObserver):
     """
     Orchestrates Farcaster API, data conversion, and scheduling.
     """
@@ -43,7 +44,8 @@ class FarcasterObserver(Integration):
         bot_fid: Optional[str] = None,
         world_state_manager=None,
     ):
-        super().__init__(integration_id, display_name, config or {})
+        Integration.__init__(self, integration_id, display_name, config or {})
+        BaseObserver.__init__(self, integration_id, display_name)
         self.api_key = api_key
         self.signer_uuid = signer_uuid
         self.bot_fid = str(bot_fid) if bot_fid else None
@@ -57,37 +59,16 @@ class FarcasterObserver(Integration):
         self.persistence_dir.mkdir(parents=True, exist_ok=True)
         self.state_file = self.persistence_dir / "observer_state.json"
         
+        # Initialize connection state
+        self._set_status(ObserverStatus.DISCONNECTED)
+        
         # Check if properly configured
         self._enabled = bool(self.api_key)
         
         if self.api_key:
-            # Load network configuration from settings
-            from ...config import settings
-            
-            self.api_client = NeynarAPIClient(
-                api_key=self.api_key,
-                signer_uuid=self.signer_uuid,
-                bot_fid=self.bot_fid,
-                base_url=settings.NEYNAR_API_BASE_URL,
-                max_retries=settings.FARCASTER_API_MAX_RETRIES,
-                base_delay=settings.FARCASTER_API_BASE_DELAY,
-                max_delay=settings.FARCASTER_API_MAX_DELAY,
-                timeout=settings.FARCASTER_API_TIMEOUT,
-            )
-            self.neynar_api_client = self.api_client  # Legacy compatibility
-            if self.world_state_manager:
-                self.scheduler = FarcasterScheduler(
-                    api_client=self.api_client,
-                    world_state_manager=self.world_state_manager,
-                )
-            else:
-                logger.warning(
-                    "WorldStateManager not provided to FarcasterObserver; scheduler actions will not be recorded in WSM."
-                )
+            self._initialize_api_client()
         else:
-            logger.warning(
-                "No Farcaster API key provided - observer will be largely inactive."
-            )
+            self._set_status(ObserverStatus.ERROR, "No Farcaster API key provided - observer will be largely inactive.")
             
         # Load persistent state
         self._load_persistent_state()
@@ -110,6 +91,40 @@ class FarcasterObserver(Integration):
         self.processing_hub = None
         
         logger.info("Farcaster observer initialized (refactored)")
+
+    def _initialize_api_client(self) -> None:
+        """Initialize the API client with proper error handling"""
+        try:
+            # Load network configuration from settings
+            from ...config import settings
+            
+            self.api_client = NeynarAPIClient(
+                api_key=self.api_key,
+                signer_uuid=self.signer_uuid,
+                bot_fid=self.bot_fid,
+                base_url=settings.NEYNAR_API_BASE_URL,
+                max_retries=settings.FARCASTER_API_MAX_RETRIES,
+                base_delay=settings.FARCASTER_API_BASE_DELAY,
+                max_delay=settings.FARCASTER_API_MAX_DELAY,
+                timeout=settings.FARCASTER_API_TIMEOUT,
+            )
+            self.neynar_api_client = self.api_client  # Legacy compatibility
+            
+            if self.world_state_manager:
+                self.scheduler = FarcasterScheduler(
+                    api_client=self.api_client,
+                    world_state_manager=self.world_state_manager,
+                )
+            else:
+                logger.warning(
+                    "WorldStateManager not provided to FarcasterObserver; scheduler actions will not be recorded in WSM."
+                )
+            
+            logger.info("Farcaster API client initialized successfully")
+        except Exception as e:
+            error_msg = f"Failed to initialize Farcaster API client: {e}"
+            self._set_status(ObserverStatus.ERROR, error_msg)
+            raise IntegrationError(error_msg) from e
 
     def _load_persistent_state(self) -> None:
         """Load persistent state from file"""
@@ -149,34 +164,49 @@ class FarcasterObserver(Integration):
         """Return the integration type identifier."""
         return "farcaster"
 
-    async def connect(self) -> None:
+    async def connect(self, credentials: Optional[Dict[str, Any]] = None) -> bool:
         """Connect to Farcaster API and start observing."""
         if not self.enabled:
-            raise IntegrationConnectionError("Farcaster observer is disabled due to missing API key")
+            self._set_status(ObserverStatus.ERROR, "Farcaster observer is disabled due to missing API key")
+            return False
             
         if not self.api_client:
-            raise IntegrationConnectionError("Cannot start Farcaster observer: API client not initialized")
+            self._set_status(ObserverStatus.ERROR, "Cannot start Farcaster observer: API client not initialized")
+            return False
+        
+        try:
+            self._set_status(ObserverStatus.CONNECTING)
+            self._increment_connection_attempts()
             
-        if self.scheduler:
-            await self.scheduler.start()
-            logger.info("Farcaster observer and scheduler started.")
-        else:
-            logger.info("Farcaster observer started (scheduler not available).")
+            if self.scheduler:
+                await self.scheduler.start()
+                logger.info("Farcaster observer and scheduler started.")
+            else:
+                logger.info("Farcaster observer started (scheduler not available).")
+                
+            # Initialize and start ecosystem token service if configured
+            from ...config import settings
+            if settings.ECOSYSTEM_TOKEN_CONTRACT_ADDRESS and self.api_client and self.world_state_manager:
+                from ...integrations.ecosystem_token_service import EcosystemTokenService
+                self.ecosystem_token_service = EcosystemTokenService(self.api_client, self.world_state_manager)
+                await self.ecosystem_token_service.start()
+                logger.info("Ecosystem Token Service started.")
+                
+            # Start world state collection loop if enabled
+            if self.world_state_collection_enabled and self.world_state_manager:
+                self._world_state_task = asyncio.create_task(self._world_state_collection_loop())
+                logger.info("World state collection loop started.")
+                
+            self.is_connected = True
+            self._set_status(ObserverStatus.CONNECTED)
+            self._reset_connection_attempts()
+            return True
             
-        # Initialize and start ecosystem token service if configured
-        from ...config import settings
-        if settings.ECOSYSTEM_TOKEN_CONTRACT_ADDRESS and self.api_client and self.world_state_manager:
-            from ...integrations.ecosystem_token_service import EcosystemTokenService
-            self.ecosystem_token_service = EcosystemTokenService(self.api_client, self.world_state_manager)
-            await self.ecosystem_token_service.start()
-            logger.info("Ecosystem Token Service started.")
-            
-        # Start world state collection loop if enabled
-        if self.world_state_collection_enabled and self.world_state_manager:
-            self._world_state_task = asyncio.create_task(self._world_state_collection_loop())
-            logger.info("World state collection loop started.")
-            
-        self._connected = True
+        except Exception as e:
+            error_msg = f"Failed to connect Farcaster observer: {e}"
+            self._set_status(ObserverStatus.ERROR, error_msg)
+            logger.error(error_msg, exc_info=True)
+            return False
 
     async def disconnect(self) -> None:
         """Disconnect from Farcaster API."""
@@ -185,90 +215,140 @@ class FarcasterObserver(Integration):
             
         logger.info("FarcasterObserver: Disconnecting from Farcaster...")
         
-        # Stop ecosystem token service
-        if self.ecosystem_token_service:
-            await self.ecosystem_token_service.stop()
-            self.ecosystem_token_service = None
-        
-        # Stop world state collection task
-        if self._world_state_task and not self._world_state_task.done():
-            self._world_state_task.cancel()
-            try:
-                await self._world_state_task
-            except asyncio.CancelledError:
-                logger.info("World state collection task cancelled successfully.")
-            except Exception as e:
-                logger.error(f"Error during world state task cancellation: {e}")
-            self._world_state_task = None
+        try:
+            # Stop ecosystem token service
+            if hasattr(self, 'ecosystem_token_service') and self.ecosystem_token_service:
+                await self.ecosystem_token_service.stop()
+                self.ecosystem_token_service = None
             
-        # Stop scheduler
-        if self.scheduler:
-            await self.scheduler.stop()
+            # Stop world state collection task
+            if hasattr(self, '_world_state_task') and self._world_state_task and not self._world_state_task.done():
+                self._world_state_task.cancel()
+                try:
+                    await self._world_state_task
+                except asyncio.CancelledError:
+                    logger.info("World state collection task cancelled successfully.")
+                except Exception as e:
+                    logger.error(f"Error during world state task cancellation: {e}")
+                self._world_state_task = None
+                
+            # Stop scheduler
+            if self.scheduler:
+                await self.scheduler.stop()
+                
+            # Close API client
+            if self.api_client:
+                await self.api_client.close()
+                
+            self.is_connected = False
+            self._set_status(ObserverStatus.DISCONNECTED)
+            logger.info("FarcasterObserver: Disconnected from Farcaster")
             
-        # Close API client
-        if self.api_client:
-            await self.api_client.close()
+        except Exception as e:
+            error_msg = f"Error during Farcaster disconnect: {e}"
+            self._set_status(ObserverStatus.ERROR, error_msg)
+            logger.error(error_msg, exc_info=True)
+
+    async def is_healthy(self) -> bool:
+        """Check if the observer is healthy and operational."""
+        if not self.enabled:
+            return False
             
-        self._connected = False
-        logger.info("FarcasterObserver: Disconnected from Farcaster")
+        if not self.api_client:
+            return False
+            
+        if self.status != ObserverStatus.CONNECTED:
+            return False
+            
+        try:
+            # Test API connectivity with a simple call
+            if self.bot_fid:
+                result = await self.api_client.get_user_by_fid(int(self.bot_fid))
+                return result is not None
+            else:
+                # If no bot_fid, just check if we have a valid API key
+                return bool(self.api_client.api_key)
+        except Exception as e:
+            logger.warning(f"Farcaster health check failed: {e}")
+            return False
 
     async def get_status(self) -> Dict[str, Any]:
         """Get current status of the Farcaster integration."""
+        base_status = self.get_status_info()
+        
         if not self.enabled:
             return {
+                **base_status,
                 "connected": False,
                 "enabled": False,
                 "error": "Missing API key"
             }
             
         return {
-            "connected": self._connected,
-            "enabled": self.enabled,
+            **base_status,
+            "connected": self.is_connected,
             "api_key_configured": bool(self.api_key),
             "signer_uuid": self.signer_uuid,
             "bot_fid": self.bot_fid,
             "scheduler_available": self.scheduler is not None,
             "world_state_collection_enabled": self.world_state_collection_enabled,
-            "ecosystem_token_service_active": self.ecosystem_token_service is not None
+            "ecosystem_token_service_active": hasattr(self, 'ecosystem_token_service') and self.ecosystem_token_service is not None
         }
 
-    async def test_connection(self) -> bool:
+    async def test_connection(self) -> Dict[str, Any]:
         """Test if Farcaster API connection is working."""
         if not self.enabled or not self.api_client:
-            return False
+            return {"success": False, "error": "API client not initialized or disabled"}
             
         try:
             # Try a simple API call to test connection
-            # This would need to be implemented based on your NeynarAPIClient
-            result = await self.api_client.get_user_info(self.bot_fid)
-            return result is not None
+            if self.bot_fid:
+                result = await self.api_client.get_user_by_fid(int(self.bot_fid))
+                if result:
+                    return {"success": True, "message": "Connection test successful"}
+                else:
+                    return {"success": False, "error": "Invalid response from API"}
+            else:
+                # Basic connectivity test without specific user
+                return {"success": True, "message": "API key configured (no bot_fid to test)"}
         except Exception as e:
-            logger.error(f"Farcaster connection test failed: {e}")
-            return False
+            error_msg = f"Farcaster connection test failed: {e}"
+            logger.error(error_msg)
+            return {"success": False, "error": error_msg}
 
     async def set_credentials(self, credentials: Dict[str, str]) -> None:
         """Set Farcaster credentials."""
         required_keys = ["api_key"]
         missing_keys = [key for key in required_keys if key not in credentials]
         if missing_keys:
-            logger.warning(f"Farcaster integration disabled: Missing required credentials: {missing_keys}")
+            error_msg = f"Missing required credentials: {missing_keys}"
+            self._set_status(ObserverStatus.ERROR, error_msg)
             self._enabled = False
             return
             
-        self.api_key = credentials["api_key"]
-        self.signer_uuid = credentials.get("signer_uuid")
-        self.bot_fid = credentials.get("bot_fid")
-        
-        # Recreate API client with new credentials
-        if self.api_key:
-            # Load network configuration from settings
-            from ...config import settings
+        try:
+            self.api_key = credentials["api_key"]
+            self.signer_uuid = credentials.get("signer_uuid")
+            self.bot_fid = credentials.get("bot_fid")
             
-            self.api_client = NeynarAPIClient(
-                api_key=self.api_key,
-                signer_uuid=self.signer_uuid,
-                bot_fid=self.bot_fid,
-                base_url=settings.NEYNAR_API_BASE_URL,
+            # Recreate API client with new credentials
+            if self.api_key:
+                self._initialize_api_client()
+                
+            # Update enabled status
+            self._enabled = bool(self.api_key)
+            
+            if self._enabled:
+                self._clear_error()
+                logger.info(f"Farcaster credentials updated with API key and bot FID: {self.bot_fid}")
+            
+        except Exception as e:
+            error_msg = f"Failed to set Farcaster credentials: {e}"
+            self._set_status(ObserverStatus.ERROR, error_msg)
+            self._enabled = False
+            raise
+
+    # Schedule management methods
                 max_retries=settings.FARCASTER_API_MAX_RETRIES,
                 base_delay=settings.FARCASTER_API_BASE_DELAY,
                 max_delay=settings.FARCASTER_API_MAX_DELAY,
@@ -276,17 +356,21 @@ class FarcasterObserver(Integration):
             )
             self.neynar_api_client = self.api_client  # Legacy compatibility
             
-            # Recreate scheduler if world state manager is available
             if self.world_state_manager:
                 self.scheduler = FarcasterScheduler(
                     api_client=self.api_client,
                     world_state_manager=self.world_state_manager,
                 )
-        
-        # Update enabled status
-        self._enabled = bool(self.api_key)
-        
-        logger.info(f"Farcaster credentials updated with API key and bot FID: {self.bot_fid}")
+            else:
+                logger.warning(
+                    "WorldStateManager not provided to FarcasterObserver; scheduler actions will not be recorded in WSM."
+                )
+            
+            logger.info("Farcaster API client initialized successfully")
+        except Exception as e:
+            error_msg = f"Failed to initialize Farcaster API client: {e}"
+            self._set_status(ObserverStatus.ERROR, error_msg)
+            raise IntegrationError(error_msg) from e
 
     # Legacy methods removed - use connect() and disconnect() instead
 

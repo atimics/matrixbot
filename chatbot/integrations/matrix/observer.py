@@ -29,12 +29,13 @@ from nio import (
 from ...config import settings
 from ...core.world_state import Channel, Message, WorldStateManager
 from ..base import Integration, IntegrationError, IntegrationConnectionError
+from ..base_observer import BaseObserver, ObserverStatus
 
 logger = logging.getLogger(__name__)
 load_dotenv()
 
 
-class MatrixObserver(Integration):
+class MatrixObserver(Integration, BaseObserver):
     """Observes Matrix channels and reports to world state"""
 
     def __init__(self, integration_id: str = "matrix", display_name: str = "Matrix Integration", 
@@ -50,7 +51,10 @@ class MatrixObserver(Integration):
             config = config or {}
             world_state_manager = ws_manager
             arweave_client = arw_client
-        super().__init__(integration_id, display_name, config or {})
+        
+        Integration.__init__(self, integration_id, display_name, config or {})
+        BaseObserver.__init__(self, integration_id, display_name)
+        
         # Assign world state manager and optional Arweave client
         self.world_state = world_state_manager
         self.arweave_client = arweave_client
@@ -71,12 +75,12 @@ class MatrixObserver(Integration):
         # Check for Matrix configuration - disable if not available
         self._enabled = all([self.homeserver, self.user_id, self.password])
         if not self._enabled:
-            logger.warning(
-                "Matrix configuration incomplete. Matrix observer will be disabled. "
-                "Check MATRIX_HOMESERVER, MATRIX_USER_ID, and MATRIX_PASSWORD environment variables."
-            )
+            error_msg = ("Matrix configuration incomplete. Check MATRIX_HOMESERVER, "
+                        "MATRIX_USER_ID, and MATRIX_PASSWORD environment variables.")
+            self._set_status(ObserverStatus.ERROR, error_msg)
             return
 
+        self._set_status(ObserverStatus.DISCONNECTED)
         logger.info(f"MatrixObserver: Initialized for {self.user_id}@{self.homeserver}")
         logger.debug(f"MatrixObserver: User ID set to: '{self.user_id}' (type: {type(self.user_id)})")
 
@@ -90,35 +94,39 @@ class MatrixObserver(Integration):
         """Return the integration type identifier."""
         return "matrix"
 
-    async def connect(self) -> None:
+    async def connect(self, credentials: Optional[Dict[str, Any]] = None) -> bool:
         """Connect to Matrix server and start observing."""
         if not self.enabled:
-            raise IntegrationConnectionError("Matrix observer is disabled due to missing configuration")
+            self._set_status(ObserverStatus.ERROR, "Matrix observer is disabled due to missing configuration")
+            return False
             
-        logger.info("MatrixObserver: Starting Matrix client...")
-
-        # Create client with device configuration and store path
-        device_name = settings.DEVICE_NAME
-        device_id = settings.MATRIX_DEVICE_ID
-
-        self.client = AsyncClient(
-            self.homeserver,
-            self.user_id,
-            device_id=device_id,
-            store_path=str(self.store_path),
-        )
-
-        # Set up event callbacks
-        self.client.add_event_callback(self._on_message, RoomMessageText)
-        self.client.add_event_callback(self._on_message, RoomMessageImage)
-
-        # Import required Matrix event types
-        from nio import InviteMemberEvent, RoomMemberEvent
-
-        self.client.add_event_callback(self._on_invite, InviteMemberEvent)
-        self.client.add_event_callback(self._on_membership_change, RoomMemberEvent)
-
         try:
+            self._set_status(ObserverStatus.CONNECTING)
+            self._increment_connection_attempts()
+            
+            logger.info("MatrixObserver: Starting Matrix client...")
+
+            # Create client with device configuration and store path
+            device_name = settings.DEVICE_NAME
+            device_id = settings.MATRIX_DEVICE_ID
+
+            self.client = AsyncClient(
+                self.homeserver,
+                self.user_id,
+                device_id=device_id,
+                store_path=str(self.store_path),
+            )
+
+            # Set up event callbacks
+            self.client.add_event_callback(self._on_message, RoomMessageText)
+            self.client.add_event_callback(self._on_message, RoomMessageImage)
+
+            # Import required Matrix event types
+            from nio import InviteMemberEvent, RoomMemberEvent
+
+            self.client.add_event_callback(self._on_invite, InviteMemberEvent)
+            self.client.add_event_callback(self._on_membership_change, RoomMemberEvent)
+
             # Try to load saved token with improved verification
             if await self._load_token():
                 logger.info("MatrixObserver: Using saved authentication token")
@@ -198,12 +206,18 @@ class MatrixObserver(Integration):
             logger.info("MatrixObserver: Starting sync...")
             self.sync_task = asyncio.create_task(self._sync_forever())
             logger.info("MatrixObserver: Sync task started successfully")
-            self._connected = True
+            
+            self.is_connected = True
+            self._set_status(ObserverStatus.CONNECTED)
+            self._reset_connection_attempts()
+            return True
 
         except Exception as e:
+            error_msg = f"Failed to connect to Matrix: {e}"
+            self._set_status(ObserverStatus.ERROR, error_msg)
             logger.error(f"MatrixObserver: Error starting Matrix client: {e}")
             self.world_state.update_system_status({"matrix_connected": False})
-            raise IntegrationConnectionError(f"Failed to connect to Matrix: {e}")
+            return False
 
     async def disconnect(self) -> None:
         """Disconnect from Matrix server."""
@@ -212,33 +226,62 @@ class MatrixObserver(Integration):
             
         logger.info("MatrixObserver: Disconnecting from Matrix...")
         
-        if self.sync_task:
-            self.sync_task.cancel()
-            try:
-                await self.sync_task
-            except asyncio.CancelledError:
-                pass
-            self.sync_task = None
+        try:
+            if self.sync_task:
+                self.sync_task.cancel()
+                try:
+                    await self.sync_task
+                except asyncio.CancelledError:
+                    pass
+                self.sync_task = None
+                
+            if self.client:
+                await self.client.close()
+                self.client = None
+                
+            self.world_state.update_system_status({"matrix_connected": False})
+            self.is_connected = False
+            self._set_status(ObserverStatus.DISCONNECTED)
+            logger.info("MatrixObserver: Disconnected from Matrix")
             
-        if self.client:
-            await self.client.close()
-            self.client = None
+        except Exception as e:
+            error_msg = f"Error during Matrix disconnect: {e}"
+            self._set_status(ObserverStatus.ERROR, error_msg)
+            logger.error(error_msg, exc_info=True)
+
+    async def is_healthy(self) -> bool:
+        """Check if the observer is healthy and operational."""
+        if not self.enabled:
+            return False
             
-        self.world_state.update_system_status({"matrix_connected": False})
-        self._connected = False
-        logger.info("MatrixObserver: Disconnected from Matrix")
+        if not self.client:
+            return False
+            
+        if self.status != ObserverStatus.CONNECTED:
+            return False
+            
+        try:
+            # Test connectivity by checking if we have a valid access token
+            return bool(self.client.access_token)
+        except Exception as e:
+            logger.warning(f"Matrix health check failed: {e}")
+            return False
 
     async def get_status(self) -> Dict[str, Any]:
         """Get current status of the Matrix integration."""
+        base_status = self.get_status_info()
+        
         if not self.enabled:
             return {
+                **base_status,
                 "connected": False,
                 "enabled": False,
                 "error": "Missing configuration"
             }
             
         return {
-            "connected": self._connected,
+            **base_status,
+            "connected": self.is_connected,
             "enabled": self.enabled,
             "homeserver": self.homeserver,
             "user_id": self.user_id,
@@ -246,34 +289,57 @@ class MatrixObserver(Integration):
             "sync_task_running": self.sync_task is not None and not self.sync_task.done()
         }
 
-    async def test_connection(self) -> bool:
+    async def test_connection(self) -> Dict[str, Any]:
         """Test if Matrix connection is working."""
         if not self.enabled:
-            return False
-            
-        if not self.client:
-            return False
+            return {"success": False, "error": "Matrix integration disabled"}
             
         try:
-            # Try a simple API call to test connection
-            response = await self.client.whoami()
-            return hasattr(response, 'user_id') and response.user_id == self.user_id
+            # Create a temporary client for testing
+            test_client = AsyncClient(self.homeserver, self.user_id)
+            
+            # Try to login with credentials
+            response = await test_client.login(password=self.password)
+            
+            if isinstance(response, LoginResponse):
+                await test_client.close()
+                return {"success": True, "message": "Connection test successful"}
+            else:
+                await test_client.close()
+                return {"success": False, "error": f"Login failed: {response}"}
+                
         except Exception as e:
-            logger.error(f"Matrix connection test failed: {e}")
-            return False
+            error_msg = f"Matrix connection test failed: {e}"
+            logger.error(error_msg)
+            return {"success": False, "error": error_msg}
 
     async def set_credentials(self, credentials: Dict[str, str]) -> None:
         """Set Matrix credentials."""
         required_keys = ["homeserver", "user_id", "password"]
         missing_keys = [key for key in required_keys if key not in credentials]
         if missing_keys:
-            logger.warning(f"Matrix integration disabled: Missing required credentials: {missing_keys}")
+            error_msg = f"Missing required credentials: {missing_keys}"
+            self._set_status(ObserverStatus.ERROR, error_msg)
             self._enabled = False
             return
             
-        self.homeserver = credentials["homeserver"]
-        self.user_id = credentials["user_id"]
-        self.password = credentials["password"]
+        try:
+            self.homeserver = credentials["homeserver"]
+            self.user_id = credentials["user_id"]
+            self.password = credentials["password"]
+            
+            # Update enabled status
+            self._enabled = all([self.homeserver, self.user_id, self.password])
+            
+            if self._enabled:
+                self._clear_error()
+                logger.info(f"Matrix credentials updated for {self.user_id}@{self.homeserver}")
+            
+        except Exception as e:
+            error_msg = f"Failed to set Matrix credentials: {e}"
+            self._set_status(ObserverStatus.ERROR, error_msg)
+            self._enabled = False
+            raise
         
         # Update enabled status
         self._enabled = all([self.homeserver, self.user_id, self.password])
