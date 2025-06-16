@@ -116,8 +116,6 @@ async def _auto_post_to_gallery(
             results["user_channel_success"] = False
     
     return results
-        return False
-        return False
 
 
 class GenerateImageTool(ToolInterface):
