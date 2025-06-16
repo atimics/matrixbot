@@ -1199,7 +1199,7 @@ class FarcasterObserver(Integration, BaseObserver):
                                 trigger = Trigger(
                                     type='farcaster_notification',
                                     priority=8,
-                                    context={'data_type': data_type, 'message_count': len(messages)}
+                                    data={'data_type': data_type, 'message_count': len(messages)}
                                 )
                                 self.processing_hub.add_trigger(trigger)
                             elif data_type in ["trending", "for_you"]:
@@ -1207,7 +1207,7 @@ class FarcasterObserver(Integration, BaseObserver):
                                 trigger = Trigger(
                                     type='farcaster_discovery',
                                     priority=6,
-                                    context={'data_type': data_type, 'message_count': len(messages)}
+                                    data={'data_type': data_type, 'message_count': len(messages)}
                                 )
                                 self.processing_hub.add_trigger(trigger)
                             elif data_type == "home_feed":
@@ -1215,7 +1215,7 @@ class FarcasterObserver(Integration, BaseObserver):
                                 trigger = Trigger(
                                     type='farcaster_feed',
                                     priority=4,
-                                    context={'data_type': data_type, 'message_count': len(messages)}
+                                    data={'data_type': data_type, 'message_count': len(messages)}
                                 )
                                 self.processing_hub.add_trigger(trigger)
                     

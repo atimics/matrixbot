@@ -214,8 +214,18 @@ Based on this world state, what actions should you take? You can take up to {sel
             }
             
             # Only add response_format for models that support it with tools
-            # Google models don't support response_format with function calling
-            if not self.model.startswith("google/"):
+            # Many providers don't support response_format with function calling:
+            # - Google models 
+            # - DeepSeek models on Fireworks
+            # - Other Fireworks-hosted models
+            # When tools are present, avoid response_format to prevent conflicts
+            has_tools = bool(payload.get("tools"))
+            
+            # Skip response_format if we have tools or if the model doesn't support it
+            if (not has_tools and 
+                not self.model.startswith("google/") and 
+                not self.model.startswith("deepseek/") and
+                not "fireworks" in self.model.lower()):
                 payload["response_format"] = {"type": "json_object"}
             
             # Log payload size
@@ -257,9 +267,15 @@ Based on this world state, what actions should you take? You can take up to {sel
                 }
             ],
             "temperature": 0.7,
-            "max_tokens": 1500,
-            "response_format": {"type": "json_object"}
+            "max_tokens": 1500
         }
+        
+        # Only add response_format for models that support it
+        # Avoid response_format for models that may not support it
+        if (not self.model.startswith("google/") and 
+            not self.model.startswith("deepseek/") and
+            not "fireworks" in self.model.lower()):
+            payload["response_format"] = {"type": "json_object"}
         
         payload_size = len(json.dumps(payload).encode('utf-8'))
         self.logger.info(f"Aggressive payload size: {payload_size:,} bytes ({payload_size/1024:.1f}KB)")

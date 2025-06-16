@@ -48,12 +48,14 @@ class HistoryRecorder:
     def __init__(self, db_path: str):
         self.db_path = db_path
         self.state_changes: List[StateChangeBlock] = []
+        # Add thread-safe lock for concurrent access
+        self._lock = asyncio.Lock()
 
         # Initialize storage directory
         self.storage_path = Path("data/context_storage")
         self.storage_path.mkdir(parents=True, exist_ok=True)
 
-        logger.info("HistoryRecorder: Initialized")
+        logger.info("HistoryRecorder: Initialized with thread-safe lock")
 
     async def initialize(self):
         """Initialize the database and ensure tables exist."""
@@ -210,24 +212,25 @@ class HistoryRecorder:
 
     async def _store_state_change(self, state_change: StateChangeBlock):
         """Permanently store a state change block."""
-        self.state_changes.append(state_change)
+        async with self._lock:  # Ensure thread-safe access
+            self.state_changes.append(state_change)
 
-        # Store in database first
-        try:
-            await self._persist_state_change(state_change)
-            logger.debug(f"HistoryRecorder: Successfully persisted state change to database")
-        except Exception as e:
-            logger.error(f"HistoryRecorder: Failed to persist state change to database: {e}")
+            # Store in database first
+            try:
+                await self._persist_state_change(state_change)
+                logger.debug(f"HistoryRecorder: Successfully persisted state change to database")
+            except Exception as e:
+                logger.error(f"HistoryRecorder: Failed to persist state change to database: {e}")
 
-        # Store as JSON file for training/analysis (best effort)
-        try:
-            await self._store_state_change_file(state_change)
-        except Exception as e:
-            logger.warning(f"HistoryRecorder: Failed to store state change file: {e}")
+            # Store as JSON file for training/analysis (best effort)
+            try:
+                await self._store_state_change_file(state_change)
+            except Exception as e:
+                logger.warning(f"HistoryRecorder: Failed to store state change file: {e}")
 
-        # Maintain memory limit
-        if len(self.state_changes) > 10000:
-            self.state_changes = self.state_changes[-10000:]
+            # Maintain memory limit
+            if len(self.state_changes) > 10000:
+                self.state_changes = self.state_changes[-10000:]
 
     async def _persist_state_change(self, state_change: StateChangeBlock):
         """Store state change in database."""

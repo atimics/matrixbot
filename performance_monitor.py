@@ -230,6 +230,280 @@ class PerformanceAnalyzer:
         except KeyboardInterrupt:
             print("\nMonitoring stopped.")
 
+    def analyze_farcaster_engagement_opportunities(self, hours: int = 24) -> Dict:
+        """Analyze Farcaster functionality and engagement opportunities from logs."""
+        if not self.log_file.exists():
+            return {"error": "Log file not found"}
+            
+        cutoff_time = datetime.now() - timedelta(hours=hours)
+        analysis = {
+            'visibility_metrics': {
+                'data_collection': {
+                    'trending_casts': 0,
+                    'home_feed': 0,
+                    'notifications': 0,
+                    'token_holders': 0,
+                    'world_state_collections': 0
+                },
+                'channel_discovery': set(),
+                'user_profiles_tracked': set(),
+                'feed_types_active': set()
+            },
+            'engagement_opportunities': {
+                'reply_opportunities': [],
+                'trending_topics': [],
+                'high_engagement_casts': [],
+                'token_holder_interactions': [],
+                'unaddressed_mentions': []
+            },
+            'intelligence_depth': {
+                'ecosystem_token_holders': 0,
+                'user_context_profiles': 0,
+                'conversation_threads': 0,
+                'sentiment_analysis': 0
+            },
+            'technical_health': {
+                'api_calls_successful': 0,
+                'api_errors': 0,
+                'rate_limit_warnings': 0,
+                'world_state_updates': 0,
+                'processing_cycles': 0
+            },
+            'recommendation_priorities': []
+        }
+        
+        # Track conversation contexts and engagement patterns
+        conversation_contexts = {}
+        cast_engagement_metrics = {}
+        
+        with open(self.log_file, 'r') as f:
+            for line in f:
+                if not self._is_recent_log(line, cutoff_time):
+                    continue
+                    
+                # World State Collection Analysis
+                if 'World state collection: stored' in line:
+                    analysis['visibility_metrics']['data_collection']['world_state_collections'] += 1
+                    if 'trending' in line:
+                        analysis['visibility_metrics']['data_collection']['trending_casts'] += self._extract_number(line, 'messages')
+                    if 'home' in line:
+                        analysis['visibility_metrics']['data_collection']['home_feed'] += self._extract_number(line, 'messages')
+                    if 'notifications' in line:
+                        analysis['visibility_metrics']['data_collection']['notifications'] += self._extract_number(line, 'messages')
+                
+                # Token Holder Intelligence
+                if 'Updated' in line and 'recent casts for holder FID' in line:
+                    fid = self._extract_fid(line)
+                    if fid:
+                        analysis['visibility_metrics']['user_profiles_tracked'].add(fid)
+                        analysis['visibility_metrics']['data_collection']['token_holders'] += self._extract_number(line, 'added')
+                
+                # Channel Discovery
+                if 'Added matrix channel' in line or 'Added farcaster channel' in line:
+                    channel_name = self._extract_channel_name(line)
+                    if channel_name:
+                        analysis['visibility_metrics']['channel_discovery'].add(channel_name)
+                        
+                        # Determine feed type
+                        if 'farcaster:holders' in line:
+                            analysis['visibility_metrics']['feed_types_active'].add('token_holders')
+                        elif 'farcaster:home' in line:
+                            analysis['visibility_metrics']['feed_types_active'].add('home_feed')
+                        elif 'farcaster:trending' in line:
+                            analysis['visibility_metrics']['feed_types_active'].add('trending')
+                
+                # Engagement Opportunity Detection
+                if 'New message in' in line and 'farcaster' in line.lower():
+                    cast_data = self._parse_farcaster_message(line)
+                    if cast_data:
+                        # Check for high engagement potential
+                        if any(keyword in cast_data.get('content', '').lower() 
+                               for keyword in ['question', '?', 'thoughts', 'opinion', 'what do you think']):
+                            analysis['engagement_opportunities']['reply_opportunities'].append({
+                                'channel': cast_data.get('channel'),
+                                'user': cast_data.get('user'),
+                                'content_preview': cast_data.get('content', '')[:100],
+                                'timestamp': self._extract_timestamp(line),
+                                'engagement_type': 'question_response'
+                            })
+                        
+                        # Track trending topics
+                        if 'trending' in cast_data.get('channel', ''):
+                            analysis['engagement_opportunities']['trending_topics'].append({
+                                'content': cast_data.get('content', '')[:100],
+                                'user': cast_data.get('user'),
+                                'timestamp': self._extract_timestamp(line)
+                            })
+                
+                # Bot Response Analysis
+                if 'Sent reply to' in line or 'Created Farcaster cast' in line:
+                    analysis['technical_health']['processing_cycles'] += 1
+                
+                # API Health Monitoring
+                if 'HTTP Request:' in line and 'neynar.com' in line:
+                    if '200 OK' in line:
+                        analysis['technical_health']['api_calls_successful'] += 1
+                    else:
+                        analysis['technical_health']['api_errors'] += 1
+                
+                # Rate Limit Monitoring
+                if 'rate limit' in line.lower():
+                    analysis['technical_health']['rate_limit_warnings'] += 1
+                
+                # Intelligence Depth Tracking
+                if 'ecosystem_token_info' in line or 'monitored_token_holders' in line:
+                    analysis['intelligence_depth']['ecosystem_token_holders'] += 1
+                
+                if 'FarcasterUserDetails' in line or 'Updated profile for Farcaster user' in line:
+                    analysis['intelligence_depth']['user_context_profiles'] += 1
+                
+                if 'thread' in line.lower() and 'expand' in line.lower():
+                    analysis['intelligence_depth']['conversation_threads'] += 1
+        
+        # Generate Recommendations
+        analysis['recommendation_priorities'] = self._generate_engagement_recommendations(analysis)
+        
+        # Convert sets to lists for JSON serialization
+        for key in analysis['visibility_metrics']:
+            if isinstance(analysis['visibility_metrics'][key], set):
+                analysis['visibility_metrics'][key] = list(analysis['visibility_metrics'][key])
+        
+        return analysis
+    
+    def _extract_number(self, line: str, context: str) -> int:
+        """Extract number from log line in given context."""
+        try:
+            if context in line:
+                parts = line.split(context)
+                if len(parts) > 1:
+                    # Look for number before the context word
+                    before = parts[0].split()[-1] if parts[0].split() else "0"
+                    return int(before) if before.isdigit() else 0
+        except:
+            pass
+        return 0
+    
+    def _extract_fid(self, line: str) -> Optional[str]:
+        """Extract Farcaster ID from log line."""
+        import re
+        fid_match = re.search(r'FID (\d+)', line)
+        return fid_match.group(1) if fid_match else None
+    
+    def _extract_channel_name(self, line: str) -> Optional[str]:
+        """Extract channel name from log line."""
+        import re
+        # Look for channel names in quotes or after 'channel'
+        channel_match = re.search(r"'([^']+)'", line)
+        if channel_match:
+            return channel_match.group(1)
+        return None
+    
+    def _parse_farcaster_message(self, line: str) -> Optional[Dict]:
+        """Parse Farcaster message details from log line."""
+        try:
+            if 'New message in' in line:
+                parts = line.split(': ', 2)
+                if len(parts) >= 3:
+                    channel_part = parts[1]
+                    message_part = parts[2]
+                    
+                    # Extract channel
+                    channel = channel_part.split(' in ')[-1] if ' in ' in channel_part else channel_part
+                    
+                    # Extract user and content
+                    if ': ' in message_part:
+                        user, content = message_part.split(': ', 1)
+                        return {
+                            'channel': channel,
+                            'user': user,
+                            'content': content
+                        }
+        except:
+            pass
+        return None
+    
+    def _extract_timestamp(self, line: str) -> Optional[str]:
+        """Extract timestamp from log line."""
+        import re
+        timestamp_match = re.match(r'^([0-9-]+ [0-9:,]+)', line)
+        return timestamp_match.group(1) if timestamp_match else None
+    
+    def _generate_engagement_recommendations(self, analysis: Dict) -> List[Dict]:
+        """Generate prioritized engagement recommendations based on analysis."""
+        recommendations = []
+        
+        # High Priority: Unaddressed Mentions/Notifications
+        if analysis['visibility_metrics']['data_collection']['notifications'] > 0:
+            recommendations.append({
+                'priority': 'HIGH',
+                'category': 'Direct Engagement',
+                'recommendation': 'Address pending notifications and mentions',
+                'reasoning': f"Found {analysis['visibility_metrics']['data_collection']['notifications']} notifications that may require responses",
+                'action': 'Review farcaster:notifications channel and respond to relevant mentions'
+            })
+        
+        # High Priority: Token Holder Engagement
+        if analysis['visibility_metrics']['data_collection']['token_holders'] > 0:
+            recommendations.append({
+                'priority': 'HIGH',
+                'category': 'Community Engagement',
+                'recommendation': 'Engage with ecosystem token holders',
+                'reasoning': f"Monitoring {len(analysis['visibility_metrics']['user_profiles_tracked'])} token holders with {analysis['visibility_metrics']['data_collection']['token_holders']} recent casts",
+                'action': 'Reply to or engage with meaningful token holder content to build community relationships'
+            })
+        
+        # Medium Priority: Trending Topic Participation
+        if analysis['visibility_metrics']['data_collection']['trending_casts'] > 0:
+            recommendations.append({
+                'priority': 'MEDIUM',
+                'category': 'Discovery & Growth',
+                'recommendation': 'Participate in trending conversations',
+                'reasoning': f"Collected {analysis['visibility_metrics']['data_collection']['trending_casts']} trending casts",
+                'action': 'Add valuable insights to trending discussions to increase visibility'
+            })
+        
+        # Medium Priority: Home Feed Engagement
+        if analysis['visibility_metrics']['data_collection']['home_feed'] > 0:
+            recommendations.append({
+                'priority': 'MEDIUM',
+                'category': 'Social Presence',
+                'recommendation': 'Engage with home feed content',
+                'reasoning': f"Home feed shows {analysis['visibility_metrics']['data_collection']['home_feed']} messages from followed accounts",
+                'action': 'Like, reply to, or recast content from accounts you follow to maintain social presence'
+            })
+        
+        # Technical Health Recommendations
+        if analysis['technical_health']['api_errors'] > analysis['technical_health']['api_calls_successful'] * 0.1:
+            recommendations.append({
+                'priority': 'HIGH',
+                'category': 'Technical Health',
+                'recommendation': 'Address API reliability issues',
+                'reasoning': f"High error rate: {analysis['technical_health']['api_errors']} errors vs {analysis['technical_health']['api_calls_successful']} successful calls",
+                'action': 'Investigate API connectivity and implement better error handling'
+            })
+        
+        # Rate Limit Management
+        if analysis['technical_health']['rate_limit_warnings'] > 0:
+            recommendations.append({
+                'priority': 'MEDIUM',
+                'category': 'Technical Optimization',
+                'recommendation': 'Optimize API usage to avoid rate limits',
+                'reasoning': f"Detected {analysis['technical_health']['rate_limit_warnings']} rate limit warnings",
+                'action': 'Implement smarter request batching and timing to stay within rate limits'
+            })
+        
+        # Intelligence Depth Enhancement
+        if analysis['intelligence_depth']['conversation_threads'] < 5:
+            recommendations.append({
+                'priority': 'LOW',
+                'category': 'Context Enhancement',
+                'recommendation': 'Expand conversation thread analysis',
+                'reasoning': 'Limited thread expansion detected, missing conversational context',
+                'action': 'Use expand_node more frequently on interesting conversations to understand full context'
+            })
+        
+        return sorted(recommendations, key=lambda x: {'HIGH': 3, 'MEDIUM': 2, 'LOW': 1}[x['priority']], reverse=True)
+
 def main():
     parser = argparse.ArgumentParser(description="RATi Chatbot Performance Analyzer")
     parser.add_argument('--log-file', default='chatbot.log', help='Path to log file')
