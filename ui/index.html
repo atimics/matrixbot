@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbot Management Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div id="app" class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <div class="flex justify-between items-center">
+                <h1 class="text-3xl font-bold text-gray-800">
+                    <i class="fas fa-robot mr-2 text-blue-600"></i>
+                    Chatbot Management Dashboard
+                </h1>
+                <div class="flex items-center space-x-4">
+                    <div id="status-indicator" class="flex items-center">
+                        <div class="w-3 h-3 bg-green-500 rounded-full mr-2"></div>
+                        <span class="text-sm text-gray-600">Connected</span>
+                    </div>
+                    <button onclick="refreshData()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg">
+                        <i class="fas fa-sync-alt mr-1"></i> Refresh
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- System Status Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-600">System Status</p>
+                        <p id="system-status" class="text-2xl font-bold text-green-600">Healthy</p>
+                    </div>
+                    <i class="fas fa-heartbeat text-3xl text-green-500"></i>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-600">Uptime</p>
+                        <p id="uptime" class="text-2xl font-bold text-blue-600">--</p>
+                    </div>
+                    <i class="fas fa-clock text-3xl text-blue-500"></i>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-600">Active Channels</p>
+                        <p id="active-channels" class="text-2xl font-bold text-purple-600">--</p>
+                    </div>
+                    <i class="fas fa-comments text-3xl text-purple-500"></i>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-600">Token Usage</p>
+                        <p id="token-usage" class="text-2xl font-bold text-orange-600">--</p>
+                    </div>
+                    <i class="fas fa-coins text-3xl text-orange-500"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <div class="bg-white rounded-lg shadow-md mb-6">
+            <nav class="flex border-b">
+                <button onclick="showTab('overview')" class="tab-button active px-6 py-3 text-sm font-medium text-gray-700 hover:text-blue-600 border-b-2 border-transparent hover:border-blue-600">
+                    <i class="fas fa-tachometer-alt mr-1"></i> Overview
+                </button>
+                <button onclick="showTab('performance')" class="tab-button px-6 py-3 text-sm font-medium text-gray-700 hover:text-blue-600 border-b-2 border-transparent hover:border-blue-600">
+                    <i class="fas fa-chart-line mr-1"></i> Performance
+                </button>
+                <button onclick="showTab('logs')" class="tab-button px-6 py-3 text-sm font-medium text-gray-700 hover:text-blue-600 border-b-2 border-transparent hover:border-blue-600">
+                    <i class="fas fa-file-alt mr-1"></i> Logs
+                </button>
+                <button onclick="showTab('config')" class="tab-button px-6 py-3 text-sm font-medium text-gray-700 hover:text-blue-600 border-b-2 border-transparent hover:border-blue-600">
+                    <i class="fas fa-cog mr-1"></i> Configuration
+                </button>
+            </nav>
+        </div>
+
+        <!-- Tab Content -->
+        <div id="overview-tab" class="tab-content">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- System Health -->
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <h3 class="text-lg font-semibold mb-4">System Health</h3>
+                    <div id="health-details" class="space-y-3">
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-600">World State</span>
+                            <span class="text-green-600 font-medium">✓ Healthy</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-600">AI Engine</span>
+                            <span class="text-green-600 font-medium">✓ Healthy</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-600">Integrations</span>
+                            <span class="text-green-600 font-medium">✓ Healthy</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Activity -->
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <h3 class="text-lg font-semibold mb-4">Recent Activity</h3>
+                    <div id="recent-activity" class="space-y-3 max-h-64 overflow-y-auto">
+                        <div class="flex items-center text-sm">
+                            <div class="w-2 h-2 bg-blue-500 rounded-full mr-3"></div>
+                            <span class="text-gray-600">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="performance-tab" class="tab-content hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Performance Chart -->
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <h3 class="text-lg font-semibold mb-4">Performance Metrics</h3>
+                    <canvas id="performance-chart" width="400" height="200"></canvas>
+                </div>
+
+                <!-- Error Rate -->
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <h3 class="text-lg font-semibold mb-4">Error Statistics</h3>
+                    <div id="error-stats" class="space-y-3">
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-600">Total Errors (24h)</span>
+                            <span id="error-count" class="font-medium">--</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-600">Error Rate</span>
+                            <span id="error-rate" class="font-medium">--</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="logs-tab" class="tab-content hidden">
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-semibold">System Logs</h3>
+                    <div class="flex space-x-2">
+                        <select id="log-level" class="px-3 py-1 border rounded">
+                            <option value="all">All Levels</option>
+                            <option value="error">Error</option>
+                            <option value="warning">Warning</option>
+                            <option value="info">Info</option>
+                        </select>
+                        <button onclick="clearLogs()" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm">
+                            Clear
+                        </button>
+                    </div>
+                </div>
+                <div id="logs-container" class="bg-gray-900 text-green-400 p-4 rounded font-mono text-sm h-96 overflow-y-auto">
+                    <div>Connecting to log stream...</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="config-tab" class="tab-content hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- AI Configuration -->
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <h3 class="text-lg font-semibold mb-4">AI Configuration</h3>
+                    <div id="ai-config" class="space-y-3">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Model</label>
+                            <input type="text" id="ai-model" class="w-full px-3 py-2 border rounded-lg" readonly>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Max Tokens</label>
+                            <input type="number" id="max-tokens" class="w-full px-3 py-2 border rounded-lg" readonly>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- System Configuration -->
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <h3 class="text-lg font-semibold mb-4">System Configuration</h3>
+                    <div id="system-config" class="space-y-3">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Environment</label>
+                            <input type="text" id="environment" class="w-full px-3 py-2 border rounded-lg" readonly>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Version</label>
+                            <input type="text" id="version" class="w-full px-3 py-2 border rounded-lg" readonly>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

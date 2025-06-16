@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 from chatbot.core.orchestration import MainOrchestrator
 from .services import SetupManager, LogWebSocketManager
-from .routers import system, tools, config, integrations, ai, worldstate, setup, logs, ui_frames
+from .routers import tools, integrations, ai, worldstate, setup, ui_frames, monitoring
 from .schemas import StatusResponse
 
 logger = logging.getLogger(__name__)
@@ -63,27 +63,25 @@ class ChatbotAPIServer:
             return self.setup_manager
         
         # Override the get_orchestrator dependency in all routers
-        self.app.dependency_overrides[system.get_orchestrator] = get_orchestrator
         self.app.dependency_overrides[tools.get_orchestrator] = get_orchestrator
-        self.app.dependency_overrides[config.get_orchestrator] = get_orchestrator
         self.app.dependency_overrides[integrations.get_orchestrator] = get_orchestrator
         self.app.dependency_overrides[ai.get_orchestrator] = get_orchestrator
         self.app.dependency_overrides[worldstate.get_orchestrator] = get_orchestrator
         self.app.dependency_overrides[setup.get_orchestrator] = get_orchestrator
         self.app.dependency_overrides[setup.get_setup_manager] = get_setup_manager
-        self.app.dependency_overrides[logs.get_orchestrator] = get_orchestrator
         self.app.dependency_overrides[ui_frames.get_orchestrator] = get_orchestrator
+        self.app.dependency_overrides[monitoring.get_orchestrator] = get_orchestrator
         
     def _setup_routers(self):
         """Include all modular routers."""
-        self.app.include_router(system.router)
         self.app.include_router(tools.router)
-        self.app.include_router(config.router)
         self.app.include_router(integrations.router)
         self.app.include_router(ai.router)
         self.app.include_router(worldstate.router)
         self.app.include_router(setup.router)
-        self.app.include_router(logs.router)  # already has /api prefix
+        
+        # Advanced monitoring router (consolidates system, config, logs functionality)
+        self.app.include_router(monitoring.router)
         
         # UI and frames routers (no prefix)
         self.app.include_router(ui_frames.ui_router)
@@ -99,14 +97,13 @@ class ChatbotAPIServer:
                 "service": "chatbot_api"
             }
         
-        # Add compatibility route for legacy /api/status endpoint
+        # Add compatibility routes for legacy endpoints
         @self.app.get("/api/status")
         async def legacy_status_endpoint():
-            """Legacy status endpoint for backwards compatibility - redirects to /api/system/status."""
-            from .routers.system import get_system_status
-            from .dependencies import get_orchestrator
+            """Legacy status endpoint - redirects to monitoring health."""
+            from .routers.monitoring import get_health_status
             orchestrator = self.orchestrator
-            return await get_system_status(orchestrator)
+            return await get_health_status(orchestrator)
         
     def _setup_websocket_routes(self):
         """Set up WebSocket routes for real-time features."""
