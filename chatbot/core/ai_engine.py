@@ -429,7 +429,8 @@ CRITICAL: You MUST respond with valid JSON in the exact format below. Do not inc
 - Matrix: Use send_matrix_reply for conversations, send_matrix_message for announcements, react_to_matrix_message for emoji reactions
 - Farcaster: Use send_farcaster_reply for responses, send_farcaster_post for new content
 - Always check recent_messages for conversation context
-- Expand nodes only when you need more detailed information"""
+- Expand nodes only when you need more detailed information
+- **Node paths**: Use EXACT paths from collapsed_node_summaries (e.g., 'channels.matrix.!room123:server.com'), NOT prefixed with 'world_state.'"""
     
     def _get_system_prompt_minimal(self) -> str:
         """Minimal system prompt for aggressive optimization."""

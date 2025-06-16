@@ -36,7 +36,10 @@ class FarcasterService(SocialServiceInterface):
     
     async def is_available(self) -> bool:
         """Check if the Farcaster service is available"""
-        return self._observer is not None and hasattr(self._observer, 'client') and self._observer.client is not None
+        return (self._observer is not None and 
+                hasattr(self._observer, 'api_client') and 
+                self._observer.api_client is not None and
+                self._observer.enabled)
     
     async def create_post(self, content: str, **kwargs) -> Dict[str, Any]:
         """
@@ -60,10 +63,10 @@ class FarcasterService(SocialServiceInterface):
         parent_url = kwargs.get('parent_url')
         
         try:
-            result = await self._observer.send_cast(
+            result = await self._observer.post_cast(
                 content, 
                 embed_urls=embed_urls,
-                parent_url=parent_url
+                reply_to=parent_url
             )
             
             if result.get("success"):
