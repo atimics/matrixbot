@@ -539,6 +539,36 @@ Take action when opportunities exist. Use "wait" only if no valuable engagement 
             {
                 "type": "function",
                 "function": {
+                    "name": "generate_image",
+                    "description": "Generate an image from a text prompt and store it permanently. Returns media_id for sharing.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "prompt": {"type": "string", "description": "Detailed description for image generation"},
+                            "aspect_ratio": {"type": "string", "description": "Aspect ratio like '1:1', '16:9', '4:3'", "default": "1:1"}
+                        },
+                        "required": ["prompt"]
+                    }
+                }
+            },
+            {
+                "type": "function", 
+                "function": {
+                    "name": "generate_video",
+                    "description": "Generate a short video from a text prompt (1 per day limit).",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "prompt": {"type": "string", "description": "Detailed description for video generation"},
+                            "aspect_ratio": {"type": "string", "description": "Aspect ratio like '16:9'", "default": "16:9"}
+                        },
+                        "required": ["prompt"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
                     "name": "expand_node",
                     "description": "Expand node to view full details. Max 8 nodes.",
                     "parameters": {
