@@ -340,11 +340,6 @@ class MatrixObserver(Integration, BaseObserver):
             self._set_status(ObserverStatus.ERROR, error_msg)
             self._enabled = False
             raise
-        
-        # Update enabled status
-        self._enabled = all([self.homeserver, self.user_id, self.password])
-        
-        logger.info(f"Matrix credentials updated for {self.user_id}@{self.homeserver}")
 
     # Legacy methods for backward compatibility
     # Legacy methods removed - use connect() and disconnect() instead

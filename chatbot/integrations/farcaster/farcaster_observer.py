@@ -349,30 +349,6 @@ class FarcasterObserver(Integration, BaseObserver):
             raise
 
     # Schedule management methods
-                max_retries=settings.FARCASTER_API_MAX_RETRIES,
-                base_delay=settings.FARCASTER_API_BASE_DELAY,
-                max_delay=settings.FARCASTER_API_MAX_DELAY,
-                timeout=settings.FARCASTER_API_TIMEOUT,
-            )
-            self.neynar_api_client = self.api_client  # Legacy compatibility
-            
-            if self.world_state_manager:
-                self.scheduler = FarcasterScheduler(
-                    api_client=self.api_client,
-                    world_state_manager=self.world_state_manager,
-                )
-            else:
-                logger.warning(
-                    "WorldStateManager not provided to FarcasterObserver; scheduler actions will not be recorded in WSM."
-                )
-            
-            logger.info("Farcaster API client initialized successfully")
-        except Exception as e:
-            error_msg = f"Failed to initialize Farcaster API client: {e}"
-            self._set_status(ObserverStatus.ERROR, error_msg)
-            raise IntegrationError(error_msg) from e
-
-    # Legacy methods removed - use connect() and disconnect() instead
 
     def schedule_post(
         self,
