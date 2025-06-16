@@ -82,6 +82,11 @@ class NodeProcessor:
 
         logger.info(f"Starting iterative processing cycle {cycle_id}")
 
+        # Update ActionContext with current channel information
+        if self.action_context and primary_channel_id:
+            self.action_context.update_current_channel(primary_channel_id)
+            logger.debug(f"Updated ActionContext with primary channel: {primary_channel_id}")
+
         try:
             # Initial auto-expansion of active channels
             await self._auto_expand_active_channels()

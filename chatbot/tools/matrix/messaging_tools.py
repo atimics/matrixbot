@@ -174,7 +174,8 @@ class SendMatrixMessageTool(ToolInterface):
     @property
     def description(self) -> str:
         return ("Send a new message to a Matrix channel. Use this when you want to start a new conversation or make an announcement. "
-                "Recently generated media (within 5 minutes) will be automatically attached as a separate image message if no explicit image_url is provided.")
+                "Use the 'attach_image' parameter to include an image - either provide a description to generate a new image, or reference an existing media_id from your library. "
+                "Recently generated media (within 5 minutes) will be automatically attached if no explicit attach_image is provided.")
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
@@ -182,7 +183,8 @@ class SendMatrixMessageTool(ToolInterface):
             "channel_id": "string (Matrix room ID) - The room where the message should be sent",
             "content": "string - The message content to send (supports markdown formatting)",
             "format_as_markdown": "boolean (optional, default: true) - Whether to format the content as markdown",
-            "image_url": "string (optional) - URL of an image to attach. If not provided, recently generated media will be auto-attached",
+            "attach_image": "string (optional) - Either a media_id from your library (e.g., 'media_img_1234567890') or a description to generate a new image (e.g., 'sunset over mountains')",
+            "image_url": "string (optional) - Direct URL of an image to attach. If not provided, recently generated media will be auto-attached",
         }
 
     async def execute(
@@ -204,6 +206,7 @@ class SendMatrixMessageTool(ToolInterface):
         room_id = params.get("channel_id")
         content = params.get("content")
         format_as_markdown = params.get("format_as_markdown", True)
+        attach_image = params.get("attach_image")  # New: either media_id or description
         image_url = params.get("image_url")
 
         missing_params = []
@@ -216,6 +219,28 @@ class SendMatrixMessageTool(ToolInterface):
             error_msg = f"Missing required parameters for Matrix message: {', '.join(missing_params)}"
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+        # Handle attach_image parameter: could be media_id or description
+        generated_image_info = None
+        if attach_image:
+            # Check if it's a media_id (starts with "media_")
+            if attach_image.startswith("media_"):
+                # It's a media_id, retrieve from library
+                if context.world_state_manager:
+                    image_url = context.world_state_manager.get_media_url_by_id(attach_image)
+                    if image_url:
+                        logger.info(f"Using existing image from library: {attach_image} -> {image_url}")
+                    else:
+                        logger.warning(f"Media ID {attach_image} not found in library")
+            else:
+                # It's a description, generate new image
+                from ..message_enhancement import generate_image_from_description
+                generated_image_info = await generate_image_from_description(attach_image, context)
+                if generated_image_info:
+                    image_url = generated_image_info["image_url"]
+                    logger.info(f"Generated new image from description: '{attach_image}' -> {image_url}")
+                else:
+                    logger.warning(f"Failed to generate image from description: {attach_image}")
 
         # Auto-attachment: Check for recently generated media if no image_url provided
         if not image_url and context.world_state_manager:
@@ -256,6 +281,8 @@ class SendMatrixMessageTool(ToolInterface):
                     "auto_attached_image": image_url if image_url else None,
                     "image_event_id": image_event_id,
                     "sent_content": content,  # For AI Blindness Fix
+                    "generated_image_info": generated_image_info,  # Include info about generated image
+                    "attach_image_used": attach_image,  # Show what attach_image parameter was used
                 })
             
             return result

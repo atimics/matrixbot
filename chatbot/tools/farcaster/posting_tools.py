@@ -23,8 +23,9 @@ class SendFarcasterPostTool(ToolInterface):
     @property
     def description(self) -> str:
         return ("Send a new post (cast) to Farcaster. "
+                "Use the 'attach_image' parameter to include an image - either provide a description to generate a new image, or reference an existing media_id from your library. "
                 "Use the 'embed_url' parameter to attach media or frames. "
-                "If no embed_url is provided, recently generated media (within 5 minutes) will be automatically attached.")
+                "If no attach_image or embed_url is provided, recently generated media (within 5 minutes) will be automatically attached.")
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
@@ -43,9 +44,13 @@ class SendFarcasterPostTool(ToolInterface):
                     "type": "string",
                     "description": "A URL to embed in the cast, such as an Arweave URL for an image/video page or a frame URL."
                 },
+                "attach_image": {
+                    "type": "string",
+                    "description": "Either a media_id from your library (e.g., 'media_img_1234567890') or a description to generate a new image (e.g., 'sunset over mountains')"
+                },
                 "media_id": {
                     "type": "string",
-                    "description": "ID of previously generated media to attach (takes precedence over embed_url)"
+                    "description": "ID of previously generated media to attach (takes precedence over embed_url and attach_image)"
                 }
             },
             "required": ["content"]
@@ -70,7 +75,26 @@ class SendFarcasterPostTool(ToolInterface):
         content = params.get("content", "")
         channel = params.get("channel")  # Optional
         embed_url = params.get("embed_url")  # Optional
-        media_id = params.get("media_id")  # Optional - takes precedence over embed_url
+        attach_image = params.get("attach_image")  # New: either media_id or description
+        media_id = params.get("media_id")  # Optional - takes precedence over all
+
+        # Handle attach_image parameter: could be media_id or description
+        generated_image_info = None
+        if attach_image and not media_id:  # Only if media_id not explicitly provided
+            # Check if it's a media_id (starts with "media_")
+            if attach_image.startswith("media_"):
+                # It's a media_id, treat it as such
+                media_id = attach_image
+                logger.info(f"Using attach_image as media_id: {media_id}")
+            else:
+                # It's a description, generate new image
+                from ..message_enhancement import generate_image_from_description
+                generated_image_info = await generate_image_from_description(attach_image, context)
+                if generated_image_info:
+                    embed_url = generated_image_info["image_url"]
+                    logger.info(f"Generated new image from description: '{attach_image}' -> {embed_url}")
+                else:
+                    logger.warning(f"Failed to generate image from description: {attach_image}")
 
         # Handle explicit media_id (takes precedence over embed_url)
         if media_id and context.world_state_manager:

@@ -312,6 +312,9 @@ class MainOrchestrator:
         # No need for separate _v2 tools
 
         # Media generation tools
+        # Image generation: Available both as standalone tool AND via attach_image parameter in messaging tools
+        # Video generation: Standalone tool only (due to rate limits and resource constraints)
+        from ...tools.media_generation_tools import GenerateImageTool, GenerateVideoTool
         self.tool_registry.register_tool(GenerateImageTool())
         self.tool_registry.register_tool(GenerateVideoTool())
         

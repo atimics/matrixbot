@@ -25,49 +25,97 @@ async def _auto_post_to_gallery(
     media_url: str,
     prompt: str,
     service_used: str,
-) -> bool:  # Changed return type
+    user_channel_id: Optional[str] = None,
+) -> Dict[str, bool]:
     """
-    Best-effort attempt to auto-post generated media to the configured Matrix gallery.
-    Failures are logged as warnings and do not fail the parent tool.
-    Returns True if successful or not configured, False on failure.
+    Enhanced auto-posting to both gallery and user's current channel.
+    
+    Args:
+        context: Action context
+        media_type: Type of media (image/video)
+        media_url: URL of the generated media
+        prompt: Generation prompt
+        service_used: Service that generated the media
+        user_channel_id: Optional current channel ID for direct posting
+        
+    Returns:
+        Dict with gallery_success and user_channel_success booleans
     """
-    if not settings.MATRIX_MEDIA_GALLERY_ROOM_ID:
-        logger.debug("MATRIX_MEDIA_GALLERY_ROOM_ID not set, skipping auto-post to gallery.")
-        return True # Not an error if not configured
+    results = {"gallery_success": True, "user_channel_success": True}
+    
+    # Post to gallery channel
+    if settings.MATRIX_MEDIA_GALLERY_ROOM_ID:
+        try:
+            gallery_caption = (
+                f"🎨 **New {media_type.capitalize()} Generated**\n\n"
+                f"**Prompt:** `{prompt}`\n\n"
+                f"**Service:** `{service_used}`\n\n"
+                f"**[View on Storage]({media_url})**"
+            )
 
-    try:
-        caption = (
-            f"🎨 **New {media_type.capitalize()} Generated**\n\n"
-            f"**Prompt:** `{prompt}`\n\n"
-            f"**Service:** `{service_used}`\n\n"
-            f"**[View on Arweave]({media_url})**"
-        )
+            if media_type == "image":
+                tool = SendMatrixImageTool()
+                params = {"channel_id": settings.MATRIX_MEDIA_GALLERY_ROOM_ID, "image_url": media_url, "caption": gallery_caption}
+            elif media_type == "video":
+                tool = SendMatrixVideoLinkTool()
+                params = {
+                    "channel_id": settings.MATRIX_MEDIA_GALLERY_ROOM_ID, 
+                    "video_url": media_url, 
+                    "caption": gallery_caption,
+                    "title": f"{service_used.title()} Generated Video"
+                }
+            else:
+                results["gallery_success"] = True  # Unknown media type, not an error
+                
+            if media_type in ["image", "video"]:
+                result = await tool.execute(params, context)
+                if result.get("status") == "success":
+                    logger.info(f"Successfully auto-posted generated {media_type} to Matrix gallery.")
+                    results["gallery_success"] = True
+                else:
+                    logger.warning(f"Failed to auto-post generated {media_type} to gallery: {result.get('error')}")
+                    results["gallery_success"] = False
 
-        if media_type == "image":
-            tool = SendMatrixImageTool()
-            params = {"channel_id": settings.MATRIX_MEDIA_GALLERY_ROOM_ID, "image_url": media_url, "caption": caption}
-        elif media_type == "video":
-            # Use link-based approach to avoid Matrix upload tuple errors
-            tool = SendMatrixVideoLinkTool()
-            params = {
-                "channel_id": settings.MATRIX_MEDIA_GALLERY_ROOM_ID, 
-                "video_url": media_url, 
-                "caption": caption,
-                "title": f"{service_used.title()} Generated Video"
-            }
-        else:
-            return True  # Unknown media type, but not an error
-
-        result = await tool.execute(params, context)
-        if result.get("status") == "success":
-            logger.info(f"Successfully auto-posted generated {media_type} to Matrix gallery.")
-            return True
-        else:
-            logger.warning(f"Failed to auto-post generated {media_type} to gallery: {result.get('error')}")
-            return False
-
-    except Exception as e:
-        logger.warning(f"Exception during media gallery auto-post: {e}", exc_info=True)
+        except Exception as e:
+            logger.warning(f"Exception during gallery auto-post: {e}", exc_info=True)
+            results["gallery_success"] = False
+    else:
+        logger.debug("MATRIX_MEDIA_GALLERY_ROOM_ID not set, skipping gallery auto-post.")
+    
+    # Post to user's current channel if provided and different from gallery
+    if (user_channel_id and 
+        user_channel_id != settings.MATRIX_MEDIA_GALLERY_ROOM_ID):
+        try:
+            user_caption = f"🎨 Generated: {prompt[:100]}{'...' if len(prompt) > 100 else ''}"
+            
+            if media_type == "image":
+                tool = SendMatrixImageTool()
+                params = {"channel_id": user_channel_id, "image_url": media_url, "caption": user_caption}
+            elif media_type == "video":
+                tool = SendMatrixVideoLinkTool()
+                params = {
+                    "channel_id": user_channel_id,
+                    "video_url": media_url,
+                    "caption": user_caption,
+                    "title": "Generated Video"
+                }
+            else:
+                results["user_channel_success"] = True  # Unknown media type, not an error
+                
+            if media_type in ["image", "video"]:
+                result = await tool.execute(params, context)
+                if result.get("status") == "success":
+                    logger.info(f"Successfully posted generated {media_type} to user channel {user_channel_id}.")
+                    results["user_channel_success"] = True
+                else:
+                    logger.warning(f"Failed to post generated {media_type} to user channel: {result.get('error')}")
+                    results["user_channel_success"] = False
+                    
+        except Exception as e:
+            logger.warning(f"Exception during user channel auto-post: {e}", exc_info=True)
+            results["user_channel_success"] = False
+    
+    return results
         return False
         return False
 
@@ -179,21 +227,36 @@ class GenerateImageTool(ToolInterface):
                 media_id=media_id  # Store the media_id for chaining
             )
 
-            gallery_post_successful = await _auto_post_to_gallery(context, "image", image_url, prompt, service_used)
-            if settings.MATRIX_MEDIA_GALLERY_ROOM_ID: # Only update status if gallery is configured
-                if gallery_post_successful:
+            # Get current channel ID and post to both gallery and user channel
+            current_channel_id = context.get_current_channel_id()
+            posting_results = await _auto_post_to_gallery(
+                context, "image", image_url, prompt, service_used, 
+                user_channel_id=current_channel_id
+            )
+            
+            # Update status based on posting results
+            if settings.MATRIX_MEDIA_GALLERY_ROOM_ID:
+                if posting_results.get("gallery_success", False):
                     gallery_post_status = "success"
                 else:
                     gallery_post_status = "failed"
-                    # Attempt to get a more specific error if possible, otherwise use a generic one
-                    # This part might need adjustment based on how errors are actually reported by SendMatrixImageTool
                     gallery_post_error = "Failed to post to gallery room. Check logs for details."
-                    # A more specific error might be available if _auto_post_to_gallery could return it
-                    # For now, we'll use a generic message.
+
+            # Create comprehensive status message
+            status_parts = []
+            if settings.MATRIX_MEDIA_GALLERY_ROOM_ID:
+                status_parts.append(f"Gallery: {gallery_post_status}")
+            if current_channel_id and current_channel_id != settings.MATRIX_MEDIA_GALLERY_ROOM_ID:
+                user_status = "success" if posting_results.get("user_channel_success", False) else "failed"
+                status_parts.append(f"Current channel: {user_status}")
+            
+            status_message = f"✅ Image generated using {service_used} and stored on {storage_service}."
+            if status_parts:
+                status_message += f" Posting - {', '.join(status_parts)}."
 
             return {
                 "status": "success",
-                "message": f"Image generated using {service_used} and stored on {storage_service}. Gallery post: {gallery_post_status}.",
+                "message": status_message,
                 "media_id": media_id,  # Explicit media_id for chaining
                 "media_url": image_url,  # Also provide direct URL for backward compatibility
                 "image_url": image_url,  # Legacy field name
@@ -202,7 +265,10 @@ class GenerateImageTool(ToolInterface):
                 "storage_service": storage_service,
                 "gallery_post_status": gallery_post_status,
                 "gallery_post_error": gallery_post_error,
-                "next_actions_suggestion": f"To share this image, use 'send_farcaster_post' or 'send_matrix_image' with media_id: {media_id}"
+                "user_channel_post_status": "success" if posting_results.get("user_channel_success", False) else "failed",
+                "current_channel_id": current_channel_id,
+                "user_response_suggestion": f"🎨 Generated '{prompt[:50]}...'! Posted to gallery{' and current channel' if current_channel_id and current_channel_id != settings.MATRIX_MEDIA_GALLERY_ROOM_ID else ''}.",
+                "next_actions_suggestion": f"Image ready! Use 'send_matrix_image' with media_id: {media_id} for other channels, or 'send_farcaster_post' for cross-platform sharing."
             }
 
         except Exception as e:
@@ -300,18 +366,40 @@ class GenerateVideoTool(ToolInterface):
                 media_id=media_id  # Store the media_id for chaining
             )
 
-            await _auto_post_to_gallery(context, "video", video_url, prompt, "google_veo")
+            # Get current channel ID and post to both gallery and user channel
+            current_channel_id = context.get_current_channel_id()
+            posting_results = await _auto_post_to_gallery(
+                context, "video", video_url, prompt, "google_veo",
+                user_channel_id=current_channel_id
+            )
+            
+            # Create comprehensive status message
+            status_parts = []
+            if settings.MATRIX_MEDIA_GALLERY_ROOM_ID:
+                gallery_status = "success" if posting_results.get("gallery_success", False) else "failed"
+                status_parts.append(f"Gallery: {gallery_status}")
+            if current_channel_id and current_channel_id != settings.MATRIX_MEDIA_GALLERY_ROOM_ID:
+                user_status = "success" if posting_results.get("user_channel_success", False) else "failed"
+                status_parts.append(f"Current channel: {user_status}")
+            
+            status_message = f"🎬 Video generated using Google Veo and stored on {storage_service}."
+            if status_parts:
+                status_message += f" Posting - {', '.join(status_parts)}."
 
             return {
                 "status": "success",
-                "message": f"Video generated and stored on {storage_service}.",
+                "message": status_message,
                 "media_id": media_id,  # Explicit media_id for chaining
                 "media_url": video_url,  # Also provide direct URL for backward compatibility
                 "video_url": video_url,  # Legacy field name
                 "arweave_video_url": video_url if storage_service == "arweave" else None,
                 "prompt_used": prompt,
                 "storage_service": storage_service,
-                "next_actions_suggestion": f"To share this video, use 'send_farcaster_post' or 'send_matrix_video_link' with media_id: {media_id}"
+                "gallery_post_status": "success" if posting_results.get("gallery_success", False) else "failed",
+                "user_channel_post_status": "success" if posting_results.get("user_channel_success", False) else "failed",
+                "current_channel_id": current_channel_id,
+                "user_response_suggestion": f"🎬 Generated video '{prompt[:50]}...'! Posted to gallery{' and current channel' if current_channel_id and current_channel_id != settings.MATRIX_MEDIA_GALLERY_ROOM_ID else ''}.",
+                "next_actions_suggestion": f"Video ready! Use 'send_farcaster_post' or 'send_matrix_video_link' with media_id: {media_id} for other channels."
             }
 
         except Exception as e:

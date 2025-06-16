@@ -28,6 +28,7 @@ class ActionContext:
         arweave_service=None,
         base_nft_service=None,
         eligibility_service=None,
+        current_channel_id=None,
     ):
         # Service-oriented approach
         self.service_registry = service_registry
@@ -40,6 +41,9 @@ class ActionContext:
         self.base_nft_service = base_nft_service
         self.eligibility_service = eligibility_service
         
+        # Current channel context for tool execution
+        self.current_channel_id = current_channel_id
+        
         # Initialize dual storage manager
         self.dual_storage_manager = None
         try:
@@ -47,6 +51,26 @@ class ActionContext:
             self.dual_storage_manager = DualStorageManager(arweave_service=arweave_service)
         except Exception as e:
             logger.warning(f"Failed to initialize dual storage manager: {e}")
+    
+    def update_current_channel(self, channel_id: str):
+        """Update the current channel ID for tool execution context."""
+        self.current_channel_id = channel_id
+    
+    def get_current_channel_id(self) -> Optional[str]:
+        """Get the current channel ID, with fallback to world state if available."""
+        if self.current_channel_id:
+            return self.current_channel_id
+        
+        # Fallback: try to get from world state
+        if self.world_state_manager:
+            try:
+                world_state_data = self.world_state_manager.get_world_state_data()
+                # Check if there's a primary processing channel in current state
+                return getattr(world_state_data, 'current_processing_channel_id', None)
+            except Exception as e:
+                logger.debug(f"Could not get current channel from world state: {e}")
+        
+        return None
     
     def get_messaging_service(self, service_id: str):
         """Get a messaging service by ID"""
