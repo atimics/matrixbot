@@ -2,16 +2,14 @@
 Router package initialization.
 """
 
-from . import system, tools, config, integrations, ai, worldstate, setup, logs, ui_frames
+from . import tools, integrations, ai, worldstate, setup, ui_frames, monitoring
 
 __all__ = [
-    "system", 
     "tools", 
-    "config", 
     "integrations", 
     "ai", 
     "worldstate", 
     "setup", 
-    "logs", 
-    "ui_frames"
+    "ui_frames",
+    "monitoring"
 ]
