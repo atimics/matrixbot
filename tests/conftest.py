@@ -4,6 +4,7 @@ Global test configuration and fixtures.
 
 import asyncio
 import logging  # Add this
+import json
 import os
 import shutil
 import tempfile
@@ -64,22 +65,24 @@ async def history_recorder(tmp_path):
     init_coro = recorder.initialize()
     logging.info(f"[Fixture history_recorder] recorder.initialize() called, type of result: {type(init_coro)}")
     if not asyncio.iscoroutine(init_coro):
-        logging.error("[Fixture history_recorder] recorder.initialize() DID NOT RETURN A COROUTINE. This is unexpected for an async method.")
-        # If it's not a coroutine, it can't be awaited. HistoryRecorder.initialize IS async def.
+        logging.error(f"[Fixture history_recorder] Expected coroutine, got {type(init_coro)}")
+        raise TypeError(f"recorder.initialize() should return a coroutine, got {type(init_coro)}")
     else:
-        logging.info("[Fixture history_recorder] Awaiting recorder.initialize()...")
+        logging.info("[Fixture history_recorder] Awaiting initialization...")
         await init_coro
-        logging.info("[Fixture history_recorder] recorder.initialize() awaited.")
+        logging.info("[Fixture history_recorder] Initialization complete")
 
-    logging.info(f"[Fixture history_recorder] Returning recorder instance: {recorder}, type: {type(recorder)}")
-    if not hasattr(recorder, 'record_action'):
-        logging.error("[Fixture history_recorder] CRITICAL: recorder object does NOT have record_action method before returning.")
-    else:
-        logging.info("[Fixture history_recorder] Recorder object HAS record_action method.")
-    if asyncio.iscoroutine(recorder):
-        logging.error("[Fixture history_recorder] CRITICAL: recorder object IS a coroutine before returning. This is wrong.")
+    yield recorder
 
-    return recorder
+    # Cleanup
+    logging.info("[Fixture history_recorder] CLEANUP starting...")
+    try:
+        cleanup_coro = recorder.cleanup()
+        if asyncio.iscoroutine(cleanup_coro):
+            await cleanup_coro
+        logging.info("[Fixture history_recorder] Cleanup complete")
+    except Exception as e:
+        logging.error(f"[Fixture history_recorder] Cleanup error: {e}")
 
 
 @pytest.fixture
@@ -143,17 +146,39 @@ def mock_farcaster_observer() -> AsyncMock:
 
 
 @pytest.fixture
+def mock_service_registry():
+    """Provide a mock service registry for testing."""
+    registry = MagicMock()
+    
+    # Mock Matrix service
+    matrix_service = AsyncMock()
+    matrix_service.is_available.return_value = True
+    matrix_service.send_message.return_value = {"status": "success"}
+    registry.get_matrix_service.return_value = matrix_service
+    
+    # Mock Farcaster service
+    farcaster_service = AsyncMock()
+    farcaster_service.is_available.return_value = True
+    farcaster_service.create_post.return_value = {"status": "success"}
+    registry.get_social_service.return_value = farcaster_service
+    
+    return registry
+
+
+@pytest.fixture
 def mock_action_context(
     world_state_manager: WorldStateManager,
     mock_matrix_observer: AsyncMock,
-    mock_farcaster_observer: AsyncMock
+    mock_farcaster_observer: AsyncMock,
+    mock_service_registry
 ) -> ActionContext:
     """Provide a fully mocked ActionContext for tool testing."""
     return ActionContext(
         world_state_manager=world_state_manager,
         matrix_observer=mock_matrix_observer,
         farcaster_observer=mock_farcaster_observer,
-        context_manager=None
+        context_manager=None,
+        service_registry=mock_service_registry
     )
 
 
