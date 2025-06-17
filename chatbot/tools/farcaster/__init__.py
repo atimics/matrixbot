@@ -41,6 +41,11 @@ from .feed_management_tools import (
     RemoveFarcasterFeedTool,
 )
 
+from .diagnostic_tools import (
+    FarcasterDiagnosticTool,
+    FarcasterRecentPostsTool,
+)
+
 # Export all tools for easy import
 __all__ = [
     # Posting tools
@@ -69,6 +74,10 @@ __all__ = [
     "AddFarcasterFeedTool",
     "ListFarcasterFeedsTool",
     "RemoveFarcasterFeedTool",
+    
+    # Diagnostic tools
+    "FarcasterDiagnosticTool",
+    "FarcasterRecentPostsTool",
 ]
 
 # Convenience groupings
@@ -104,11 +113,17 @@ FEED_MANAGEMENT_TOOLS = [
     RemoveFarcasterFeedTool,
 ]
 
+DIAGNOSTIC_TOOLS = [
+    FarcasterDiagnosticTool,
+    FarcasterRecentPostsTool,
+]
+
 # All tools in one list
 ALL_FARCASTER_TOOLS = (
     POSTING_TOOLS + 
     ENGAGEMENT_TOOLS + 
     MANAGEMENT_TOOLS + 
     DISCOVERY_TOOLS +
-    FEED_MANAGEMENT_TOOLS
+    FEED_MANAGEMENT_TOOLS +
+    DIAGNOSTIC_TOOLS
 )

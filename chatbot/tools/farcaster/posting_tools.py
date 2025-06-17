@@ -12,8 +12,49 @@ logger = logging.getLogger(__name__)
 
 
 class SendFarcasterPostTool(ToolInterface):
-    """
-    Tool for sending new posts to Farcaster.
+            """
+        Execute the Farcaster post action using service-oriented approach.
+        """
+        logger.info(f"Executing tool '{self.name}' with params: {params}")
+
+        # Get Farcaster service from service registry with enhanced diagnostics
+        social_service = context.get_social_service("farcaster")
+        if not social_service:
+            error_msg = "❌ Farcaster service not found in service registry. Integration may not be configured."
+            logger.error(error_msg)
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+        
+        # Test service availability with detailed error reporting
+        try:
+            is_available = await social_service.is_available()
+            if not is_available:
+                # Get detailed service status if available
+                status_info = {}
+                if hasattr(social_service, '_observer') and social_service._observer:
+                    observer = social_service._observer
+                    status_info = {
+                        "observer_enabled": getattr(observer, 'enabled', False),
+                        "api_client_exists": hasattr(observer, 'api_client') and observer.api_client is not None,
+                        "api_key_configured": bool(getattr(observer, 'api_key', None)),
+                        "bot_fid": getattr(observer, 'bot_fid', None),
+                        "signer_uuid": getattr(observer, 'signer_uuid', None)
+                    }
+                
+                error_msg = f"❌ Farcaster service is not available. Status: {status_info}"
+                logger.error(error_msg)
+                return {
+                    "status": "failure", 
+                    "error": "Farcaster service is not available",
+                    "service_diagnostics": status_info,
+                    "timestamp": time.time()
+                }
+        except Exception as availability_error:
+            logger.error(f"Error checking Farcaster service availability: {availability_error}", exc_info=True)
+            return {
+                "status": "failure",
+                "error": f"❌ Farcaster service availability check failed: {str(availability_error)}",
+                "timestamp": time.time()
+            }l for sending new posts to Farcaster.
     """
 
     @property
@@ -64,12 +105,42 @@ class SendFarcasterPostTool(ToolInterface):
         """
         logger.info(f"Executing tool '{self.name}' with params: {params}")
 
-        # Get Farcaster service from service registry
+        # Enhanced service availability check with diagnostics
         social_service = context.get_social_service("farcaster")
-        if not social_service or not await social_service.is_available():
-            error_msg = "Farcaster service is not available."
-            logger.error(error_msg)
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+        if not social_service:
+            # Detailed diagnostic logging
+            available_services = list(context.service_registry.keys()) if hasattr(context, 'service_registry') else []
+            logger.error(f"Farcaster service not found in registry. Available services: {available_services}")
+            return {
+                "status": "failure", 
+                "error": "Farcaster service not found in service registry",
+                "diagnostic_info": {
+                    "available_services": available_services,
+                    "registry_status": "empty" if not available_services else "populated"
+                },
+                "timestamp": time.time()
+            }
+        
+        # Test service availability with detailed error reporting
+        try:
+            is_available = await social_service.is_available()
+            if not is_available:
+                # Get detailed service status
+                service_status = getattr(social_service, 'get_status', lambda: {})()
+                logger.error(f"Farcaster service unavailable. Status: {service_status}")
+                return {
+                    "status": "failure", 
+                    "error": "Farcaster service is not available",
+                    "service_status": service_status,
+                    "timestamp": time.time()
+                }
+        except Exception as availability_error:
+            logger.error(f"Error checking Farcaster service availability: {availability_error}", exc_info=True)
+            return {
+                "status": "failure",
+                "error": f"Farcaster service availability check failed: {str(availability_error)}",
+                "timestamp": time.time()
+            }
 
         # Extract and validate parameters
         content = params.get("content", "")
@@ -147,19 +218,61 @@ class SendFarcasterPostTool(ToolInterface):
                 parent_url=None  # TODO: Add reply support to schema
             )
 
-            # Record this action in world state if successful
-            if context.world_state_manager and result.get("status") == "success":
-                context.world_state_manager.add_action_result(
-                    action_type=self.name,
-                    parameters={
-                        "content": content,
-                        "channel": channel,
-                        "embed_url": embed_url,
-                    },
-                    result="success",
-                )
-
-            return result
+            # Enhanced success response formatting for better AI understanding
+            if result.get("status") == "success":
+                cast_hash = result.get("cast_hash", "unknown")
+                success_msg = f"✅ Successfully posted to Farcaster! Cast hash: {cast_hash}"
+                
+                if embed_url:
+                    success_msg += f" (with media: {embed_url})"
+                
+                logger.info(success_msg)
+                
+                # Record this action in world state if successful
+                if context.world_state_manager:
+                    context.world_state_manager.add_action_result(
+                        action_type=self.name,
+                        parameters={
+                            "content": content,
+                            "channel": channel,
+                            "embed_url": embed_url,
+                        },
+                        result="success",
+                    )
+                
+                return {
+                    "status": "success",
+                    "message": success_msg,
+                    "cast_hash": cast_hash,
+                    "content_posted": content,
+                    "media_attached": embed_url if embed_url else None,
+                    "farcaster_url": f"https://warpcast.com/{settings.FARCASTER_BOT_USERNAME or 'unknown'}/{cast_hash}" if cast_hash != "unknown" else None,
+                    "timestamp": time.time()
+                }
+            else:
+                # Enhanced failure response
+                error_detail = result.get("error", "Unknown error occurred")
+                failure_msg = f"❌ Farcaster post failed: {error_detail}"
+                logger.error(failure_msg)
+                
+                # Record this action in world state if failed
+                if context.world_state_manager:
+                    context.world_state_manager.add_action_result(
+                        action_type=self.name,
+                        parameters={
+                            "content": content,
+                            "channel": channel,
+                            "embed_url": embed_url,
+                        },
+                        result=f"failure: {error_detail}",
+                    )
+                
+                return {
+                    "status": "failure", 
+                    "error": failure_msg,
+                    "details": result,
+                    "timestamp": time.time()
+                }
 
         except Exception as e:
             error_msg = f"Error creating Farcaster post: {e}"
@@ -267,10 +380,14 @@ class SendFarcasterReplyTool(ToolInterface):
             result = await social_service.reply_to_post(content, reply_to_hash)
             logger.info(f"Farcaster service reply_to_post returned: {result}")
 
-            # Record this action in world state for duplicate prevention
-            if context.world_state_manager:
-                if result.get("status") == "success":
-                    reply_hash = result.get("reply_hash", "unknown")
+            # Enhanced success response formatting for better AI understanding
+            if result.get("status") == "success":
+                reply_hash = result.get("reply_hash", "unknown")
+                success_msg = f"✅ Successfully replied to Farcaster cast {reply_to_hash}! Reply hash: {reply_hash}"
+                logger.info(success_msg)
+                
+                # Record this action in world state for duplicate prevention
+                if context.world_state_manager:
                     context.world_state_manager.add_action_result(
                         action_type=self.name,
                         parameters={
@@ -280,19 +397,34 @@ class SendFarcasterReplyTool(ToolInterface):
                         },
                         result="success",
                     )
-                else:
+                
+                return {
+                    "status": "success",
+                    "message": success_msg,
+                    "reply_hash": reply_hash,
+                    "parent_hash": reply_to_hash,
+                    "content_posted": content,
+                    "farcaster_url": f"https://warpcast.com/{settings.FARCASTER_BOT_USERNAME or 'unknown'}/{reply_hash}" if reply_hash != "unknown" else None,
+                    "timestamp": time.time()
+                }
+            else:
+                # Enhanced failure response
+                error_detail = result.get("error", "Unknown error occurred")
+                failure_msg = f"❌ Failed to reply to Farcaster cast {reply_to_hash}: {error_detail}"
+                logger.error(failure_msg)
+                
+                # Record this action in world state for duplicate prevention
+                if context.world_state_manager:
                     context.world_state_manager.add_action_result(
                         action_type=self.name,
                         parameters={"content": content, "reply_to_hash": reply_to_hash},
-                        result=f"failure: {result.get('error', 'unknown')}",
+                        result=f"failure: {error_detail}",
                     )
-
-            if result.get("status") == "success":
-                return {"status": "success", **result}
-            else:
+                
                 return {
                     "status": "failure",
-                    "error": result.get("error", "unknown"),
+                    "error": failure_msg,
+                    "details": result,
                     "timestamp": time.time(),
                 }
         except Exception as e:
