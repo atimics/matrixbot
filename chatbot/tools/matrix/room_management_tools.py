@@ -38,7 +38,7 @@ class JoinMatrixRoomTool(ToolInterface):
         logger.info(f"Executing tool '{self.name}' with params: {params}")
 
         # Get Matrix service from service registry
-        matrix_service = context.get_matrix_service("matrix")
+        matrix_service = context.get_messaging_service("matrix")
         if not matrix_service or not await matrix_service.is_available():
             error_msg = "Matrix service is not available."
             logger.error(error_msg)
@@ -92,7 +92,7 @@ class LeaveMatrixRoomTool(ToolInterface):
         logger.info(f"Executing tool '{self.name}' with params: {params}")
 
         # Get Matrix service from service registry
-        matrix_service = context.get_matrix_service("matrix")
+        matrix_service = context.get_messaging_service("matrix")
         if not matrix_service or not await matrix_service.is_available():
             error_msg = "Matrix service is not available."
             logger.error(error_msg)
@@ -146,7 +146,7 @@ class AcceptMatrixInviteTool(ToolInterface):
         logger.info(f"Executing tool '{self.name}' with params: {params}")
 
         # Get Matrix service from service registry
-        matrix_service = context.get_matrix_service("matrix")
+        matrix_service = context.get_messaging_service("matrix")
         if not matrix_service or not await matrix_service.is_available():
             error_msg = "Matrix service is not available."
             logger.error(error_msg)
@@ -200,7 +200,7 @@ class IgnoreMatrixInviteTool(ToolInterface):
         logger.info(f"Executing tool '{self.name}' with params: {params}")
 
         # Get Matrix service from service registry
-        matrix_service = context.get_matrix_service("matrix")
+        matrix_service = context.get_messaging_service("matrix")
         if not matrix_service or not await matrix_service.is_available():
             error_msg = "Matrix service is not available."
             logger.error(error_msg)
