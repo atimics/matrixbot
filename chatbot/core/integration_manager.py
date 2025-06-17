@@ -622,3 +622,37 @@ class IntegrationManager:
             }
             for row in rows
         ]
+
+    async def remove_integration(self, integration_id: str) -> bool:
+        """
+        Remove an integration configuration from the database.
+        
+        Args:
+            integration_id: The ID of the integration to remove.
+            
+        Returns:
+            bool: True if removal was successful, False otherwise.
+        """
+        logger.info(f"Removing integration {integration_id}...")
+        
+        # First, ensure the integration is disconnected
+        await self.disconnect_integration(integration_id)
+        
+        try:
+            async def db_operation(db):
+                cursor = await db.execute("DELETE FROM integrations WHERE id = ?", (integration_id,))
+                await db.commit()
+                return cursor.rowcount > 0
+
+            removed = await self._execute_db_operation(db_operation)
+            
+            if removed:
+                logger.info(f"Successfully removed integration {integration_id} from the database.")
+            else:
+                logger.warning(f"Attempted to remove integration {integration_id}, but it was not found in the database.")
+            
+            return removed
+            
+        except Exception as e:
+            logger.error(f"Error removing integration {integration_id} from database: {e}", exc_info=True)
+            return False
