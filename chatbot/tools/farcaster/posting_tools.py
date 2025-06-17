@@ -12,49 +12,8 @@ logger = logging.getLogger(__name__)
 
 
 class SendFarcasterPostTool(ToolInterface):
-            """
-        Execute the Farcaster post action using service-oriented approach.
-        """
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
-
-        # Get Farcaster service from service registry with enhanced diagnostics
-        social_service = context.get_social_service("farcaster")
-        if not social_service:
-            error_msg = "❌ Farcaster service not found in service registry. Integration may not be configured."
-            logger.error(error_msg)
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
-        
-        # Test service availability with detailed error reporting
-        try:
-            is_available = await social_service.is_available()
-            if not is_available:
-                # Get detailed service status if available
-                status_info = {}
-                if hasattr(social_service, '_observer') and social_service._observer:
-                    observer = social_service._observer
-                    status_info = {
-                        "observer_enabled": getattr(observer, 'enabled', False),
-                        "api_client_exists": hasattr(observer, 'api_client') and observer.api_client is not None,
-                        "api_key_configured": bool(getattr(observer, 'api_key', None)),
-                        "bot_fid": getattr(observer, 'bot_fid', None),
-                        "signer_uuid": getattr(observer, 'signer_uuid', None)
-                    }
-                
-                error_msg = f"❌ Farcaster service is not available. Status: {status_info}"
-                logger.error(error_msg)
-                return {
-                    "status": "failure", 
-                    "error": "Farcaster service is not available",
-                    "service_diagnostics": status_info,
-                    "timestamp": time.time()
-                }
-        except Exception as availability_error:
-            logger.error(f"Error checking Farcaster service availability: {availability_error}", exc_info=True)
-            return {
-                "status": "failure",
-                "error": f"❌ Farcaster service availability check failed: {str(availability_error)}",
-                "timestamp": time.time()
-            }l for sending new posts to Farcaster.
+    """
+    Tool for sending new posts to Farcaster.
     """
 
     @property
