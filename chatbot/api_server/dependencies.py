@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from chatbot.core.orchestration import MainOrchestrator
 from chatbot.api_server.services.setup_manager import SetupManager
 from chatbot.config import UnifiedSettings
-from chatbot.config.secret_manager import SecretManager
+from chatbot.core.secrets import SecretManager
 
 logger = logging.getLogger(__name__)
 
