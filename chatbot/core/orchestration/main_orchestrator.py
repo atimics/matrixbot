@@ -68,7 +68,7 @@ class MainOrchestrator:
         
         # Initialize unified settings and secret manager
         self.unified_settings = get_settings()
-        self.secret_manager = SecretManager(self.unified_settings.secrets)
+        self.secret_manager = SecretManager()  # Use default SecretConfig
         
         # Core components
         self.world_state = WorldStateManager()
@@ -78,7 +78,7 @@ class MainOrchestrator:
         
         # Initialize new persistence layer v2
         from ..persistence_v2 import PersistenceManager
-        self.persistence_manager = PersistenceManager(self.unified_settings.database)
+        self.persistence_manager = PersistenceManager(self.unified_settings.CHATBOT_DB_PATH)
         
         # Initialize HistoryRecorder for backward compatibility
         self.history_recorder = HistoryRecorder(self.config.db_path)
@@ -130,10 +130,10 @@ class MainOrchestrator:
         
         self.ai_engine = AIEngineV2(
             api_key=api_key,
-            model=self.unified_settings.ai.model,
-            temperature=self.unified_settings.ai.temperature,
-            max_tokens=self.unified_settings.ai.max_tokens,
-            timeout=self.unified_settings.ai.timeout
+            model=self.unified_settings.AI_MODEL,
+            temperature=0.7,  # Default temperature since not in AppConfig
+            max_tokens=4000,  # Default max_tokens since not in AppConfig
+            timeout=30.0  # Default timeout since not in AppConfig
         )
         logger.info(f"MainOrchestrator: Using AIDecisionEngine with {optimization_level} optimization")
         

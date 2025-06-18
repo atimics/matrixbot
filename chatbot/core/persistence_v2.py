@@ -35,7 +35,7 @@ class StateChangeRecord(SQLModel, table=True):
     channel_id: Optional[str] = Field(default=None, description="Associated channel")
     platform: Optional[str] = Field(default=None, description="Platform (matrix, farcaster)")
     data: str = Field(description="JSON-serialized change data")
-    metadata: Optional[str] = Field(default=None, description="Additional metadata")
+    record_metadata: Optional[str] = Field(default=None, description="Additional metadata")
     
     # Indexes for performance
     class Config:
@@ -62,7 +62,7 @@ class MessageRecord(SQLModel, table=True):
     content: str = Field(description="Message content")
     timestamp: float = Field(description="Unix timestamp")
     parent_id: Optional[str] = Field(default=None, description="Parent message for replies")
-    metadata: Optional[str] = Field(default=None, description="Additional message metadata")
+    record_metadata: Optional[str] = Field(default=None, description="Additional message metadata")
     processed: bool = Field(default=False, description="Whether message has been processed")
     
     class Config:
@@ -229,7 +229,7 @@ class ConsolidatedHistoryRecorder:
             channel_id=channel_id,
             platform=platform,
             data=json.dumps(data),
-            metadata=json.dumps(metadata) if metadata else None
+            record_metadata=json.dumps(metadata) if metadata else None
         )
         
         async with self.db_manager.get_session() as session:
@@ -259,7 +259,7 @@ class ConsolidatedHistoryRecorder:
             content=content,
             timestamp=timestamp or time.time(),
             parent_id=parent_id,
-            metadata=json.dumps(metadata) if metadata else None
+            record_metadata=json.dumps(metadata) if metadata else None
         )
         
         async with self.db_manager.get_session() as session:
@@ -452,7 +452,7 @@ class ConsolidatedHistoryRecorder:
                     "channel_id": sc.channel_id,
                     "platform": sc.platform,
                     "data": json.loads(sc.data),
-                    "metadata": json.loads(sc.metadata) if sc.metadata else None
+                    "metadata": json.loads(sc.record_metadata) if sc.record_metadata else None
                 }
                 for sc in state_changes
             ],
@@ -465,7 +465,7 @@ class ConsolidatedHistoryRecorder:
                     "content": msg.content,
                     "timestamp": msg.timestamp,
                     "parent_id": msg.parent_id,
-                    "metadata": json.loads(msg.metadata) if msg.metadata else None
+                    "metadata": json.loads(msg.record_metadata) if msg.record_metadata else None
                 }
                 for msg in messages
             ],
