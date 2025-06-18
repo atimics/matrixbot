@@ -18,6 +18,16 @@ httpx = "^0.28.1"
 # --- AI & LLM ---
 google-genai = "^1.19.0"
 
+# --- Database & ORM ---
+sqlmodel = "^0.0.18"
+alembic = "^1.13.1"
+
+# --- Security & Crypto ---
+cryptography = "^45.0.3"
+bcrypt = "^4.1.2"
+python-jose = {extras = ["cryptography"], version = "^3.3.0"}
+hvac = {version = "^2.1.0", optional = true}
+
 # --- Matrix Integration ---
 matrix-nio = {extras = ["e2e"], version = "^0.24.0"}
 
@@ -31,7 +41,6 @@ markdown = "^3.6"
 pillow = "^10.3.0"
 base58 = "^2.1.1"
 aiosqlite = "^0.21.0"
-cryptography = "^45.0.3"
 arweave-python-client = "^1.0.19"
 python-multipart = "^0.0.20"
 
@@ -183,3 +192,6 @@ exclude_lines = [
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.extras]
+vault = ["hvac"]

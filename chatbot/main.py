@@ -11,6 +11,7 @@ import logging
 from pathlib import Path
 
 from chatbot.config import settings
+from chatbot.config import settings
 from chatbot.core.orchestration import MainOrchestrator, OrchestratorConfig, ProcessingConfig
 
 
@@ -33,15 +34,18 @@ async def main() -> None:
 
     logger.info("Starting chatbot application...")
 
+    # Load unified configuration
+    unified_settings = settings
+    
     # Load configuration with node-based processing
     config = OrchestratorConfig(
-        db_path=settings.CHATBOT_DB_PATH,
+        db_path=unified_settings.database.path,
         processing_config=ProcessingConfig(
             enable_node_based_processing=True,  # Advanced node-based mode
-            observation_interval=settings.OBSERVATION_INTERVAL,
-            max_cycles_per_hour=settings.MAX_CYCLES_PER_HOUR
+            observation_interval=unified_settings.core.observation_interval,
+            max_cycles_per_hour=unified_settings.core.max_cycles_per_hour
         ),
-        ai_model=settings.AI_MODEL,
+        ai_model=unified_settings.ai.model,
     )
 
     # Create and start orchestrator

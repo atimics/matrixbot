@@ -1,16 +1,8 @@
 """
 Centralized Configuration Management
 
-This module provides centralized configuration management    # AI Debugging and Analysis Configuration
-    AI_ENABLE_PROMPT_LOGGING: bool = True  # Enable detailed prompt logging for analysis
-    AI_LOG_FULL_PROMPTS: bool = False  # Log full prompts and responses (very verbose)
-    AI_LOG_TOKEN_USAGE: bool = True  # Log token usage and cost estimation
-    AI_LOG_PROMPT_PREVIEW_LENGTH: int = 200  # Length of prompt preview in logs when full logging is disabled
-    AI_DUMP_PAYLOADS_TO_FILE: bool = False  # Write payloads to files for offline analysis
-    AI_PAYLOAD_DUMP_DIRECTORY: str = "data/payload_dumps"  # Directory to store payload dumps
-    AI_PAYLOAD_DUMP_MAX_FILES: int = 50  # Maximum number of payload files to keep
-    AI_USE_OPTIMIZED_ENGINE: bool = True  # Use the optimized AI engine v2 for reduced payload size
-to load and validate all configuration from environment variables and .env files.
+This module provides centralized configuration management for the RatiChat application.
+It loads and validates configuration from environment variables and .env files.
 """
 
 import json
@@ -213,3 +205,11 @@ def create_settings() -> AppConfig:
 
 
 settings = create_settings()
+
+# For backward compatibility with code expecting UnifiedSettings
+UnifiedSettings = AppConfig
+
+# For backward compatibility with code expecting get_settings() function
+def get_settings() -> AppConfig:
+    """Get the global settings instance."""
+    return settings

@@ -15,7 +15,7 @@ from threading import Thread
 import uvicorn
 
 from chatbot.api_server import create_api_server
-from chatbot.config import settings
+from chatbot.config import settings  # This imports from the config package
 from chatbot.core.orchestration import MainOrchestrator, OrchestratorConfig, ProcessingConfig
 
 logger = logging.getLogger(__name__)

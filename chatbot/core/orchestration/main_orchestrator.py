@@ -13,8 +13,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from ...config import settings
+from ...config import settings, UnifiedSettings, get_settings
 from ...core.context import ContextManager
+from ...core.secrets import SecretManager
 from ...core.integration_manager import IntegrationManager
 from ...integrations.arweave_uploader_client import ArweaveUploaderClient
 from ...integrations.farcaster import FarcasterObserver
@@ -65,13 +66,21 @@ class MainOrchestrator:
     def __init__(self, config: Optional[OrchestratorConfig] = None):
         self.config = config or OrchestratorConfig()
         
+        # Initialize unified settings and secret manager
+        self.unified_settings = get_settings()
+        self.secret_manager = SecretManager(self.unified_settings.secrets)
+        
         # Core components
         self.world_state = WorldStateManager()
         self.payload_builder = PayloadBuilder()
         self.rate_limiter = RateLimiter(self.config.rate_limit_config)
         self.context_manager = ContextManager(self.world_state, self.config.db_path)
         
-        # Initialize HistoryRecorder for persistent memory
+        # Initialize new persistence layer v2
+        from ..persistence_v2 import PersistenceManager
+        self.persistence_manager = PersistenceManager(self.unified_settings.database)
+        
+        # Initialize HistoryRecorder for backward compatibility
         self.history_recorder = HistoryRecorder(self.config.db_path)
         
         # Connect HistoryRecorder to WorldStateManager for memory persistence
@@ -109,28 +118,22 @@ class MainOrchestrator:
         # Import the prompt builder
         from ...core.prompts import prompt_builder
         
-        # Ensure we have an API key
-        api_key = settings.OPENROUTER_API_KEY
-        if not api_key:
-            raise ValueError("OPENROUTER_API_KEY is required but not set")
+        # Get API key through secret manager
+        try:
+            api_key = self.secret_manager.get_secret("OPENROUTER_API_KEY")
+        except Exception as e:
+            logger.error(f"Failed to get OPENROUTER_API_KEY: {e}")
+            raise ValueError("OPENROUTER_API_KEY is required but not available")
         
-        # Choose AI engine based on configuration
-        optimization_level = getattr(settings, 'AI_OPTIMIZATION_LEVEL', 'balanced')
+        # Use the new AI engine v2
+        from ..ai_engine_v2 import AIEngineV2
         
-        from ..ai_engine import AIDecisionEngine, OptimizationLevel
-        
-        # Validate optimization level
-        valid_levels = [OptimizationLevel.ORIGINAL, OptimizationLevel.BALANCED, OptimizationLevel.AGGRESSIVE]
-        if optimization_level not in valid_levels:
-            logger.warning(f"Invalid optimization level '{optimization_level}', using 'balanced'")
-            optimization_level = OptimizationLevel.BALANCED
-        
-        self.ai_engine = AIDecisionEngine(
+        self.ai_engine = AIEngineV2(
             api_key=api_key,
-            model=self.config.ai_model,
-            optimization_level=optimization_level,
-            prompt_builder_instance=prompt_builder,
-            config=self.config
+            model=self.unified_settings.ai.model,
+            temperature=self.unified_settings.ai.temperature,
+            max_tokens=self.unified_settings.ai.max_tokens,
+            timeout=self.unified_settings.ai.timeout
         )
         logger.info(f"MainOrchestrator: Using AIDecisionEngine with {optimization_level} optimization")
         

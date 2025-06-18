@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from chatbot.core.orchestration import MainOrchestrator
 from chatbot.api_server.services.setup_manager import SetupManager
-from chatbot.config.enhanced_config import UnifiedSettings
+from chatbot.config import UnifiedSettings
 from chatbot.config.secret_manager import SecretManager
 
 logger = logging.getLogger(__name__)
@@ -155,7 +155,7 @@ def get_cached_settings() -> UnifiedSettings:
         return _container.settings
     except:
         # Fallback to creating new instance if container not initialized
-        from chatbot.config.enhanced_config import create_settings
+        from chatbot.config import create_settings
         return create_settings()
 
 
