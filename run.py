@@ -18,7 +18,7 @@ def main():
             os.environ[key] = value
             
         # Replace this with the actual command to run your bot
-        subprocess.run(["python", "-m", "chatbot.main"])
+        subprocess.run(["python", "-m", "chatbot.main", CONFIG_PATH])
 
 if __name__ == "__main__":
     main()

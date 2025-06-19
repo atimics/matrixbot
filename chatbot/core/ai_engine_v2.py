@@ -30,6 +30,7 @@ FEATURES:
 
 import json
 import logging
+import re
 import time
 import asyncio
 from typing import Any, Dict, List, Optional, Type, Union, Callable
@@ -204,8 +205,19 @@ class OpenRouterProvider(AIProvider_Base):
         **kwargs
     ) -> Dict[str, Any]:
         """Make the actual HTTP request to OpenRouter."""
+        # Ensure API key is properly resolved and not a reused coroutine
+        api_key = self.config.api_key
+        if hasattr(api_key, '__await__'):
+            # If it's a coroutine, this is an error - it should already be resolved
+            logger.error(f"Received coroutine as API key: {type(api_key)}")
+            raise ValueError("API key should not be a coroutine at this point")
+        
+        if not api_key or str(api_key).startswith('<coroutine'):
+            logger.error(f"Invalid API key detected: {type(api_key)}")
+            raise ValueError("Invalid or missing API key")
+        
         headers = {
-            "Authorization": f"Bearer {self.config.api_key}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
             "HTTP-Referer": "https://github.com/ratichat/matrixbot",
             "X-Title": "RatiChat Matrix Bot"
@@ -224,6 +236,7 @@ class OpenRouterProvider(AIProvider_Base):
                 "type": "json_schema",
                 "json_schema": {
                     "name": response_format.__name__,
+                    "strict": True,
                     "schema": response_format.model_json_schema()
                 }
             }
@@ -232,6 +245,14 @@ class OpenRouterProvider(AIProvider_Base):
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
+        
+        # Log detailed request info for debugging 401 errors
+        payload_size = len(json.dumps(payload).encode('utf-8'))
+        logger.debug(f"Making API request - Model: {payload.get('model')}, Size: {payload_size} bytes, "
+                    f"Messages: {len(payload.get('messages', []))}, Tools: {len(payload.get('tools', []))}")
+        
+        # Log API key status for debugging (without exposing the actual key)
+        logger.debug(f"API key type: {type(api_key)}, length: {len(str(api_key)) if api_key else 0}")
         
         response = await self.client.post(
             f"{self.base_url}/chat/completions",
@@ -242,6 +263,14 @@ class OpenRouterProvider(AIProvider_Base):
         # Enhanced error handling for better debugging and resilience
         if response.status_code == 401:
             logger.error("OpenRouter API authentication failed. Please check your API key.")
+            logger.error(f"Request URL: {self.base_url}/chat/completions")
+            logger.error(f"Request headers: {dict(headers)}")
+            logger.error(f"Payload size: {len(json.dumps(payload).encode('utf-8'))} bytes")
+            logger.error(f"Model: {payload.get('model', 'unknown')}")
+            logger.error(f"Message count: {len(payload.get('messages', []))}")
+            logger.error(f"Tools count: {len(payload.get('tools', []))}")
+            if hasattr(response, 'text'):
+                logger.error(f"Response body: {response.text}")
             raise ValueError(
                 "Authentication failed: Invalid or missing OpenRouter API key. "
                 "Please check your OPENROUTER_API_KEY environment variable."
@@ -264,7 +293,18 @@ class OpenRouterProvider(AIProvider_Base):
             )
         
         response.raise_for_status()
-        return response.json()
+        result = response.json()
+        
+        # Debug logging to understand response structure
+        logger.info(f"OpenRouter response keys: {list(result.keys()) if isinstance(result, dict) else 'not a dict'}")
+        if isinstance(result, dict) and 'choices' in result:
+            logger.info(f"Number of choices: {len(result['choices'])}")
+            if result['choices'] and 'message' in result['choices'][0]:
+                content = result['choices'][0]['message'].get('content', '')
+                logger.info(f"Response content length: {len(content)}")
+                logger.info(f"Response content preview: {content[:200]}...")
+        
+        return result
     
     def supports_structured_outputs(self) -> bool:
         """OpenRouter supports structured outputs for compatible models."""
@@ -393,8 +433,45 @@ class EnhancedAIEngine:
             tools=tools
         )
         
-        # Extract and parse JSON
-        content = response["choices"][0]["message"]["content"]
+        # Debug logging for response structure
+        logger.info(f"AI response structure: {type(response)}")
+        logger.info(f"AI response keys: {response.keys() if isinstance(response, dict) else 'Not a dict'}")
+        
+        # Extract and parse JSON with defensive checks
+        try:
+            if not isinstance(response, dict):
+                raise ValueError(f"Expected dict response, got {type(response)}")
+            
+            if "choices" not in response:
+                raise ValueError(f"No 'choices' in response. Keys: {list(response.keys())}")
+            
+            if not response["choices"]:
+                raise ValueError("Empty choices array in response")
+            
+            choice = response["choices"][0]
+            if "message" not in choice:
+                raise ValueError(f"No 'message' in choice. Keys: {list(choice.keys())}")
+            
+            message = choice["message"]
+            if "content" not in message:
+                raise ValueError(f"No 'content' in message. Keys: {list(message.keys())}")
+            
+            content = message["content"]
+            
+        except (KeyError, IndexError, TypeError) as e:
+            logger.error(f"Error extracting content from response: {e}")
+            logger.error(f"Full response: {response}")
+            raise ValueError(f"Invalid response structure: {e}")
+        
+        # Debug logging for content extraction
+        logger.info(f"Extracted content type: {type(content)}")
+        logger.info(f"Extracted content length: {len(content) if content else 0}")
+        if content:
+            logger.info(f"Content preview: {content[:500]}...")
+        else:
+            logger.warning("AI response content is empty!")
+            raise ValueError("Empty response from AI")
+        
         json_content = self._extract_json_from_text(content)
         
         return response_type.model_validate(json_content)
@@ -436,8 +513,20 @@ Your responses should be:
             base_prompt += f"\n\nCurrent channel: {context['current_channel_id']}"
         
         if context.get("recent_messages"):
-            message_count = len(context["recent_messages"])
+            messages = context["recent_messages"]
+            message_count = len(messages)
             base_prompt += f"\n\nRecent activity: {message_count} recent messages"
+            
+            # Include actual message content for AI understanding
+            base_prompt += "\n\nRecent messages:"
+            for msg in messages[-5:]:  # Show last 5 messages
+                author = msg.get("author", "Unknown")
+                content = msg.get("content", "").strip()
+                if content:
+                    # Truncate very long messages
+                    if len(content) > 200:
+                        content = content[:200] + "..."
+                    base_prompt += f"\n- {author}: {content}"
         
         if context.get("available_tools"):
             tools_list = ", ".join(context["available_tools"])
@@ -454,38 +543,134 @@ Your responses should be:
 
 {json.dumps(schema, indent=2)}
 
-Your response must be parseable JSON. Do not include any text outside the JSON structure."""
+IMPORTANT FORMATTING RULES:
+- Your response must be valid JSON only
+- You can wrap JSON in ```json code blocks if you prefer
+- Do not include explanatory text before or after the JSON
+- Do not include markdown formatting outside of code blocks
+- Ensure all JSON properties are properly quoted
+- Ensure all string values are properly escaped
+
+Examples of acceptable formats:
+1. Raw JSON: {{"key": "value"}}
+2. Code block: ```json\n{{"key": "value"}}\n```
+3. Simple code block: ```\n{{"key": "value"}}\n```"""
         }
     
     def _extract_json_from_text(self, text: str) -> Dict[str, Any]:
-        """Extract JSON from text response."""
-        # Remove code blocks
+        """Extract JSON from text response with robust parsing."""
+        if not text or not text.strip():
+            raise ValueError("Empty response from AI")
+        
         text = text.strip()
-        if text.startswith("```json"):
-            text = text[7:]
-        if text.startswith("```"):
-            text = text[3:]
-        if text.endswith("```"):
-            text = text[:-3]
+        logger.info(f"Parsing AI response (length: {len(text)}): {text[:200]}...")
         
-        # Find JSON boundaries
-        start_idx = text.find("{")
-        end_idx = text.rfind("}") + 1
+        # Strategy 1: Try parsing the full text as JSON first
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
         
-        if start_idx != -1 and end_idx > start_idx:
-            json_text = text[start_idx:end_idx]
+        # Strategy 2: Remove markdown code blocks
+        cleaned_text = text
+        
+        # Handle various markdown code block formats
+        code_block_patterns = [
+            (r'```json\s*\n(.*?)\n```', re.DOTALL),
+            (r'```\s*\n(.*?)\n```', re.DOTALL),
+            (r'`(.*?)`', re.DOTALL),
+        ]
+        
+        for pattern, flags in code_block_patterns:
+            match = re.search(pattern, cleaned_text, flags)
+            if match:
+                cleaned_text = match.group(1).strip()
+                try:
+                    return json.loads(cleaned_text)
+                except json.JSONDecodeError:
+                    continue
+        
+        # Strategy 3: Find JSON objects by brace matching
+        possible_jsons = []
+        brace_count = 0
+        start_idx = -1
+        
+        for i, char in enumerate(text):
+            if char == '{':
+                if brace_count == 0:
+                    start_idx = i
+                brace_count += 1
+            elif char == '}':
+                brace_count -= 1
+                if brace_count == 0 and start_idx != -1:
+                    possible_jsons.append(text[start_idx:i+1])
+        
+        # Try each potential JSON object
+        for json_candidate in possible_jsons:
             try:
-                return json.loads(json_text)
+                return json.loads(json_candidate)
+            except json.JSONDecodeError:
+                continue
+        
+        # Strategy 4: Look for JSON between common delimiters
+        delimiters = [
+            ('```json', '```'),
+            ('```', '```'),
+            ('```json\n', '\n```'),
+            ('{', '}'),
+        ]
+        
+        for start_delim, end_delim in delimiters:
+            start_idx = text.find(start_delim)
+            if start_idx != -1:
+                start_idx += len(start_delim)
+                end_idx = text.find(end_delim, start_idx)
+                if end_idx != -1:
+                    json_candidate = text[start_idx:end_idx].strip()
+                    try:
+                        return json.loads(json_candidate)
+                    except json.JSONDecodeError:
+                        continue
+        
+        # Strategy 5: Extract everything between the first { and last }
+        start_brace = text.find('{')
+        end_brace = text.rfind('}')
+        if start_brace != -1 and end_brace > start_brace:
+            json_candidate = text[start_brace:end_brace+1]
+            try:
+                return json.loads(json_candidate)
             except json.JSONDecodeError:
                 pass
         
-        # If no valid JSON found, try to parse the whole text
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to extract JSON from response: {e}")
-            logger.debug(f"Response text: {text}")
-            raise ValueError(f"Could not extract valid JSON from AI response: {e}")
+        # Strategy 6: Handle common AI response patterns with explanations
+        # Look for patterns like "Here's the JSON:" followed by JSON
+        explanation_patterns = [
+            r'(?:here[\'s\s]*(?:the|is|are)?[:\s]*json[:\s]*)(.*?)(?:\n\n|\Z)',
+            r'(?:json[:\s]*)(.*?)(?:\n\n|\Z)',
+            r'(?:response[:\s]*)(.*?)(?:\n\n|\Z)',
+        ]
+        
+        for pattern in explanation_patterns:
+            match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
+            if match:
+                potential_json = match.group(1).strip()
+                # Try to find JSON in this section
+                start_brace = potential_json.find('{')
+                end_brace = potential_json.rfind('}')
+                if start_brace != -1 and end_brace > start_brace:
+                    json_candidate = potential_json[start_brace:end_brace+1]
+                    try:
+                        return json.loads(json_candidate)
+                    except json.JSONDecodeError:
+                        continue
+        
+        # If all strategies fail, log detailed info and raise error
+        logger.error(f"Failed to extract JSON from response after all strategies")
+        logger.error(f"Full response text (length {len(text)}): {repr(text)}")
+        logger.error(f"Found potential JSON candidates: {len(possible_jsons)} candidates")
+        for i, candidate in enumerate(possible_jsons[:3]):  # Log first 3 candidates
+            logger.error(f"Candidate {i}: {repr(candidate[:200])}...")
+        raise ValueError(f"Could not extract valid JSON from AI response. First 200 chars: {repr(text[:200])}")
     
     async def analyze_error(self, error: Exception, context: str) -> ErrorAnalysis:
         """Analyze an error and provide recovery suggestions."""
@@ -643,9 +828,19 @@ class AIEngine(EnhancedAIEngine):
         the old AIDecisionEngine interface.
         """
         try:
+            # Debug: Log what we're receiving from the world state
+            logger.info(f"AI Engine received world state keys: {list(world_state.keys())}")
+            
             # Convert world_state to prompt and context
             prompt = self._build_decision_prompt(world_state)
             context = self._extract_context_from_world_state(world_state)
+            
+            # Debug: Log extracted context
+            logger.info(f"Extracted context keys: {list(context.keys())}")
+            if "recent_messages" in context:
+                logger.info(f"Found {len(context['recent_messages'])} recent messages")
+                for i, msg in enumerate(context["recent_messages"][-3:]):  # Log last 3 messages
+                    logger.info(f"Message {i}: {msg.get('author', 'Unknown')}: {msg.get('content', '')[:100]}...")
             
             # Generate structured response
             response = await self.generate_structured_response(
@@ -683,20 +878,31 @@ class AIEngine(EnhancedAIEngine):
         prompt = """Analyze the current situation and decide what actions to take.
 
 Consider:
-- Current messages and conversations
+- Current messages and conversations (especially mentions and direct messages)
 - System status and health
 - Opportunities for engagement
 - Available tools and capabilities
+
+When you receive a direct mention or see relevant conversation:
+- Respond appropriately to direct questions or greetings
+- Engage naturally in ongoing discussions
+- Use tools when they would add value to the conversation
 
 Provide your reasoning and any necessary actions."""
         
         # Add context from world state
         if world_state.get("recent_messages"):
             message_count = len(world_state["recent_messages"])
-            prompt += f"\n\nRecent activity: {message_count} messages"
+            prompt += f"\n\nRecent activity: {message_count} messages available for review"
         
-        if world_state.get("current_channel"):
-            prompt += f"\nCurrent channel: {world_state['current_channel']}"
+        # Check for expanded nodes with messages
+        elif world_state.get("expanded_nodes"):
+            expanded_count = len(world_state["expanded_nodes"])
+            prompt += f"\n\nExpanded data available: {expanded_count} channels with detailed message content"
+        
+        if world_state.get("current_processing_channel_id") or world_state.get("current_channel"):
+            channel_id = world_state.get("current_processing_channel_id") or world_state.get("current_channel")
+            prompt += f"\n\nFocus channel: {channel_id}"
         
         return prompt
     
@@ -704,13 +910,51 @@ Provide your reasoning and any necessary actions."""
         """Extract relevant context from world state."""
         context = {}
         
-        # Copy relevant fields
+        # Handle legacy format (direct recent_messages)
         if "recent_messages" in world_state:
             context["recent_messages"] = world_state["recent_messages"]
-        if "current_channel" in world_state:
+        
+        # Handle node-based payload format
+        elif "expanded_nodes" in world_state or "collapsed_node_summaries" in world_state:
+            # Extract messages from expanded channel nodes
+            recent_messages = []
+            
+            # Check expanded nodes for message content
+            expanded_nodes = world_state.get("expanded_nodes", {})
+            for node_path, node_info in expanded_nodes.items():
+                if node_path.startswith("channels."):
+                    node_data = node_info.get("data", {})
+                    if "messages" in node_data:
+                        messages = node_data["messages"]
+                        if isinstance(messages, list):
+                            for msg in messages[-10:]:  # Get last 10 messages from expanded channels
+                                recent_messages.append({
+                                    "author": msg.get("author", "Unknown"),
+                                    "content": msg.get("content", ""),
+                                    "timestamp": msg.get("timestamp"),
+                                    "channel": node_data.get("name", "Unknown"),
+                                    "channel_id": node_data.get("id", node_path)
+                                })
+            
+            # If we found messages, add them to context
+            if recent_messages:
+                # Sort by timestamp and keep most recent
+                recent_messages.sort(key=lambda x: x.get("timestamp", 0))
+                context["recent_messages"] = recent_messages[-15:]  # Keep last 15 messages
+        
+        # Extract current channel information
+        if "current_processing_channel_id" in world_state:
+            context["current_channel_id"] = world_state["current_processing_channel_id"]
+        elif "current_channel" in world_state:
             context["current_channel_id"] = world_state["current_channel"]
+        
+        # Extract available tools
         if "available_tools" in world_state:
             context["available_tools"] = world_state["available_tools"]
+        elif "tools" in world_state:
+            context["available_tools"] = [tool.get("name", str(tool)) for tool in world_state["tools"]]
+        
+        # Extract cycle ID
         if "cycle_id" in world_state:
             context["cycle_id"] = world_state["cycle_id"]
         

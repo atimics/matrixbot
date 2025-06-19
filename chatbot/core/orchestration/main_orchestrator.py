@@ -118,11 +118,10 @@ class MainOrchestrator:
         # Import the prompt builder
         from ...core.prompts import prompt_builder
         
-        # Get API key through secret manager
-        try:
-            api_key = self.secret_manager.get_secret("OPENROUTER_API_KEY")
-        except Exception as e:
-            logger.error(f"Failed to get OPENROUTER_API_KEY: {e}")
+        # Get API key from settings (already loaded from env/config)
+        api_key = settings.OPENROUTER_API_KEY
+        if not api_key:
+            logger.error("OPENROUTER_API_KEY is not configured in environment or config.json")
             raise ValueError("OPENROUTER_API_KEY is required but not available")
         
         # Use the unified AI engine
