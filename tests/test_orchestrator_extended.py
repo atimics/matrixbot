@@ -5,6 +5,7 @@ import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 from chatbot.core.orchestration import MainOrchestrator, OrchestratorConfig, ProcessingConfig
+from chatbot.core.ai_engine_v2 import AIResponse, ToolCall
 
 
 class TestOrchestratorExtended:
@@ -106,12 +107,10 @@ class TestOrchestratorExtended:
         """Test channel processing with mocked AI."""
         # Mock the AI engine to return a simple decision
         with patch.object(self.orchestrator.ai_engine, 'make_decision') as mock_decision:
-            from chatbot.core.ai_engine import DecisionResult
-            mock_result = DecisionResult(
-                selected_actions=[],
-                observations="No action needed",
-                reasoning="Test reasoning",
-                cycle_id="test_cycle_123"
+            mock_result = AIResponse(
+                tool_calls=[],
+                message="No action needed",
+                reasoning="Test reasoning"
             )
             mock_decision.return_value = mock_result
             
@@ -179,12 +178,10 @@ class TestOrchestratorExtended:
             
             # Mock AI engine to prevent HTTP requests and return empty decision
             with patch.object(self.orchestrator.ai_engine, 'make_decision') as mock_ai_decision:
-                from chatbot.core.ai_engine import DecisionResult
-                mock_ai_decision.return_value = DecisionResult(
-                    selected_actions=[],
+                mock_ai_decision.return_value = AIResponse(
+                    tool_calls=[],
                     reasoning="Test decision during error handling",
-                    observations="Error in context service",
-                    cycle_id="test_cycle"
+                    message="Error in context service"
                 )
                 
                 # Channel processing should handle the error gracefully
