@@ -31,6 +31,7 @@ FEATURES:
 import json
 import logging
 import time
+import asyncio
 from typing import Any, Dict, List, Optional, Type, Union, Callable
 from dataclasses import dataclass
 from enum import Enum
@@ -165,7 +166,44 @@ class OpenRouterProvider(AIProvider_Base):
         tools: Optional[List[Dict[str, Any]]] = None,
         **kwargs
     ) -> Dict[str, Any]:
-        """Generate chat completion via OpenRouter."""
+        """Generate chat completion via OpenRouter with retry logic."""
+        max_retries = 3
+        base_delay = 1.0
+        
+        for attempt in range(max_retries + 1):
+            try:
+                return await self._make_request(messages, response_format, tools, **kwargs)
+            except ValueError as e:
+                # Don't retry for authentication or client errors
+                if "Authentication failed" in str(e) or "Access forbidden" in str(e):
+                    raise e
+                
+                # Retry for rate limits and server errors
+                if attempt < max_retries and ("Rate limit" in str(e) or "Server error" in str(e)):
+                    delay = base_delay * (2 ** attempt)  # Exponential backoff
+                    logger.warning(f"Retrying in {delay}s after error: {e}")
+                    await asyncio.sleep(delay)
+                    continue
+                
+                # Re-raise on final attempt
+                raise e
+            except Exception as e:
+                logger.error(f"Unexpected error in chat completion: {e}")
+                if attempt < max_retries:
+                    delay = base_delay * (2 ** attempt)
+                    logger.warning(f"Retrying in {delay}s after unexpected error")
+                    await asyncio.sleep(delay)
+                    continue
+                raise ValueError(f"Chat completion failed after {max_retries} retries: {e}")
+    
+    async def _make_request(
+        self,
+        messages: List[Dict[str, Any]],
+        response_format: Optional[Type[BaseModel]] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Make the actual HTTP request to OpenRouter."""
         headers = {
             "Authorization": f"Bearer {self.config.api_key}",
             "Content-Type": "application/json",
@@ -200,6 +238,30 @@ class OpenRouterProvider(AIProvider_Base):
             headers=headers,
             json=payload
         )
+        
+        # Enhanced error handling for better debugging and resilience
+        if response.status_code == 401:
+            logger.error("OpenRouter API authentication failed. Please check your API key.")
+            raise ValueError(
+                "Authentication failed: Invalid or missing OpenRouter API key. "
+                "Please check your OPENROUTER_API_KEY environment variable."
+            )
+        elif response.status_code == 403:
+            logger.error("OpenRouter API access forbidden. Check your API key permissions.")
+            raise ValueError(
+                "Access forbidden: Your API key may not have permission for this model or feature."
+            )
+        elif response.status_code == 429:
+            logger.warning("Rate limit exceeded. Implementing exponential backoff.")
+            raise ValueError(
+                "Rate limit exceeded. Please wait before making more requests."
+            )
+        elif response.status_code >= 500:
+            logger.error(f"OpenRouter server error: {response.status_code}")
+            raise ValueError(
+                f"Server error: OpenRouter is experiencing issues (HTTP {response.status_code}). "
+                "This is typically temporary, please try again later."
+            )
         
         response.raise_for_status()
         return response.json()
