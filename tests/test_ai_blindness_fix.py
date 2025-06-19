@@ -12,7 +12,7 @@ import time
 from unittest.mock import Mock, AsyncMock, patch
 
 from chatbot.core.orchestrator import ContextAwareOrchestrator, OrchestratorConfig
-from chatbot.core.ai_engine import ActionPlan
+from chatbot.core.orchestration.action_executor import ActionPlan
 from chatbot.config import settings
 
 
@@ -71,14 +71,12 @@ class TestAIBlindnessFix:
         
         # Create action
         action = ActionPlan(
-            action_type="send_matrix_reply",
+            tool_name="send_matrix_reply",
             parameters={
                 "channel_id": channel_id,  # Updated parameter name for new tool interface
                 "content": test_content,
                 "reply_to_id": "original_event_123"  # Updated parameter name for new tool interface
-            },
-            reasoning="Test action",
-            priority=5
+            }
         )
         
         # Execute action
@@ -114,14 +112,12 @@ class TestAIBlindnessFix:
         
         # Create action
         action = ActionPlan(
-            action_type="send_matrix_reply",
+            tool_name="send_matrix_reply",
             parameters={
                 "channel_id": channel_id,  # Updated parameter name
                 "content": test_content,
                 "reply_to_id": "original_event_456"  # Updated parameter name
-            },
-            reasoning="Test action for context",
-            priority=5
+            }
         )
         
         # Execute action
@@ -153,13 +149,11 @@ class TestAIBlindnessFix:
         
         # Create action
         action = ActionPlan(
-            action_type="send_matrix_message",
+            tool_name="send_matrix_message",
             parameters={
                 "channel_id": channel_id,  # Updated parameter name for new tool interface
                 "content": test_content
-            },
-            reasoning="Test message action",
-            priority=5
+            }
         )
         
         # Execute action
@@ -202,14 +196,12 @@ class TestAIBlindnessFix:
         
         # Create action
         action = ActionPlan(
-            action_type="send_matrix_reply",
+            tool_name="send_matrix_reply",
             parameters={
                 "channel_id": channel_id,  # Updated parameter name
                 "content": test_content,
                 "reply_to_id": "original_event_789"  # Updated parameter name
-            },
-            reasoning="Test failed action",
-            priority=5
+            }
         )
         
         # Execute action
