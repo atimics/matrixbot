@@ -18,7 +18,6 @@ colorlog = "^6.8.2"
 
 # --- AI & LLM ---
 google-genai = "^1.19.0"
-ollama = "^0.2.1"
 
 # --- Database & ORM ---
 sqlmodel = "^0.0.18"
@@ -45,6 +44,11 @@ base58 = "^2.1.1"
 aiosqlite = "^0.21.0"
 arweave-python-client = "^1.0.19"
 python-multipart = "^0.0.20"
+structlog = "^24.1.0"
+python-json-logger = "^2.0.7"
+
+[tool.poetry.extras]
+vault = ["hvac"]
 
 [tool.poetry.group.dev.dependencies]
 # Testing Framework
@@ -200,6 +204,3 @@ exclude_lines = [
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
-
-[tool.poetry.extras]
-vault = ["hvac"]

@@ -6,35 +6,119 @@ on:
     paths-ignore:
       - '**/*.md'
   push:
-    branches: [develop]
+    branches: [develop, main]
     paths-ignore:
       - '**/*.md'
 
+env:
+  PYTHON_VERSION: "3.11"
+
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ['3.10']
+        python-version: ['3.10', '3.11']
+    
     steps:
       - uses: actions/checkout@v4
+      
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          
       - name: Install Poetry
-        run: |
-          python -m pip install --upgrade pip
-          pip install poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: latest
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+          
+      - name: Load cached venv
+        id: cached-poetry-dependencies
+        uses: actions/cache@v3
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('**/poetry.lock') }}
+          
       - name: Install dependencies
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        run: poetry install --no-interaction --no-root
+        
+      - name: Install project
+        run: poetry install --no-interaction
+        
+      - name: Create test environment file
         run: |
-          poetry install
-      - name: Run tests
+          cat > .env << EOF
+          ENVIRONMENT=test
+          OPENROUTER_API_KEY=test_key_placeholder
+          MATRIX_HOMESERVER=http://test.matrix.org
+          MATRIX_USER_ID=@test:matrix.org
+          MATRIX_PASSWORD=test_password
+          LOG_LEVEL=DEBUG
+          EOF
+          
+      - name: Lint with ruff
         run: |
-          poetry run pytest -v --junitxml=pytest.xml
-      - name: Upload test results
+          poetry run ruff check chatbot/ scripts/ tests/ --output-format=github
+          poetry run ruff format --check chatbot/ scripts/ tests/
+          
+      - name: Type check with mypy
+        run: |
+          poetry run mypy chatbot/ --ignore-missing-imports
+        continue-on-error: true
+        
+      - name: Security scan with bandit
+        run: |
+          poetry run bandit -r chatbot/ -f json -o bandit-report.json
+          poetry run bandit -r chatbot/
+        continue-on-error: true
+        
+      - name: Test with pytest
+        run: |
+          poetry run pytest tests/ \
+            --cov=chatbot \
+            --cov-report=xml \
+            --cov-report=term-missing \
+            --junit-xml=pytest-report.xml \
+            -v
+            
+      - name: Upload test results and coverage
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pytest-results
-          path: pytest.xml
+          name: test-results-${{ matrix.python-version }}
+          path: |
+            pytest-report.xml
+            coverage.xml
+            bandit-report.json
+
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push'
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: ratichat:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          
+      - name: Test Docker image
+        run: |
+          docker run --rm ratichat:${{ github.sha }} python -c "
+          import chatbot
+          print('Docker image basic import test passed')
+          "
