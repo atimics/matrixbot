@@ -20,7 +20,7 @@ from chatbot.core.node_system.node_manager import NodeManager, SystemEvent, Node
 from chatbot.core.orchestration.main_orchestrator import MainOrchestrator
 from chatbot.core.world_state.payload_builder import PayloadBuilder
 from chatbot.core.world_state import WorldStateManager
-from chatbot.core.ai_engine import AIDecisionEngine
+from chatbot.core.ai_engine_v2 import AIEngine
 from chatbot.core.node_system.interaction_tools import NodeInteractionTools
 
 
@@ -599,14 +599,14 @@ class TestPayloadBuilderCrossPlatform(unittest.TestCase):
         # Note: Actual structure depends on PayloadBuilder implementation
 
 
-class TestAIDecisionEngineEnhancement(unittest.TestCase):
-    """Test AIDecisionEngine enhanced system prompts."""
+class TestAIEngineEnhancement(unittest.TestCase):
+    """Test AIEngine enhanced system prompts."""
 
     def test_base_system_prompt_includes_cross_platform_instructions(self):
         """Test that base system prompt includes cross-platform awareness."""
-        ai_engine = AIDecisionEngine(MagicMock())
+        ai_engine = AIEngine(api_key="test_key", model="test_model")
         
-        base_prompt = ai_engine.base_system_prompt
+        base_prompt = ai_engine._build_system_message({})
         
         # Check for cross-platform awareness keywords
         cross_platform_keywords = [
@@ -629,9 +629,9 @@ class TestAIDecisionEngineEnhancement(unittest.TestCase):
 
     def test_base_system_prompt_includes_farcaster_guidance(self):
         """Test that base system prompt includes Farcaster-specific guidance."""
-        ai_engine = AIDecisionEngine(MagicMock())
+        ai_engine = AIEngine(api_key="test_key", model="test_model")
         
-        base_prompt = ai_engine.base_system_prompt
+        base_prompt = ai_engine._build_system_message({})
         
         # Check for Farcaster-specific guidance
         farcaster_keywords = [
@@ -653,9 +653,9 @@ class TestAIDecisionEngineEnhancement(unittest.TestCase):
 
     def test_base_system_prompt_includes_node_documentation(self):
         """Test that base system prompt includes node-based payload documentation."""
-        ai_engine = AIDecisionEngine(MagicMock())
+        ai_engine = AIEngine(api_key="test_key", model="test_model")
         
-        base_prompt = ai_engine.base_system_prompt
+        base_prompt = ai_engine._build_system_message({})
         
         # Check for node-based structure documentation
         node_keywords = [
@@ -760,7 +760,7 @@ class TestCrossPlatformIntegration(unittest.TestCase):
         self.payload_builder.node_manager = self.node_manager
         
         # Create AI engine
-        self.ai_engine = AIDecisionEngine(api_key="test_key", model="test_model")
+        self.ai_engine = AIEngine(api_key="test_key", model="test_model")
 
     def test_end_to_end_cross_platform_awareness(self):
         """Test complete cross-platform awareness workflow."""

@@ -46,10 +46,10 @@ def enable_payload_dumping():
 def create_test_payload():
     """Create a test payload to verify the dumping functionality."""
     try:
-        from chatbot.core.ai_engine import AIDecisionEngine, OptimizationLevel
+        from chatbot.core.ai_engine_v2 import AIEngine
         
         # Create a test AI engine
-        ai_engine = AIDecisionEngine(api_key="test_key", model="test_model", optimization_level=OptimizationLevel.BALANCED)
+        ai_engine = AIEngine(api_key="test_key", model="test_model")
         
         # Create a sample payload
         test_payload = {

@@ -125,17 +125,17 @@ class MainOrchestrator:
             logger.error(f"Failed to get OPENROUTER_API_KEY: {e}")
             raise ValueError("OPENROUTER_API_KEY is required but not available")
         
-        # Use the new AI engine v2
-        from ..ai_engine_v2 import AIEngineV2
+        # Use the unified AI engine
+        from ..ai_engine_v2 import AIEngine
         
-        self.ai_engine = AIEngineV2(
+        self.ai_engine = AIEngine(
             api_key=api_key,
             model=self.unified_settings.AI_MODEL,
             temperature=0.7,  # Default temperature since not in AppConfig
             max_tokens=4000,  # Default max_tokens since not in AppConfig
             timeout=30.0  # Default timeout since not in AppConfig
         )
-        logger.info(f"MainOrchestrator: Using AIDecisionEngine with {optimization_level} optimization")
+        logger.info(f"MainOrchestrator: Using unified AIEngine with model {self.unified_settings.AI_MODEL}")
         
         # Initialize Arweave client for internal uploader service
         self.arweave_client = None

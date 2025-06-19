@@ -10,7 +10,7 @@ import time
 from chatbot.core.world_state import WorldStateManager
 from chatbot.core.history_recorder import HistoryRecorder
 from chatbot.core.orchestration import MainOrchestrator, OrchestratorConfig, ProcessingConfig
-from chatbot.core.ai_engine import AIDecisionEngine, OptimizationLevel
+from chatbot.core.ai_engine_v2 import AIEngine
 
 
 class TestWorldState:
@@ -139,14 +139,14 @@ class TestAIEngine:
     
     def test_initialization(self):
         """Test AI engine initialization."""
-        engine = AIDecisionEngine("fake_api_key", "fake_model", OptimizationLevel.ORIGINAL)
+        engine = AIEngine("fake_api_key", "fake_model", optimization_level="original")
         assert engine.api_key == "fake_api_key"
         assert engine.model == "fake_model"
     
     @pytest.mark.asyncio
     async def test_make_decision_with_mock(self):
         """Test AI decision making with mocked response."""
-        engine = AIDecisionEngine("fake_api_key", "fake_model", OptimizationLevel.ORIGINAL)
+        engine = AIEngine("fake_api_key", "fake_model", optimization_level="original")
         
         # Mock the HTTP client response
         mock_response = Mock()

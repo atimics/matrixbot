@@ -4,7 +4,7 @@ Test cases for robust JSON parsing in AI engine.
 """
 
 import pytest
-from chatbot.core.ai_engine import AIDecisionEngine
+from chatbot.core.ai_engine_v2 import AIEngine
 
 
 class TestRobustJSONParsing:
@@ -12,7 +12,7 @@ class TestRobustJSONParsing:
 
     def setup_method(self):
         """Set up test fixtures."""
-        self.engine = AIDecisionEngine("dummy_key", "dummy_model")
+        self.engine = AIEngine("dummy_key", "dummy_model")
 
     def test_pure_json_parsing(self):
         """Test parsing pure JSON response."""

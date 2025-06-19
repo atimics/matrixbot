@@ -4,30 +4,30 @@ Tests for AI decision engine functionality.
 import pytest
 import json
 from unittest.mock import AsyncMock, patch, MagicMock, Mock
-from chatbot.core.ai_engine import AIDecisionEngine, DecisionResult, ActionPlan
+from chatbot.core.ai_engine_v2 import AIEngine, AIResponse, ToolCall
 
 
-class TestAIDecisionEngine:
-    """Test the AI decision engine with various scenarios."""
+class TestAIEngine:
+    """Test the unified AI engine with various scenarios."""
     
     def test_initialization_with_config(self):
         """Test initialization with custom config."""
-        engine = AIDecisionEngine(api_key="test_key", model="claude-3-haiku")
+        engine = AIEngine(api_key="test_key", model="claude-3-haiku")
         
         assert engine.api_key == "test_key"
         assert engine.model == "claude-3-haiku"
-        assert engine.base_url is not None
+        assert hasattr(engine, 'config')
     
     def test_initialization_without_api_key(self):
         """Test initialization fails without API key."""
         with pytest.raises(TypeError):
             # Should fail because api_key is required parameter
-            AIDecisionEngine()
+            AIEngine()
     
     @pytest.mark.asyncio
     async def test_make_decision_successful_response(self):
         """Test successful decision making with mocked response."""
-        engine = AIDecisionEngine(api_key="test_key")
+        engine = AIEngine(api_key="test_key")
         
         # Mock response data that matches current JSON structure
         mock_response_data = {
@@ -73,7 +73,7 @@ class TestAIDecisionEngine:
     @pytest.mark.asyncio
     async def test_make_decision_invalid_json_response(self):
         """Test handling of invalid JSON response."""
-        engine = AIDecisionEngine(api_key="test_key")
+        engine = AIEngine(api_key="test_key")
         
         mock_response_data = {
             "choices": [{
@@ -102,7 +102,7 @@ class TestAIDecisionEngine:
     @pytest.mark.asyncio
     async def test_make_decision_http_error(self):
         """Test handling of HTTP errors."""
-        engine = AIDecisionEngine(api_key="test_key")
+        engine = AIEngine(api_key="test_key")
         
         mock_response = Mock()
         mock_response.status_code = 500
@@ -124,7 +124,7 @@ class TestAIDecisionEngine:
     @pytest.mark.asyncio
     async def test_make_decision_network_exception(self):
         """Test handling of network exceptions."""
-        engine = AIDecisionEngine(api_key="test_key")
+        engine = AIEngine(api_key="test_key")
         
         with patch('httpx.AsyncClient') as mock_client:
             mock_context = AsyncMock()
@@ -141,7 +141,7 @@ class TestAIDecisionEngine:
     @pytest.mark.asyncio
     async def test_make_decision_no_choices_in_response(self):
         """Test handling of response with no choices."""
-        engine = AIDecisionEngine(api_key="test_key")
+        engine = AIEngine(api_key="test_key")
         
         mock_response_data = {
             "choices": []
@@ -166,7 +166,7 @@ class TestAIDecisionEngine:
     
     def test_cleanup(self):
         """Test cleanup method (if it exists)."""
-        engine = AIDecisionEngine(api_key="test_key")
+        engine = AIEngine(api_key="test_key")
         # Current implementation doesn't have cleanup method, so just verify it doesn't crash
         # If cleanup method is added later, this test should be updated
         assert engine.api_key == "test_key"

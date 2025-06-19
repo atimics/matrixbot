@@ -606,3 +606,7 @@ class LegacyHistoryRecorderAdapter:
     async def export_state_changes_for_training(self, output_file: str, limit: Optional[int] = None):
         """Legacy interface for exporting training data."""
         return await self.consolidated_recorder.export_for_training(output_file=output_file)
+
+
+# Backward compatibility alias
+PersistenceManager = DatabaseManager

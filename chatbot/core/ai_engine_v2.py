@@ -1,11 +1,31 @@
 """
-Enhanced AI Engine with Structured Outputs
+Unified AI Engine with Structured Outputs
 
-Implements the engineering report recommendations for:
-- Structured outputs using function calling
-- Simplified prompt engineering
-- Better error handling and reliability
-- Integration with instructor library for type-safe outputs
+This module consolidates all AI engine implementations into a single unified interface:
+
+CURRENT STANDARD (Recommended):
+- AIEngine: Main unified class supporting all interfaces
+- create_ai_engine(): Factory function for creating AIEngine instances
+
+LEGACY COMPATIBILITY (Deprecated but supported):
+- AIEngineV2: Alias for AIEngine (for orchestrator compatibility)  
+- AIDecisionEngine: Alias for AIEngine (for legacy code compatibility)
+- LegacyAIEngineAdapter: Alias for AIEngine (deprecated)
+- EnhancedAIEngine: Base implementation (use AIEngine instead)
+
+MIGRATION GUIDE:
+1. Replace all AIDecisionEngine imports with AIEngine
+2. Replace all AIEngineV2 imports with AIEngine  
+3. Replace create_enhanced_ai_engine() calls with create_ai_engine()
+4. Update constructor calls to use the unified AIEngine interface
+
+FEATURES:
+- Structured outputs using Pydantic models
+- Multiple AI provider support (OpenRouter, OpenAI, Anthropic)
+- Backward compatibility with all legacy interfaces
+- Enhanced error handling and retry logic
+- Tool calling and function execution support
+- Conversation history management
 """
 
 import json
@@ -44,8 +64,8 @@ class AIResponse(BaseModel):
     message: Optional[str] = Field(None, description="Message to send if no tools needed")
     confidence: float = Field(default=0.8, description="Confidence in the response (0-1)")
     
-    class Config:
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "reasoning": "User asked about weather, I should search for current weather information",
                 "tool_calls": [
@@ -58,6 +78,7 @@ class AIResponse(BaseModel):
                 "confidence": 0.9
             }
         }
+    }
 
 
 class ObservationResponse(BaseModel):
@@ -74,6 +95,25 @@ class ErrorAnalysis(BaseModel):
     severity: str = Field(description="Error severity: low, medium, high, critical") 
     recovery_suggestion: str = Field(description="Suggested recovery action")
     retry_recommended: bool = Field(description="Whether retry is recommended")
+
+
+@dataclass
+class ActionPlan:
+    """Represents a planned action for legacy compatibility."""
+    action_type: str
+    parameters: Dict[str, Any]
+    reasoning: str
+    priority: int  # 1-10, higher is more important
+
+
+@dataclass
+class DecisionResult:
+    """Result of AI decision making for legacy compatibility."""
+    selected_actions: List[ActionPlan]
+    reasoning: str
+    observations: str
+    thought: str  # AI's step-by-step thinking process
+    cycle_id: str
 
 
 @dataclass
@@ -451,37 +491,179 @@ Focus on:
             await self.provider.client.aclose()
 
 
-# Factory function
+# Factory functions
 def create_ai_engine(
     provider: AIProvider = AIProvider.OPENROUTER,
     model: str = "openai/gpt-4o-mini",
     api_key: Optional[str] = None,
     **kwargs
-) -> EnhancedAIEngine:
-    """Factory function to create an AI engine."""
-    config = AIEngineConfig(
-        provider=provider,
-        model=model,
+) -> "AIEngine":
+    """
+    Factory function to create the unified AI engine.
+    
+    Returns:
+        AIEngine: Unified AI engine with all interfaces
+    """
+    return AIEngine(
         api_key=api_key,
+        model=model,
         **kwargs
     )
-    return EnhancedAIEngine(config)
 
 
-# Migration utilities for existing code
-class LegacyAIEngineAdapter:
-    """Adapter to maintain compatibility with existing AI engine interface."""
+def create_enhanced_ai_engine(*args, **kwargs) -> "AIEngine":
+    """
+    DEPRECATED: Use create_ai_engine() instead.
     
-    def __init__(self, enhanced_engine: EnhancedAIEngine):
-        self.enhanced_engine = enhanced_engine
+    This function is maintained for backward compatibility.
+    """
+    import warnings
+    warnings.warn(
+        "create_enhanced_ai_engine() is deprecated. Use create_ai_engine() instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    return create_ai_engine(*args, **kwargs)
+
+
+# Unified AI Engine Interface
+class AIEngine(EnhancedAIEngine):
+    """
+    Unified AI Engine that consolidates all previous implementations.
+    
+    This class provides both the new structured interface and legacy compatibility.
+    It replaces AIDecisionEngine, AIEngineV2, and EnhancedAIEngine.
+    """
+    
+    def __init__(self, api_key: str, model: str = "openai/gpt-4o-mini", 
+                 temperature: float = 0.7, max_tokens: int = 4000, 
+                 timeout: float = 30.0, optimization_level: str = "balanced",
+                 **kwargs):
+        """
+        Initialize the unified AI engine.
+        
+        Args:
+            api_key: OpenRouter API key
+            model: AI model to use
+            temperature: Sampling temperature (0.0-2.0)
+            max_tokens: Max tokens in response
+            timeout: Request timeout in seconds
+            optimization_level: Optimization level (for legacy compatibility)
+            **kwargs: Additional configuration options
+        """
+        config = AIEngineConfig(
+            provider=AIProvider.OPENROUTER,
+            model=model,
+            api_key=api_key,
+            timeout=timeout,
+            **kwargs
+        )
+        super().__init__(config)
+        
+        # Store parameters for legacy compatibility
+        self.api_key = api_key
+        self.model = model
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.optimization_level = optimization_level
+        
+        # Legacy compatibility attributes
+        self.base_url = "https://openrouter.ai/api/v1/chat/completions"
+        self.max_actions_per_cycle = 3
+        
+        logger.info(f"Initialized unified AIEngine with model {model}")
+    
+    async def decide_actions(self, world_state: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Legacy interface for AI decision making.
+        
+        This method maintains compatibility with existing code that expects
+        the old AIDecisionEngine interface.
+        """
+        try:
+            # Convert world_state to prompt and context
+            prompt = self._build_decision_prompt(world_state)
+            context = self._extract_context_from_world_state(world_state)
+            
+            # Generate structured response
+            response = await self.generate_structured_response(
+                prompt, context, AIResponse
+            )
+            
+            # Convert to legacy format
+            return {
+                "observations": response.reasoning,
+                "selected_actions": [
+                    {
+                        "action_type": call.name,
+                        "parameters": call.parameters,
+                        "reasoning": call.reasoning or response.reasoning,
+                        "priority": 5  # Default priority
+                    }
+                    for call in response.tool_calls
+                ],
+                "reasoning": response.reasoning,
+                "thought": response.reasoning,
+                "cycle_id": context.get("cycle_id", "unknown")
+            }
+        except Exception as e:
+            logger.error(f"Decision making failed: {e}")
+            return {
+                "observations": f"Error: {str(e)}",
+                "selected_actions": [],
+                "reasoning": "An error occurred during decision making",
+                "thought": "Error in AI processing",
+                "cycle_id": "error"
+            }
+    
+    def _build_decision_prompt(self, world_state: Dict[str, Any]) -> str:
+        """Build decision prompt from world state."""
+        prompt = """Analyze the current situation and decide what actions to take.
+
+Consider:
+- Current messages and conversations
+- System status and health
+- Opportunities for engagement
+- Available tools and capabilities
+
+Provide your reasoning and any necessary actions."""
+        
+        # Add context from world state
+        if world_state.get("recent_messages"):
+            message_count = len(world_state["recent_messages"])
+            prompt += f"\n\nRecent activity: {message_count} messages"
+        
+        if world_state.get("current_channel"):
+            prompt += f"\nCurrent channel: {world_state['current_channel']}"
+        
+        return prompt
+    
+    def _extract_context_from_world_state(self, world_state: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract relevant context from world state."""
+        context = {}
+        
+        # Copy relevant fields
+        if "recent_messages" in world_state:
+            context["recent_messages"] = world_state["recent_messages"]
+        if "current_channel" in world_state:
+            context["current_channel_id"] = world_state["current_channel"]
+        if "available_tools" in world_state:
+            context["available_tools"] = world_state["available_tools"]
+        if "cycle_id" in world_state:
+            context["cycle_id"] = world_state["cycle_id"]
+        
+        return context
     
     async def generate_response(self, prompt: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Legacy interface for generating responses."""
-        response = await self.enhanced_engine.generate_structured_response(
+        """
+        Legacy interface for generating responses.
+        
+        Maintains compatibility with older code that expects this method.
+        """
+        response = await self.generate_structured_response(
             prompt, context, AIResponse
         )
         
-        # Convert to legacy format
         return {
             "reasoning": response.reasoning,
             "actions": [
@@ -494,6 +676,85 @@ class LegacyAIEngineAdapter:
             "message": response.message,
             "confidence": response.confidence
         }
+    
+    async def make_decision(self, world_state: Dict[str, Any], cycle_id: str) -> DecisionResult:
+        """
+        Make a decision based on current world state.
+        
+        This method provides legacy compatibility with the node processor and other
+        components that expect the make_decision interface.
+        
+        Args:
+            world_state: Current state of the world
+            cycle_id: Unique identifier for this decision cycle
+            
+        Returns:
+            DecisionResult containing selected actions and reasoning
+        """
+        try:
+            logger.info(f"AIEngine: Starting decision cycle {cycle_id}")
+            
+            # Call the decide_actions method to get the decision data
+            decision_data = await self.decide_actions(world_state)
+            
+            # Convert to DecisionResult format
+            selected_actions = []
+            for action_data in decision_data.get("selected_actions", []):
+                try:
+                    action_plan = ActionPlan(
+                        action_type=action_data.get("action_type", "unknown"),
+                        parameters=action_data.get("parameters", {}),
+                        reasoning=action_data.get("reasoning", "No reasoning provided"),
+                        priority=action_data.get("priority", 5),
+                    )
+                    selected_actions.append(action_plan)
+                except Exception as e:
+                    logger.warning(f"Skipping malformed action: {e}")
+                    continue
+            
+            # Limit to max actions per cycle
+            if len(selected_actions) > self.max_actions_per_cycle:
+                logger.warning(
+                    f"AI selected {len(selected_actions)} actions, "
+                    f"limiting to {self.max_actions_per_cycle}"
+                )
+                selected_actions.sort(key=lambda x: x.priority, reverse=True)
+                selected_actions = selected_actions[:self.max_actions_per_cycle]
+            
+            result = DecisionResult(
+                selected_actions=selected_actions,
+                reasoning=decision_data.get("reasoning", ""),
+                observations=decision_data.get("observations", ""),
+                thought=decision_data.get("thought", ""),
+                cycle_id=cycle_id,
+            )
+            
+            # Log the AI's thought process for debugging
+            if result.thought:
+                logger.info(f"AI Thought Process (Cycle {cycle_id}): {result.thought}")
+            
+            logger.info(
+                f"AIEngine: Cycle {cycle_id} complete - "
+                f"selected {len(result.selected_actions)} actions"
+            )
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in make_decision for cycle {cycle_id}: {e}")
+            return DecisionResult(
+                selected_actions=[],
+                reasoning=f"Error: {str(e)}",
+                observations="Error during decision making",
+                thought="",
+                cycle_id=cycle_id,
+            )
+
+
+# Aliases for backward compatibility
+AIEngineV2 = AIEngine  # For orchestrator compatibility
+AIDecisionEngine = AIEngine  # For legacy code compatibility
+LegacyAIEngineAdapter = AIEngine  # Deprecated - use AIEngine directly
 
 
 # Testing utilities
@@ -520,3 +781,37 @@ class MockAIProvider(AIProvider_Base):
     
     def supports_structured_outputs(self) -> bool:
         return False
+
+
+def create_mock_ai_engine(responses: List[str]) -> "AIEngine":
+    """Create a mock AI engine for testing."""
+    engine = AIEngine(api_key="mock_key", model="mock_model")
+    engine.provider = MockAIProvider(responses)
+    return engine
+
+
+# Module exports for clean imports
+__all__ = [
+    # Main classes (recommended)
+    'AIEngine',
+    'AIEngineConfig', 
+    'AIProvider',
+    'AIResponse',
+    'ToolCall',
+    'ObservationResponse',
+    'ErrorAnalysis',
+    
+    # Factory functions
+    'create_ai_engine',
+    
+    # Legacy aliases (deprecated)
+    'AIEngineV2',
+    'AIDecisionEngine', 
+    'LegacyAIEngineAdapter',
+    'EnhancedAIEngine',
+    'create_enhanced_ai_engine',
+    
+    # Testing utilities
+    'MockAIProvider',
+    'create_mock_ai_engine',
+]
