@@ -424,57 +424,84 @@ class EnhancedAIEngine:
     ) -> BaseModel:
         """Generate response and parse from text output."""
         
-        # Add instructions for JSON output
-        system_msg = self._get_system_message_for_parsing(response_type)
-        messages_with_instructions = [system_msg] + messages
-        
-        response = await self.provider.chat_completion(
-            messages=messages_with_instructions,
-            tools=tools
-        )
-        
-        # Debug logging for response structure
-        logger.info(f"AI response structure: {type(response)}")
-        logger.info(f"AI response keys: {response.keys() if isinstance(response, dict) else 'Not a dict'}")
-        
-        # Extract and parse JSON with defensive checks
         try:
-            if not isinstance(response, dict):
-                raise ValueError(f"Expected dict response, got {type(response)}")
+            # Add instructions for JSON output
+            system_msg = self._get_system_message_for_parsing(response_type)
+            messages_with_instructions = [system_msg] + messages
             
-            if "choices" not in response:
-                raise ValueError(f"No 'choices' in response. Keys: {list(response.keys())}")
+            logger.info(f"Making AI request with {len(messages_with_instructions)} messages")
             
-            if not response["choices"]:
-                raise ValueError("Empty choices array in response")
+            response = await self.provider.chat_completion(
+                messages=messages_with_instructions,
+                tools=tools
+            )
             
-            choice = response["choices"][0]
-            if "message" not in choice:
-                raise ValueError(f"No 'message' in choice. Keys: {list(choice.keys())}")
+            # Debug logging for response structure
+            logger.info(f"AI response structure: {type(response)}")
+            logger.info(f"AI response keys: {response.keys() if isinstance(response, dict) else 'Not a dict'}")
             
-            message = choice["message"]
-            if "content" not in message:
-                raise ValueError(f"No 'content' in message. Keys: {list(message.keys())}")
+            # Extract and parse JSON with defensive checks
+            try:
+                if not isinstance(response, dict):
+                    raise ValueError(f"Expected dict response, got {type(response)}")
+                
+                if "choices" not in response:
+                    raise ValueError(f"No 'choices' in response. Keys: {list(response.keys())}")
+                
+                if not response["choices"]:
+                    raise ValueError("Empty choices array in response")
+                
+                choice = response["choices"][0]
+                if "message" not in choice:
+                    raise ValueError(f"No 'message' in choice. Keys: {list(choice.keys())}")
+                
+                message = choice["message"]
+                if "content" not in message:
+                    raise ValueError(f"No 'content' in message. Keys: {list(message.keys())}")
+                
+                content = message["content"]
+                
+            except (KeyError, IndexError, TypeError) as e:
+                logger.error(f"Error extracting content from response: {e}")
+                logger.error(f"Full response: {response}")
+                raise ValueError(f"Invalid response structure: {e}")
             
-            content = message["content"]
+            # Debug logging for content extraction
+            logger.info(f"Extracted content type: {type(content)}")
+            logger.info(f"Extracted content length: {len(content) if content else 0}")
+            if content:
+                logger.info(f"Content preview: {content[:500]}...")
+            else:
+                logger.warning("AI response content is empty!")
+                raise ValueError("Empty response from AI")
             
-        except (KeyError, IndexError, TypeError) as e:
-            logger.error(f"Error extracting content from response: {e}")
-            logger.error(f"Full response: {response}")
-            raise ValueError(f"Invalid response structure: {e}")
-        
-        # Debug logging for content extraction
-        logger.info(f"Extracted content type: {type(content)}")
-        logger.info(f"Extracted content length: {len(content) if content else 0}")
-        if content:
-            logger.info(f"Content preview: {content[:500]}...")
-        else:
-            logger.warning("AI response content is empty!")
-            raise ValueError("Empty response from AI")
-        
-        json_content = self._extract_json_from_text(content)
-        
-        return response_type.model_validate(json_content)
+            logger.info("Attempting to extract JSON from AI response")
+            json_content = self._extract_json_from_text(content)
+            
+            logger.info(f"Successfully extracted JSON with keys: {list(json_content.keys()) if isinstance(json_content, dict) else 'Not a dict'}")
+            
+            result = response_type.model_validate(json_content)
+            logger.info(f"Successfully validated response as {response_type.__name__}")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Critical error in AI text parsing: {e}", exc_info=True)
+            
+            # Return a safe fallback response
+            if response_type == AIResponse:
+                return AIResponse(
+                    reasoning=f"Failed to process AI response: {str(e)}",
+                    tool_calls=[],
+                    message="I'm experiencing technical difficulties. Please try again.",
+                    confidence=0.1
+                )
+            else:
+                # For other response types, create minimal valid response
+                try:
+                    return response_type()
+                except:
+                    raise e
     
     def _build_messages(self, prompt: str, context: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Build message list for AI completion."""
@@ -537,6 +564,41 @@ Your responses should be:
     def _get_system_message_for_parsing(self, response_type: Type[BaseModel]) -> Dict[str, str]:
         """Get system message that instructs JSON output format."""
         schema = response_type.model_json_schema()
+        
+        # Add clear examples based on response type
+        example_json = ""
+        if response_type == AIResponse:
+            example_json = """
+Example response for a user mention:
+```json
+{
+  "reasoning": "User mentioned me and asked about my capabilities",
+  "tool_calls": [
+    {
+      "name": "send_matrix_reply",
+      "parameters": {
+        "room_id": "!roomid:server.com",
+        "message": "Hello! I can help with Matrix and Farcaster interactions.",
+        "reply_to_event_id": "$eventid"
+      },
+      "reasoning": "User asked about my capabilities, should respond helpfully"
+    }
+  ],
+  "message": null,
+  "confidence": 0.9
+}
+```
+
+Example response when no action is needed:
+```json
+{
+  "reasoning": "No new messages requiring immediate attention",
+  "tool_calls": [],
+  "message": null,
+  "confidence": 0.8
+}
+```"""
+        
         return {
             "role": "system",
             "content": f"""You must respond with valid JSON that matches this exact schema:
@@ -550,6 +612,10 @@ IMPORTANT FORMATTING RULES:
 - Do not include markdown formatting outside of code blocks
 - Ensure all JSON properties are properly quoted
 - Ensure all string values are properly escaped
+- Use empty arrays [] for tool_calls when no tools are needed
+- Always include reasoning even if brief
+
+{example_json}
 
 Examples of acceptable formats:
 1. Raw JSON: {{"key": "value"}}

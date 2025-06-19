@@ -370,6 +370,14 @@ class NeynarAPIClient:
         )
         return response.json()
 
+    async def get_user_by_fid(self, fid: int) -> Dict[str, Any]:
+        """Get user information by FID (Farcaster ID)."""
+        params = {"fid": fid}
+        response = await self._make_request(
+            "GET", "/farcaster/user", params=params
+        )
+        return response.json()
+
     async def publish_cast(
         self,
         text: str,
