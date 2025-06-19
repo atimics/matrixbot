@@ -529,15 +529,40 @@ Core Capabilities:
 - Context-aware decision making
 - Multi-platform awareness
 
+CRITICAL RESPONSE REQUIREMENTS:
+- ALWAYS respond when directly mentioned (@ratichat or [ratichat]) - This is MANDATORY
+- ALWAYS respond to direct messages - This is MANDATORY  
+- ALWAYS respond to questions about your capabilities or tools
+- ALWAYS respond to greetings and direct interactions
+- Use the send_matrix_reply tool to send responses in Matrix channels
+- Use the send_farcaster_reply tool to send responses on Farcaster
+- Only choose "wait" action when there is genuinely nothing requiring attention
+
 Your responses should be:
 - Thoughtful and contextually appropriate
-- Action-oriented when needed
+- Action-oriented when needed (use tools to actually respond)
 - Efficient with token usage
-- Professional yet engaging"""
+- Professional yet engaging
+
+MENTION DETECTION:
+When you see messages containing @ratichat, [ratichat], or similar mentions, you MUST respond.
+These are direct mentions requiring immediate attention."""
         
         # Add context information
         if context.get("current_channel_id"):
             base_prompt += f"\n\nCurrent channel: {context['current_channel_id']}"
+        
+        # Add trigger type information with strong emphasis
+        if context.get("trigger_type"):
+            trigger_type = context["trigger_type"]
+            if trigger_type == "mention":
+                base_prompt += f"\n\n🔔 CRITICAL ALERT: You were mentioned directly! This requires an immediate response using the appropriate send_* tool."
+            elif trigger_type == "direct_message":
+                base_prompt += f"\n\n💬 CRITICAL ALERT: This is a direct message that requires an immediate response."
+            elif trigger_type == "question":
+                base_prompt += f"\n\n❓ IMPORTANT: Someone asked a question that requires a response."
+            else:
+                base_prompt += f"\n\nTrigger type: {trigger_type}"
         
         if context.get("recent_messages"):
             messages = context["recent_messages"]
@@ -554,6 +579,10 @@ Your responses should be:
                     if len(content) > 200:
                         content = content[:200] + "..."
                     base_prompt += f"\n- {author}: {content}"
+                    
+                    # Check for mentions in the recent messages
+                    if "@ratichat" in content.lower() or "[ratichat]" in content.lower():
+                        base_prompt += " ⭐ MENTION DETECTED - RESPOND TO THIS"
         
         if context.get("available_tools"):
             tools_list = ", ".join(context["available_tools"])
@@ -1023,6 +1052,23 @@ Provide your reasoning and any necessary actions."""
         # Extract cycle ID
         if "cycle_id" in world_state:
             context["cycle_id"] = world_state["cycle_id"]
+        
+        # Extract trigger information from processing context
+        processing_context = world_state.get("processing_context", {})
+        cycle_context = processing_context.get("cycle_context", {})
+        
+        # Get the primary trigger type
+        if "primary_trigger_type" in cycle_context:
+            context["trigger_type"] = cycle_context["primary_trigger_type"]
+            logger.info(f"Extracted trigger type: {context['trigger_type']}")
+        
+        # Also check for trigger information in triggers list
+        triggers = cycle_context.get("triggers", [])
+        if triggers and not context.get("trigger_type"):
+            # Get the highest priority trigger type
+            highest_priority_trigger = max(triggers, key=lambda t: t.get('priority', 0))
+            context["trigger_type"] = highest_priority_trigger.get('type')
+            logger.info(f"Extracted trigger type from triggers list: {context['trigger_type']}")
         
         return context
     
