@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 if TYPE_CHECKING:
     from ..world_state.manager import WorldStateManager
     from ..world_state.payload_builder import PayloadBuilder
-    from ..ai_engine_v2 import AIEngine
+    from ..ai_engine import AIEngine
     from .node_manager import NodeManager
     from .summary_service import NodeSummaryService
     from .interaction_tools import NodeInteractionTools

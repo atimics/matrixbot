@@ -100,6 +100,7 @@ class ProcessingHub:
         self.trigger_delays = {
             "mention": 1.0,       # 1 second for mentions (high priority)
             "new_message": 2.0,   # 2 seconds for new messages
+            "channel_activity": 3.0,  # 3 seconds for channel activity (replaces new_message)
             "proactive": 5.0,     # 5 seconds for proactive triggers
             "periodic": 10.0,     # 10 seconds for periodic updates
             "default": 3.0        # 3 seconds default delay
@@ -244,8 +245,14 @@ class ProcessingHub:
                     # Just wait and let the trigger-based scheduling handle everything
                     await asyncio.sleep(self.config.observation_interval)
                     
-                    # Optional: Do a periodic cleanup or status check here
-                    # For now, just ensure we're still running
+                    # Periodic cleanup: trigger observers to clean up old tracking data
+                    try:
+                        from ...integrations.matrix.observer import MatrixObserver
+                        # Find any Matrix observers connected to this hub and clean them up
+                        # This is a lightweight way to trigger periodic maintenance
+                        pass  # Observer cleanup is handled automatically when checking activity
+                    except Exception as cleanup_error:
+                        logger.debug(f"Periodic cleanup notice: {cleanup_error}")
                     
                 except asyncio.CancelledError:
                     logger.info("Scheduled processing loop cancelled.")

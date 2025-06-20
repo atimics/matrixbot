@@ -20,7 +20,7 @@ from chatbot.core.node_system.node_manager import NodeManager, SystemEvent, Node
 from chatbot.core.orchestration.main_orchestrator import MainOrchestrator
 from chatbot.core.world_state.payload_builder import PayloadBuilder
 from chatbot.core.world_state import WorldStateManager
-from chatbot.core.ai_engine_v2 import AIEngine
+from chatbot.core.ai_engine import AIEngine
 from chatbot.core.node_system.interaction_tools import NodeInteractionTools
 
 

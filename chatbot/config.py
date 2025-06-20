@@ -60,11 +60,18 @@ class AppConfig(BaseSettings):
     MATRIX_MEDIA_GALLERY_ROOM_ID: Optional[str] = None  # Dedicated channel for auto-posting generated media
     DEVICE_NAME: str = "ratichat_bot"
 
+    # Matrix Auto-Posting Configuration
+    MATRIX_AUTO_ATTACH_MEDIA: bool = False  # Auto-attach recent media to Matrix messages (disabled by default)
+    MATRIX_GALLERY_AUTO_POST: bool = True   # Auto-post generated media to gallery room (enabled by default)
+
     # Farcaster (Optional)
     NEYNAR_API_KEY: Optional[str] = None
     FARCASTER_BOT_FID: Optional[str] = None
     FARCASTER_BOT_SIGNER_UUID: Optional[str] = None
     FARCASTER_BOT_USERNAME: Optional[str] = None  # Bot's username for filtering
+    
+    # Farcaster Auto-Posting Configuration  
+    FARCASTER_AUTO_ATTACH_MEDIA: bool = True  # Auto-attach recent media to Farcaster posts (enabled by default)
     
     # Farcaster Rate Limiting and Context
     FARCASTER_MIN_POST_INTERVAL_MINUTES: int = 1  # Minimum minutes between posts

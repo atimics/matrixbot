@@ -1,28 +1,15 @@
 """
 Unified AI Engine with Structured Outputs
 
-This module consolidates all AI engine implementations into a single unified interface:
+This module provides a unified AI engine implementation for the chatbot system.
 
-CURRENT STANDARD (Recommended):
+MAIN INTERFACE:
 - AIEngine: Main unified class supporting all interfaces
 - create_ai_engine(): Factory function for creating AIEngine instances
-
-LEGACY COMPATIBILITY (Deprecated but supported):
-- AIEngineV2: Alias for AIEngine (for orchestrator compatibility)  
-- AIDecisionEngine: Alias for AIEngine (for legacy code compatibility)
-- LegacyAIEngineAdapter: Alias for AIEngine (deprecated)
-- EnhancedAIEngine: Base implementation (use AIEngine instead)
-
-MIGRATION GUIDE:
-1. Replace all AIDecisionEngine imports with AIEngine
-2. Replace all AIEngineV2 imports with AIEngine  
-3. Replace create_enhanced_ai_engine() calls with create_ai_engine()
-4. Update constructor calls to use the unified AIEngine interface
 
 FEATURES:
 - Structured outputs using Pydantic models
 - Multiple AI provider support (OpenRouter, OpenAI, Anthropic)
-- Backward compatibility with all legacy interfaces
 - Enhanced error handling and retry logic
 - Tool calling and function execution support
 - Conversation history management
@@ -100,24 +87,6 @@ class ErrorAnalysis(BaseModel):
 
 
 @dataclass
-class ActionPlan:
-    """Represents a planned action for legacy compatibility."""
-    action_type: str
-    parameters: Dict[str, Any]
-    reasoning: str
-    priority: int  # 1-10, higher is more important
-
-
-@dataclass
-class DecisionResult:
-    """Result of AI decision making for legacy compatibility."""
-    selected_actions: List[ActionPlan]
-    reasoning: str
-    observations: str
-    thought: str  # AI's step-by-step thinking process
-    cycle_id: str
-
-
 @dataclass
 class AIEngineConfig:
     """Configuration for the AI engine."""
@@ -561,6 +530,8 @@ These are direct mentions requiring immediate attention."""
                 base_prompt += f"\n\n💬 CRITICAL ALERT: This is a direct message that requires an immediate response."
             elif trigger_type == "question":
                 base_prompt += f"\n\n❓ IMPORTANT: Someone asked a question that requires a response."
+            elif trigger_type == "channel_activity":
+                base_prompt += f"\n\n📢 CHANNEL ACTIVITY: New activity detected in a monitored channel. Review the messages and consider if engagement is appropriate. You don't need to respond to every message - focus on meaningful opportunities."
             else:
                 base_prompt += f"\n\nTrigger type: {trigger_type}"
         
@@ -853,34 +824,18 @@ def create_ai_engine(
     )
 
 
-def create_enhanced_ai_engine(*args, **kwargs) -> "AIEngine":
-    """
-    DEPRECATED: Use create_ai_engine() instead.
-    
-    This function is maintained for backward compatibility.
-    """
-    import warnings
-    warnings.warn(
-        "create_enhanced_ai_engine() is deprecated. Use create_ai_engine() instead.",
-        DeprecationWarning,
-        stacklevel=2
-    )
-    return create_ai_engine(*args, **kwargs)
-
-
 # Unified AI Engine Interface
 class AIEngine(EnhancedAIEngine):
     """
-    Unified AI Engine that consolidates all previous implementations.
+    Unified AI Engine that consolidates all AI processing capabilities.
     
-    This class provides both the new structured interface and legacy compatibility.
-    It replaces AIDecisionEngine, AIEngineV2, and EnhancedAIEngine.
+    This class provides a structured interface for AI interactions,
+    replacing all previous AI engine implementations.
     """
     
     def __init__(self, api_key: str, model: str = "openai/gpt-4o-mini", 
                  temperature: float = 0.7, max_tokens: int = 4000, 
-                 timeout: float = 30.0, optimization_level: str = "balanced",
-                 **kwargs):
+                 timeout: float = 30.0, **kwargs):
         """
         Initialize the unified AI engine.
         
@@ -890,7 +845,6 @@ class AIEngine(EnhancedAIEngine):
             temperature: Sampling temperature (0.0-2.0)
             max_tokens: Max tokens in response
             timeout: Request timeout in seconds
-            optimization_level: Optimization level (for legacy compatibility)
             **kwargs: Additional configuration options
         """
         config = AIEngineConfig(
@@ -902,25 +856,21 @@ class AIEngine(EnhancedAIEngine):
         )
         super().__init__(config)
         
-        # Store parameters for legacy compatibility
+        # Store parameters
         self.api_key = api_key
         self.model = model
         self.temperature = temperature
         self.max_tokens = max_tokens
-        self.optimization_level = optimization_level
-        
-        # Legacy compatibility attributes
         self.base_url = "https://openrouter.ai/api/v1/chat/completions"
-        self.max_actions_per_cycle = 3
         
-        logger.info(f"Initialized unified AIEngine with model {model}")
+        logger.info(f"Initialized AIEngine with model {model}")
     
     async def decide_actions(self, world_state: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Legacy interface for AI decision making.
+        AI decision making interface.
         
-        This method maintains compatibility with existing code that expects
-        the old AIDecisionEngine interface.
+        This method provides the decision-making interface for the orchestrator
+        and other components that need AI-driven action selection.
         """
         try:
             # Debug: Log what we're receiving from the world state
@@ -942,7 +892,7 @@ class AIEngine(EnhancedAIEngine):
                 prompt, context, AIResponse
             )
             
-            # Convert to legacy format
+            # Convert to structured format
             return {
                 "observations": response.reasoning,
                 "selected_actions": [
@@ -1005,7 +955,7 @@ Provide your reasoning and any necessary actions."""
         """Extract relevant context from world state."""
         context = {}
         
-        # Handle legacy format (direct recent_messages)
+        # Handle different input formats
         if "recent_messages" in world_state:
             context["recent_messages"] = world_state["recent_messages"]
         
@@ -1074,9 +1024,9 @@ Provide your reasoning and any necessary actions."""
     
     async def generate_response(self, prompt: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Legacy interface for generating responses.
+        Interface for generating responses.
         
-        Maintains compatibility with older code that expects this method.
+        Maintains compatibility with code that expects this method format.
         """
         response = await self.generate_structured_response(
             prompt, context, AIResponse
@@ -1169,12 +1119,6 @@ Provide your reasoning and any necessary actions."""
             )
 
 
-# Aliases for backward compatibility
-AIEngineV2 = AIEngine  # For orchestrator compatibility
-AIDecisionEngine = AIEngine  # For legacy code compatibility
-LegacyAIEngineAdapter = AIEngine  # Deprecated - use AIEngine directly
-
-
 # Testing utilities
 class MockAIProvider(AIProvider_Base):
     """Mock AI provider for testing."""
@@ -1210,7 +1154,7 @@ def create_mock_ai_engine(responses: List[str]) -> "AIEngine":
 
 # Module exports for clean imports
 __all__ = [
-    # Main classes (recommended)
+    # Main classes
     'AIEngine',
     'AIEngineConfig', 
     'AIProvider',
@@ -1221,13 +1165,6 @@ __all__ = [
     
     # Factory functions
     'create_ai_engine',
-    
-    # Legacy aliases (deprecated)
-    'AIEngineV2',
-    'AIDecisionEngine', 
-    'LegacyAIEngineAdapter',
-    'EnhancedAIEngine',
-    'create_enhanced_ai_engine',
     
     # Testing utilities
     'MockAIProvider',

@@ -183,7 +183,7 @@ try:
     from chatbot.config import settings
     print('Configuration loading: OK')
     
-    from chatbot.core.ai_engine_v2 import create_ai_engine
+    from chatbot.core.ai_engine import create_ai_engine
     print('AI engine import: OK')
     
     print('Basic functionality test passed')

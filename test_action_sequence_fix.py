@@ -15,7 +15,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from chatbot.core.orchestration.action_executor import ActionPlan
-from chatbot.core.ai_engine_v2 import AIEngine
+from chatbot.core.ai_engine import AIEngine
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

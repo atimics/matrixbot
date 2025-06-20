@@ -41,7 +41,7 @@ class MatrixObserver(Integration, BaseObserver):
     def __init__(self, integration_id: str = "matrix", display_name: str = "Matrix Integration", 
                  config: Dict[str, Any] = None, world_state_manager: WorldStateManager = None, 
                  arweave_client=None):
-        # Support legacy positional usage: if first arg is not str, treat as world_state_manager
+        # Support positional usage: if first arg is not str, treat as world_state_manager
         if not isinstance(integration_id, str) and world_state_manager is None:
             # Shift positional parameters
             ws_manager = integration_id
@@ -67,6 +67,10 @@ class MatrixObserver(Integration, BaseObserver):
         
         # Processing hub connection for trigger generation
         self.processing_hub = None
+        
+        # Channel activity tracking to prevent spam responses
+        self.channel_activity_triggers = {}  # channel_id -> timestamp of last trigger
+        self.channel_response_cooldown = 300  # 5 minutes between triggers per channel
 
         # Create store directory for Matrix client data
         self.store_path = Path("matrix_store")
@@ -341,8 +345,7 @@ class MatrixObserver(Integration, BaseObserver):
             self._enabled = False
             raise
 
-    # Legacy methods for backward compatibility
-    # Legacy methods removed - use connect() and disconnect() instead
+    # Removed methods - use connect() and disconnect() instead
 
     async def _on_message(self, room: MatrixRoom, event):
         """Handle incoming Matrix messages and update room details"""
@@ -497,18 +500,19 @@ class MatrixObserver(Integration, BaseObserver):
             logger.debug(f"MatrixObserver: Checking trigger conditions for message from {event.sender}")
             logger.debug(f"MatrixObserver: self.user_id = '{self.user_id}', content = '{content[:100]}'")
             
-            # Skip trigger generation for the bot's own messages unless it's a direct mention
+            # Skip trigger generation for the bot's own messages - CRITICAL SELF-LOOP PREVENTION
             # This prevents the bot from triggering processing cycles on its own automated messages
             is_bot_message = event.sender == self.user_id
-            has_mention = self.user_id and self.user_id in content
             
-            if is_bot_message and not has_mention:
-                logger.debug(f"MatrixObserver: Skipping trigger generation for bot's own message")
+            if is_bot_message:
+                logger.debug(f"MatrixObserver: Skipping trigger generation for bot's own message (sender: {event.sender})")
                 return
             
-            # Check for direct mention (use self.user_id instead of settings.MATRIX_USER_ID)
+            # Check for direct mention from OTHER users only (since we already filtered out bot's own messages)
+            has_mention = self.user_id and self.user_id in content
+            
             if has_mention:
-                logger.info(f"MatrixObserver: Direct mention detected for {self.user_id} in message: {content[:50]}...")
+                logger.info(f"MatrixObserver: Direct mention detected for {self.user_id} from {event.sender}: {content[:50]}...")
                 trigger = Trigger(
                     type='mention',
                     priority=9,
@@ -518,14 +522,23 @@ class MatrixObserver(Integration, BaseObserver):
                 logger.info(f"MatrixObserver: Added mention trigger to processing hub")
             # Check if it's an actively monitored ("expanded") channel (only if not a mention)
             elif self.world_state.is_channel_expanded(room.room_id, "matrix"):
-                logger.info(f"MatrixObserver: New message in expanded channel {room.room_id}")
-                trigger = Trigger(
-                    type='new_message',
-                    priority=7,
-                    data={'channel_id': room.room_id, 'message_id': event.event_id, 'sender': event.sender}
-                )
-                self.processing_hub.add_trigger(trigger)
-                logger.info(f"MatrixObserver: Added new_message trigger to processing hub")
+                # Check if bot has recently responded to this channel to avoid spam
+                should_trigger = self._should_trigger_for_channel_activity(room.room_id, event.sender)
+                
+                if should_trigger:
+                    logger.info(f"MatrixObserver: New message in expanded channel {room.room_id} - triggering response")
+                    trigger = Trigger(
+                        type='channel_activity', 
+                        priority=6,  # Lower priority than mentions
+                        data={'channel_id': room.room_id, 'message_id': event.event_id, 'sender': event.sender}
+                    )
+                    self.processing_hub.add_trigger(trigger)
+                    logger.info(f"MatrixObserver: Added channel_activity trigger to processing hub")
+                    
+                    # Mark that we've triggered for this channel
+                    self._mark_channel_activity_trigger(room.room_id)
+                else:
+                    logger.debug(f"MatrixObserver: Skipping trigger for channel {room.room_id} - recent bot activity detected")
             else:
                 # Message is in a non-active channel. Just log it, don't trigger a full cycle.
                 logger.debug(f"MatrixObserver: Message in non-expanded channel {room.room_id}, no trigger generated.")
@@ -1967,3 +1980,71 @@ class MatrixObserver(Integration, BaseObserver):
         except Exception as e:
             logger.error(f"Failed to check room permissions: {e}")
             return {"error": str(e)}
+
+    def _should_trigger_for_channel_activity(self, channel_id: str, sender: str) -> bool:
+        """
+        Determine if we should trigger a response for channel activity.
+        
+        This prevents the bot from responding to every message in a channel,
+        instead focusing on meaningful bursts of new activity.
+        """
+        import time
+        
+        current_time = time.time()
+        
+        # Always trigger for activity we haven't seen before
+        if channel_id not in self.channel_activity_triggers:
+            return True
+            
+        # Check if enough time has passed since last trigger
+        last_trigger_time = self.channel_activity_triggers[channel_id]
+        time_since_last_trigger = current_time - last_trigger_time
+        
+        if time_since_last_trigger >= self.channel_response_cooldown:
+            return True
+            
+        # Check if bot has responded to this channel recently to avoid rapid responses
+        if self.world_state:
+            # Look for recent bot messages in this channel
+            try:
+                channel = self.world_state.get_channel(channel_id, "matrix")
+                if channel and channel.recent_messages:
+                    # Check last few messages for bot responses
+                    recent_messages = channel.recent_messages[-5:]  # Last 5 messages
+                    for msg in reversed(recent_messages):  # Check from newest to oldest
+                        if msg.sender == self.user_id:
+                            # Found a recent bot message, check how recent
+                            time_since_bot_message = current_time - msg.timestamp
+                            if time_since_bot_message < self.channel_response_cooldown:
+                                logger.debug(f"MatrixObserver: Bot responded to {channel_id} {time_since_bot_message:.1f}s ago, skipping trigger")
+                                return False
+                            break
+            except Exception as e:
+                logger.debug(f"MatrixObserver: Error checking recent bot activity for {channel_id}: {e}")
+        
+        # If no recent bot activity found, allow trigger
+        return True
+    
+    def _mark_channel_activity_trigger(self, channel_id: str):
+        """Mark that we've triggered a response for this channel."""
+        import time
+        self.channel_activity_triggers[channel_id] = time.time()
+        logger.debug(f"MatrixObserver: Marked activity trigger for channel {channel_id}")
+    
+    def _cleanup_old_activity_triggers(self):
+        """Clean up old activity trigger timestamps to prevent memory bloat."""
+        import time
+        
+        current_time = time.time()
+        cutoff_time = current_time - (self.channel_response_cooldown * 2)  # Keep 2x cooldown period
+        
+        old_channels = [
+            channel_id for channel_id, timestamp in self.channel_activity_triggers.items()
+            if timestamp < cutoff_time
+        ]
+        
+        for channel_id in old_channels:
+            del self.channel_activity_triggers[channel_id]
+            
+        if old_channels:
+            logger.debug(f"MatrixObserver: Cleaned up {len(old_channels)} old activity triggers")

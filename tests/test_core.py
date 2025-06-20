@@ -10,7 +10,7 @@ import time
 from chatbot.core.world_state import WorldStateManager
 from chatbot.core.history_recorder import HistoryRecorder
 from chatbot.core.orchestration import MainOrchestrator, OrchestratorConfig, ProcessingConfig
-from chatbot.core.ai_engine_v2 import AIEngine
+from chatbot.core.ai_engine import AIEngine
 
 
 class TestWorldState:

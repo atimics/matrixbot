@@ -77,7 +77,7 @@ class MainOrchestrator:
         self.context_manager = ContextManager(self.world_state, self.config.db_path)
         
         # Initialize new persistence layer v2
-        from ..persistence_v2 import PersistenceManager
+        from ..persistence import PersistenceManager
         self.persistence_manager = PersistenceManager(self.unified_settings.CHATBOT_DB_PATH)
         
         # Initialize HistoryRecorder for backward compatibility
@@ -125,7 +125,7 @@ class MainOrchestrator:
             raise ValueError("OPENROUTER_API_KEY is required but not available")
         
         # Use the unified AI engine
-        from ..ai_engine_v2 import AIEngine
+        from ..ai_engine import AIEngine
         
         self.ai_engine = AIEngine(
             api_key=api_key,
@@ -311,7 +311,7 @@ class MainOrchestrator:
         
         # Service-oriented tools (new architecture) - REMOVED
         # Legacy tools now use service-oriented architecture internally
-        # No need for separate _v2 tools
+        # No need for separate tool versions
 
         # Media generation tools
         # Image generation: Available both as standalone tool AND via attach_image parameter in messaging tools
@@ -839,19 +839,6 @@ class MainOrchestrator:
                 "error": str(e)
             }
 
-    def force_processing_mode(self, enable_node_based: bool) -> None:
-        """
-        Force the processing mode to a specific type - deprecated method.
-        
-        Args:
-            enable_node_based: Ignored, system now uses node-based processing only
-        """
-        logger.warning("force_processing_mode is deprecated - system now uses node-based processing only")
-
-    def reset_processing_mode(self) -> None:
-        """Reset processing mode to automatic determination - deprecated method."""
-        logger.warning("reset_processing_mode is deprecated - system now uses node-based processing only")
-
     def get_tool_registry(self) -> ToolRegistry:
         """Get the tool registry instance."""
         return self.tool_registry
@@ -872,22 +859,6 @@ class MainOrchestrator:
         """Increment the processing cycle counter."""
         self.cycle_count += 1
 
-    # Additional API methods for test compatibility and external usage
-    async def process_payload(self, payload: Dict[str, Any], active_channels: list) -> None:
-        """Process a payload directly - deprecated method for backward compatibility."""
-        logger.warning("process_payload method is deprecated - system now uses node-based processing only")
-
-    async def _execute_action(self, action) -> None:
-        """Execute a single action - wrapper for test compatibility."""
-        logger.warning("_execute_action method is deprecated - system now uses node-based processing only")
-        # For test compatibility, execute matrix actions directly
-        if action.action_type in ["send_matrix_reply", "send_matrix_message"]:
-            await self._execute_matrix_action_directly(action)
-        else:
-            logger.warning(f"Cannot execute action type {action.action_type} without traditional processor")
-    
-    async def _execute_matrix_action_directly(self, action) -> None:
-        """Execute matrix actions directly for test compatibility."""
         try:
             from ...tools.matrix import SendMatrixReplyTool, SendMatrixMessageTool
             

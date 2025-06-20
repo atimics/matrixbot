@@ -57,7 +57,7 @@
 
 **Unified Tool Architecture (SIMPLIFIED):**
 - All tools now use a unified service-oriented architecture internally
-- No more distinction between legacy and "_v2" tools - there is only one set of tools
+- Unified tool system - there is only one set of tools
 - Tools automatically use the best available service (Matrix, Farcaster, etc.)
 - Better error handling and reliability across all platforms
 - Consistent parameter schemas and response formats

@@ -62,6 +62,7 @@ class PayloadBuilder:
             "farcaster": self._get_farcaster_node_data,
             "threads": self._get_thread_node_data,
             "system": self._get_system_node_data,
+            "media_gallery": self._get_media_gallery_node_data,
         }
 
     def _build_action_history_payload(
@@ -545,6 +546,29 @@ class PayloadBuilder:
                 "farcaster.recent_posts"
             ]
 
+    def _generate_media_gallery_paths(self, world_state_data: WorldStateData):
+        """Generate node paths for the AI's generated media library."""
+        # Always generate the main media gallery path so AI can see it exists
+        yield "media_gallery"
+        
+        # Generate paths for recent media items if there are any
+        if world_state_data.generated_media_library:
+            # Create individual media item paths for the most recent items
+            # This allows the AI to expand and see specific media details
+            recent_media = world_state_data.generated_media_library[-10:]  # Last 10 items
+            for media_item in recent_media:
+                if hasattr(media_item, 'media_id') and media_item.media_id:
+                    yield f"media_gallery.{media_item.media_id}"
+            
+            # Also create categorical paths if there are different media types
+            media_types = set()
+            for media_item in world_state_data.generated_media_library:
+                if hasattr(media_item, 'media_type') and media_item.media_type:
+                    media_types.add(media_item.media_type)
+            
+            for media_type in media_types:
+                yield f"media_gallery.by_type.{media_type}"
+
     def _generate_user_paths(self, world_state_data: WorldStateData):
         user_fids = set(world_state_data.farcaster_users.keys())
         user_matrix_ids = set(world_state_data.matrix_users.keys())
@@ -706,6 +730,8 @@ class PayloadBuilder:
                 return self._get_system_node_data(world_state_data, path_parts, expanded)
             elif node_type == "threads":
                 return self._get_thread_node_data(world_state_data, path_parts, expanded)
+            elif node_type == "media_gallery":
+                return self._get_media_gallery_node_data(world_state_data, path_parts, expanded)
             else:
                 logger.warning(f"Unknown node type '{node_type}' in path: {node_path}")
                 return None
@@ -868,6 +894,131 @@ class PayloadBuilder:
         if component == "action_history": 
             # Use optimized action history to prevent large payloads
             return self._build_action_history_payload(world_state_data, 10, optimize=True)
+        return None
+
+    def _get_media_gallery_node_data(self, world_state_data: WorldStateData, path_parts: List[str], expanded: bool = False) -> Optional[Dict]:
+        """
+        Get node data for the AI's generated media library.
+        
+        This allows the AI to see and reference its own generated media for use in posts.
+        
+        Args:
+            world_state_data: The world state data
+            path_parts: The parsed node path components
+            expanded: Whether to get expanded data
+            
+        Returns:
+            Dictionary containing media gallery data
+        """
+        if len(path_parts) == 1:
+            # Root media gallery node - provide overview
+            media_library = world_state_data.generated_media_library
+            if not media_library:
+                return {
+                    "status": "empty",
+                    "total_media_count": 0,
+                    "message": "No generated media available yet. Use image generation tools to create media.",
+                    "available_tools": ["generate_image", "generate_meme"]
+                }
+            
+            # Recent media summary
+            recent_media = media_library[-10:]  # Last 10 items
+            
+            # Group by media type
+            media_by_type = {}
+            for media_item in media_library:
+                media_type = getattr(media_item, 'media_type', 'unknown')
+                if media_type not in media_by_type:
+                    media_by_type[media_type] = []
+                media_by_type[media_type].append(media_item)
+            
+            summary_data = {
+                "status": "available",
+                "total_media_count": len(media_library),
+                "recent_media_count": len(recent_media),
+                "media_types": {
+                    media_type: len(items) 
+                    for media_type, items in media_by_type.items()
+                },
+                "recent_media": [
+                    {
+                        "media_id": getattr(item, 'media_id', None),
+                        "media_type": getattr(item, 'media_type', 'unknown'),
+                        "description": getattr(item, 'description', 'No description'),
+                        "timestamp": getattr(item, 'timestamp', 0),
+                        "file_path": getattr(item, 'file_path', None),
+                        "available_for_posting": bool(getattr(item, 'file_path', None))
+                    }
+                    for item in recent_media
+                ],
+                "usage_instructions": "Use media_id or file_path to attach media to Farcaster posts with cast_with_image tool"
+            }
+            
+            if expanded:
+                # When expanded, include more details about recent media
+                summary_data["detailed_recent_media"] = [
+                    {
+                        "media_id": getattr(item, 'media_id', None),
+                        "media_type": getattr(item, 'media_type', 'unknown'),
+                        "description": getattr(item, 'description', 'No description'),
+                        "prompt": getattr(item, 'generation_prompt', 'No prompt recorded'),
+                        "timestamp": getattr(item, 'timestamp', 0),
+                        "file_path": getattr(item, 'file_path', None),
+                        "file_size": getattr(item, 'file_size', 0),
+                        "dimensions": getattr(item, 'dimensions', None),
+                        "available_for_posting": bool(getattr(item, 'file_path', None)),
+                        "node_path": f"media_gallery.{getattr(item, 'media_id', 'unknown')}" if getattr(item, 'media_id', None) else None
+                    }
+                    for item in recent_media
+                ]
+            
+            return summary_data
+            
+        elif len(path_parts) == 2:
+            # Specific media item or category
+            item_id = path_parts[1]
+            
+            # Find specific media item by ID
+            for media_item in world_state_data.generated_media_library:
+                if hasattr(media_item, 'media_id') and media_item.media_id == item_id:
+                    return {
+                        "media_id": media_item.media_id,
+                        "media_type": getattr(media_item, 'media_type', 'unknown'),
+                        "description": getattr(media_item, 'description', 'No description'),
+                        "generation_prompt": getattr(media_item, 'generation_prompt', 'No prompt recorded'),
+                        "timestamp": getattr(media_item, 'timestamp', 0),
+                        "file_path": getattr(media_item, 'file_path', None),
+                        "file_size": getattr(media_item, 'file_size', 0),
+                        "dimensions": getattr(media_item, 'dimensions', None),
+                        "available_for_posting": bool(getattr(media_item, 'file_path', None)),
+                        "usage_instructions": f"Use media_id '{media_item.media_id}' or file_path '{getattr(media_item, 'file_path', '')}' with cast_with_image tool"
+                    }
+            
+            return {"error": f"Media item '{item_id}' not found in gallery"}
+            
+        elif len(path_parts) == 3 and path_parts[1] == "by_type":
+            # Media items filtered by type
+            media_type = path_parts[2]
+            filtered_media = [
+                media_item for media_item in world_state_data.generated_media_library
+                if getattr(media_item, 'media_type', 'unknown') == media_type
+            ]
+            
+            return {
+                "media_type": media_type,
+                "count": len(filtered_media),
+                "media_items": [
+                    {
+                        "media_id": getattr(item, 'media_id', None),
+                        "description": getattr(item, 'description', 'No description'),
+                        "timestamp": getattr(item, 'timestamp', 0),
+                        "file_path": getattr(item, 'file_path', None),
+                        "available_for_posting": bool(getattr(item, 'file_path', None))
+                    }
+                    for item in filtered_media[-10:]  # Last 10 of this type
+                ]
+            }
+        
         return None
 
     # Simplified handlers for other node types

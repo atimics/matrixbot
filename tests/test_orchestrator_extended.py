@@ -5,7 +5,7 @@ import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 from chatbot.core.orchestration import MainOrchestrator, OrchestratorConfig, ProcessingConfig
-from chatbot.core.ai_engine_v2 import AIResponse, ToolCall
+from chatbot.core.ai_engine import AIResponse, ToolCall
 
 
 class TestOrchestratorExtended:
