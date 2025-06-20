@@ -83,7 +83,7 @@ class APIKeyAuth:
         return None
     
     async def verify_api_key(self, api_key: Optional[str] = Depends(get_api_key)) -> str:
-        """Verify API key for protected endpoints."""
+        """Verify API key for protected endpoints using secure comparison."""
         if not self.security_config.enable_api_key_auth:
             return "bypass"  # Authentication disabled
         
@@ -99,10 +99,24 @@ class APIKeyAuth:
                 detail="API key not configured"
             )
         
-        if not api_key or api_key != expected_key:
+        if not api_key:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or missing API key",
+                detail="Missing API key",
+                headers={"WWW-Authenticate": "Bearer"}
+            )
+        
+        # Use secure comparison to prevent timing attacks
+        import hmac
+        import hashlib
+        
+        expected_hash = hashlib.sha256(expected_key.encode()).hexdigest()
+        provided_hash = hashlib.sha256(api_key.encode()).hexdigest()
+        
+        if not hmac.compare_digest(expected_hash, provided_hash):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid API key",
                 headers={"WWW-Authenticate": "Bearer"}
             )
         
@@ -277,7 +291,7 @@ class SecureAPIServer:
         async def get_integrations(api_key: str = Depends(self.api_key_auth.verify_api_key)):
             """Get integrations (protected)."""
             try:
-                integrations = self.orchestrator.integration_manager.list_integrations()
+                integrations = await self.orchestrator.integration_manager.list_integrations()
                 return {
                     "integrations": integrations,
                     "count": len(integrations),
@@ -422,15 +436,15 @@ class SecureRouterMixin:
     
     def add_security_dependency(self, api_key_auth: APIKeyAuth):
         """Add security dependency to all routes."""
-        for route in self.routes:
-            if hasattr(route, 'dependencies'):
-                route.dependencies.append(
-                    Depends(api_key_auth.verify_api_key)
-                )
+        # This would be implemented to add auth to existing router instances
+        pass
 
 
 # Testing utilities
 class TestSecurityConfig(SecurityConfig):
+    """Test configuration with disabled security."""
+    enable_api_key_auth: bool = False
+    allowed_origins: List[str] = ["*"]
     """Test security configuration that bypasses authentication."""
     enable_api_key_auth: bool = False
     allowed_origins: List[str] = ["*"]

@@ -9,6 +9,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from chatbot.core.secrets import get_secret_manager
+
 logger = logging.getLogger(__name__)
 
 
@@ -62,7 +64,7 @@ class SetupManager:
             return None
         return self.steps[self.current_step_index]
     
-    def submit_step(self, step_key: str, value: str) -> dict:
+    async def submit_step(self, step_key: str, value: str) -> dict:
         """Submit a step and advance to the next one."""
         current_step = self.get_current_step()
         if not current_step or current_step["key"] != step_key:
@@ -85,12 +87,19 @@ class SetupManager:
         
         # Check if setup is complete
         if self.current_step_index >= len(self.steps):
-            self._save_configuration()
-            return {
-                "success": True,
-                "message": "Perfect! All configurations are complete. Initializing systems...",
-                "complete": True
-            }
+            try:
+                await self._save_configuration()
+                return {
+                    "success": True,
+                    "message": "Perfect! All configurations are complete. Initializing systems...",
+                    "complete": True
+                }
+            except Exception as e:
+                return {
+                    "success": False,
+                    "message": f"Failed to save configuration: {str(e)}",
+                    "complete": False
+                }
         
         # Return next step
         next_step = self.get_current_step()
@@ -129,62 +138,69 @@ class SetupManager:
         
         return {"valid": True, "message": "Valid"}
     
-    def _save_configuration(self):
-        """Save the configuration to a config file in the data directory."""
-        # Use data directory for persistence instead of .env (which may be read-only in Docker)
-        config_path = Path("data/config.json")
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Map our step keys to environment variable names
-        step_to_env = {
-            "openrouter_api_key": "OPENROUTER_API_KEY",
-            "matrix_homeserver": "MATRIX_HOMESERVER",
-            "matrix_user_id": "MATRIX_USER_ID", 
-            "matrix_password": "MATRIX_PASSWORD",
-            "matrix_room_id": "MATRIX_ROOM_ID"
-        }
-        
-        # Create config dictionary
-        config = {}
-        for step_key, env_key in step_to_env.items():
-            if step_key in self.completed_steps:
-                config[env_key] = self.completed_steps[step_key]
-        
-        # Add metadata
-        config["_setup_completed"] = True
-        config["_setup_timestamp"] = datetime.now().isoformat()
-        
-        # Save to JSON file
+    async def _save_configuration(self):
+        """Save the configuration securely using the SecretManager."""
         try:
-            with open(config_path, 'w') as f:
-                json.dump(config, f, indent=2)
-            logger.info(f"Configuration saved to {config_path}")
+            # Get the secret manager
+            secret_manager = get_secret_manager()
+            
+            # Map our step keys to secret keys
+            step_to_secret = {
+                "openrouter_api_key": "OPENROUTER_API_KEY",
+                "matrix_homeserver": "MATRIX_HOMESERVER",
+                "matrix_user_id": "MATRIX_USER_ID", 
+                "matrix_password": "MATRIX_PASSWORD",
+                "matrix_room_id": "MATRIX_ROOM_ID"
+            }
+            
+            # Save each secret securely
+            for step_key, secret_key in step_to_secret.items():
+                if step_key in self.completed_steps:
+                    await secret_manager.set_secret(secret_key, self.completed_steps[step_key])
+                    logger.info(f"Securely stored {secret_key}")
+            
+            # Save setup completion flag
+            await secret_manager.set_secret("SETUP_COMPLETED", "true")
+            await secret_manager.set_secret("SETUP_TIMESTAMP", datetime.now().isoformat())
+            
+            logger.info("Configuration saved securely using SecretManager")
+            
         except Exception as e:
-            logger.error(f"Failed to save configuration: {e}")
+            logger.error(f"Failed to save configuration securely: {e}")
             raise
     
-    def is_setup_required(self) -> bool:
-        """Check if setup is required by looking for essential environment variables or config file."""
-        # First check if config file exists and has setup completion flag
-        config_path = Path("data/config.json")
-        if config_path.exists():
-            try:
-                with open(config_path, 'r') as f:
-                    config = json.load(f)
-                    if config.get("_setup_completed", False):
-                        # Verify essential keys are present
-                        required_keys = ["OPENROUTER_API_KEY", "MATRIX_USER_ID", "MATRIX_PASSWORD"]
-                        if all(config.get(key) for key in required_keys):
-                            return False
-            except Exception as e:
-                logger.warning(f"Error reading config file: {e}")
-        
-        # Fall back to checking environment variables
-        required_vars = ["OPENROUTER_API_KEY", "MATRIX_USER_ID", "MATRIX_PASSWORD"]
-        for var in required_vars:
-            if not os.getenv(var):
-                return True
-        return False
+    async def is_setup_required(self) -> bool:
+        """Check if setup is required by looking for essential secrets."""
+        try:
+            # Get the secret manager
+            secret_manager = get_secret_manager()
+            
+            # Check if setup was completed
+            setup_completed = await secret_manager.get_secret("SETUP_COMPLETED")
+            if setup_completed == "true":
+                # Verify essential secrets are present
+                required_secrets = ["OPENROUTER_API_KEY", "MATRIX_USER_ID", "MATRIX_PASSWORD"]
+                for secret_key in required_secrets:
+                    secret_value = await secret_manager.get_secret(secret_key)
+                    if not secret_value:
+                        return True
+                return False
+            
+            # Fall back to checking environment variables
+            required_vars = ["OPENROUTER_API_KEY", "MATRIX_USER_ID", "MATRIX_PASSWORD"]
+            for var in required_vars:
+                if not os.getenv(var):
+                    return True
+            return False
+            
+        except Exception as e:
+            logger.warning(f"Error checking setup requirements: {e}")
+            # Fall back to environment variable check
+            required_vars = ["OPENROUTER_API_KEY", "MATRIX_USER_ID", "MATRIX_PASSWORD"]
+            for var in required_vars:
+                if not os.getenv(var):
+                    return True
+            return False
     
     def get_setup_status(self) -> dict:
         """Get the current setup status."""

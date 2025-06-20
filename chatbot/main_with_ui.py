@@ -14,7 +14,7 @@ from threading import Thread
 
 import uvicorn
 
-from chatbot.api_server import create_api_server
+from chatbot.api_server.secure_server import create_secure_api_server
 from chatbot.config import settings  # This imports from the config package
 from chatbot.core.orchestration import MainOrchestrator, OrchestratorConfig, ProcessingConfig
 
@@ -64,8 +64,8 @@ class ChatbotWithUI:
         if not self.orchestrator:
             raise RuntimeError("Orchestrator must be set up before API server")
             
-        self.api_server = create_api_server(self.orchestrator)
-        logger.info("API server configured successfully")
+        self.api_server = create_secure_api_server(self.orchestrator, settings)
+        logger.info("Secure API server configured successfully")
         
     def start_api_server(self):
         """Start the API server in a separate thread."""
