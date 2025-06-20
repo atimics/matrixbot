@@ -192,20 +192,17 @@ class MatrixRoomManager:
                 id=room_id,
                 name=room_details.get("name", "Unnamed Room"),
                 channel_type="matrix",
-                members=list(room_details.get("power_levels", {}).keys()),
                 topic=room_details.get("topic"),
                 recent_messages=recent_messages,
-                metadata={
-                    "canonical_alias": room_details.get("canonical_alias"),
-                    "alt_aliases": room_details.get("alt_aliases", []),
-                    "avatar_url": room_details.get("avatar_url"),
-                    "member_count": room_details.get("member_count", 0),
-                    "encrypted": room_details.get("encrypted", False),
-                    "public": room_details.get("public", False),
-                    "power_levels": room_details.get("power_levels", {}),
-                    "creation_time": room_details.get("creation_time"),
-                    "last_checked": room_details.get("last_checked"),
-                }
+                canonical_alias=room_details.get("canonical_alias"),
+                alt_aliases=room_details.get("alt_aliases", []),
+                avatar_url=room_details.get("avatar_url"),
+                member_count=room_details.get("member_count", 0),
+                encrypted=room_details.get("encrypted", False),
+                public=room_details.get("public", False),
+                power_levels=room_details.get("power_levels", {}),
+                creation_time=room_details.get("creation_time"),
+                last_checked=room_details.get("last_checked")
             )
             
             self.world_state.add_channel(channel)
@@ -226,18 +223,13 @@ class MatrixRoomManager:
                 # Update channel properties
                 existing_channel.name = room_details.get("name", existing_channel.name)
                 existing_channel.topic = room_details.get("topic", existing_channel.topic)
-                existing_channel.members = list(room_details.get("power_levels", {}).keys())
-                
-                # Update metadata
-                if existing_channel.metadata is None:
-                    existing_channel.metadata = {}
-                
-                existing_channel.metadata.update({
-                    "member_count": room_details.get("member_count", 0),
-                    "encrypted": room_details.get("encrypted", False),
-                    "power_levels": room_details.get("power_levels", {}),
-                    "last_checked": room_details.get("last_checked"),
-                })
+                existing_channel.member_count = room_details.get("member_count", existing_channel.member_count)
+                existing_channel.encrypted = room_details.get("encrypted", existing_channel.encrypted)
+                existing_channel.public = room_details.get("public", existing_channel.public)
+                existing_channel.power_levels = room_details.get("power_levels", existing_channel.power_levels)
+                existing_channel.canonical_alias = room_details.get("canonical_alias", existing_channel.canonical_alias)
+                existing_channel.alt_aliases = room_details.get("alt_aliases", existing_channel.alt_aliases)
+                existing_channel.avatar_url = room_details.get("avatar_url", existing_channel.avatar_url)
                 
                 logger.debug(f"MatrixRoomManager: Updated room details for {room_id}")
             
@@ -247,15 +239,18 @@ class MatrixRoomManager:
     def get_room_details(self) -> Dict[str, Dict[str, Any]]:
         """Get all room details from world state."""
         try:
-            matrix_channels = self.world_state.get_channels_by_type("matrix")
+            # Access Matrix channels directly from the nested structure
+            matrix_channels = self.world_state.state.channels.get("matrix", {})
             room_details = {}
             
-            for channel in matrix_channels:
-                room_details[channel.id] = {
+            for channel_id, channel in matrix_channels.items():
+                room_details[channel_id] = {
                     "name": channel.name,
                     "topic": channel.topic,
-                    "members": channel.members,
-                    "metadata": channel.metadata or {}
+                    "member_count": channel.member_count,
+                    "encrypted": channel.encrypted,
+                    "public": channel.public,
+                    "power_levels": channel.power_levels
                 }
             
             return room_details
@@ -267,13 +262,14 @@ class MatrixRoomManager:
     def get_user_details(self) -> Dict[str, Dict[str, Any]]:
         """Get user details across all Matrix rooms."""
         try:
-            matrix_channels = self.world_state.get_channels_by_type("matrix")
+            # Access Matrix channels directly from the nested structure
+            matrix_channels = self.world_state.state.channels.get("matrix", {})
             user_details = {}
             
             # Aggregate user information from all rooms
-            for channel in matrix_channels:
-                if channel.metadata and "power_levels" in channel.metadata:
-                    for user_id, power_level in channel.metadata["power_levels"].items():
+            for channel_id, channel in matrix_channels.items():
+                if channel.power_levels:
+                    for user_id, power_level in channel.power_levels.items():
                         if user_id not in user_details:
                             user_details[user_id] = {
                                 "rooms": [],

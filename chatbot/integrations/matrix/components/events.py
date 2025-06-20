@@ -503,3 +503,47 @@ class MatrixEventHandler:
             
         except Exception as e:
             logger.error(f"MatrixEventHandler: Error handling encryption error: {e}", exc_info=True)
+
+    async def _process_message_content(self, event, client=None):
+        """Process message content and extract text and images."""
+        content = ""
+        image_urls_list = []
+        
+        try:
+            if hasattr(event, 'body'):
+                content = event.body or ""
+            
+            # Handle image messages
+            if hasattr(event, 'url') and event.url:
+                # This is an image message
+                if client and hasattr(client, 'download'):
+                    try:
+                        # Download and upload to Arweave if arweave_client is available
+                        if self.arweave_client:
+                            download_response = await client.download(event.url)
+                            if download_response:
+                                # Upload to Arweave
+                                content_type = getattr(download_response, 'content_type', 'image/jpeg')
+                                arweave_url = await self.arweave_client.upload_data(
+                                    download_response.body, content_type
+                                )
+                                if arweave_url:
+                                    image_urls_list.append(arweave_url)
+                                    logger.info(f"MatrixEventHandler: Uploaded image to Arweave: {arweave_url}")
+                        
+                        # Fallback to matrix URL if Arweave upload failed
+                        if not image_urls_list:
+                            image_urls_list.append(event.url)
+                            
+                    except Exception as e:
+                        logger.warning(f"MatrixEventHandler: Failed to process image: {e}")
+                        image_urls_list.append(event.url)
+                else:
+                    # No client available, use the URL directly
+                    image_urls_list.append(event.url)
+                    
+        except Exception as e:
+            logger.error(f"MatrixEventHandler: Error processing message content: {e}")
+            content = str(event) if event else ""
+            
+        return content, image_urls_list
