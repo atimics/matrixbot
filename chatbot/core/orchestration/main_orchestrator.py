@@ -77,9 +77,9 @@ class MainOrchestrator:
         self.rate_limiter = RateLimiter(self.config.rate_limit_config)
         self.context_manager = ContextManager(self.world_state, self.config.db_path)
         
-        # Initialize new persistence layer v2
-        from ..persistence import PersistenceManager
-        self.persistence_manager = PersistenceManager(self.unified_settings.CHATBOT_DB_PATH)
+        # Initialize modern database manager
+        from ..persistence import DatabaseManager
+        self.database_manager = DatabaseManager(self.unified_settings.CHATBOT_DB_PATH)
         
         # Initialize HistoryRecorder for backward compatibility
         self.history_recorder = HistoryRecorder(self.config.db_path)
@@ -620,12 +620,13 @@ class MainOrchestrator:
         if settings.MATRIX_USER_ID and settings.MATRIX_PASSWORD:
             try:
                 self.matrix_observer = MatrixObserver(self.world_state, self.arweave_client)
+                
+                # Connect processing hub BEFORE starting the observer
+                self.matrix_observer.set_processing_hub(self.processing_hub)
+                
                 room_id = settings.MATRIX_ROOM_ID
                 self.matrix_observer.add_channel(room_id, "Robot Laboratory")
                 await self.matrix_observer.start()
-                
-                # Connect processing hub for trigger generation
-                self.matrix_observer.processing_hub = self.processing_hub
                 
                 # Connect legacy state change callback for backward compatibility
                 self.matrix_observer.on_state_change = self._on_world_state_change

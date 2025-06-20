@@ -277,7 +277,48 @@ The world state provides rich analytics for understanding conversation patterns 
 - **Bot Performance**: Action success rates, response times, and error patterns
 - **Social Dynamics**: User interaction patterns, thread participation, and engagement quality
 
-## 🔧 Configuration
+## � Security
+
+The system implements multiple layers of security to protect against unauthorized access and code execution:
+
+### 🔑 Critical Security Requirements
+
+**REQUIRED**: Two security keys must be configured before deployment:
+
+```bash
+# 1. Master encryption key for secure secret storage
+# Generate with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
+RATICHAT_ENCRYPTION_KEY=your-generated-key-here
+
+# 2. API authentication key for secure server endpoints  
+# Generate with: openssl rand -hex 32
+API_KEY=your-generated-api-key-here
+```
+
+### 🛡️ Security Features
+
+- **🔐 Encrypted Secret Storage**: All sensitive data encrypted at rest using Fernet cryptography
+- **🔑 API Key Authentication**: All API endpoints protected with bearer token authentication
+- **🚫 CORS Protection**: Configurable allowed origins for cross-origin requests
+- **⏱️ Rate Limiting**: Intelligent rate limiting with per-IP request throttling
+- **🚨 Developer Tools Protection**: Code execution tools disabled by default, admin-key protected
+
+### ⚠️ Developer Tools Security
+
+Developer tools that can modify code are **disabled by default** for security. Only enable in secure, isolated environments:
+
+```bash
+# WARNING: These tools can execute arbitrary code
+# NEVER enable in production
+DEVELOPER_TOOLS_ENABLED=false
+
+# If enabled, configure strict security restrictions
+DEVELOPER_TOOLS_ADMIN_KEY=your-admin-key
+DEVELOPER_TOOLS_SANDBOX=/app/workspace  
+DEVELOPER_TOOLS_ALLOWED_REPOS=owner/repo1,owner/repo2
+```
+
+## �🔧 Configuration
 
 The system uses environment variables for configuration. Copy `.env.example` to `.env` and configure:
 
