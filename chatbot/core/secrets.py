@@ -109,13 +109,26 @@ class EncryptedFileSecretProvider(SecretProvider):
         return self._fernet
     
     async def _load_or_create_key(self) -> bytes:
-        """Load or create encryption key."""
+        """Load encryption key from environment or create new one."""
+        # First, try to get the key from environment variable (more secure)
+        env_key = os.getenv("ENCRYPTION_KEY")
+        if env_key:
+            try:
+                # Decode base64-encoded key from environment
+                import base64
+                return base64.b64decode(env_key.encode())
+            except Exception as e:
+                logger.warning(f"Invalid ENCRYPTION_KEY in environment: {e}")
+        
+        # Fallback to file-based key (less secure but functional)
         key_file = Path(self.config.encryption_key_file)
         
         if key_file.exists():
             # Load existing key
             with open(key_file, 'rb') as f:
-                return f.read()
+                key = f.read()
+                logger.warning("Using file-based encryption key. For better security, set ENCRYPTION_KEY environment variable.")
+                return key
         else:
             # Create new key
             key = Fernet.generate_key()
@@ -130,7 +143,11 @@ class EncryptedFileSecretProvider(SecretProvider):
             # Set restrictive permissions
             key_file.chmod(0o600)
             
-            logger.info(f"Generated new encryption key: {key_file}")
+            # Log the base64-encoded key for environment variable setup
+            import base64
+            env_key = base64.b64encode(key).decode()
+            logger.warning(f"Generated new encryption key. For better security, set ENCRYPTION_KEY={env_key} and remove {key_file}")
+            
             return key
     
     async def _load_secrets(self) -> Dict[str, str]:
