@@ -113,6 +113,53 @@ class MatrixEventHandler:
             # Generate triggers for processing hub if connected
             await self._generate_triggers(room, event, message)
     
+    async def _generate_triggers(self, room: MatrixRoom, event, message: Message):
+        """Generate processing triggers based on message content and context."""
+        if not self.processing_hub:
+            return
+            
+        try:
+            # Import Trigger class from processing hub
+            from ....core.orchestration.processing_hub import Trigger
+            
+            # Determine trigger type and priority based on message content
+            bot_mentioned = self.user_id.lower() in message.content.lower()
+            
+            if bot_mentioned:
+                # High priority for bot mentions
+                trigger = Trigger(
+                    type='mention',
+                    priority=9,
+                    data={
+                        'channel_id': room.room_id,
+                        'channel_type': 'matrix',
+                        'message_id': message.id,
+                        'sender': message.sender,
+                        'room_name': room.display_name or room.room_id
+                    }
+                )
+                logger.debug(f"MatrixEventHandler: Generated mention trigger for {room.room_id}")
+            else:
+                # Medium priority for regular messages
+                trigger = Trigger(
+                    type='new_message',
+                    priority=7,
+                    data={
+                        'channel_id': room.room_id,
+                        'channel_type': 'matrix',
+                        'message_id': message.id,
+                        'sender': message.sender,
+                        'room_name': room.display_name or room.room_id
+                    }
+                )
+                logger.debug(f"MatrixEventHandler: Generated new_message trigger for {room.room_id}")
+            
+            # Add trigger to processing hub
+            self.processing_hub.add_trigger(trigger)
+            
+        except Exception as e:
+            logger.error(f"MatrixEventHandler: Error generating triggers: {e}", exc_info=True)
+    
     async def _handle_message_batching(self, room: MatrixRoom, message: Message) -> bool:
         """Handle message batching for rapid-fire messages from same user."""
         room_id = room.room_id
@@ -200,24 +247,29 @@ class MatrixEventHandler:
             
             if bot_mentioned:
                 trigger = Trigger(
-                    trigger_type="mention",
-                    channel_id=room.room_id,
-                    channel_type="matrix",
-                    triggering_message_id=combined_message.id,
-                    priority=1,
-                    metadata={"mentioned_user": self.user_id, "batch_size": len(messages)}
+                    type="mention",
+                    priority=9,
+                    data={
+                        "channel_id": room.room_id,
+                        "channel_type": "matrix",
+                        "message_id": combined_message.id,
+                        "mentioned_user": self.user_id,
+                        "batch_size": len(messages)
+                    }
                 )
             else:
                 trigger = Trigger(
-                    trigger_type="new_message",
-                    channel_id=room.room_id,
-                    channel_type="matrix",
-                    triggering_message_id=combined_message.id,
-                    priority=3,
-                    metadata={"batch_size": len(messages)}
+                    type="new_message",
+                    priority=7,
+                    data={
+                        "channel_id": room.room_id,
+                        "channel_type": "matrix",
+                        "message_id": combined_message.id,
+                        "batch_size": len(messages)
+                    }
                 )
             
-            await self.processing_hub.add_trigger(trigger)
+            self.processing_hub.add_trigger(trigger)
     
     async def _update_activity_tracking(self, room: MatrixRoom, message: Message) -> None:
         """Update activity tracking for enhanced collapsed channel summaries."""
