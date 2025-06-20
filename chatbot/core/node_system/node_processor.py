@@ -119,16 +119,16 @@ class NodeProcessor:
                     # Track the action in cycle history
                     cycle_actions.append({
                         "step": actions_executed_count + 1,
-                        "action_type": action_to_execute.action_type,
-                        "parameters": action_to_execute.parameters,
-                        "reasoning": action_to_execute.reasoning,
+                        "action_type": action_to_execute["action_type"],
+                        "parameters": action_to_execute["parameters"],
+                        "reasoning": action_to_execute.get("reasoning", ""),
                         "timestamp": time.time()
                     })
 
                     # If the action is 'wait', end the entire cycle
-                    if action_to_execute.action_type == "wait":
+                    if action_to_execute["action_type"] == "wait":
                         logger.info(f"AI chose to 'wait'. Cycle {cycle_id} complete.")
-                        await self._execute_platform_tool(action_to_execute.action_type, action_to_execute.parameters, cycle_id)
+                        await self._execute_platform_tool(action_to_execute["action_type"], action_to_execute["parameters"], cycle_id)
                         actions_executed_count += 1
                         return await self._finalize_cycle(cycle_id, cycle_start_time, actions_executed_count)
 
