@@ -441,42 +441,55 @@ class NeynarAPIClient:
             else:
                 params["channel_id"] = f"channel/{normalized_channel}"
 
-        response = await self._make_request(
-            "GET", "/farcaster/cast/search", params=params
-        )
-        return response.json()
+        response = None
+        try:
+            response = await self._make_request(
+                "GET", "/farcaster/cast/search", params=params
+            )
+            return response.json()
+        except Exception as e:
+            logger.error(f"Error in search_casts_by_query with params {params}: {e}", exc_info=True)
+            if response is not None:
+                try:
+                    logger.error(f"Response status: {getattr(response, 'status_code', 'unknown')}")
+                    logger.error(f"Response text: {getattr(response, 'text', 'unknown')}")
+                except:
+                    pass
+            return {"casts": [], "error": str(e)}
 
     async def get_trending_casts_feed(
         self,
         limit: int = 25,
         channel_id: Optional[str] = None,
-        feed_type: str = "filter",
-        filter_type: str = "global_trending",
+        timeframe_hours: int = 24,
+        provider: str = "neynar",
         with_recasts: bool = True,
         with_likes: bool = True,
     ) -> Dict[str, Any]:
-        if channel_id:
-            normalized_channel = channel_id.lstrip("/")
-            if not normalized_channel.startswith("channel/"):
-                normalized_channel = f"channel/{normalized_channel}"
-            params = {
-                "channel_ids": normalized_channel,
-                "limit": min(limit * 2, 50),
-                "with_likes": with_likes,
-                "with_recasts": with_recasts,
-            }
-            response = await self._make_request(
-                "GET", "/farcaster/feed/channels", params=params
-            )
+        # Convert timeframe_hours to time_window parameter
+        if timeframe_hours <= 1:
+            time_window = "1h"
+        elif timeframe_hours <= 6:
+            time_window = "6h"  
+        elif timeframe_hours <= 24:
+            time_window = "24h"
+        elif timeframe_hours <= 168:  # 7 days
+            time_window = "7d"
         else:
-            params = {
-                "feed_type": feed_type,
-                "filter_type": filter_type,
-                "limit": min(limit * 2, 50),
-                "with_likes": with_likes,
-                "with_recasts": with_recasts,
-            }
-            response = await self._make_request("GET", "/farcaster/feed", params=params)
+            time_window = "7d"  # Default to max available
+            
+        params = {
+            "limit": min(limit, 25),  # API has a max limit
+            "time_window": time_window,
+            "provider": provider,
+            "with_likes": with_likes,
+            "with_recasts": with_recasts,
+        }
+        
+        if channel_id:
+            params["channel_id"] = channel_id
+            
+        response = await self._make_request("GET", "/farcaster/feed/trending", params=params)
         return response.json()
 
     async def get_cast_by_hash(self, cast_hash: str) -> Dict[str, Any]:
@@ -587,7 +600,11 @@ class NeynarAPIClient:
         limit: int = 25,
     ) -> Dict[str, Any]:
         """Get trending casts, optionally within a specific channel and timeframe."""
-        return await self.get_trending_casts_feed(limit, channel_id)
+        return await self.get_trending_casts_feed(
+            limit=limit, 
+            channel_id=channel_id, 
+            timeframe_hours=timeframe_hours
+        )
 
     async def get_conversation_messages(
         self, fid: str, conversation_with_fid: str, limit: int = 25

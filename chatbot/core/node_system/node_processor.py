@@ -10,6 +10,8 @@ import logging
 import time
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
+from .action_backlog import ActionBacklog, QueuedAction, ActionPriority, ActionStatus
+
 if TYPE_CHECKING:
     from ..world_state.manager import WorldStateManager
     from ..world_state.payload_builder import PayloadBuilder
@@ -54,7 +56,13 @@ class NodeProcessor:
         self.action_context = action_context
         self.action_executor = action_executor
         
-        logger.info("NodeProcessor initialized with node-based processing capabilities")
+        # Initialize Kanban-style action backlog system
+        self.action_backlog = ActionBacklog(max_total_wip=8)
+        self._last_planning_time = 0
+        self._planning_interval = 5.0  # Plan new actions every 5 seconds if backlog is low
+        self._shutdown_requested = False
+        
+        logger.info("NodeProcessor initialized with Kanban-style action backlog system")
     
     async def process_cycle(
         self,
@@ -63,13 +71,18 @@ class NodeProcessor:
         context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        Process a single cycle using an iterative action loop.
-        The loop continues until the AI chooses to 'wait' or a limit is reached.
+        Process using Kanban-style continuous execution.
+        
+        This method:
+        1. Checks for high-priority interrupts (mentions, DMs)
+        2. Plans new actions if backlog is low
+        3. Executes actions from the prioritized backlog
+        4. Respects service-specific rate limits and WIP constraints
         
         Args:
             cycle_id: Unique identifier for this processing cycle
             primary_channel_id: The primary channel to focus on (optional)
-            context: Additional context for processing
+            context: Additional context for processing (trigger_type, etc.)
             
         Returns:
             Dict containing cycle results and metrics
@@ -77,10 +90,9 @@ class NodeProcessor:
         context = context or {}
         cycle_start_time = time.time()
         actions_executed_count = 0
-        cycle_actions = []  # Track actions within this cycle for self-state awareness
-        MAX_ACTIONS_PER_CYCLE = 5  # Allow more actions to complete complex sequences like image generation + posting
+        planning_cycles = 0
 
-        logger.info(f"Starting iterative processing cycle {cycle_id}")
+        logger.info(f"Starting Kanban-style processing cycle {cycle_id}")
 
         # Update ActionContext with current channel information
         if self.action_context and primary_channel_id:
@@ -91,113 +103,199 @@ class NodeProcessor:
             # Initial auto-expansion of active channels
             await self._auto_expand_active_channels()
 
-            while actions_executed_count < MAX_ACTIONS_PER_CYCLE:
-                # 1. Build payload with current cycle context
-                cycle_context = {
-                    **context,
-                    "cycle_actions": cycle_actions,
-                    "actions_executed_this_cycle": actions_executed_count,
-                    "cycle_id": cycle_id
-                }
-                payload = await self._build_current_payload(primary_channel_id, cycle_context)
-                if not payload:
-                    logger.warning("Failed to build payload, ending cycle.")
+            # Main Kanban execution loop
+            execution_timeout = 30.0  # Max time to spend in one cycle
+            while (time.time() - cycle_start_time) < execution_timeout and not self._shutdown_requested:
+                
+                # 1. Handle high-priority interrupts first
+                await self._handle_priority_interrupts(context, cycle_id)
+                
+                # 2. Planning phase: Add new actions to backlog if needed
+                if self._should_plan_new_actions():
+                    planning_cycles += 1
+                    await self._planning_phase(cycle_id, primary_channel_id, context)
+                    self._last_planning_time = time.time()
+                
+                # 3. Execution phase: Execute actions from backlog
+                executed_this_iteration = await self._execution_phase(cycle_id)
+                actions_executed_count += executed_this_iteration
+                
+                # 4. If no actions executed and backlog is empty, break
+                if executed_this_iteration == 0 and self._is_backlog_empty():
+                    logger.info(f"No actions in backlog and none executed, ending cycle {cycle_id}")
                     break
-
-                # 2. Get actions from the AI (can return multiple non-conflicting actions)
-                ai_actions = await self._get_next_actions(payload, cycle_id, actions_executed_count)
-                if not ai_actions:
-                    logger.info("AI returned no actions, ending cycle.")
-                    break
-
-                # 3. Process all actions returned by the AI
-                # The AI can now plan sequences of non-conflicting actions
-                actions_requiring_world_state_refresh = ["send_matrix_reply", "send_farcaster_reply"]
-                world_state_changed = False
                 
-                for i, action_to_execute in enumerate(ai_actions):
-                    # Track the action in cycle history
-                    cycle_actions.append({
-                        "step": actions_executed_count + 1,
-                        "action_type": action_to_execute["action_type"],
-                        "parameters": action_to_execute["parameters"],
-                        "reasoning": action_to_execute.get("reasoning", ""),
-                        "timestamp": time.time()
-                    })
-
-                    # If the action is 'wait', end the entire cycle
-                    if action_to_execute["action_type"] == "wait":
-                        logger.info(f"AI chose to 'wait'. Cycle {cycle_id} complete.")
-                        await self._execute_platform_tool(action_to_execute["action_type"], action_to_execute["parameters"], cycle_id)
-                        actions_executed_count += 1
-                        return await self._finalize_cycle(cycle_id, cycle_start_time, actions_executed_count)
-
-                    # Check for shutdown signal before executing action
-                    if hasattr(self, '_shutdown_requested') and self._shutdown_requested:
-                        logger.warning(f"Shutdown requested, deferring remaining actions in cycle {cycle_id}")
-                        # Save unexecuted actions to world state for potential retry
-                        await self._save_deferred_actions(ai_actions[i:], cycle_id)
-                        break
-                    
-                    # Execute the chosen action
-                    logger.info(f"Cycle {cycle_id}, Step {actions_executed_count + 1}: Executing action '{action_to_execute['action_type']}' ({i+1}/{len(ai_actions)})")
-                    execution_result = await self._execute_action(action_to_execute, cycle_id)
-                    actions_executed_count += 1
-                    
-                    # Check if this action significantly changed the world state
-                    # Only break for world state refresh if:
-                    # 1. This action requires refresh AND there are more actions to execute
-                    # 2. There was a failure
-                    # This allows completing planned action sequences while still handling failures
-                    action_requires_refresh = action_to_execute["action_type"] in actions_requiring_world_state_refresh
-                    has_more_actions = i < len(ai_actions) - 1
-                    had_failure = execution_result and execution_result.get("status") == "failure"
-                    
-                    if (action_requires_refresh and has_more_actions) or had_failure:
-                        world_state_changed = True
-                        if had_failure:
-                            logger.warning(f"Action {action_to_execute['action_type']} failed, will refresh world state")
-                        else:
-                            logger.info(f"Action {action_to_execute['action_type']} changed world state, will refresh for next LLM call")
-                        break  # Break out of action sequence to get fresh AI decision
-                    
-                    # Safety check: don't exceed max actions per cycle
-                    if actions_executed_count >= MAX_ACTIONS_PER_CYCLE:
-                        logger.warning(f"Reached maximum actions per cycle ({MAX_ACTIONS_PER_CYCLE}), ending cycle")
-                        break
-                
-                # If we processed all actions without world state changes, the AI planned well!
-                if not world_state_changed and len(ai_actions) > 1:
-                    logger.info(f"Successfully executed {len(ai_actions)} actions in sequence without world state refresh")
-                
-                # Continue to next iteration (will build fresh payload if world state changed)
+                # 5. Brief pause to prevent tight loops
+                if executed_this_iteration == 0:
+                    await asyncio.sleep(0.1)
 
             # Finalize cycle
-            return await self._finalize_cycle(cycle_id, cycle_start_time, actions_executed_count)
+            return await self._finalize_cycle(
+                cycle_id, cycle_start_time, actions_executed_count, planning_cycles
+            )
 
         except Exception as e:
-            logger.error(f"Error in iterative processing cycle {cycle_id}: {e}", exc_info=True)
+            logger.error(f"Error in Kanban processing cycle {cycle_id}: {e}", exc_info=True)
             return {
                 "cycle_id": cycle_id,
                 "success": False,
                 "error": str(e),
                 "actions_executed": actions_executed_count,
+                "planning_cycles": planning_cycles
             }
     
-    async def _finalize_cycle(self, cycle_id: str, cycle_start_time: float, actions_executed_count: int) -> Dict[str, Any]:
+    async def _finalize_cycle(self, cycle_id: str, cycle_start_time: float, 
+                             actions_executed_count: int, planning_cycles: int = 0) -> Dict[str, Any]:
         """Helper method to finalize a processing cycle."""
         await self._update_node_summaries()
         self._log_node_system_events()
 
         cycle_duration = time.time() - cycle_start_time
-        logger.info(f"Completed iterative cycle {cycle_id} in {cycle_duration:.2f}s - {actions_executed_count} actions executed")
+        backlog_status = self.action_backlog.get_status_summary()
+        
+        logger.info(
+            f"Completed Kanban cycle {cycle_id} in {cycle_duration:.2f}s - "
+            f"{actions_executed_count} actions executed, {planning_cycles} planning cycles, "
+            f"backlog: {backlog_status['total_queued']} queued, {backlog_status['in_progress']} in progress"
+        )
         
         return {
             "cycle_id": cycle_id,
             "success": True,
             "actions_executed": actions_executed_count,
-            "cycle_duration": cycle_duration
+            "planning_cycles": planning_cycles,
+            "cycle_duration": cycle_duration,
+            "backlog_status": backlog_status
         }
+    
+    async def _handle_priority_interrupts(self, context: Dict[str, Any], cycle_id: str):
+        """Handle high-priority interrupts like mentions and DMs"""
+        trigger_type = context.get("trigger_type", "")
+        
+        if trigger_type in ["mention", "dm", "direct_reply"]:
+            # Escalate priority of any queued communication actions
+            await self._escalate_communication_actions()
+            
+            # If this is a critical trigger, add immediate response actions
+            if trigger_type == "mention":
+                logger.info(f"High-priority mention detected in cycle {cycle_id}, escalating response")
+                # Could add immediate high-priority response actions here if needed
+                logger.info(f"High-priority mention detected in cycle {cycle_id}, escalating response")
+    
+    async def _escalate_communication_actions(self):
+        """Escalate priority of pending communication actions"""
+        # Move any communication actions to high priority
+        for priority_queue in self.action_backlog.queued_actions.values():
+            for action in list(priority_queue):
+                if action.action_type in ["send_matrix_reply", "send_farcaster_reply"]:
+                    priority_queue.remove(action)
+                    action.priority = ActionPriority.CRITICAL
+                    self.action_backlog.queued_actions[ActionPriority.CRITICAL].appendleft(action)
+                    logger.debug(f"Escalated {action.action_id} to CRITICAL priority")
+    
+    def _should_plan_new_actions(self) -> bool:
+        """Determine if we should run AI planning to add new actions to backlog"""
+        # Plan if backlog is low
+        total_queued = sum(len(queue) for queue in self.action_backlog.queued_actions.values())
+        if total_queued < 3:
+            return True
+            
+        # Plan if enough time has passed since last planning
+        if time.time() - self._last_planning_time > self._planning_interval:
+            return True
+            
+        return False
+    
+    async def _planning_phase(self, cycle_id: str, primary_channel_id: Optional[str], 
+                             context: Dict[str, Any]):
+        """AI planning phase - analyze world state and add actions to backlog"""
+        try:
+            # Build planning payload
+            planning_context = {
+                **context,
+                "phase": "planning",
+                "backlog_status": self.action_backlog.get_status_summary(),
+                "cycle_id": cycle_id
+            }
+            
+            payload = await self._build_planning_payload(primary_channel_id, planning_context)
+            if not payload:
+                logger.warning("Failed to build planning payload")
+                return
+            
+            # Get AI decisions for new actions
+            ai_actions = await self._get_planned_actions(payload, cycle_id)
+            if ai_actions:
+                # Add actions to backlog
+                action_ids = self.action_backlog.add_actions_batch(
+                    ai_actions, 
+                    cycle_context=planning_context
+                )
+                logger.info(f"Planning phase added {len(action_ids)} actions to backlog")
+            else:
+                logger.debug("Planning phase: AI suggested no new actions")
+                
+        except Exception as e:
+            logger.error(f"Error in planning phase: {e}", exc_info=True)
+    
+    async def _execution_phase(self, cycle_id: str) -> int:
+        """Execution phase - execute actions from backlog under rate limits"""
+        actions_executed = 0
+        
+        try:
+            # Execute actions while respecting rate limits and WIP constraints
+            max_iterations = 10  # Prevent infinite loops
+            iteration = 0
+            
+            while iteration < max_iterations:
+                iteration += 1
+                
+                # Get next executable action
+                next_action = self.action_backlog.get_next_executable_action()
+                if not next_action:
+                    break  # No executable actions available
+                
+                # Start the action (acquire service resources)
+                if not self.action_backlog.start_action(next_action):
+                    logger.warning(f"Failed to start action {next_action.action_id}")
+                    continue
+                
+                # Execute the action
+                logger.info(f"Executing backlog action: {next_action.action_type} (priority: {next_action.priority.name})")
+                execution_result = await self._execute_backlog_action(next_action, cycle_id)
+                
+                # Handle the action result
+                result_status = execution_result.get("status")
+                if result_status == "rate_limited":
+                    # For rate limited actions, put them back in the queue with a delay
+                    retry_after = execution_result.get("retry_after", 30)
+                    logger.info(f"Action {next_action.action_id} rate limited, will retry after {retry_after} seconds")
+                    
+                    # Mark the action as queued again for retry, but don't increment attempts
+                    # since this is a temporary condition
+                    self.action_backlog.schedule_delayed_retry(next_action.action_id, retry_after)
+                else:
+                    # Complete the action normally
+                    success = result_status == "success"
+                    error = execution_result.get("error") if not success else None
+                    self.action_backlog.complete_action(next_action.action_id, success, error)
+                
+                actions_executed += 1
+                
+                # Brief pause between actions
+                await asyncio.sleep(0.05)
+                
+            return actions_executed
+            
+        except Exception as e:
+            logger.error(f"Error in execution phase: {e}", exc_info=True)
+            return actions_executed
+    
+    def _is_backlog_empty(self) -> bool:
+        """Check if the action backlog is empty"""
+        total_queued = sum(len(queue) for queue in self.action_backlog.queued_actions.values())
+        total_in_progress = len(self.action_backlog.in_progress)
+        return total_queued == 0 and total_in_progress == 0
     
     async def _build_current_payload(self, primary_channel_id: Optional[str], context: Dict[str, Any]) -> Dict[str, Any]:
         """Build a single, unified payload for the current state of the world."""
@@ -295,12 +393,24 @@ class NodeProcessor:
                 result = await self._execute_platform_tool(tool_name, tool_args, cycle_id)
                 
                 # The result from the tool itself is in result['tool_result'].
-                # That's what contains the 'status' field ('success', 'failure', 'error').
+                # That's what contains the 'status' field ('success', 'failure', 'error', 'rate_limited').
                 # We need to propagate this status up to the process_cycle loop.
                 tool_result = result.get("tool_result", {})
                 
                 # Determine the overall status. Default to success if not specified.
                 status = tool_result.get("status", "success")
+                
+                # Handle rate limiting specially
+                if status == "rate_limited":
+                    retry_after = tool_result.get("retry_after", 30)
+                    next_attempt_time = tool_result.get("next_attempt_time", time.time() + retry_after)
+                    logger.info(f"Action rate limited, will retry after {retry_after} seconds")
+                    return {
+                        "status": "rate_limited", 
+                        "result": result,
+                        "retry_after": retry_after,
+                        "next_attempt_time": next_attempt_time
+                    }
                 
                 # If the outer tool execution failed, that should take precedence.
                 if not result.get("success", True):
@@ -1106,3 +1216,112 @@ class NodeProcessor:
                 "cycles_executed": 0,
                 "error": str(e)
             }
+    
+    async def _execute_backlog_action(self, action: QueuedAction, cycle_id: str) -> Dict[str, Any]:
+        """Execute a single action from the backlog"""
+        try:
+            # Convert backlog action to the format expected by _execute_action
+            action_dict = {
+                "action_type": action.action_type,
+                "parameters": action.parameters,
+                "reasoning": getattr(action, 'reasoning', f"Executing {action.action_type} from backlog")
+            }
+            
+            # Execute using existing action execution infrastructure
+            result = await self._execute_action(action_dict, cycle_id)
+            
+            # Log execution result
+            if result.get("status") == "success":
+                logger.debug(f"Successfully executed backlog action {action.action_id}: {action.action_type}")
+            else:
+                logger.warning(f"Failed to execute backlog action {action.action_id}: {result.get('error', 'Unknown error')}")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error executing backlog action {action.action_id}: {e}", exc_info=True)
+            return {"status": "failure", "error": str(e)}
+    
+    async def _build_planning_payload(self, primary_channel_id: Optional[str], 
+                                     context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Build a payload for AI planning phase to decide on new actions"""
+        try:
+            # Get current world state
+            world_state_data = self.world_state.get_world_state_data()
+            
+            # Build comprehensive payload for planning
+            payload = self.payload_builder.build_node_based_payload(
+                world_state_data=world_state_data,
+                node_manager=self.node_manager,
+                primary_channel_id=primary_channel_id or ""
+            )
+            
+            # Store reference to world_state_data for template substitution
+            payload["_world_state_data_ref"] = world_state_data
+            
+            # Add all available tools
+            payload["tools"] = []
+            if self.tool_registry:
+                enabled_tools = self.tool_registry.get_enabled_tools()
+                for tool in enabled_tools:
+                    payload["tools"].append({
+                        "type": "function",
+                        "function": {
+                            "name": tool.name,
+                            "description": tool.description,
+                            "parameters": self._convert_parameters_schema(tool.parameters_schema)
+                        }
+                    })
+            
+            # Add node interaction tools
+            node_interaction_tools = self.interaction_tools.get_tool_definitions()
+            payload["tools"].extend(node_interaction_tools.values())
+            
+            # Add planning-specific context
+            payload["processing_context"] = {
+                "mode": "kanban_planning",
+                "primary_channel": primary_channel_id,
+                "backlog_status": context.get("backlog_status", {}),
+                "cycle_id": context.get("cycle_id"),
+                "phase": "planning",
+                "instruction": "Analyze the current world state and backlog status. Plan 1-3 high-value actions to add to the execution backlog. Focus on responding to recent activity, mentions, or important updates. Consider the current backlog to avoid redundant actions."
+            }
+            
+            return payload
+            
+        except Exception as e:
+            logger.error(f"Error building planning payload: {e}", exc_info=True)
+            return None
+    
+    async def _get_planned_actions(self, payload: Dict[str, Any], cycle_id: str) -> List[Dict[str, Any]]:
+        """Get planned actions from AI for the backlog"""
+        try:
+            # Use AI engine to get planning decisions
+            decision_result = await self.ai_engine.make_decision(
+                world_state=payload,
+                cycle_id=f"{cycle_id}_planning"
+            )
+            
+            # Log AI reasoning for planning
+            if decision_result.get('reasoning'):
+                logger.info(f"AI Planning Reasoning: {decision_result['reasoning']}")
+            
+            # Extract actions from the result
+            planned_actions = decision_result.get('selected_actions', [])
+            
+            # Filter out 'wait' actions since we're building a backlog
+            actionable_plans = [
+                action for action in planned_actions 
+                if action.get('action_type') != 'wait'
+            ]
+            
+            if actionable_plans:
+                logger.info(f"AI planned {len(actionable_plans)} new actions for backlog")
+                for action in actionable_plans:
+                    logger.debug(f"Planned action: {action.get('action_type')} - {action.get('reasoning', 'No reasoning')}")
+            
+            return actionable_plans
+            
+        except Exception as e:
+            logger.error(f"Error getting planned actions: {e}", exc_info=True)
+            return []

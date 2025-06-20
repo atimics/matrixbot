@@ -913,6 +913,12 @@ class FarcasterObserver(Integration, BaseObserver):
 
         try:
             data = await self.api_client.search_casts(query, channel_id, limit)
+            
+            # Check if API client returned an error
+            if data.get("error"):
+                logger.error(f"API client returned error for search query '{query}': {data.get('error')}")
+                return {"success": False, "casts": [], "error": data.get("error")}
+            
             messages = await convert_api_casts_to_messages(
                 data.get("casts", []),
                 channel_id_prefix=f"farcaster:search_{query}",
@@ -946,7 +952,7 @@ class FarcasterObserver(Integration, BaseObserver):
 
         try:
             data = await self.api_client.get_trending_casts(
-                channel_id, timeframe_hours, limit
+                channel_id=channel_id, timeframe_hours=timeframe_hours, limit=limit
             )
             messages = await convert_api_casts_to_messages(
                 data.get("casts", []),

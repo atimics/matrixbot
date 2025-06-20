@@ -93,9 +93,18 @@ class GetUserTimelineTool(ToolInterface):
         """
         logger.info(f"Executing tool '{self.name}' with params: {params}")
 
-        # Use service-oriented approach
-        social_service = context.get_social_service("farcaster")
-        if not social_service:
+        # Try service-oriented approach first, then fallback to direct attribute access
+        farcaster_service = None
+        
+        # Service registry approach
+        if hasattr(context, 'service_registry') and context.service_registry:
+            farcaster_service = context.service_registry.get_social_service("farcaster")
+        
+        # Fallback to direct attribute access for backward compatibility
+        if not farcaster_service and hasattr(context, 'farcaster_observer'):
+            farcaster_service = getattr(context, 'farcaster_observer', None)
+        
+        if not farcaster_service:
             error_msg = "Farcaster service not available."
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
@@ -117,7 +126,7 @@ class GetUserTimelineTool(ToolInterface):
             limit = 10
 
         try:
-            result = await social_service.get_user_casts(
+            result = await farcaster_service.get_user_casts(
                 user_identifier=user_identifier, limit=limit
             )
 
@@ -215,9 +224,18 @@ class CollectWorldStateTool(ToolInterface):
 
     async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
         """Execute world state collection."""
-        # Use service-oriented approach
-        social_service = context.get_social_service("farcaster")
-        if not social_service:
+        # Try service-oriented approach first, then fallback to direct attribute access
+        farcaster_service = None
+        
+        # Service registry approach
+        if hasattr(context, 'service_registry') and context.service_registry:
+            farcaster_service = context.service_registry.get_social_service("farcaster")
+        
+        # Fallback to direct attribute access for backward compatibility
+        if not farcaster_service and hasattr(context, 'farcaster_observer'):
+            farcaster_service = getattr(context, 'farcaster_observer', None)
+        
+        if not farcaster_service:
             return {
                 "status": "failure",
                 "error": "Farcaster service not available",
@@ -225,7 +243,7 @@ class CollectWorldStateTool(ToolInterface):
             }
             
         try:
-            results = await social_service.collect_world_state_now()
+            results = await farcaster_service.collect_world_state_now()
             
             if results.get("success"):
                 total = results.get("total_messages", 0)
@@ -264,8 +282,13 @@ class CollectWorldStateTool(ToolInterface):
 class GetTrendingCastsTool(ToolInterface):
     """Tool to get trending casts from Farcaster."""
     
-    name = "get_trending_casts"
-    description = "Get trending casts from Farcaster to see what's popular on the platform"
+    @property
+    def name(self) -> str:
+        return "get_trending_casts"
+
+    @property
+    def description(self) -> str:
+        return "Get trending casts from Farcaster to see what's popular on the platform"
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
@@ -298,9 +321,18 @@ class GetTrendingCastsTool(ToolInterface):
 
     async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
         """Execute the tool to get trending casts."""
-        # Use service-oriented approach
-        social_service = context.get_social_service("farcaster")
-        if not social_service:
+        # Try service-oriented approach first, then fallback to direct attribute access
+        farcaster_service = None
+        
+        # Service registry approach
+        if hasattr(context, 'service_registry') and context.service_registry:
+            farcaster_service = context.service_registry.get_social_service("farcaster")
+        
+        # Fallback to direct attribute access for backward compatibility
+        if not farcaster_service and hasattr(context, 'farcaster_observer'):
+            farcaster_service = getattr(context, 'farcaster_observer', None)
+        
+        if not farcaster_service:
             return {
                 "status": "failure",
                 "error": "Farcaster service not available",
@@ -313,59 +345,63 @@ class GetTrendingCastsTool(ToolInterface):
             limit = params.get("limit", 10)
             
             # Get trending casts using the service
-            if hasattr(social_service, "get_trending_casts"):
-                result = await social_service.get_trending_casts(
-                    channel_id=channel_id, timeframe_hours=timeframe_hours, limit=limit
-                )
-            else:
-                # Fallback to API client if method missing
-                if not hasattr(social_service, "api_client") or not social_service.api_client:
+            result = await farcaster_service.get_trending_casts(
+                channel_id=channel_id, timeframe_hours=timeframe_hours, limit=limit
+            )
+                
+            # Check if the service operation was successful
+            if result.get("success", True):  # Default to True for backward compatibility
+                cast_list = result.get("casts", [])
+                if cast_list:
+                    cast_summaries = []
+                    for cast in cast_list[:limit]:
+                        # Handle both dict and object formats
+                        if hasattr(cast, '__dict__'):
+                            cast_data = cast.__dict__
+                        else:
+                            cast_data = cast
+                        summary = _summarize_cast_for_ai(cast_data)
+                        cast_summaries.append(summary)
+                        
+                    if context.world_state_manager:
+                        context.world_state_manager.add_action_result(
+                            action_type="get_trending_casts",
+                            parameters={"channel_id": channel_id, "timeframe_hours": timeframe_hours, "limit": limit},
+                            result="success",
+                        )
+                        
+                        # Cache trending results
+                        params_key = f"{channel_id or 'all'}_{timeframe_hours}_{limit}"
+                        context.world_state_manager.cache_tool_result(
+                            "get_trending_casts", params_key, {
+                                "casts": cast_summaries,
+                                "channel_id": channel_id,
+                                "timeframe_hours": timeframe_hours,
+                                "timestamp": time.time()
+                            }
+                        )
+                        logger.info(f"Cached trending casts for channel: {channel_id or 'all'}")
+                    
+                    return {
+                        "status": "success",
+                        "channel_id": channel_id,
+                        "timeframe_hours": timeframe_hours,
+                        "limit": limit,
+                        "casts": cast_summaries,
+                        "timestamp": time.time(),
+                    }
+                else:
                     return {
                         "status": "failure",
-                        "error": "Farcaster API client not initialized",
-                        "timestamp": time.time()
+                        "error": "No trending casts found",
+                        "timestamp": time.time(),
                     }
-                result = await social_service.api_client.get_trending_casts(
-                    limit=limit, channel=channel_id
-                )
-                
-            if result.get("casts"):
-                cast_summaries = []
-                for cast in result["casts"][:limit]:
-                    summary = _summarize_cast_for_ai(cast)
-                    cast_summaries.append(summary)
-                    
-                if context.world_state_manager:
-                    context.world_state_manager.add_action_result(
-                        action_type="get_trending_casts",
-                        parameters={"channel_id": channel_id, "timeframe_hours": timeframe_hours, "limit": limit},
-                        result="success",
-                    )
-                    
-                    # Cache trending results
-                    params_key = f"{channel_id or 'all'}_{timeframe_hours}_{limit}"
-                    context.world_state_manager.cache_tool_result(
-                        "get_trending_casts", params_key, {
-                            "casts": cast_summaries,
-                            "channel_id": channel_id,
-                            "timeframe_hours": timeframe_hours,
-                            "timestamp": time.time()
-                        }
-                    )
-                    logger.info(f"Cached trending casts for channel: {channel_id or 'all'}")
-                
-                return {
-                    "status": "success",
-                    "channel_id": channel_id,
-                    "timeframe_hours": timeframe_hours,
-                    "limit": limit,
-                    "casts": cast_summaries,
-                    "timestamp": time.time(),
-                }
             else:
+                error_msg = result.get("error", "Service returned error")
+                logger.warning(f"Get trending casts failed: {error_msg}")
                 return {
                     "status": "failure",
-                    "error": "No trending casts found",
+                    "error": error_msg,
                     "timestamp": time.time(),
                 }
         except Exception as e:
@@ -380,8 +416,13 @@ class GetTrendingCastsTool(ToolInterface):
 class SearchCastsTool(ToolInterface):
     """Tool to search for casts on Farcaster."""
     
-    name = "search_casts"
-    description = "Search for casts on Farcaster by query text"
+    @property
+    def name(self) -> str:
+        return "search_casts"
+
+    @property
+    def description(self) -> str:
+        return "Search for casts on Farcaster by query text"
 
     def __init__(self):
         self.parameters = [
@@ -431,14 +472,23 @@ class SearchCastsTool(ToolInterface):
         if not query:
             return {"status": "failure", "error": "Missing required parameter 'query'", "timestamp": time.time()}
             
-        # Use service-oriented approach
-        social_service = context.get_social_service("farcaster")
-        if not social_service:
+        # Try service-oriented approach first, then fallback to direct attribute access
+        farcaster_service = None
+        
+        # Service registry approach
+        if hasattr(context, 'service_registry') and context.service_registry:
+            farcaster_service = context.service_registry.get_social_service("farcaster")
+        
+        # Fallback to direct attribute access for backward compatibility
+        if not farcaster_service and hasattr(context, 'farcaster_observer'):
+            farcaster_service = getattr(context, 'farcaster_observer', None)
+        
+        if not farcaster_service:
             return {"status": "failure", "error": "Farcaster service not available", "timestamp": time.time()}
             
         try:
             # Call the service's search_casts method directly
-            result = await social_service.search_casts(
+            result = await farcaster_service.search_casts(
                 query=query,
                 channel_id=channel_id,
                 limit=min(limit, 25)
@@ -496,13 +546,15 @@ class SearchCastsTool(ToolInterface):
                     "timestamp": time.time(),
                 }
             else:
-                return {"status": "failure", "error": f"No casts found for query: {query}", "timestamp": time.time()}
+                error_msg = result.get("error", f"No casts found for query: {query}")
+                logger.warning(f"Search failed for query '{query}': {error_msg}")
+                return {"status": "failure", "error": error_msg, "timestamp": time.time()}
                 
         except Exception as e:
             logger.error(f"Error in SearchCastsTool: {e}", exc_info=True)
             return {
                 "status": "failure", 
-                "error": str(e),
+                "error": f"SearchCastsTool error: {str(e)}",
                 "timestamp": time.time(),
             }
 
@@ -510,8 +562,13 @@ class SearchCastsTool(ToolInterface):
 class GetCastByUrlTool(ToolInterface):
     """Tool to get a specific cast by its URL or hash."""
     
-    name = "get_cast_by_url"
-    description = "Get details about a specific Farcaster cast by its URL or hash"
+    @property
+    def name(self) -> str:
+        return "get_cast_by_url"
+
+    @property
+    def description(self) -> str:
+        return "Get details about a specific Farcaster cast by its URL or hash"
 
     def __init__(self):
         self.parameters = [
@@ -539,9 +596,18 @@ class GetCastByUrlTool(ToolInterface):
 
     async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
         """Execute the tool to get cast details."""
-        # Use service-oriented approach
-        social_service = context.get_social_service("farcaster")
-        if not social_service:
+        # Try service-oriented approach first, then fallback to direct attribute access
+        farcaster_service = None
+        
+        # Service registry approach
+        if hasattr(context, 'service_registry') and context.service_registry:
+            farcaster_service = context.service_registry.get_social_service("farcaster")
+        
+        # Fallback to direct attribute access for backward compatibility
+        if not farcaster_service and hasattr(context, 'farcaster_observer'):
+            farcaster_service = getattr(context, 'farcaster_observer', None)
+        
+        if not farcaster_service:
             return {
                 "status": "failure",
                 "error": "Farcaster service not available",
@@ -559,7 +625,7 @@ class GetCastByUrlTool(ToolInterface):
             
         try:
             # Call the service's get_cast_by_url method directly
-            result = await social_service.get_cast_by_url(
+            result = await farcaster_service.get_cast_by_url(
                 farcaster_url=farcaster_url
             )
             

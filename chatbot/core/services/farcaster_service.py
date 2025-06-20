@@ -264,3 +264,132 @@ class FarcasterService(SocialServiceInterface):
                 "casts": [],
                 "error": str(e)
             }
+        
+    async def get_trending_casts(self, channel_id: Optional[str] = None, timeframe_hours: int = 24, limit: int = 10) -> Dict[str, Any]:
+        """
+        Get trending Farcaster casts.
+        
+        Args:
+            channel_id: Optional channel ID to get trending casts from
+            timeframe_hours: Timeframe in hours to look back for trending casts
+            limit: Maximum number of trending casts to return
+            
+        Returns:
+            Dict with success status and cast results
+        """
+        try:
+            if not await self.is_available():
+                return {
+                    "success": False,
+                    "casts": [],
+                    "error": "Farcaster service not available"
+                }
+            
+            # Delegate to the observer's get_trending_casts method
+            result = await self._observer.get_trending_casts(
+                channel_id=channel_id, 
+                timeframe_hours=timeframe_hours, 
+                limit=limit
+            )
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error getting trending Farcaster casts: {e}")
+            return {
+                "success": False,
+                "casts": [],
+                "error": str(e)
+            }
+
+    async def get_user_casts(self, user_identifier: str, limit: int = 10) -> Dict[str, Any]:
+        """
+        Get a user's timeline/casts.
+        
+        Args:
+            user_identifier: Username or FID of the user
+            limit: Maximum number of casts to return
+            
+        Returns:
+            Dict with success status and cast results
+        """
+        try:
+            if not await self.is_available():
+                return {
+                    "success": False,
+                    "casts": [],
+                    "error": "Farcaster service not available"
+                }
+            
+            # Delegate to the observer's get_user_casts method
+            result = await self._observer.get_user_casts(
+                user_identifier=user_identifier, 
+                limit=limit
+            )
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error getting user casts: {e}")
+            return {
+                "success": False,
+                "casts": [],
+                "error": str(e)
+            }
+
+    async def get_cast_by_url(self, farcaster_url: str) -> Dict[str, Any]:
+        """
+        Get a specific cast by its URL or hash.
+        
+        Args:
+            farcaster_url: Farcaster cast URL or hash
+            
+        Returns:
+            Dict with success status and cast details
+        """
+        try:
+            if not await self.is_available():
+                return {
+                    "success": False,
+                    "cast": None,
+                    "error": "Farcaster service not available"
+                }
+            
+            # Delegate to the observer's get_cast_by_url method
+            result = await self._observer.get_cast_by_url(farcaster_url=farcaster_url)
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error getting cast by URL: {e}")
+            return {
+                "success": False,
+                "cast": None,
+                "error": str(e)
+            }
+
+    async def collect_world_state_now(self) -> Dict[str, Any]:
+        """
+        Manually trigger collection of Farcaster world state.
+        
+        Returns:
+            Dict with success status and collection results
+        """
+        try:
+            if not await self.is_available():
+                return {
+                    "success": False,
+                    "error": "Farcaster service not available"
+                }
+            
+            # Delegate to the observer's collect_world_state_now method
+            result = await self._observer.collect_world_state_now()
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error collecting world state: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }

@@ -209,29 +209,46 @@ class SendFarcasterPostTool(ToolInterface):
                     "timestamp": time.time()
                 }
             else:
-                # Enhanced failure response
+                # Enhanced failure response with rate limiting detection
                 error_detail = result.get("error", "Unknown error occurred")
-                failure_msg = f"❌ Farcaster post failed: {error_detail}"
-                logger.error(failure_msg)
                 
-                # Record this action in world state if failed
-                if context.world_state_manager:
-                    context.world_state_manager.add_action_result(
-                        action_type=self.name,
-                        parameters={
-                            "content": content,
-                            "channel": channel,
-                            "embed_url": embed_url,
-                        },
-                        result=f"failure: {error_detail}",
-                    )
-                
-                return {
-                    "status": "failure", 
-                    "error": failure_msg,
-                    "details": result,
-                    "timestamp": time.time()
-                }
+                # Check if this is a rate limiting error that should be retried later
+                if result.get("rate_limited") and result.get("time_remaining"):
+                    retry_delay = result.get("time_remaining", 30)  # Default to 30 seconds
+                    failure_msg = f"⏱️ Farcaster post rate limited: {error_detail}"
+                    logger.warning(failure_msg)
+                    
+                    # Don't record rate limit as a permanent failure in world state
+                    return {
+                        "status": "rate_limited",
+                        "error": failure_msg,
+                        "retry_after": retry_delay,
+                        "next_attempt_time": time.time() + retry_delay,
+                        "details": result,
+                        "timestamp": time.time()
+                    }
+                else:
+                    failure_msg = f"❌ Farcaster post failed: {error_detail}"
+                    logger.error(failure_msg)
+                    
+                    # Record this action in world state if failed
+                    if context.world_state_manager:
+                        context.world_state_manager.add_action_result(
+                            action_type=self.name,
+                            parameters={
+                                "content": content,
+                                "channel": channel,
+                                "embed_url": embed_url,
+                            },
+                            result=f"failure: {error_detail}",
+                        )
+                    
+                    return {
+                        "status": "failure", 
+                        "error": failure_msg,
+                        "details": result,
+                        "timestamp": time.time()
+                    }
 
         except Exception as e:
             error_msg = f"Error creating Farcaster post: {e}"
