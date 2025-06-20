@@ -79,7 +79,7 @@ def test_service_tools():
         
         # Test tool instantiation
         matrix_reply_tool = ServiceOrientedSendMatrixReplyTool()
-        assert matrix_reply_tool.name == "send_matrix_reply_v2"
+        assert matrix_reply_tool.name == "send_matrix_reply"
         print("✅ Service-oriented tools can be instantiated")
         
         return True

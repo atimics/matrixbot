@@ -78,7 +78,7 @@ async def test_trigger_system():
     )
     hub.add_trigger(discovery_trigger)
     
-    # Legacy trigger for backward compatibility
+    # Trigger for backward compatibility
     hub.trigger_state_change()
     
     logger.info(f"✓ Added 4 triggers to queue")
