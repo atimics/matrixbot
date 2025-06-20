@@ -23,7 +23,7 @@ from ..node_system.node_manager import NodeManager
 from ..node_system.node_processor import NodeProcessor
 from ..node_system.summary_service import NodeSummaryService
 from ..node_system.interaction_tools import NodeInteractionTools
-from ...integrations.matrix.observer import MatrixObserver
+from ...integrations.matrix import MatrixObserver
 from ...integrations.base_nft_service import BaseNFTService
 from ...integrations.eligibility_service import UserEligibilityService
 from ...tools.registry import ToolRegistry

@@ -278,40 +278,51 @@ class MatrixObserver(Integration, BaseObserver):
         """Send a message to a room."""
         if self.message_ops:
             return await self.message_ops.send_message(room_id, content)
-        return {"success": False, "error": "Message operations not available"}
+        return {"success": False, "error": "Message operations not initialized"}
 
     async def send_reply(
         self,
         room_id: str,
-        reply_to_event_id: str,
         content: str,
-        original_sender: Optional[str] = None,
-        original_content: Optional[str] = None
+        reply_to_event_id: str,
     ) -> Dict[str, Any]:
         """Send a reply to a message."""
         if self.message_ops:
-            return await self.message_ops.send_reply(
-                room_id, reply_to_event_id, content, original_sender, original_content
-            )
-        return {"success": False, "error": "Message operations not available"}
+            return await self.message_ops.send_reply(room_id, content, reply_to_event_id)
+        return {"success": False, "error": "Message operations not initialized"}
 
     async def join_room(self, room_identifier: str) -> Dict[str, Any]:
-        """Join a room."""
+        """Join a Matrix room."""
         if self.room_ops:
             return await self.room_ops.join_room(room_identifier)
-        return {"success": False, "error": "Room operations not available"}
+        return {"success": False, "error": "Room operations not initialized"}
 
-    async def leave_room(self, room_id: str, reason: Optional[str] = None) -> Dict[str, Any]:
-        """Leave a room."""
+    async def leave_room(self, room_id: str, reason: str = None) -> Dict[str, Any]:
+        """Leave a Matrix room."""
         if self.room_ops:
             return await self.room_ops.leave_room(room_id, reason)
-        return {"success": False, "error": "Room operations not available"}
+        return {"success": False, "error": "Room operations not initialized"}
 
-    def get_room_details(self) -> Dict[str, Dict[str, Any]]:
-        """Get room details."""
-        if self.room_manager:
-            return self.room_manager.get_room_details()
-        return {}
+    def add_channel(self, channel_id: str, channel_name: str):
+        """Add a channel to monitor for backward compatibility."""
+        if not self.enabled:
+            logger.warning("Matrix observer is disabled - cannot add channel")
+            return
+            
+        if channel_id not in self.channels_to_monitor:
+            self.channels_to_monitor.append(channel_id)
+        
+        if self.world_state:
+            # Use the world state manager to add the channel
+            from ...core.world_state.data_structures import Channel
+            channel = Channel(
+                id=channel_id,
+                name=channel_name,
+                type="matrix"
+            )
+            self.world_state.add_channel(channel)
+            
+        logger.info(f"MatrixObserver: Added channel {channel_name} ({channel_id}) to monitoring")
 
     async def disconnect(self) -> None:
         """Disconnect from Matrix."""
@@ -347,6 +358,41 @@ class MatrixObserver(Integration, BaseObserver):
             logger.warning(f"MatrixObserver: Health check failed: {e}")
 
         return False
+
+    async def add_channel(self, room_id: str, force_fetch: bool = False):
+        """Add a channel to be monitored - compatibility method"""
+        try:
+            self.logger.info(f"MatrixObserver: Adding channel {room_id} (force_fetch={force_fetch})")
+            
+            # Use the room manager to get room details
+            room_details = await self.room_manager.extract_room_details(room_id, force_fetch)
+            
+            if room_details:
+                # Update world state with the new channel
+                await self._register_room_with_world_state(room_id, room_details)
+                self.logger.info(f"MatrixObserver: Successfully added channel {room_id}")
+                return True
+            else:
+                self.logger.warning(f"MatrixObserver: Failed to get details for channel {room_id}")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"MatrixObserver: Error adding channel {room_id}: {e}")
+            return False
+
+    async def _register_room_with_world_state(self, room_id: str, room_details: Dict[str, Any]):
+        """Register a room with the world state manager."""
+        if not self.world_state:
+            return
+            
+        try:
+            await self.world_state.update_channel(
+                platform="matrix",
+                channel_id=room_id,
+                **room_details
+            )
+        except Exception as e:
+            self.logger.error(f"MatrixObserver: Error registering room {room_id} with world state: {e}")
 
     async def get_status(self) -> Dict[str, Any]:
         """Get detailed status information."""

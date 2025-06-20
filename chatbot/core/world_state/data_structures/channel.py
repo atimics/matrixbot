@@ -63,6 +63,9 @@ class Channel:
     power_levels: Dict[str, int] = field(default_factory=dict)  # User power levels
     creation_time: Optional[float] = None  # When room was created
 
+    # Enhanced activity tracking
+    activity_metrics: Dict[str, Any] = field(default_factory=dict)
+
     # Channel status tracking
     status: str = "active"  # Status: 'active', 'left_by_bot', 'kicked', 'banned', 'invited'
     last_status_update: float = 0.0  # When status was last updated
@@ -100,30 +103,48 @@ class Channel:
 
         This method provides detailed analytics about channel engagement, user activity,
         and temporal patterns that can inform AI decision-making about channel priority
-        and engagement strategies.
+        and engagement strategies. It now uses the enhanced `activity_metrics` if available.
 
         Returns:
-            Dictionary containing:
-            - message_count: Total number of recent messages
-            - last_activity: Timestamp of most recent message
-            - last_message: Preview of the most recent message content
-            - last_sender: Username of the most recent message author
-            - active_users: List of recently active usernames (top 5)
-            - summary: Human-readable activity summary
-            - timestamp_range: Detailed temporal analysis including:
-                - start: Timestamp of oldest tracked message
-                - end: Timestamp of newest tracked message
-                - span_hours: Duration of activity period in hours
+            Dictionary containing detailed activity analysis.
         """
         if not self.recent_messages:
             return {
-                "message_count": 0,
-                "last_activity": None,
-                "active_users": [],
                 "summary": "No recent activity",
-                "timestamp_range": None,
+                "message_count": 0,
+                "active_users": 0,
+                "keywords": [],
+                "last_activity": None,
             }
 
+        # Use enhanced metrics if available
+        if self.activity_metrics:
+            message_count = self.activity_metrics.get("message_count_1h", 0)
+            active_users_count = len(self.activity_metrics.get("recent_senders", []))
+            keywords = list(self.activity_metrics.get("recent_keywords", []))[:5]
+            last_activity = self.activity_metrics.get("last_activity")
+
+            # Create human-readable summary
+            if message_count == 0:
+                summary = "No recent messages."
+            elif message_count == 1:
+                summary = f"1 new message from {active_users_count} user."
+            else:
+                summary = f"{message_count} new messages from {active_users_count} users."
+
+            if keywords:
+                summary += f" Topics include: {', '.join(keywords[:3])}."
+            
+            return {
+                "summary": summary,
+                "message_count": message_count,
+                "active_users": active_users_count,
+                "keywords": keywords,
+                "last_activity": last_activity,
+                "time_since_activity": time.time() - last_activity if last_activity else None,
+            }
+
+        # Fallback to basic summary if no enhanced metrics
         active_users = list(
             set(msg.sender_username or msg.sender for msg in self.recent_messages[-5:])
         )
@@ -138,7 +159,7 @@ class Channel:
             else last_msg.content,
             "last_sender": last_msg.sender_username or last_msg.sender,
             "active_users": active_users[:5],  # Top 5 active users
-            "summary": f"Last: {last_msg.sender_username or last_msg.sender}: {last_msg.content[:50]}...",
+            "summary": f"Last message from {last_msg.sender_username or last_msg.sender}: {last_msg.content[:50]}...",
             "timestamp_range": {
                 "start": first_msg.timestamp,
                 "end": last_msg.timestamp,

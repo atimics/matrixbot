@@ -265,7 +265,7 @@ class NodeProcessor:
 
         try:
             # Dispatch to the correct tool executor
-            if tool_name in ["select_nodes_to_expand", "expand_node", "collapse_node", "pin_node", "unpin_node"]:
+            if tool_name in ["select_nodes_to_expand", "expand_node", "collapse_node", "pin_node", "unpin_node", "get_expansion_status"]:
                 result = await self._execute_node_tool(tool_name, tool_args)
                 logger.info(f"Node tool '{tool_name}' result: {result}")
                 return {"status": "success", "result": result}
@@ -395,25 +395,28 @@ class NodeProcessor:
                 return {"success": True, "message": f"Expanded {len(node_paths)} nodes."}
 
             node_path = tool_args.get("node_path", "")
-            if not node_path:
+            
+            # Some tools don't require a node_path
+            if tool_name not in ["get_expansion_status"] and not node_path:
                 return {"success": False, "error": "Missing node_path"}
             
             # *** INPUT SANITIZATION FOR NODE PATH MISMATCH BUG ***
-            # Attempt to correct incomplete node paths
-            original_node_path = node_path
-            if node_path not in self.node_manager.node_metadata:
-                corrected_path = self._find_full_path(node_path)
-                if corrected_path:
-                    logger.warning(f"Corrected ambiguous node_path '{node_path}' to '{corrected_path}'")
-                    node_path = corrected_path
-                    tool_args["node_path"] = corrected_path  # Update args for consistency
-                else:
-                    # If no correction is found, fail gracefully
-                    all_known_paths = self.node_manager.get_all_node_paths()
-                    return {
-                        "success": False, 
-                        "error": f"Node path '{original_node_path}' not found or is ambiguous. Available paths: {all_known_paths[:5]}..."  # Limit output
-                    }
+            # Attempt to correct incomplete node paths (skip for tools that don't need paths)
+            if tool_name not in ["get_expansion_status"]:
+                original_node_path = node_path
+                if node_path not in self.node_manager.node_metadata:
+                    corrected_path = self._find_full_path(node_path)
+                    if corrected_path:
+                        logger.warning(f"Corrected ambiguous node_path '{node_path}' to '{corrected_path}'")
+                        node_path = corrected_path
+                        tool_args["node_path"] = corrected_path  # Update args for consistency
+                    else:
+                        # If no correction is found, fail gracefully
+                        all_known_paths = self.node_manager.get_all_node_paths()
+                        return {
+                            "success": False, 
+                            "error": f"Node path '{original_node_path}' not found or is ambiguous. Available paths: {all_known_paths[:5]}..."  # Limit output
+                        }
             # *** END OF INPUT SANITIZATION ***
             
             if tool_name == "expand_node":
@@ -435,6 +438,11 @@ class NodeProcessor:
             elif tool_name == "unpin_node":
                 success, message = self.node_manager.unpin_node(node_path)
                 return {"success": success, "message": message}
+            
+            elif tool_name == "get_expansion_status":
+                # This tool doesn't need a node_path, get status from interaction_tools
+                status = self.interaction_tools.execute_tool(tool_name, {})
+                return status
             
             else:
                 return {"success": False, "error": f"Unknown node tool: {tool_name}"}
