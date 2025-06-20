@@ -497,8 +497,17 @@ class MatrixObserver(Integration, BaseObserver):
             logger.debug(f"MatrixObserver: Checking trigger conditions for message from {event.sender}")
             logger.debug(f"MatrixObserver: self.user_id = '{self.user_id}', content = '{content[:100]}'")
             
+            # Skip trigger generation for the bot's own messages unless it's a direct mention
+            # This prevents the bot from triggering processing cycles on its own automated messages
+            is_bot_message = event.sender == self.user_id
+            has_mention = self.user_id and self.user_id in content
+            
+            if is_bot_message and not has_mention:
+                logger.debug(f"MatrixObserver: Skipping trigger generation for bot's own message")
+                return
+            
             # Check for direct mention (use self.user_id instead of settings.MATRIX_USER_ID)
-            if self.user_id and self.user_id in content:
+            if has_mention:
                 logger.info(f"MatrixObserver: Direct mention detected for {self.user_id} in message: {content[:50]}...")
                 trigger = Trigger(
                     type='mention',

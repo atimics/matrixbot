@@ -112,7 +112,7 @@ class NodeProcessor:
 
                 # 3. Process all actions returned by the AI
                 # The AI can now plan sequences of non-conflicting actions
-                actions_requiring_world_state_refresh = ["send_matrix_reply", "send_farcaster_reply", "generate_image"]
+                actions_requiring_world_state_refresh = ["send_matrix_reply", "send_farcaster_reply"]
                 world_state_changed = False
                 
                 for i, action_to_execute in enumerate(ai_actions):
@@ -132,16 +132,33 @@ class NodeProcessor:
                         actions_executed_count += 1
                         return await self._finalize_cycle(cycle_id, cycle_start_time, actions_executed_count)
 
+                    # Check for shutdown signal before executing action
+                    if hasattr(self, '_shutdown_requested') and self._shutdown_requested:
+                        logger.warning(f"Shutdown requested, deferring remaining actions in cycle {cycle_id}")
+                        # Save unexecuted actions to world state for potential retry
+                        await self._save_deferred_actions(ai_actions[i:], cycle_id)
+                        break
+                    
                     # Execute the chosen action
                     logger.info(f"Cycle {cycle_id}, Step {actions_executed_count + 1}: Executing action '{action_to_execute.action_type}' ({i+1}/{len(ai_actions)})")
                     execution_result = await self._execute_action(action_to_execute, cycle_id)
                     actions_executed_count += 1
                     
                     # Check if this action significantly changed the world state
-                    if (action_to_execute.action_type in actions_requiring_world_state_refresh or
-                        (execution_result and execution_result.get("status") == "failure")):
+                    # Only break for world state refresh if:
+                    # 1. This action requires refresh AND there are more actions to execute
+                    # 2. There was a failure
+                    # This allows completing planned action sequences while still handling failures
+                    action_requires_refresh = action_to_execute.action_type in actions_requiring_world_state_refresh
+                    has_more_actions = i < len(ai_actions) - 1
+                    had_failure = execution_result and execution_result.get("status") == "failure"
+                    
+                    if (action_requires_refresh and has_more_actions) or had_failure:
                         world_state_changed = True
-                        logger.info(f"Action {action_to_execute.action_type} changed world state, will refresh for next LLM call")
+                        if had_failure:
+                            logger.warning(f"Action {action_to_execute.action_type} failed, will refresh world state")
+                        else:
+                            logger.info(f"Action {action_to_execute.action_type} changed world state, will refresh for next LLM call")
                         break  # Break out of action sequence to get fresh AI decision
                     
                     # Safety check: don't exceed max actions per cycle

@@ -47,25 +47,43 @@ class Trigger:
         if not isinstance(other, Trigger):
             return False
         return self.type == other.type
+    
+    @staticmethod
+    def can_combine(trigger_types: Set[str]) -> bool:
+        """
+        Check if multiple trigger types can be efficiently combined into a single processing cycle.
+        
+        Args:
+            trigger_types: Set of trigger type strings
+            
+        Returns:
+            True if these triggers can be efficiently processed together
+        """
+        # All triggers can be combined since world state updates are generic
+        # The AI will see the current state and decide what actions to take
+        return True
+    
+    @staticmethod
+    def get_combined_priority(triggers: Set['Trigger']) -> int:
+        """Get the priority for a combined set of triggers."""
+        return max(trigger.priority for trigger in triggers)
 
 
 class ProcessingHub:
     """
-    Central hub for managing processing workflows.
-    
-    Coordinates between traditional event-based processing and the new node-based system.
-    Manages triggers, rate limiting, and processing cycles using a scheduled approach.
+    Central hub for processing different types of triggers.
+    Handles rate limiting and coordination between different processing strategies.
     """
-    
+
     def __init__(
         self,
         config: ProcessingConfig,
-        world_state_manager: "WorldStateManager",
+        world_state: "WorldStateManager",
         payload_builder: "PayloadBuilder",
         rate_limiter: "RateLimiter"
     ):
         self.config = config
-        self.world_state_manager = world_state_manager
+        self.world_state = world_state
         self.payload_builder = payload_builder
         self.rate_limiter = rate_limiter
         
@@ -86,6 +104,10 @@ class ProcessingHub:
             "periodic": 10.0,     # 10 seconds for periodic updates
             "default": 3.0        # 3 seconds default delay
         }
+        
+        # Batching configuration
+        self.batching_window = 0.5  # 500ms window to collect rapid triggers
+        self.last_trigger_time = 0.0
         
         # Component availability tracking
         self.node_processor = None
@@ -122,15 +144,42 @@ class ProcessingHub:
         self.running = False
         
     def add_trigger(self, trigger: Trigger):
-        """Add a trigger and schedule processing (but only if no sooner processing is already scheduled)."""
-        # Calculate when this trigger wants to be processed
+        """Add a trigger and schedule processing with intelligent batching."""
+        current_time = time.time()
         delay = self.trigger_delays.get(trigger.type, self.trigger_delays["default"])
-        desired_time = time.time() + delay
+        desired_time = current_time + delay
         
         # Add trigger to pending set for deduplication
         self.pending_triggers.add(trigger)
         
-        # Only schedule/reschedule if no processing is scheduled or if this would be sooner
+        # If a processing cycle is currently active, don't interrupt it
+        # Just add the trigger and let it be processed in the next cycle
+        if self._processing_lock.locked():
+            logger.info(f"Trigger added: {trigger.type} (Priority: {trigger.priority}, "
+                       f"Delay: {delay}s, Queued due to active processing cycle)")
+            return
+        
+        # Intelligent batching: if this trigger arrives within the batching window
+        # of the last trigger, extend the delay slightly to allow more triggers to batch
+        time_since_last_trigger = current_time - self.last_trigger_time
+        
+        if (time_since_last_trigger < self.batching_window and 
+            self.next_scheduled_time is not None and 
+            len(self.pending_triggers) > 1):
+            # Extend the current scheduling by a small amount to batch more triggers
+            extended_delay = min(delay, self.batching_window * 0.5)  # Don't extend too much
+            new_desired_time = self.next_scheduled_time + extended_delay
+            
+            # Only extend if it doesn't make high-priority triggers wait too long
+            max_wait_time = current_time + (delay * 1.5)  # 1.5x normal delay at most
+            if new_desired_time <= max_wait_time:
+                logger.info(f"Trigger added: {trigger.type} (Priority: {trigger.priority}, "
+                           f"Extended batching window for {len(self.pending_triggers)} triggers)")
+                self._schedule_processing(new_desired_time, f"batched_{trigger.type}")
+                self.last_trigger_time = current_time
+                return
+        
+        # Normal scheduling logic
         should_schedule = (
             self.next_scheduled_time is None or 
             desired_time < self.next_scheduled_time
@@ -139,6 +188,7 @@ class ProcessingHub:
         if should_schedule:
             self._schedule_processing(desired_time, trigger.type)
         
+        self.last_trigger_time = current_time
         logger.info(f"Trigger added: {trigger.type} (Priority: {trigger.priority}, "
                    f"Delay: {delay}s, Scheduled for: {should_schedule})")
 
@@ -159,24 +209,28 @@ class ProcessingHub:
         try:
             await asyncio.sleep(delay)
             
-            # Collect all pending triggers
-            triggers_to_process = self.pending_triggers.copy()
-            self.pending_triggers.clear()
+            # Clear the scheduled time since we're about to process
             self.next_scheduled_time = None
             
-            if triggers_to_process:
-                await self._process_triggers(triggers_to_process)
+            # Get all pending triggers
+            triggers_to_process = self.pending_triggers.copy()
+            self.pending_triggers.clear()
+            
+            # Process the triggers
+            await self._process_triggers(triggers_to_process)
+            
         except asyncio.CancelledError:
-            logger.debug("Scheduled processing was cancelled (replaced by higher priority trigger)")
+            # This is expected when we cancel to reschedule
+            pass
         except Exception as e:
             logger.error(f"Error in delayed processing: {e}", exc_info=True)
 
-    def add_generic_trigger(self, trigger_type: str, priority: int = 0, data: Optional[Dict] = None):
-        """Add a generic trigger to the queue."""
+    def add_generic_trigger(self, trigger_type: str = "new_message", priority: int = 5):
+        """Add a generic trigger for periodic processing."""
         generic_trigger = Trigger(
             type=trigger_type,
             priority=priority,
-            data=data or {}
+            data={"source": "generic"}
         )
         self.add_trigger(generic_trigger)
 
@@ -215,7 +269,8 @@ class ProcessingHub:
 
         # Sort by priority to determine the primary reason for this cycle
         highest_priority_trigger = max(triggers, key=lambda t: t.priority)
-        logger.info(f"Processing {len(triggers)} triggers. Highest priority: {highest_priority_trigger.type}")
+        trigger_types = [t.type for t in triggers]
+        logger.info(f"Processing {len(triggers)} triggers: {trigger_types}. Highest priority: {highest_priority_trigger.type}")
 
         # Prevent re-processing if a cycle is already locked
         if self._processing_lock.locked():
@@ -247,6 +302,23 @@ class ProcessingHub:
                     await self._process_with_node_system(triggers)
                 else:
                     logger.info("Node-based processing disabled, skipping trigger processing")
+                    
+                # After processing completes, check if there are any remaining triggers
+                # that were added during the processing cycle
+                if self.pending_triggers:
+                    logger.info(f"Found {len(self.pending_triggers)} pending triggers after cycle completion, combining them")
+                    # Combine all pending triggers into a single processing cycle
+                    # Use the shortest delay from all pending triggers to be responsive
+                    min_delay = min(
+                        self.trigger_delays.get(trigger.type, self.trigger_delays["default"]) 
+                        for trigger in self.pending_triggers
+                    )
+                    # Use the trigger types for logging
+                    pending_types = list(set(t.type for t in self.pending_triggers))
+                    self._schedule_processing(
+                        time.time() + min_delay, 
+                        f"combined_{len(self.pending_triggers)}_triggers_{'+'.join(pending_types)}"
+                    )
                     
             except Exception as e:
                 logger.error(f"Error during trigger processing: {e}", exc_info=True)
@@ -311,17 +383,15 @@ class ProcessingHub:
             "running": self.running,
             "last_cycle": self.last_cycle_time.isoformat() if self.last_cycle_time else None,
             "next_scheduled": next_scheduled_str,
-            "total_triggers_processed": self.total_triggers_processed,
             "pending_triggers": len(self.pending_triggers),
+            "total_processed": self.total_triggers_processed,
+            "errors": self.processing_errors,
             "active_conversations": len(self.active_conversations),
-            "processing_errors": self.processing_errors
+            "locked": self._processing_lock.locked()
         }
-
+        
     def _log_rate_limit_status(self):
         """Log current rate limiting status."""
-        try:
-            current_time = time.time()
-            status = self.rate_limiter.get_rate_limit_status(current_time)
-            logger.info(f"Rate limit status: {status['cycles_per_hour']}/{status['max_cycles_per_hour']} cycles/hour")
-        except Exception as e:
-            logger.error(f"Error logging rate limit status: {e}")
+        current_time = time.time()
+        status = self.rate_limiter.get_rate_limit_status(current_time)
+        logger.info(f"Rate limit status: {status['cycles_this_hour']}/{status['max_cycles_per_hour']} cycles/hour")
