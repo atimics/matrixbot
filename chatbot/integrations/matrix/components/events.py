@@ -115,7 +115,15 @@ class MatrixEventHandler:
     
     async def _generate_triggers(self, room: MatrixRoom, event, message: Message):
         """Generate processing triggers based on message content and context."""
+        logger.info(f"MatrixEventHandler: _generate_triggers called for message from {message.sender} in {room.room_id}")
+        
         if not self.processing_hub:
+            logger.warning(f"MatrixEventHandler: No processing hub available for trigger generation")
+            return
+        
+        # Skip generating triggers for the bot's own messages
+        if message.sender == self.user_id:
+            logger.debug(f"MatrixEventHandler: Skipping trigger generation for bot's own message")
             return
             
         try:
@@ -124,6 +132,7 @@ class MatrixEventHandler:
             
             # Determine trigger type and priority based on message content
             bot_mentioned = self.user_id.lower() in message.content.lower()
+            logger.info(f"MatrixEventHandler: Bot mention check - user_id: {self.user_id}, content: '{message.content}', mentioned: {bot_mentioned}")
             
             if bot_mentioned:
                 # High priority for bot mentions
@@ -138,7 +147,7 @@ class MatrixEventHandler:
                         'room_name': room.display_name or room.room_id
                     }
                 )
-                logger.debug(f"MatrixEventHandler: Generated mention trigger for {room.room_id}")
+                logger.info(f"MatrixEventHandler: Generated mention trigger for {room.room_id} - sender: {message.sender}")
             else:
                 # Medium priority for regular messages
                 trigger = Trigger(
@@ -152,10 +161,11 @@ class MatrixEventHandler:
                         'room_name': room.display_name or room.room_id
                     }
                 )
-                logger.debug(f"MatrixEventHandler: Generated new_message trigger for {room.room_id}")
+                logger.info(f"MatrixEventHandler: Generated new_message trigger for {room.room_id} - sender: {message.sender}")
             
             # Add trigger to processing hub
             self.processing_hub.add_trigger(trigger)
+            logger.info(f"MatrixEventHandler: Successfully added trigger to processing hub")
             
         except Exception as e:
             logger.error(f"MatrixEventHandler: Error generating triggers: {e}", exc_info=True)
