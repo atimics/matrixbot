@@ -78,7 +78,7 @@ class NodeProcessor:
         cycle_start_time = time.time()
         actions_executed_count = 0
         cycle_actions = []  # Track actions within this cycle for self-state awareness
-        MAX_ACTIONS_PER_CYCLE = 3  # Safety break to prevent infinite loops
+        MAX_ACTIONS_PER_CYCLE = 5  # Allow more actions to complete complex sequences like image generation + posting
 
         logger.info(f"Starting iterative processing cycle {cycle_id}")
 

@@ -511,6 +511,7 @@ class PayloadBuilder:
         """Generate all node paths from different parts of the world state."""
         yield from self._generate_channel_paths(world_state_data)
         yield from self._generate_farcaster_feed_paths(world_state_data)
+        yield from self._generate_media_gallery_paths(world_state_data)
         yield from self._generate_user_paths(world_state_data)
         yield from self._generate_tool_cache_paths(world_state_data)
         yield from self._generate_search_cache_paths(world_state_data)
@@ -538,6 +539,7 @@ class PayloadBuilder:
                 "farcaster.feeds.home", 
                 "farcaster.feeds.notifications", 
                 "farcaster.feeds.for_you",  # Added missing for_you feed
+                "farcaster.feeds.holders",  # Added ecosystem token holders feed
                 "farcaster.feeds.trending",
                 "farcaster.rate_limits",
                 "farcaster.recent_posts"
@@ -839,6 +841,11 @@ class PayloadBuilder:
             elif feed_type == "for_you":
                 for ch in self._iter_all_channels(world_state_data.channels):
                     if ch.type == "farcaster" and "for_you" in ch.id:
+                        messages.extend(ch.recent_messages[-5:])
+            elif feed_type == "holders":
+                # Get messages from ecosystem token holders feed
+                for ch in self._iter_all_channels(world_state_data.channels):
+                    if ch.type == "farcaster" and "holders" in ch.id:
                         messages.extend(ch.recent_messages[-5:])
             messages.sort(key=lambda m: m.timestamp, reverse=True)
             return {
