@@ -358,7 +358,7 @@ class MatrixEventHandler:
                     "room_topic": getattr(room, 'topic', None),
                     "member_count": getattr(room, 'member_count', 0),
                 }
-                self.world_state.add_pending_matrix_invite(room_id, invite_details)
+                self.world_state.add_pending_matrix_invite(invite_details)
                 
             logger.info(f"MatrixEventHandler: Added pending invite for room {room_id}")
             
