@@ -125,15 +125,16 @@ class MainOrchestrator:
             raise ValueError("OPENROUTER_API_KEY is required but not available")
         
         # Use the unified AI engine
-        from ..ai_engine import AIEngine
+        from ..ai_engine import AIEngine, AIEngineConfig
         
-        self.ai_engine = AIEngine(
+        config = AIEngineConfig(
             api_key=api_key,
             model=self.unified_settings.AI_MODEL,
             temperature=0.7,  # Default temperature since not in AppConfig
             max_tokens=4000,  # Default max_tokens since not in AppConfig
             timeout=30.0  # Default timeout since not in AppConfig
         )
+        self.ai_engine = AIEngine(config)
         logger.info(f"MainOrchestrator: Using unified AIEngine with model {self.unified_settings.AI_MODEL}")
         
         # Initialize Arweave client for internal uploader service
