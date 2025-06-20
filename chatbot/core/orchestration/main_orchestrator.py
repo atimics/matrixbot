@@ -8,6 +8,7 @@ Acts as the primary entry point and coordinates between different subsystems.
 import asyncio
 import json
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -331,13 +332,18 @@ class MainOrchestrator:
         self.tool_registry.register_tool(CreateGitHubIssueTool())
         self.tool_registry.register_tool(AnalyzeChannelForIssuesTool())
         
-        # Core Developer tools (ACE Phase 1, 2 & 3)
-        self.tool_registry.register_tool(GetCodebaseStructureTool())
-        self.tool_registry.register_tool(SetupDevelopmentWorkspaceTool())
-        self.tool_registry.register_tool(ExploreCodebaseTool())
-        self.tool_registry.register_tool(AnalyzeAndProposeChangeTool())
-        self.tool_registry.register_tool(ImplementCodeChangesTool())
-        self.tool_registry.register_tool(CreatePullRequestTool())
+        # Core Developer tools (ACE Phase 1, 2 & 3) - SECURITY: Only enabled when explicitly configured
+        developer_tools_enabled = os.getenv("DEVELOPER_TOOLS_ENABLED", "false").lower() == "true"
+        if developer_tools_enabled:
+            logger.warning("Developer tools are enabled - these tools can modify code and should only be used in secure environments")
+            self.tool_registry.register_tool(GetCodebaseStructureTool(), enabled=True)
+            self.tool_registry.register_tool(SetupDevelopmentWorkspaceTool(), enabled=True) 
+            self.tool_registry.register_tool(ExploreCodebaseTool(), enabled=True)
+            self.tool_registry.register_tool(AnalyzeAndProposeChangeTool(), enabled=True)
+            self.tool_registry.register_tool(ImplementCodeChangesTool(), enabled=True)
+            self.tool_registry.register_tool(CreatePullRequestTool(), enabled=True)
+        else:
+            logger.info("Developer tools are disabled by default for security. Set DEVELOPER_TOOLS_ENABLED=true to enable.")
         
         # User Profiling tools (Initiative B)
         self.tool_registry.register_tool(SentimentAnalysisTool())
