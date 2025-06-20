@@ -121,7 +121,7 @@ class MainOrchestrator:
         # Get API key from settings (already loaded from env/config)
         api_key = settings.OPENROUTER_API_KEY
         if not api_key:
-            logger.error("OPENROUTER_API_KEY is not configured in environment or config.json")
+            logger.error("OPENROUTER_API_KEY is not configured in environment variables")
             raise ValueError("OPENROUTER_API_KEY is required but not available")
         
         # Use the unified AI engine
@@ -873,20 +873,7 @@ class MainOrchestrator:
             logger.info(f"Matrix media gallery is configured: {settings.MATRIX_MEDIA_GALLERY_ROOM_ID}")
             return
 
-        config_path = Path("data/config.json")
-        if config_path.exists():
-            try:
-                with open(config_path, 'r') as f:
-                    config_data = json.load(f)
-                    gallery_id = config_data.get("MATRIX_MEDIA_GALLERY_ROOM_ID")
-                    if gallery_id:
-                        settings.MATRIX_MEDIA_GALLERY_ROOM_ID = gallery_id
-                        logger.info(f"Loaded Matrix media gallery from config.json: {gallery_id}")
-                        return
-            except (json.JSONDecodeError, IOError) as e:
-                logger.warning(f"Could not read gallery ID from config.json: {e}")
-
-        logger.info("MATRIX_MEDIA_GALLERY_ROOM_ID not found. Attempting to create a new gallery room...")
+        logger.info("MATRIX_MEDIA_GALLERY_ROOM_ID not found in environment. Attempting to create a new gallery room...")
         if not self.action_context.matrix_observer:
             logger.error("Cannot create gallery room: Matrix observer is not available.")
             return
@@ -903,17 +890,7 @@ class MainOrchestrator:
                 new_room_id = response.room_id
                 logger.info(f"Successfully created new Matrix media gallery: {new_room_id}")
                 settings.MATRIX_MEDIA_GALLERY_ROOM_ID = new_room_id
-
-                # Persist the new room ID to config.json
-                config_data = {}
-                if config_path.exists():
-                    with open(config_path, 'r') as f: 
-                        config_data = json.load(f)
-                config_data["MATRIX_MEDIA_GALLERY_ROOM_ID"] = new_room_id
-                config_path.parent.mkdir(parents=True, exist_ok=True)
-                with open(config_path, 'w') as f: 
-                    json.dump(config_data, f, indent=2)
-                logger.info(f"Saved new gallery room ID to {config_path}")
+                logger.info(f"Set MATRIX_MEDIA_GALLERY_ROOM_ID to {new_room_id}. Please add this to your environment variables for persistence.")
             else:
                 logger.error(f"Failed to create gallery room. Response: {response}")
         except Exception as e:

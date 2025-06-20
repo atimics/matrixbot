@@ -31,8 +31,8 @@ class DynamicPayloadOptimizer:
     Dynamically optimizes payload parameters based on performance metrics.
     """
     
-    def __init__(self, config_file: str = "data/config.json"):
-        self.config_file = Path(config_file)
+    def __init__(self):
+        # Remove config_file parameter - use environment variables instead
         self.metrics_file = Path("data/optimization_metrics.json")
         self.optimization_history = []
         self.load_metrics_history()

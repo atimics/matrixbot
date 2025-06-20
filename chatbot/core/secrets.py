@@ -114,13 +114,14 @@ class EncryptedFileSecretProvider(SecretProvider):
         if not env_key:
             raise ConfigurationError(
                 "FATAL: The RATICHAT_ENCRYPTION_KEY environment variable is not set. "
-                "The application cannot start without it."
+                "The application cannot start without it. Please generate a key and set it.\n"
+                "Generate a new key with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
             )
         try:
-            # The key in the environment should be Base64 encoded
+            # The key in the environment should be Base64 encoded for safety
             return base64.b64decode(env_key)
         except Exception as e:
-            raise ConfigurationError(f"Invalid RATICHAT_ENCRYPTION_KEY format: {e}")
+            raise ConfigurationError(f"Invalid RATICHAT_ENCRYPTION_KEY format: {e}. It must be a valid Base64 encoded string.")
 
     async def _load_secrets(self) -> Dict[str, str]:
         """Load and decrypt secrets from file."""
