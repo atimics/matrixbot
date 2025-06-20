@@ -7,7 +7,7 @@ It loads and validates configuration from environment variables and .env files.
 
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -178,6 +178,18 @@ class AppConfig(BaseSettings):
     CLOUDFRONT_DOMAIN: Optional[str] = None  # CloudFront domain for public URLs
     S3_UPLOAD_TIMEOUT: float = 120.0  # Upload timeout in seconds
     USE_S3_FOR_MEDIA: bool = True  # Use S3 as primary media storage (keep Arweave for NFTs)
+
+    # API Security Configuration
+    class Security:
+        """Security configuration nested class."""
+        api_key: Optional[str] = None
+        allowed_origins: List[str] = ["http://localhost:3000"]
+        trusted_hosts: List[str] = ["localhost", "127.0.0.1"]
+        rate_limit_requests_per_minute: int = 60
+        rate_limit_burst_size: int = 100
+        enable_api_key_auth: bool = True
+
+    security: Security = Security()
 
 
 # Global settings instance
