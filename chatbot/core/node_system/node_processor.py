@@ -1298,9 +1298,8 @@ class NodeProcessor:
         """Get planned actions from AI for the backlog"""
         try:
             # Use AI engine to get planning decisions
-            decision_result = await self.ai_engine.make_decision(
-                world_state=payload,
-                cycle_id=f"{cycle_id}_planning"
+            decision_result = await self.ai_engine.decide_actions(
+                world_state=payload
             )
             
             # Log AI reasoning for planning
