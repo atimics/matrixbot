@@ -119,7 +119,7 @@ class WorldStateData:
         self.development_tasks: Dict[str, DevelopmentTask] = {}  # task_id -> task
         self.evolutionary_knowledge_base: Dict[str, Dict[str, Any]] = {}  # patterns and learnings
         
-        # Legacy compatibility (Phase 1 backward compatibility)
+        # Compatibility (Phase 1 backward compatibility)
         self.codebase_structure: Optional[Dict[str, Any]] = None
         self.project_plan: Dict[str, DevelopmentTask] = {}  # task_id -> DevelopmentTask  
         self.github_repository_state: Optional[TargetRepositoryContext] = None
@@ -348,7 +348,7 @@ class WorldStateData:
             "target_repositories": {url: asdict(ctx) for url, ctx in self.target_repositories.items()},
             "development_tasks": {task_id: asdict(task) for task_id, task in self.development_tasks.items()},
             "evolutionary_knowledge_base": self.evolutionary_knowledge_base,
-            # Legacy compatibility
+            # Compatibility
             "codebase_structure": self.codebase_structure,
             "project_plan": {task_id: asdict(task) for task_id, task in self.project_plan.items()},
             "github_repository_state": asdict(self.github_repository_state) if self.github_repository_state else None,
@@ -466,7 +466,7 @@ class WorldStateData:
         self.last_update = time.time()
 
     def add_project_task(self, task: DevelopmentTask):
-        """Add a new development task to the plan (legacy compatibility)."""
+        """Add a new development task to the plan (compatibility method)."""
         self.project_plan[task.task_id] = task
         self.development_tasks[task.task_id] = task  # Also add to new structure
         self.last_update = time.time()
@@ -480,7 +480,7 @@ class WorldStateData:
                     setattr(task, key, value)
             task.updated_at = time.time()
             self.last_update = time.time()
-            # Keep legacy structure in sync
+            # Keep structure in sync
             if task_id in self.project_plan:
                 self.project_plan[task_id] = task
 

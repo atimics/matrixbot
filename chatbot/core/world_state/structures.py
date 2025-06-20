@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-World State Data Structures (Legacy Compatibility Module)
+World State Data Structures
 
-This module is now a compatibility layer that imports from the new modular structure.
+This module provides compatibility imports from the new modular structure.
 The actual structures have been split into logical modules for better maintainability.
 
 For new code, import directly from the data_structures package:

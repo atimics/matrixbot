@@ -215,7 +215,7 @@ class PayloadBuilder:
                 all_channel_items.append((platform_channels.id, platform_channels))
         sorted_channels = sorted(all_channel_items, key=sort_key)
 
-        # --- Legacy compatibility: provide flat channels dict if all IDs are unique ---
+        # --- Compatibility: provide flat channels dict if all IDs are unique ---
         flat_channels = self._flatten_channels(world_state_data.channels)
         unique_ids = len(flat_channels) == len(set(flat_channels.keys()))
         channels_payload = {}
@@ -283,7 +283,7 @@ class PayloadBuilder:
                         
                 channels_payload[ch_id] = summary
 
-        # If legacy/flat structure is expected, provide it
+        # If flat structure is expected, provide it
         payload_channels = channels_payload
         if unique_ids:
             payload_channels = {ch_id: channels_payload[ch_id] for ch_id in flat_channels.keys() if ch_id in channels_payload}
@@ -1218,7 +1218,7 @@ class PayloadBuilder:
         return PayloadBuilder._remove_empty_values(payload)
 
     def _flatten_channels(self, channels_dict):
-        """Flatten nested channels dict to {channel_id: channel} for legacy compatibility."""
+        """Flatten nested channels dict to {channel_id: channel} for compatibility."""
         flat = {}
         for platform_channels in channels_dict.values():
             if isinstance(platform_channels, dict):
