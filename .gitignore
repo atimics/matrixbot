@@ -216,7 +216,7 @@ pytest.xml
 # Project-specific additions for consolidated UI
 
 # Runtime configuration files
-data/config.json
+# config.json is no longer used - all configuration via environment variables
 data/chatbot.db
 
 # Deprecated UI components (keeping for reference)
