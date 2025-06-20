@@ -106,12 +106,12 @@ class TestOrchestratorExtended:
     async def test_channel_processing_with_mocked_ai(self):
         """Test channel processing with mocked AI."""
         # Mock the AI engine to return a simple decision
-        with patch.object(self.orchestrator.ai_engine, 'make_decision') as mock_decision:
-            mock_result = AIResponse(
-                tool_calls=[],
-                message="No action needed",
-                reasoning="Test reasoning"
-            )
+        with patch.object(self.orchestrator.ai_engine, 'decide_actions') as mock_decision:
+            mock_result = {
+                "reasoning": "Test reasoning",
+                "selected_actions": [],
+                "message": "No action needed"
+            }
             mock_decision.return_value = mock_result
             
             # Mock context manager to return some messages
@@ -177,12 +177,12 @@ class TestOrchestratorExtended:
             mock_get_messages.side_effect = Exception("Context service unavailable")
             
             # Mock AI engine to prevent HTTP requests and return empty decision
-            with patch.object(self.orchestrator.ai_engine, 'make_decision') as mock_ai_decision:
-                mock_ai_decision.return_value = AIResponse(
-                    tool_calls=[],
-                    reasoning="Test decision during error handling",
-                    message="Error in context service"
-                )
+            with patch.object(self.orchestrator.ai_engine, 'decide_actions') as mock_ai_decision:
+                mock_ai_decision.return_value = {
+                    "reasoning": "Test decision during error handling",
+                    "selected_actions": [],
+                    "message": "Error in context service"
+                }
                 
                 # Channel processing should handle the error gracefully
                 await self.orchestrator._process_channel("test_channel")
