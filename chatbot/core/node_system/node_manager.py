@@ -15,6 +15,27 @@ from datetime import datetime
 
 
 @dataclass
+class ActionRecord:
+    """Represents a recent action taken by the AI or system."""
+    timestamp: float
+    action: str
+    params: Dict[str, Any]
+    result: str
+    reason: str
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "timestamp": self.timestamp,
+            "action": self.action,
+            "params": self.params,
+            "result": self.result,
+            "reason": self.reason,
+            "time_str": datetime.fromtimestamp(self.timestamp).strftime("%H:%M:%S")
+        }
+
+
+@dataclass
 class SystemEvent:
     """Represents a system event in node management."""
     timestamp: float
@@ -62,6 +83,7 @@ class NodeManager:
         self.default_pinned_nodes = default_pinned_nodes or []
         self.node_metadata: Dict[str, NodeMetadata] = {}
         self.system_events: deque = deque(maxlen=20)  # Keep last 20 events
+        self.action_history: deque = deque(maxlen=50)  # Keep last 50 actions
         self._initialize_default_pins()
     
     def _log_system_event(self, event_type: str, message: str, affected_nodes: Optional[List[str]] = None):
@@ -73,6 +95,17 @@ class NodeManager:
             affected_nodes=affected_nodes or []
         )
         self.system_events.append(event)
+    
+    def _log_action(self, action: str, params: Dict[str, Any], result: str, reason: str):
+        """Log an action taken by the AI or system."""
+        record = ActionRecord(
+            timestamp=time.time(),
+            action=action,
+            params=params,
+            result=result,
+            reason=reason
+        )
+        self.action_history.append(record)
     
     def _initialize_default_pins(self):
         """Initialize default pinned nodes and expand them for guaranteed visibility."""
@@ -219,6 +252,14 @@ class NodeManager:
             [node_path] + ([auto_collapsed_node] if auto_collapsed_node else [])
         )
         
+        # Log action
+        self._log_action(
+            action="expand_node",
+            params={"node_path": node_path},
+            result="success",
+            reason=message
+        )
+        
         return True, auto_collapsed_node, message
     
     def collapse_node(self, node_path: str, is_auto_collapse: bool = False) -> tuple[bool, str]:
@@ -245,6 +286,14 @@ class NodeManager:
             [node_path]
         )
         
+        # Log action
+        self._log_action(
+            action="collapse_node",
+            params={"node_path": node_path},
+            result="success",
+            reason=f"Node {node_path} was {collapse_type}"
+        )
+        
         return True, f"Successfully {collapse_type} {node_path}"
     
     def pin_node(self, node_path: str) -> tuple[bool, str]:
@@ -268,6 +317,14 @@ class NodeManager:
             [node_path]
         )
         
+        # Log action
+        self._log_action(
+            action="pin_node",
+            params={"node_path": node_path},
+            result="success",
+            reason=f"Node {node_path} was pinned"
+        )
+        
         return True, f"Successfully pinned {node_path}"
     
     def unpin_node(self, node_path: str) -> tuple[bool, str]:
@@ -289,6 +346,14 @@ class NodeManager:
             "node_unpinned",
             f"Node {node_path} was unpinned",
             [node_path]
+        )
+        
+        # Log action
+        self._log_action(
+            action="unpin_node",
+            params={"node_path": node_path},
+            result="success",
+            reason=f"Node {node_path} was unpinned"
         )
         
         return True, f"Successfully unpinned {node_path}"

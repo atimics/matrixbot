@@ -5,6 +5,6 @@ This package provides a modular FastAPI-based REST API for monitoring and contro
 the chatbot system, with organized routers for different functional areas.
 """
 
-from .main import ChatbotAPIServer, create_api_server
+from .secure_server import create_secure_api_server
 
-__all__ = ["ChatbotAPIServer", "create_api_server"]
+__all__ = ["create_secure_api_server"]

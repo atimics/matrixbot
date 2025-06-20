@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import Mock, patch, AsyncMock
 
-from chatbot.api_server.main import ChatbotAPIServer, create_api_server
+from chatbot.api_server.secure_server import create_secure_api_server
 from chatbot.core.orchestration import MainOrchestrator
 
 
