@@ -939,13 +939,13 @@ class NodeProcessor:
             )
             
             # Extract node selection from AI response
-            selected_actions = decision_result.selected_actions
+            selected_actions = decision_result.get('selected_actions', [])
             for action_plan in selected_actions:
-                if action_plan.action_type == "select_nodes_to_expand":
+                if action_plan.get('action_type') == "select_nodes_to_expand":
                     return {
-                        "node_paths": action_plan.parameters.get("node_paths", []),
-                        "reasoning": action_plan.parameters.get("reasoning", "No reasoning provided"),
-                        "ai_reasoning": action_plan.reasoning
+                        "node_paths": action_plan.get('parameters', {}).get("node_paths", []),
+                        "reasoning": action_plan.get('parameters', {}).get("reasoning", "No reasoning provided"),
+                        "ai_reasoning": action_plan.get('reasoning', '')
                     }
             
             # If no explicit node selection, return empty selection
@@ -973,20 +973,20 @@ class NodeProcessor:
                 cycle_id=f"{cycle_id}_action_selection"
             )
             
-            # Convert DecisionResult to dict format expected by execution methods
+            # Convert dict result to format expected by execution methods
             ai_response = {
-                "reasoning": decision_result.reasoning,
-                "observations": decision_result.observations,
-                "selected_actions": decision_result.selected_actions,
-                "tool_calls": []  # Convert ActionPlan objects to tool_calls format
+                "reasoning": decision_result.get('reasoning', ''),
+                "observations": decision_result.get('observations', ''),
+                "selected_actions": decision_result.get('selected_actions', []),
+                "tool_calls": []  # Convert action dict objects to tool_calls format
             }
             
-            # Convert ActionPlan objects to tool_calls format for execution
-            for action_plan in decision_result.selected_actions:
+            # Convert action dict objects to tool_calls format for execution
+            for action_plan in decision_result.get('selected_actions', []):
                 tool_call = {
                     "function": {
-                        "name": action_plan.action_type,
-                        "arguments": action_plan.parameters
+                        "name": action_plan.get('action_type', ''),
+                        "arguments": action_plan.get('parameters', {})
                     },
                     "reasoning": action_plan.reasoning,
                     "priority": action_plan.priority
