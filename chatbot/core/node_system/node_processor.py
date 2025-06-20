@@ -986,15 +986,14 @@ class NodeProcessor:
                 return {}
             
             # Send to AI engine for action selection
-            decision_result = await self.ai_engine.make_decision(
-                world_state=payload_data,
-                cycle_id=f"{cycle_id}_action_selection"
+            decision_result = await self.ai_engine.decide_actions(
+                world_state=payload_data
             )
             
             # Convert dict result to format expected by execution methods
             ai_response = {
                 "reasoning": decision_result.get('reasoning', ''),
-                "observations": decision_result.get('observations', ''),
+                "observations": decision_result.get('reasoning', ''),  # Map reasoning to observations for compatibility
                 "selected_actions": decision_result.get('selected_actions', []),
                 "tool_calls": []  # Convert action dict objects to tool_calls format
             }
