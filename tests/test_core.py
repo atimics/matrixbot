@@ -10,7 +10,7 @@ import time
 from chatbot.core.world_state import WorldStateManager
 from chatbot.core.history_recorder import HistoryRecorder
 from chatbot.core.orchestration import MainOrchestrator, OrchestratorConfig, ProcessingConfig
-from chatbot.core.ai_engine import AIEngine
+from chatbot.core.ai_engine import AIEngine, AIEngineConfig
 
 
 class TestWorldState:
@@ -139,14 +139,16 @@ class TestAIEngine:
     
     def test_initialization(self):
         """Test AI engine initialization."""
-        engine = AIEngine("fake_api_key", "fake_model", optimization_level="original")
-        assert engine.api_key == "fake_api_key"
-        assert engine.model == "fake_model"
+        config = AIEngineConfig(api_key="fake_api_key", model="fake_model")
+        engine = AIEngine(config)
+        assert engine.config.api_key == "fake_api_key"
+        assert engine.config.model == "fake_model"
     
     @pytest.mark.asyncio
-    async def test_make_decision_with_mock(self):
+    async def test_decide_actions_with_mock(self):
         """Test AI decision making with mocked response."""
-        engine = AIEngine("fake_api_key", "fake_model", optimization_level="original")
+        config = AIEngineConfig(api_key="fake_api_key", model="fake_model")
+        engine = AIEngine(config)
         
         # Mock the HTTP client response
         mock_response = Mock()
@@ -154,18 +156,18 @@ class TestAIEngine:
         mock_response.json.return_value = {
             "choices": [{
                 "message": {
-                    "content": '{"reasoning": "Test decision", "selected_actions": []}'
+                    "content": '{"reasoning": "Test decision", "tool_calls": [], "message": "No actions"}'
                 }
             }]
         }
         
         with patch('httpx.AsyncClient.post', return_value=mock_response):
             world_state = {"channels": {}, "system": {}}
-            decision = await engine.make_decision(world_state, "test_cycle")
+            decision = await engine.decide_actions(world_state)
             
             assert decision is not None
-            assert decision.reasoning == "Test decision"
-            assert decision.selected_actions == []
+            assert decision["reasoning"] == "Test decision"
+            assert decision["selected_actions"] == []
 
 
 class TestOrchestrator:

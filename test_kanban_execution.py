@@ -40,9 +40,10 @@ class MockAIEngine:
     def __init__(self):
         self.call_count = 0
         
-    async def make_decision(self, world_state, cycle_id):
+    async def decide_actions(self, world_state):
         self.call_count += 1
         # Simulate AI planning different actions based on call count
+        cycle_id = world_state.get("cycle_id", "default")
         if "planning" in cycle_id:
             # Planning phase - suggest new actions
             if self.call_count == 1:
