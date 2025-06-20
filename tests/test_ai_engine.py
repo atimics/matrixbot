@@ -123,26 +123,27 @@ class TestAIEngine:
             assert "error" in result["reasoning"].lower()
     
     @pytest.mark.asyncio
-    async def test_make_decision_network_exception(self):
+    async def test_decide_actions_network_exception(self):
         """Test handling of network exceptions."""
-        engine = AIEngine(api_key="test_key")
+        config = AIEngineConfig(api_key="test_key")
+        engine = AIEngine(config)
         
         with patch('httpx.AsyncClient') as mock_client:
             mock_context = AsyncMock()
             mock_context.__aenter__.return_value.post = AsyncMock(side_effect=Exception("Network timeout"))
             mock_client.return_value = mock_context
             
-            result = await engine.make_decision({"test": "state"}, "test_cycle")
+            result = await engine.decide_actions({"test": "state"})
             
-            assert result.cycle_id == "test_cycle"
-            assert len(result.selected_actions) == 1  # Should have fallback wait action
-            assert result.selected_actions[0].action_type == "wait"
-            assert "error" in result.reasoning.lower()
+            assert "reasoning" in result
+            assert len(result["selected_actions"]) == 0  # Should have no actions on error
+            assert "error" in result["reasoning"].lower()
     
     @pytest.mark.asyncio
-    async def test_make_decision_no_choices_in_response(self):
+    async def test_decide_actions_no_choices_in_response(self):
         """Test handling of response with no choices."""
-        engine = AIEngine(api_key="test_key")
+        config = AIEngineConfig(api_key="test_key")
+        engine = AIEngine(config)
         
         mock_response_data = {
             "choices": []
@@ -158,12 +159,11 @@ class TestAIEngine:
             mock_context.__aenter__.return_value.post = AsyncMock(return_value=mock_response)
             mock_client.return_value = mock_context
             
-            result = await engine.make_decision({"test": "state"}, "test_cycle")
+            result = await engine.decide_actions({"test": "state"})
             
-            assert result.cycle_id == "test_cycle"
-            assert len(result.selected_actions) == 1  # Should have fallback wait action
-            assert result.selected_actions[0].action_type == "wait"
-            assert "error" in result.reasoning.lower()
+            assert "reasoning" in result
+            assert len(result["selected_actions"]) == 0  # Should have no actions on error
+            assert "error" in result["reasoning"].lower()
     
     def test_cleanup(self):
         """Test cleanup method (if it exists)."""
