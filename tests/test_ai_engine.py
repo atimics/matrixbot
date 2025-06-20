@@ -4,7 +4,7 @@ Tests for AI decision engine functionality.
 import pytest
 import json
 from unittest.mock import AsyncMock, patch, MagicMock, Mock
-from chatbot.core.ai_engine import AIEngine, AIResponse, ToolCall
+from chatbot.core.ai_engine import AIEngine, AIEngineConfig, AIResponse, ToolCall
 
 
 class TestAIEngine:
@@ -12,36 +12,36 @@ class TestAIEngine:
     
     def test_initialization_with_config(self):
         """Test initialization with custom config."""
-        engine = AIEngine(api_key="test_key", model="claude-3-haiku")
+        config = AIEngineConfig(api_key="test_key", model="claude-3-haiku")
+        engine = AIEngine(config)
         
-        assert engine.api_key == "test_key"
-        assert engine.model == "claude-3-haiku"
+        assert engine.config.api_key == "test_key"
+        assert engine.config.model == "claude-3-haiku"
         assert hasattr(engine, 'config')
     
     def test_initialization_without_api_key(self):
         """Test initialization fails without API key."""
-        with pytest.raises(TypeError):
+        with pytest.raises(ValueError):
             # Should fail because api_key is required parameter
-            AIEngine()
+            config = AIEngineConfig(api_key="")
+            AIEngine(config)
     
     @pytest.mark.asyncio
-    async def test_make_decision_successful_response(self):
+    async def test_decide_actions_successful_response(self):
         """Test successful decision making with mocked response."""
-        engine = AIEngine(api_key="test_key")
+        engine = AIEngine(AIEngineConfig(api_key="test_key"))
         
         # Mock response data that matches current JSON structure
         mock_response_data = {
             "choices": [{
                 "message": {
                     "content": json.dumps({
-                        "observations": "Test observation",
-                        "potential_actions": [],
-                        "selected_actions": [{
-                            "action_type": "wait",
+                        "tool_calls": [{
+                            "name": "wait",
                             "parameters": {},
-                            "reasoning": "No action needed",
-                            "priority": 1
+                            "reasoning": "No action needed"
                         }],
+                        "message": "I'm waiting for more input",
                         "reasoning": "Test reasoning"
                     })
                 }
@@ -63,17 +63,18 @@ class TestAIEngine:
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=None)
             
-            result = await engine.make_decision({"test": "state"}, "test_cycle")
+            result = await engine.decide_actions({"test": "state"})
             
-            assert result.cycle_id == "test_cycle"
-            assert result.observations == "Test observation"
-            assert len(result.selected_actions) == 1
-            assert result.selected_actions[0].action_type == "wait"
+            assert "reasoning" in result
+            assert "selected_actions" in result
+            assert len(result["selected_actions"]) == 1
+            assert result["selected_actions"][0]["action_type"] == "wait"
     
     @pytest.mark.asyncio
-    async def test_make_decision_invalid_json_response(self):
+    async def test_decide_actions_invalid_json_response(self):
         """Test handling of invalid JSON response."""
-        engine = AIEngine(api_key="test_key")
+        config = AIEngineConfig(api_key="test_key")
+        engine = AIEngine(config)
         
         mock_response_data = {
             "choices": [{
@@ -93,16 +94,17 @@ class TestAIEngine:
             mock_context.__aenter__.return_value.post = AsyncMock(return_value=mock_response)
             mock_client.return_value = mock_context
             
-            result = await engine.make_decision({"test": "state"}, "test_cycle")
+            result = await engine.decide_actions({"test": "state"})
             
             # Should handle invalid JSON gracefully
-            assert result.cycle_id == "test_cycle"
-            assert "error" in result.reasoning.lower() or "failed" in result.reasoning.lower()
+            assert "reasoning" in result
+            assert "error" in result["reasoning"].lower() or "failed" in result["reasoning"].lower()
     
     @pytest.mark.asyncio
-    async def test_make_decision_http_error(self):
+    async def test_decide_actions_http_error(self):
         """Test handling of HTTP errors."""
-        engine = AIEngine(api_key="test_key")
+        config = AIEngineConfig(api_key="test_key")
+        engine = AIEngine(config)
         
         mock_response = Mock()
         mock_response.status_code = 500
@@ -114,12 +116,11 @@ class TestAIEngine:
             mock_context.__aenter__.return_value.post = AsyncMock(return_value=mock_response)
             mock_client.return_value = mock_context
             
-            result = await engine.make_decision({"test": "state"}, "test_cycle")
+            result = await engine.decide_actions({"test": "state"})
             
-            assert result.cycle_id == "test_cycle"
-            assert len(result.selected_actions) == 1  # Should have fallback wait action
-            assert result.selected_actions[0].action_type == "wait"
-            assert "api error" in result.reasoning.lower()
+            assert "reasoning" in result
+            assert len(result["selected_actions"]) == 0  # Should have no actions on error
+            assert "error" in result["reasoning"].lower()
     
     @pytest.mark.asyncio
     async def test_make_decision_network_exception(self):
