@@ -359,9 +359,8 @@ class NodeProcessor:
     async def _get_next_actions(self, payload_data: Dict[str, Any], cycle_id: str, step: int):
         """Get the next action(s) from the AI."""
         try:
-            decision_result = await self.ai_engine.make_decision(
-                world_state=payload_data,
-                cycle_id=f"{cycle_id}_step_{step}"
+            decision_result = await self.ai_engine.decide_actions(
+                world_state=payload_data
             )
             # Log the AI's reasoning for this step
             if decision_result.get('reasoning'):
@@ -953,9 +952,8 @@ class NodeProcessor:
                 return {"node_paths": [], "reasoning": "No payload data"}
             
             # Send to AI engine for node selection
-            decision_result = await self.ai_engine.make_decision(
-                world_state=payload_data,
-                cycle_id=f"{cycle_id}_node_selection"
+            decision_result = await self.ai_engine.decide_actions(
+                world_state=payload_data
             )
             
             # Extract node selection from AI response

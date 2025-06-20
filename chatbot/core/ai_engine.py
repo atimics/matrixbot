@@ -429,7 +429,7 @@ def create_ai_engine(
         **kwargs: Additional configuration options for AIEngineConfig.
 
     Returns:
-        An initialized AIEngine instance.
+        An initialized modern AIEngine instance.
     """
     if not api_key:
         raise ValueError("API key must be provided to create an AI engine.")
@@ -506,8 +506,7 @@ class AIEngineLegacy(AIEngine):
 # A clear list of what this module provides for external use.
 __all__ = [
     "AIEngine",
-    "AIEngineLegacy",
-    "AIEngineConfig",
+    "AIEngineConfig", 
     "AIProvider",
     "AIResponse",
     "ToolCall",
