@@ -48,11 +48,8 @@ class MatrixEventHandler:
     
     async def handle_message(self, room: MatrixRoom, event, client=None):
         """Handle incoming Matrix messages with enhanced batching and context tracking."""
-        # Skip our own messages
-        logger.info(f"MatrixEventHandler: Comparing event.sender='{event.sender}' with user_id='{self.user_id}'")
-        if event.sender == self.user_id:
-            logger.info(f"MatrixEventHandler: Skipping own message from {event.sender}")
-            return
+        # Include all messages, including our own, for full conversation context
+        logger.info(f"MatrixEventHandler: Processing message from sender='{event.sender}' (user_id='{self.user_id}')")
 
         # Extract comprehensive room details
         room_details = self.room_manager.extract_room_details(room)

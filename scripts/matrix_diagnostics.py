@@ -16,7 +16,7 @@ from typing import Dict, Any
 # Add the parent directory to Python path to import chatbot modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from chatbot.integrations.matrix.observer import MatrixObserver
+from chatbot.integrations.matrix import MatrixObserver
 from chatbot.core.world_state import WorldStateManager
 from chatbot.config import settings
 

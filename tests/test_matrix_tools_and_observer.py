@@ -14,7 +14,7 @@ from chatbot.tools.matrix import (
     IgnoreMatrixInviteTool
 )
 from chatbot.tools.base import ActionContext
-from chatbot.integrations.matrix.observer import MatrixObserver
+from chatbot.integrations.matrix import MatrixObserver
 from chatbot.core.world_state import WorldStateManager, WorldState, Message
 
 # ---- Tests for Matrix Tools ----

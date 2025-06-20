@@ -80,9 +80,8 @@ async def _create_message_from_cast_data(
             return None
         author = cast_data.get("author", {})
         author_fid_str = str(author.get("fid"))
-        if bot_fid and author_fid_str == str(bot_fid):
-            logger.debug(f"Skipping cast from self (bot_fid={bot_fid}): {cast_hash}")
-            return None
+        # Include all messages, including bot's own, for full conversation context
+        # Removed self-filtering logic - bot should be aware of its own messages
         cast_timestamp_str = cast_data.get("timestamp", "")
         cast_timestamp = parse_farcaster_timestamp(cast_timestamp_str)
         if (
