@@ -16,12 +16,102 @@ import os
 import json
 from typing import Any, Dict, List, Optional
 from pathlib import Path
+import logging
 
 from ..integrations.github_service import GitHubService
 from ..config import settings
 from ..utils.git_utils import LocalGitRepository
 from .base import ToolInterface, ActionContext
 
+logger = logging.getLogger(__name__)
+
+# Security configuration for developer tools
+class DeveloperToolsSecurity:
+    """Security controls for developer tools."""
+    
+    def __init__(self):
+        self.enabled = os.getenv("DEVELOPER_TOOLS_ENABLED", "false").lower() == "true"
+        self.sandbox_path = Path(os.getenv("DEVELOPER_TOOLS_SANDBOX", "/app/workspace"))
+        self.admin_key = os.getenv("DEVELOPER_TOOLS_ADMIN_KEY")
+        self.allowed_repos = self._get_allowed_repos()
+    
+    def _get_allowed_repos(self) -> List[str]:
+        """Get list of allowed repositories from environment."""
+        repos_env = os.getenv("DEVELOPER_TOOLS_ALLOWED_REPOS", "")
+        if repos_env:
+            return [repo.strip() for repo in repos_env.split(",")]
+        return []
+    
+    def is_enabled(self) -> bool:
+        """Check if developer tools are enabled."""
+        return self.enabled
+    
+    def validate_admin_access(self, context: ActionContext) -> bool:
+        """Validate admin access for dangerous operations."""
+        if not self.admin_key:
+            logger.warning("DEVELOPER_TOOLS_ADMIN_KEY not configured - blocking admin operations")
+            return False
+        
+        # In a real implementation, this would check the request context
+        # for the admin key or validate user permissions
+        return True
+    
+    def validate_repo_access(self, repo_name: str) -> bool:
+        """Validate access to a specific repository."""
+        if not self.allowed_repos:
+            # If no restrictions configured, allow all
+            return True
+        return repo_name in self.allowed_repos
+    
+    def sanitize_path(self, path: str) -> Path:
+        """Sanitize and validate file paths to prevent path traversal."""
+        # Convert to Path object and resolve
+        requested_path = Path(path).resolve()
+        
+        # Ensure path is within sandbox
+        try:
+            requested_path.relative_to(self.sandbox_path.resolve())
+        except ValueError:
+            raise ValueError(f"Path {requested_path} is outside allowed sandbox {self.sandbox_path}")
+        
+        return requested_path
+    
+    def setup_sandbox(self):
+        """Set up the sandbox directory."""
+        self.sandbox_path.mkdir(parents=True, exist_ok=True)
+        
+        # Create .gitignore to prevent accidental commits
+        gitignore = self.sandbox_path / ".gitignore"
+        if not gitignore.exists():
+            with open(gitignore, "w") as f:
+                f.write("# Developer tools sandbox - do not commit\n*\n")
+
+# Global security instance
+_security = DeveloperToolsSecurity()
+
+def require_developer_tools_enabled(func):
+    """Decorator to require developer tools to be enabled."""
+    async def wrapper(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
+        if not _security.is_enabled():
+            return {
+                "status": "error",
+                "message": "Developer tools are disabled. Set DEVELOPER_TOOLS_ENABLED=true to enable.",
+                "security_notice": "These tools can modify code and should only be enabled in secure environments."
+            }
+        return await func(self, params, context)
+    return wrapper
+
+def require_admin_access(func):
+    """Decorator to require admin access for dangerous operations."""
+    async def wrapper(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
+        if not _security.validate_admin_access(context):
+            return {
+                "status": "error",
+                "message": "Admin access required. Configure DEVELOPER_TOOLS_ADMIN_KEY.",
+                "security_notice": "This operation can modify code and requires elevated permissions."
+            }
+        return await func(self, params, context)
+    return wrapper
 
 # ==============================================================================
 # GitHub-Centric ACE Tools (Phase 2 - New Architecture)
