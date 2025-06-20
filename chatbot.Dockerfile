@@ -37,6 +37,15 @@ RUN poetry install --without dev --no-interaction --no-ansi
 # Create necessary directories
 RUN mkdir -p /app/data /app/matrix_store
 
+# Create a non-root user and group
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+# Change ownership of the app directory to the non-root user
+RUN chown -R appuser:appuser /app
+
+# Switch to the non-root user
+USER appuser
+
 # Expose the API server port
 EXPOSE 8000
 
