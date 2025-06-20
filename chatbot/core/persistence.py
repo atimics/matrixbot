@@ -586,27 +586,4 @@ def create_database_manager(database_url: Optional[str] = None) -> DatabaseManag
 
 
 # Backward compatibility adapter
-class LegacyHistoryRecorderAdapter:
-    """Adapter to maintain compatibility with existing HistoryRecorder interface."""
-    
-    def __init__(self, consolidated_recorder: ConsolidatedHistoryRecorder):
-        self.consolidated_recorder = consolidated_recorder
-    
-    async def record_state_change(self, change_type: str, data: Any, metadata: Optional[Dict] = None):
-        """Legacy interface for recording state changes."""
-        if not isinstance(data, dict):
-            data = {"data": str(data)}
-        
-        return await self.consolidated_recorder.record_state_change(
-            change_type=change_type,
-            data=data,
-            metadata=metadata
-        )
-    
-    async def export_state_changes_for_training(self, output_file: str, limit: Optional[int] = None):
-        """Legacy interface for exporting training data."""
-        return await self.consolidated_recorder.export_for_training(output_file=output_file)
 
-
-# Backward compatibility alias
-PersistenceManager = DatabaseManager

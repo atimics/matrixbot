@@ -224,15 +224,6 @@ class WorldStateManager:
         self.state.threads.setdefault(thread_id, []).append(message)
         logger.info(f"WorldStateManager: Added message to thread '{thread_id}'")
 
-    def add_message_compat(self, channel_id_or_dict, message=None):
-        """Compatibility wrapper for tests that call add_message with (dict, message) or (message_data, message)."""
-        # If called with (message_data, message), extract channel_id
-        if isinstance(channel_id_or_dict, dict) and message is not None:
-            channel_id = channel_id_or_dict.get("channel_id") or channel_id_or_dict.get("id")
-            return self.add_message(channel_id, message)
-        # If called with (channel_id, message)
-        return self.add_message(channel_id_or_dict, message)
-    
     def add_messages(self, messages: List[Message]) -> None:
         """Batch add multiple messages to the world state."""
         for msg in messages:

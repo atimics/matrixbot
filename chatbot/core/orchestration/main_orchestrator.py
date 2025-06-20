@@ -391,9 +391,6 @@ class MainOrchestrator:
             await self.integration_manager.connect_all_active()
             await self.integration_manager.start_all_services()
             
-            # Update legacy observer references for backward compatibility
-            await self._update_legacy_observer_references()
-            
             # Register integration services in the service registry
             await self._register_integration_services()
             
@@ -534,24 +531,6 @@ class MainOrchestrator:
             logger.debug("Added Farcaster feeds to critical pins: home, notifications")
         
         return critical_pins
-
-    async def _update_legacy_observer_references(self) -> None:
-        """Update legacy observer references for backward compatibility."""
-        try:
-            active_integrations = self.integration_manager.get_active_integrations()
-            
-            # Update legacy references
-            for integration_id, integration in active_integrations.items():
-                if hasattr(integration, 'integration_type'):
-                    if integration.integration_type == 'matrix':
-                        self.matrix_observer = integration
-                        logger.debug(f"Updated legacy matrix_observer reference to integration {integration_id}")
-                    elif integration.integration_type == 'farcaster':
-                        self.farcaster_observer = integration
-                        logger.debug(f"Updated legacy farcaster_observer reference to integration {integration_id}")
-                        
-        except Exception as e:
-            logger.error(f"Error updating legacy observer references: {e}")
 
     async def _register_integration_services(self) -> None:
         """Register integration services in the service registry for service-oriented access."""

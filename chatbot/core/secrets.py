@@ -39,7 +39,6 @@ class SecretConfig:
     vault_url: Optional[str] = None
     vault_token: Optional[str] = None
     vault_path: str = "secret/ratichat"
-    encryption_key_file: str = "data/encryption.key"
     secrets_file: str = "data/secrets.enc"
     master_password: Optional[str] = None
 

@@ -679,12 +679,11 @@ Core AI integration and decision-making interface.
 
 ```python
 class AIEngine:
-    async def make_decision(
+    async def decide_actions(
         self, 
-        world_state_payload: Dict[str, Any], 
-        available_tools: List[str]
+        world_state: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Make AI decision based on world state."""
+        """Decide on actions based on world state."""
         
     def build_prompt(
         self, 
