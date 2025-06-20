@@ -537,6 +537,7 @@ class PayloadBuilder:
             yield from [
                 "farcaster.feeds.home", 
                 "farcaster.feeds.notifications", 
+                "farcaster.feeds.for_you",  # Added missing for_you feed
                 "farcaster.feeds.trending",
                 "farcaster.rate_limits",
                 "farcaster.recent_posts"
@@ -834,6 +835,10 @@ class PayloadBuilder:
             elif feed_type == "notifications":
                 for ch in self._iter_all_channels(world_state_data.channels):
                     if ch.type == "farcaster" and ("notification" in ch.id or "mention" in ch.id):
+                        messages.extend(ch.recent_messages[-5:])
+            elif feed_type == "for_you":
+                for ch in self._iter_all_channels(world_state_data.channels):
+                    if ch.type == "farcaster" and "for_you" in ch.id:
                         messages.extend(ch.recent_messages[-5:])
             messages.sort(key=lambda m: m.timestamp, reverse=True)
             return {
@@ -1400,3 +1405,59 @@ class PayloadBuilder:
             return "MODERATE - Reduce message frequency"
         else:
             return "NORMAL - Continue normal conversation flow"
+    
+    def _analyze_unresponded_notifications(self, world_state_data: WorldStateData) -> Dict[str, Any]:
+        """Analyze notifications to identify unresponded threads requiring attention."""
+        unresponded_notifications = []
+        current_time = time.time()
+        
+        # Check for notifications in Farcaster channels
+        for platform_channels in world_state_data.channels.values():
+            if isinstance(platform_channels, dict):
+                for channel_id, channel in platform_channels.items():
+                    if channel.type == "farcaster" and ("notification" in channel_id or "mention" in channel_id):
+                        for msg in channel.recent_messages:
+                            # Skip very old notifications (older than 24 hours)
+                            if current_time - msg.timestamp > 86400:
+                                continue
+                                
+                            # Check if this is a reply/mention that hasn't been responded to
+                            needs_response = False
+                            
+                            # Check if it's a mention or reply
+                            if hasattr(msg, 'metadata') and isinstance(msg.metadata, dict):
+                                notification_type = msg.metadata.get('notification_type_detail', '')
+                                if notification_type in ['cast-mention', 'cast-reply', 'mention']:
+                                    needs_response = True
+                            
+                            # Check if we've already replied to this cast/thread
+                            if needs_response and hasattr(msg, 'id') and msg.id:
+                                # Check action history for replies to this cast
+                                for action in world_state_data.action_history:
+                                    if action.action_type == "send_farcaster_reply":
+                                        reply_to_hash = action.parameters.get("reply_to_hash")
+                                        if reply_to_hash == msg.id and action.result != "failure":
+                                            needs_response = False
+                                            break
+                            
+                            if needs_response:
+                                unresponded_notifications.append({
+                                    'message_id': msg.id,
+                                    'sender': msg.sender,
+                                    'content': msg.content[:200],  # First 200 chars
+                                    'timestamp': msg.timestamp,
+                                    'time_since': current_time - msg.timestamp,
+                                    'channel_id': channel_id,
+                                    'notification_type': msg.metadata.get('notification_type_detail', 'unknown') if hasattr(msg, 'metadata') else 'unknown',
+                                    'thread_id': msg.reply_to or msg.id,  # For thread expansion
+                                })
+        
+        # Sort by timestamp (most recent first)
+        unresponded_notifications.sort(key=lambda x: x['timestamp'], reverse=True)
+        
+        return {
+            'unresponded_count': len(unresponded_notifications),
+            'unresponded_notifications': unresponded_notifications[:10],  # Limit to 10 most recent
+            'has_urgent_notifications': any(n['time_since'] < 3600 for n in unresponded_notifications),  # Within last hour
+            'analysis_timestamp': current_time
+        }

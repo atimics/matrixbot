@@ -237,7 +237,7 @@ class NodeProcessor:
                 "primary_channel": primary_channel_id,
                 "cycle_context": context,
                 "node_stats": self.node_manager.get_expansion_status_summary(),
-                "instruction": "Based on the current world state, select the single most important action to take now. Choose 'wait' if no action is needed."
+                "instruction": "Based on the current world state, select one or more actions to take in sequence. You can choose multiple non-conflicting actions that logically follow each other (e.g., generate_image followed by send_farcaster_post). Choose 'wait' if no action is needed."
             }
             
             # Add self-state awareness to prevent repetitive actions
@@ -285,13 +285,28 @@ class NodeProcessor:
             if tool_name in ["select_nodes_to_expand", "expand_node", "collapse_node", "pin_node", "unpin_node", "get_expansion_status"]:
                 result = await self._execute_node_tool(tool_name, tool_args)
                 logger.info(f"Node tool '{tool_name}' result: {result}")
-                return {"status": "success", "result": result}
+                # Node tools return success/fail, let's normalize to status
+                return {"status": "success" if result.get("success") else "failure", "result": result}
             elif tool_name == "refresh_summary":
-                await self._execute_summary_refresh(tool_args)
-                return {"status": "success", "result": "Summary refreshed"}
+                refresh_result = await self._execute_summary_refresh(tool_args)
+                status = "success" if refresh_result.get("success") else "failure"
+                return {"status": status, "result": refresh_result}
             else:
                 result = await self._execute_platform_tool(tool_name, tool_args, cycle_id)
-                return {"status": "success", "result": result}
+                
+                # The result from the tool itself is in result['tool_result'].
+                # That's what contains the 'status' field ('success', 'failure', 'error').
+                # We need to propagate this status up to the process_cycle loop.
+                tool_result = result.get("tool_result", {})
+                
+                # Determine the overall status. Default to success if not specified.
+                status = tool_result.get("status", "success")
+                
+                # If the outer tool execution failed, that should take precedence.
+                if not result.get("success", True):
+                    status = "failure"
+                    
+                return {"status": status, "result": result}
         except Exception as e:
             logger.error(f"Error executing action '{tool_name}': {e}", exc_info=True)
             return {"status": "failure", "error": str(e)}
@@ -620,9 +635,12 @@ class NodeProcessor:
             logger.info(f"Executing platform tool: {tool_name} with args {tool_args}")
             result = await tool_instance.execute(tool_args, action_context)
             
+            # Check if the tool execution was successful
+            tool_success = result.get("status") == "success" if isinstance(result, dict) else True
+            
             return {
-                "success": True,
-                "message": f"Tool {tool_name} executed successfully",
+                "success": tool_success,
+                "message": f"Tool {tool_name} executed {'successfully' if tool_success else 'with errors'}",
                 "tool_name": tool_name,
                 "cycle_id": cycle_id,
                 "tool_result": result

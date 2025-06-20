@@ -394,4 +394,4 @@ class ProcessingHub:
         """Log current rate limiting status."""
         current_time = time.time()
         status = self.rate_limiter.get_rate_limit_status(current_time)
-        logger.info(f"Rate limit status: {status['cycles_this_hour']}/{status['max_cycles_per_hour']} cycles/hour")
+        logger.info(f"Rate limit status: {status['cycles_per_hour']}/{status['max_cycles_per_hour']} cycles/hour")
