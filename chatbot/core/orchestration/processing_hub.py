@@ -77,13 +77,13 @@ class ProcessingHub:
 
     def __init__(
         self,
-        config: ProcessingConfig,
-        world_state: "WorldStateManager",
+        world_state_manager: "WorldStateManager",
         payload_builder: "PayloadBuilder",
-        rate_limiter: "RateLimiter"
+        rate_limiter: "RateLimiter",
+        config: ProcessingConfig
     ):
         self.config = config
-        self.world_state = world_state
+        self.world_state = world_state_manager
         self.payload_builder = payload_builder
         self.rate_limiter = rate_limiter
         
