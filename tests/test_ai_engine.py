@@ -167,7 +167,8 @@ class TestAIEngine:
     
     def test_cleanup(self):
         """Test cleanup method (if it exists)."""
-        engine = AIEngine(api_key="test_key")
+        config = AIEngineConfig(api_key="test_key")
+        engine = AIEngine(config)
         # Current implementation doesn't have cleanup method, so just verify it doesn't crash
         # If cleanup method is added later, this test should be updated
-        assert engine.api_key == "test_key"
+        assert engine.config.api_key == "test_key"
