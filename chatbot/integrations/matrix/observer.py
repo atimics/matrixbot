@@ -392,36 +392,93 @@ class MatrixObserver(Integration, BaseObserver):
 
         return False
 
+    async def test_connection(self) -> Dict[str, Any]:
+        """Test the connection to Matrix without fully connecting."""
+        if not self.enabled:
+            return {
+                "success": False, 
+                "error": "Matrix integration is disabled due to missing configuration"
+            }
+
+        # Check that all required configuration is present
+        if not all([self.homeserver, self.user_id, self.password]):
+            return {
+                "success": False,
+                "error": "Missing required Matrix configuration (homeserver, user_id, or password)"
+            }
+
+        temp_client = None
+        try:
+            logger.info(f"MatrixObserver: Testing connection to {self.homeserver} for user {self.user_id}")
+            
+            # Create a temporary client for the test
+            temp_client = AsyncClient(self.homeserver, self.user_id)
+            
+            # Create a temporary auth handler
+            temp_auth_handler = MatrixAuthHandler(
+                str(self.homeserver), str(self.user_id), str(self.password), self.store_path
+            )
+
+            # Attempt to login to test credentials
+            access_token = await temp_auth_handler.login_with_retry(temp_client)
+
+            if access_token:
+                logger.info(f"MatrixObserver: Connection test successful for {self.user_id}")
+                return {
+                    "success": True, 
+                    "message": f"Successfully connected to {self.homeserver} as {self.user_id}"
+                }
+            else:
+                error_message = "Failed to authenticate with provided credentials"
+                logger.error(f"MatrixObserver: Connection test failed - {error_message}")
+                return {"success": False, "error": error_message}
+
+        except Exception as e:
+            error_message = f"Connection test failed: {str(e)}"
+            logger.error(f"MatrixObserver: {error_message}", exc_info=True)
+            return {"success": False, "error": error_message}
+        
+        finally:
+            if temp_client:
+                try:
+                    await temp_client.close()
+                except Exception as e:
+                    logger.warning(f"MatrixObserver: Error closing test client: {e}")
+
     async def add_channel(self, room_id: str, force_fetch: bool = False):
         """Add a channel to be monitored - compatibility method"""
         try:
-            self.logger.info(f"MatrixObserver: Adding channel {room_id} (force_fetch={force_fetch})")
+            logger.info(f"MatrixObserver: Adding channel {room_id} (force_fetch={force_fetch})")
             
             # Get the room object from the client
             if not self.client or not hasattr(self.client, 'rooms'):
-                self.logger.error(f"MatrixObserver: Client not available for room {room_id}")
+                logger.error(f"MatrixObserver: Client not available for room {room_id}")
                 return False
             
             if room_id not in self.client.rooms:
-                self.logger.warning(f"MatrixObserver: Room {room_id} not found in client rooms")
+                logger.warning(f"MatrixObserver: Room {room_id} not found in client rooms")
                 return False
             
             room = self.client.rooms[room_id]
             
             # Use the room manager to extract details and register the room
-            room_details = self.room_manager.extract_room_details(room)
-            
-            if room_details:
-                # Use room manager's register_room method which includes message fetching
-                self.room_manager.register_room(room_id, room_details, room)
-                self.logger.info(f"MatrixObserver: Successfully added channel {room_id}")
-                return True
+            if self.room_manager:
+                room_details = self.room_manager.extract_room_details(room)
+                
+                if room_details:
+                    # Use room manager's register_room method which includes message fetching
+                    self.room_manager.register_room(room_id, room_details, room)
+                    logger.info(f"MatrixObserver: Successfully added channel {room_id}")
+                    return True
+                else:
+                    logger.warning(f"MatrixObserver: Failed to get details for channel {room_id}")
+                    return False
             else:
-                self.logger.warning(f"MatrixObserver: Failed to get details for channel {room_id}")
+                logger.error(f"MatrixObserver: Room manager not initialized")
                 return False
                 
         except Exception as e:
-            self.logger.error(f"MatrixObserver: Error adding channel {room_id}: {e}")
+            logger.error(f"MatrixObserver: Error adding channel {room_id}: {e}")
             return False
 
     async def _register_room_with_world_state(self, room_id: str, room_details: Dict[str, Any]):
@@ -430,13 +487,15 @@ class MatrixObserver(Integration, BaseObserver):
             return
             
         try:
-            await self.world_state.update_channel(
-                platform="matrix",
-                channel_id=room_id,
-                **room_details
+            # Use add_channel instead of update_channel
+            self.world_state.add_channel(
+                channel_or_id=room_id,
+                channel_type="matrix",
+                name=room_details.get("name", room_id),
+                status=room_details.get("status", "active")
             )
         except Exception as e:
-            self.logger.error(f"MatrixObserver: Error registering room {room_id} with world state: {e}")
+            logger.error(f"MatrixObserver: Error registering room {room_id} with world state: {e}")
 
     async def get_status(self) -> Dict[str, Any]:
         """Get detailed status information."""
