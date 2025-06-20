@@ -140,7 +140,7 @@ class NodeProcessor:
                         break
                     
                     # Execute the chosen action
-                    logger.info(f"Cycle {cycle_id}, Step {actions_executed_count + 1}: Executing action '{action_to_execute.action_type}' ({i+1}/{len(ai_actions)})")
+                    logger.info(f"Cycle {cycle_id}, Step {actions_executed_count + 1}: Executing action '{action_to_execute['action_type']}' ({i+1}/{len(ai_actions)})")
                     execution_result = await self._execute_action(action_to_execute, cycle_id)
                     actions_executed_count += 1
                     
@@ -149,16 +149,16 @@ class NodeProcessor:
                     # 1. This action requires refresh AND there are more actions to execute
                     # 2. There was a failure
                     # This allows completing planned action sequences while still handling failures
-                    action_requires_refresh = action_to_execute.action_type in actions_requiring_world_state_refresh
+                    action_requires_refresh = action_to_execute["action_type"] in actions_requiring_world_state_refresh
                     has_more_actions = i < len(ai_actions) - 1
                     had_failure = execution_result and execution_result.get("status") == "failure"
                     
                     if (action_requires_refresh and has_more_actions) or had_failure:
                         world_state_changed = True
                         if had_failure:
-                            logger.warning(f"Action {action_to_execute.action_type} failed, will refresh world state")
+                            logger.warning(f"Action {action_to_execute['action_type']} failed, will refresh world state")
                         else:
-                            logger.info(f"Action {action_to_execute.action_type} changed world state, will refresh for next LLM call")
+                            logger.info(f"Action {action_to_execute['action_type']} changed world state, will refresh for next LLM call")
                         break  # Break out of action sequence to get fresh AI decision
                     
                     # Safety check: don't exceed max actions per cycle
@@ -271,11 +271,11 @@ class NodeProcessor:
 
     async def _execute_action(self, action, cycle_id: str) -> Dict[str, Any]:
         """Executes a single action and updates the world state."""
-        tool_name = action.action_type
-        tool_args = action.parameters
+        tool_name = action["action_type"]
+        tool_args = action["parameters"]
         
         # Log AI reasoning for selecting this action
-        logger.info(f"AI reasoning: {action.reasoning}")
+        logger.info(f"AI reasoning: {action.get('reasoning', 'No reasoning provided')}")
         
         # *** VERBOSE LOGGING FOR BUG DIAGNOSIS ***
         logger.info(f"Executing action '{tool_name}' with args: {tool_args}")
@@ -314,100 +314,6 @@ class NodeProcessor:
     # Old methods removed - now using two-step approach with:
     # _build_node_selection_payload, _ai_select_nodes_to_expand
     # _build_action_selection_payload, _ai_select_actions
-
-    async def _execute_ai_actions(
-        self, 
-        ai_response: Dict[str, Any], 
-        cycle_id: str
-    ) -> Dict[str, Any]:
-        """Execute actions from AI response."""
-        actions_executed = 0
-        nodes_processed = set()
-        
-        try:
-            # Handle tool calls from AI response (converted from ActionPlan objects)
-            tool_calls = ai_response.get("tool_calls", [])
-            
-            # Also handle ActionPlan objects directly
-            selected_actions = ai_response.get("selected_actions", [])
-            
-            # Process tool calls first
-            for tool_call in tool_calls:
-                try:
-                    tool_name = tool_call.get("function", {}).get("name", "")
-                    tool_args = tool_call.get("function", {}).get("arguments", {})
-                    
-                    # Handle node interaction tools
-                    if tool_name in ["expand_node", "collapse_node", "pin_node", "unpin_node"]:
-                        result = await self._execute_node_tool(tool_name, tool_args)
-                        if result.get("success"):
-                            actions_executed += 1
-                            if "node_path" in tool_args:
-                                nodes_processed.add(tool_args["node_path"])
-                    
-                    # Handle summary refresh
-                    elif tool_name == "refresh_summary":
-                        result = await self._execute_summary_refresh(tool_args)
-                        if result.get("success"):
-                            actions_executed += 1
-                            if "node_path" in tool_args:
-                                nodes_processed.add(tool_args["node_path"])
-                    
-                    # Handle other platform-specific tools
-                    else:
-                        result = await self._execute_platform_tool(tool_name, tool_args, cycle_id)
-                        if result.get("success"):
-                            actions_executed += 1
-                
-                except Exception as e:
-                    # Extract tool_name safely in case it wasn't defined
-                    safe_tool_name = tool_call.get("function", {}).get("name", "unknown") if 'tool_call' in locals() else "unknown"
-                    logger.error(f"Error executing tool {safe_tool_name}: {e}")
-                    continue
-            
-            # Process ActionPlan objects directly
-            for action_plan in selected_actions:
-                try:
-                    tool_name = action_plan.action_type
-                    tool_args = action_plan.parameters
-                    
-                    # Handle node interaction tools
-                    if tool_name in ["expand_node", "collapse_node", "pin_node", "unpin_node"]:
-                        result = await self._execute_node_tool(tool_name, tool_args)
-                        if result.get("success"):
-                            actions_executed += 1
-                            if "node_path" in tool_args:
-                                nodes_processed.add(tool_args["node_path"])
-                    
-                    # Handle summary refresh
-                    elif tool_name == "refresh_summary":
-                        result = await self._execute_summary_refresh(tool_args)
-                        if result.get("success"):
-                            actions_executed += 1
-                            if "node_path" in tool_args:
-                                nodes_processed.add(tool_args["node_path"])
-                    
-                    # Handle other platform-specific tools
-                    else:
-                        result = await self._execute_platform_tool(tool_name, tool_args, cycle_id)
-                        if result.get("success"):
-                            actions_executed += 1
-                
-                except Exception as e:
-                    # Extract tool_name safely in case it wasn't defined
-                    safe_tool_name = getattr(action_plan, 'action_type', 'unknown') if 'action_plan' in locals() else "unknown"
-                    logger.error(f"Error executing action {safe_tool_name}: {e}")
-                    continue
-            
-            return {
-                "actions_executed": actions_executed,
-                "nodes_processed": len(nodes_processed),
-                "processed_node_paths": list(nodes_processed)
-            }
-            
-        except Exception as e:
-            logger.error(f"Error executing AI actions for cycle {cycle_id}: {e}", exc_info=True)
-            return {"actions_executed": 0, "nodes_processed": 0}
     
     async def _execute_node_tool(
         self, 
@@ -988,8 +894,8 @@ class NodeProcessor:
                         "name": action_plan.get('action_type', ''),
                         "arguments": action_plan.get('parameters', {})
                     },
-                    "reasoning": action_plan.reasoning,
-                    "priority": action_plan.priority
+                    "reasoning": action_plan.get('reasoning', ''),
+                    "priority": action_plan.get('priority', 0)
                 }
                 ai_response["tool_calls"].append(tool_call)
             
