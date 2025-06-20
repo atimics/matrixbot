@@ -1019,17 +1019,17 @@ Provide your reasoning and any necessary actions."""
             for node_path, node_info in expanded_nodes.items():
                 if node_path.startswith("channels."):
                     node_data = node_info.get("data", {})
-                    if "messages" in node_data:
-                        messages = node_data["messages"]
-                        if isinstance(messages, list):
-                            for msg in messages[-10:]:  # Get last 10 messages from expanded channels
-                                recent_messages.append({
-                                    "author": msg.get("author", "Unknown"),
-                                    "content": msg.get("content", ""),
-                                    "timestamp": msg.get("timestamp"),
-                                    "channel": node_data.get("name", "Unknown"),
-                                    "channel_id": node_data.get("id", node_path)
-                                })
+                    # Check for messages under either "messages" or "recent_messages" key
+                    messages = node_data.get("messages") or node_data.get("recent_messages")
+                    if messages and isinstance(messages, list):
+                        for msg in messages[-10:]:  # Get last 10 messages from expanded channels
+                            recent_messages.append({
+                                "author": msg.get("sender_username", msg.get("sender", "Unknown")),
+                                "content": msg.get("content", ""),
+                                "timestamp": msg.get("timestamp"),
+                                "channel": node_data.get("name", "Unknown"),
+                                "channel_id": node_data.get("id", node_path)
+                            })
             
             # If we found messages, add them to context
             if recent_messages:

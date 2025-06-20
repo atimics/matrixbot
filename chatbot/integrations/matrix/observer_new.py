@@ -201,6 +201,13 @@ class MatrixObserver(Integration, BaseObserver):
 
         # Encryption events
         self.client.add_event_callback(self._on_bad_event, BadEventType)
+        
+        # Import and add Megolm event callback for undecryptable messages
+        try:
+            from nio import MegolmEvent
+            self.client.add_event_callback(self._on_megolm_event, MegolmEvent)
+        except ImportError:
+            logger.debug("MatrixObserver: MegolmEvent not available, skipping callback")
 
         logger.debug("MatrixObserver: Event callbacks configured")
 
@@ -272,6 +279,21 @@ class MatrixObserver(Integration, BaseObserver):
         # Also handle via event handler for logging
         if self.event_handler:
             await self.event_handler.handle_encryption_error(room, event)
+
+    async def _on_megolm_event(self, room: MatrixRoom, event):
+        """Handle undecryptable Megolm events."""
+        logger.warning(
+            f"MatrixObserver: Undecryptable Megolm event {getattr(event, 'event_id', 'unknown')} "
+            f"in room {room.room_id} from {getattr(event, 'sender', 'unknown')}"
+        )
+        
+        if self.encryption_handler:
+            await self.encryption_handler.handle_decryption_failure(
+                room,
+                getattr(event, 'event_id', 'unknown'),
+                getattr(event, 'sender', 'unknown'),
+                'megolm_undecryptable'
+            )
 
     # Public API methods that delegate to components
     async def send_message(self, room_id: str, content: str) -> Dict[str, Any]:
@@ -364,12 +386,23 @@ class MatrixObserver(Integration, BaseObserver):
         try:
             self.logger.info(f"MatrixObserver: Adding channel {room_id} (force_fetch={force_fetch})")
             
-            # Use the room manager to get room details
-            room_details = await self.room_manager.extract_room_details(room_id, force_fetch)
+            # Get the room object from the client
+            if not self.client or not hasattr(self.client, 'rooms'):
+                self.logger.error(f"MatrixObserver: Client not available for room {room_id}")
+                return False
+            
+            if room_id not in self.client.rooms:
+                self.logger.warning(f"MatrixObserver: Room {room_id} not found in client rooms")
+                return False
+            
+            room = self.client.rooms[room_id]
+            
+            # Use the room manager to extract details and register the room
+            room_details = self.room_manager.extract_room_details(room)
             
             if room_details:
-                # Update world state with the new channel
-                await self._register_room_with_world_state(room_id, room_details)
+                # Use room manager's register_room method which includes message fetching
+                self.room_manager.register_room(room_id, room_details, room)
                 self.logger.info(f"MatrixObserver: Successfully added channel {room_id}")
                 return True
             else:

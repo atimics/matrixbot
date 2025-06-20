@@ -61,7 +61,7 @@ class MatrixEventHandler:
         existing_channel = self.world_state.get_channel(room.room_id, "matrix")
         if not existing_channel:
             logger.info(f"MatrixEventHandler: Auto-registering room {room.room_id}")
-            self.room_manager.register_room(room.room_id, room_details)
+            self.room_manager.register_room(room.room_id, room_details, room)
         else:
             # Update existing room details
             self.room_manager.update_room_details(room.room_id, room_details)

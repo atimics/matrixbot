@@ -47,6 +47,9 @@ class MatrixEncryptionHandler:
             
             self.failed_decryption_events.add(failure_key)
             
+            # Immediate key request for critical events
+            await self._immediate_key_request(room_id, sender)
+            
             # Attempt recovery strategies
             recovery_result = await self._attempt_key_recovery(room, event_id, sender, error_type)
             
@@ -64,6 +67,24 @@ class MatrixEncryptionHandler:
             logger.error(f"MatrixEncryption: Error handling decryption failure: {e}")
             return {"success": False, "error": str(e)}
     
+    async def _immediate_key_request(self, room_id: str, sender: str):
+        """Immediately request keys for a failed decryption."""
+        try:
+            if not self.client:
+                return
+            
+            # Request keys from the sender immediately
+            if hasattr(self.client, 'request_room_key'):
+                logger.info(f"MatrixEncryption: Immediate key request for {room_id} from {sender}")
+                await self.client.request_room_key(room_id=room_id)
+            
+            # Also try to start a key sharing session
+            if hasattr(self.client, 'share_group_session'):
+                await self.client.share_group_session(room_id)
+                
+        except Exception as e:
+            logger.debug(f"MatrixEncryption: Immediate key request failed: {e}")
+
     async def _attempt_key_recovery(
         self, 
         room: MatrixRoom, 
@@ -85,17 +106,27 @@ class MatrixEncryptionHandler:
                 logger.warning(f"MatrixEncryption: Room key request failed: {e}")
                 recovery_attempts.append({"strategy": "room_key_request", "success": False, "error": str(e)})
         
-        # Strategy 2: Trigger key sharing for the room
+        # Strategy 2: Share keys with room if we're able to
         if hasattr(self.client, 'share_group_session'):
             try:
                 logger.info(f"MatrixEncryption: Attempting to share group session for room {room_id}")
-                await self.client.share_group_session(room_id)
+                await self.client.share_group_session(room_id, ignore_unverified_devices=True)
                 recovery_attempts.append({"strategy": "group_session_share", "success": True})
             except Exception as e:
                 logger.warning(f"MatrixEncryption: Group session share failed: {e}")
                 recovery_attempts.append({"strategy": "group_session_share", "success": False, "error": str(e)})
         
-        # Strategy 3: Schedule retry after delay
+        # Strategy 3: Trigger key exchange if supported
+        if hasattr(self.client, 'keys_query'):
+            try:
+                # Query keys for the sender to potentially start key exchange
+                await self.client.keys_query([sender])
+                recovery_attempts.append({"strategy": "keys_query", "success": True})
+            except Exception as e:
+                logger.warning(f"MatrixEncryption: Keys query failed: {e}")
+                recovery_attempts.append({"strategy": "keys_query", "success": False, "error": str(e)})
+        
+        # Strategy 4: Schedule retry after delay
         retry_key = f"{room_id}:{event_id}"
         current_retries = self.key_request_retries.get(retry_key, 0)
         

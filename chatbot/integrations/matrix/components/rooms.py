@@ -115,15 +115,86 @@ class MatrixRoomManager:
             logger.debug(f"MatrixRoomManager: Error extracting power levels: {e}")
         return power_levels
     
-    def register_room(self, room_id: str, room_details: Dict[str, Any]):
-        """Register a room in the world state."""
+    def extract_recent_messages(self, room: MatrixRoom, limit: int = 50) -> List[Message]:
+        """Extract recent messages from room timeline."""
+        messages = []
         try:
+            if hasattr(room, 'timeline') and room.timeline and hasattr(room.timeline, 'events'):
+                # Get timeline events and filter for text messages
+                timeline_events = list(room.timeline.events)
+                
+                # Sort by server timestamp, most recent first
+                timeline_events.sort(
+                    key=lambda evt: getattr(evt, 'server_timestamp', 0), 
+                    reverse=True
+                )
+                
+                for event in timeline_events[:limit]:
+                    try:
+                        # Handle different event types
+                        if hasattr(event, 'body') and hasattr(event, 'sender'):
+                            # Regular message events
+                            content = event.body
+                            
+                            # Handle formatted messages
+                            if hasattr(event, 'formatted_body') and event.formatted_body:
+                                content = event.formatted_body
+                            
+                            # Handle image/media events
+                            if hasattr(event, 'url') and event.url:
+                                if hasattr(event, 'body'):
+                                    content = f"[{event.body}]"
+                                else:
+                                    content = "[Media]"
+                            
+                            message = Message(
+                                id=getattr(event, 'event_id', f"unknown_{time.time()}"),
+                                content=content,
+                                author=event.sender,
+                                timestamp=getattr(event, 'server_timestamp', time.time() * 1000) / 1000,
+                                channel_id=room.room_id,
+                                platform='matrix',
+                                metadata={
+                                    'event_type': getattr(event, '__class__', {}).get('__name__', 'unknown'),
+                                    'encrypted': getattr(room, 'encrypted', False),
+                                    'decryption_success': True  # If we can read the content, decryption worked
+                                }
+                            )
+                            messages.append(message)
+                            
+                        elif hasattr(event, 'event_id'):
+                            # Handle undecryptable events
+                            logger.debug(f"MatrixRoomManager: Skipping non-text event {event.event_id} in {room.room_id}")
+                            
+                    except Exception as e:
+                        logger.debug(f"MatrixRoomManager: Error processing timeline event in {room.room_id}: {e}")
+                        continue
+                
+                if messages:
+                    logger.info(f"MatrixRoomManager: Extracted {len(messages)} messages from {room.room_id} timeline")
+                else:
+                    logger.debug(f"MatrixRoomManager: No readable messages found in {room.room_id} (may be encrypted or empty)")
+                
+        except Exception as e:
+            logger.warning(f"MatrixRoomManager: Error extracting messages from {room.room_id}: {e}")
+        
+        return messages
+    
+    def register_room(self, room_id: str, room_details: Dict[str, Any], room: MatrixRoom = None):
+        """Register a room in the world state with message history."""
+        try:
+            # Extract recent messages if room object is provided
+            recent_messages = []
+            if room:
+                recent_messages = self.extract_recent_messages(room)
+            
             channel = Channel(
                 id=room_id,
                 name=room_details.get("name", "Unnamed Room"),
                 channel_type="matrix",
                 members=list(room_details.get("power_levels", {}).keys()),
                 topic=room_details.get("topic"),
+                recent_messages=recent_messages,
                 metadata={
                     "canonical_alias": room_details.get("canonical_alias"),
                     "alt_aliases": room_details.get("alt_aliases", []),
@@ -137,14 +208,11 @@ class MatrixRoomManager:
                 }
             )
             
-            # Fetch and attach recent messages
-            recent_messages = self.extract_recent_messages(room_details)
-            channel.metadata["recent_messages"] = recent_messages
-            
             self.world_state.add_channel(channel)
+            message_count = len(recent_messages)
             logger.info(
                 f"MatrixRoomManager: Registered room {room_id} "
-                f"({room_details.get('name', 'Unnamed Room')})"
+                f"({room_details.get('name', 'Unnamed Room')}) with {message_count} messages"
             )
             
         except Exception as e:
