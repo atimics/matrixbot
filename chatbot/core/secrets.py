@@ -19,6 +19,7 @@ from enum import Enum
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from chatbot.exceptions import ConfigurationError
 
 logger = logging.getLogger(__name__)
 
@@ -107,49 +108,21 @@ class EncryptedFileSecretProvider(SecretProvider):
             key = await self._load_or_create_key()
             self._fernet = Fernet(key)
         return self._fernet
-    
+
     async def _load_or_create_key(self) -> bytes:
-        """Load encryption key from environment or create new one."""
-        # First, try to get the key from environment variable (more secure)
-        env_key = os.getenv("ENCRYPTION_KEY")
-        if env_key:
-            try:
-                # Decode base64-encoded key from environment
-                import base64
-                return base64.b64decode(env_key.encode())
-            except Exception as e:
-                logger.warning(f"Invalid ENCRYPTION_KEY in environment: {e}")
-        
-        # Fallback to file-based key (less secure but functional)
-        key_file = Path(self.config.encryption_key_file)
-        
-        if key_file.exists():
-            # Load existing key
-            with open(key_file, 'rb') as f:
-                key = f.read()
-                logger.warning("Using file-based encryption key. For better security, set ENCRYPTION_KEY environment variable.")
-                return key
-        else:
-            # Create new key
-            key = Fernet.generate_key()
-            
-            # Ensure directory exists
-            key_file.parent.mkdir(parents=True, exist_ok=True)
-            
-            # Save key securely
-            with open(key_file, 'wb') as f:
-                f.write(key)
-            
-            # Set restrictive permissions
-            key_file.chmod(0o600)
-            
-            # Log the base64-encoded key for environment variable setup
-            import base64
-            env_key = base64.b64encode(key).decode()
-            logger.warning(f"Generated new encryption key. For better security, set ENCRYPTION_KEY={env_key} and remove {key_file}")
-            
-            return key
-    
+        """Load encryption key from environment variable."""
+        env_key = os.getenv("RATICHAT_ENCRYPTION_KEY")
+        if not env_key:
+            raise ConfigurationError(
+                "FATAL: The RATICHAT_ENCRYPTION_KEY environment variable is not set. "
+                "The application cannot start without it."
+            )
+        try:
+            # The key in the environment should be Base64 encoded
+            return base64.b64decode(env_key)
+        except Exception as e:
+            raise ConfigurationError(f"Invalid RATICHAT_ENCRYPTION_KEY format: {e}")
+
     async def _load_secrets(self) -> Dict[str, str]:
         """Load and decrypt secrets from file."""
         if self._secrets_cache:
