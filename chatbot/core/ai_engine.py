@@ -87,7 +87,6 @@ class ErrorAnalysis(BaseModel):
 
 
 @dataclass
-@dataclass
 class AIEngineConfig:
     """Configuration for the AI engine."""
     provider: AIProvider = AIProvider.OPENROUTER
@@ -861,6 +860,7 @@ class AIEngine(EnhancedAIEngine):
         self.model = model
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.max_actions_per_cycle = 5  # Default action limit
         self.base_url = "https://openrouter.ai/api/v1/chat/completions"
         
         logger.info(f"Initialized AIEngine with model {model}")
@@ -1045,7 +1045,7 @@ Provide your reasoning and any necessary actions."""
             "confidence": response.confidence
         }
     
-    async def make_decision(self, world_state: Dict[str, Any], cycle_id: str) -> DecisionResult:
+    async def make_decision(self, world_state: Dict[str, Any], cycle_id: str) -> Dict[str, Any]:
         """
         Make a decision based on current world state.
         
@@ -1057,7 +1057,7 @@ Provide your reasoning and any necessary actions."""
             cycle_id: Unique identifier for this decision cycle
             
         Returns:
-            DecisionResult containing selected actions and reasoning
+            Dict containing selected actions and reasoning
         """
         try:
             logger.info(f"AIEngine: Starting decision cycle {cycle_id}")
@@ -1065,16 +1065,16 @@ Provide your reasoning and any necessary actions."""
             # Call the decide_actions method to get the decision data
             decision_data = await self.decide_actions(world_state)
             
-            # Convert to DecisionResult format
+            # Convert to simplified action format
             selected_actions = []
             for action_data in decision_data.get("selected_actions", []):
                 try:
-                    action_plan = ActionPlan(
-                        action_type=action_data.get("action_type", "unknown"),
-                        parameters=action_data.get("parameters", {}),
-                        reasoning=action_data.get("reasoning", "No reasoning provided"),
-                        priority=action_data.get("priority", 5),
-                    )
+                    action_plan = {
+                        'action_type': action_data.get("action_type", "unknown"),
+                        'parameters': action_data.get("parameters", {}),
+                        'reasoning': action_data.get("reasoning", "No reasoning provided"),
+                        'priority': action_data.get("priority", 5),
+                    }
                     selected_actions.append(action_plan)
                 except Exception as e:
                     logger.warning(f"Skipping malformed action: {e}")
@@ -1086,37 +1086,37 @@ Provide your reasoning and any necessary actions."""
                     f"AI selected {len(selected_actions)} actions, "
                     f"limiting to {self.max_actions_per_cycle}"
                 )
-                selected_actions.sort(key=lambda x: x.priority, reverse=True)
-                selected_actions = selected_actions[:self.max_actions_per_cycle]
+                selected_actions.sort(key=lambda x: x['priority'], reverse=True)
+                selected_actions = selected_actions[:3]  # max actions per cycle
             
-            result = DecisionResult(
-                selected_actions=selected_actions,
-                reasoning=decision_data.get("reasoning", ""),
-                observations=decision_data.get("observations", ""),
-                thought=decision_data.get("thought", ""),
-                cycle_id=cycle_id,
-            )
+            result = {
+                'selected_actions': selected_actions,
+                'reasoning': decision_data.get("reasoning", ""),
+                'observations': decision_data.get("observations", ""),
+                'thought': decision_data.get("thought", ""),
+                'cycle_id': cycle_id,
+            }
             
             # Log the AI's thought process for debugging
-            if result.thought:
-                logger.info(f"AI Thought Process (Cycle {cycle_id}): {result.thought}")
+            if result['thought']:
+                logger.info(f"AI Thought Process (Cycle {cycle_id}): {result['thought']}")
             
             logger.info(
                 f"AIEngine: Cycle {cycle_id} complete - "
-                f"selected {len(result.selected_actions)} actions"
+                f"selected {len(result['selected_actions'])} actions"
             )
             
             return result
             
         except Exception as e:
             logger.error(f"Error in make_decision for cycle {cycle_id}: {e}")
-            return DecisionResult(
-                selected_actions=[],
-                reasoning=f"Error: {str(e)}",
-                observations="Error during decision making",
-                thought="",
-                cycle_id=cycle_id,
-            )
+            return {
+                'selected_actions': [],
+                'reasoning': f"Error: {str(e)}",
+                'observations': "Error during decision making",
+                'thought': "",
+                'cycle_id': cycle_id,
+            }
 
 
 # Testing utilities

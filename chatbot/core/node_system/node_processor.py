@@ -262,9 +262,9 @@ class NodeProcessor:
                 cycle_id=f"{cycle_id}_step_{step}"
             )
             # Log the AI's reasoning for this step
-            if decision_result.reasoning:
-                logger.info(f"AI Reasoning for step {step}: {decision_result.reasoning}")
-            return decision_result.selected_actions
+            if decision_result.get('reasoning'):
+                logger.info(f"AI Reasoning for step {step}: {decision_result['reasoning']}")
+            return decision_result.get('selected_actions', [])
         except Exception as e:
             logger.error(f"Error in AI action selection for cycle {cycle_id}, step {step}: {e}", exc_info=True)
             return []

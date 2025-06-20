@@ -498,7 +498,7 @@ class WorldStateData:
         return self.target_repositories.get(repo_url)
 
     def update_github_repo_state(self, **kwargs):
-        """Update GitHub repository state fields (legacy compatibility)."""
+        """Update GitHub repository state fields (compatibility method)."""
         if self.github_repository_state is None:
             self.github_repository_state = TargetRepositoryContext()
         for key, value in kwargs.items():

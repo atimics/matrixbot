@@ -859,37 +859,6 @@ class MainOrchestrator:
         """Increment the processing cycle counter."""
         self.cycle_count += 1
 
-        try:
-            from ...tools.matrix import SendMatrixReplyTool, SendMatrixMessageTool
-            
-            # Get matrix observer from integration manager
-            active_integrations = self.integration_manager.get_active_integrations()
-            matrix_integration = None
-            for integration_id, integration in active_integrations.items():
-                if hasattr(integration, 'name') and integration.name == 'matrix':
-                    matrix_integration = integration
-                    break
-            
-            # Update action context with required components
-            self.action_context.matrix_observer = matrix_integration or self.matrix_observer
-            self.action_context.world_state_manager = self.world_state
-            self.action_context.context_manager = self.context_manager
-            
-            if action.action_type == "send_matrix_reply":
-                tool = SendMatrixReplyTool()
-            elif action.action_type == "send_matrix_message":
-                tool = SendMatrixMessageTool()
-            else:
-                logger.error(f"Unknown matrix action type: {action.action_type}")
-                return
-                
-            result = await tool.execute(action.parameters, self.action_context)
-            logger.info(f"Direct matrix action execution result: {result}")
-            
-        except Exception as e:
-            logger.error(f"Error executing matrix action directly: {str(e)}")
-            logger.exception(e)
-
     async def _process_channel(self, channel_id: str) -> None:
         """Process a specific channel - simplified implementation for tests."""
         try:

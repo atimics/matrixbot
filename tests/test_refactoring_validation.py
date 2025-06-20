@@ -191,7 +191,7 @@ async def main():
         print("\nKey improvements validated:")
         print("• Service-oriented tool execution")
         print("• Explicit media chaining with media_id")
-        print("• Deprecation warnings for legacy patterns")
+        print("• Deprecation warnings for old patterns")
         print("• Centralized ActionExecutor")
         
     except Exception as e:
