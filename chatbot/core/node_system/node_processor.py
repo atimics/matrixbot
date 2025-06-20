@@ -56,11 +56,15 @@ class NodeProcessor:
         self.action_context = action_context
         self.action_executor = action_executor
         
-        # Initialize Kanban-style action backlog system
-        self.action_backlog = ActionBacklog(max_total_wip=8)
+        # Initialize Kanban-style action backlog system with optimized settings
+        self.action_backlog = ActionBacklog(max_total_wip=12)  # Increased WIP capacity
         self._last_planning_time = 0
-        self._planning_interval = 5.0  # Plan new actions every 5 seconds if backlog is low
+        self._planning_interval = 2.0  # More frequent planning (reduced from 5s to 2s)
         self._shutdown_requested = False
+        
+        # Enhanced continuous processing settings
+        self._min_backlog_threshold = 5  # Increased from 3 to 5 for more aggressive planning
+        self._max_execution_timeout = 120.0  # Increased from 30s to 2 minutes for more continuous processing
         
         logger.info("NodeProcessor initialized with Kanban-style action backlog system")
     
@@ -103,8 +107,8 @@ class NodeProcessor:
             # Initial auto-expansion of active channels
             await self._auto_expand_active_channels()
 
-            # Main Kanban execution loop
-            execution_timeout = 30.0  # Max time to spend in one cycle
+            # Main Kanban execution loop with extended timeout for continuous processing
+            execution_timeout = self._max_execution_timeout  # Extended timeout for continuous processing
             while (time.time() - cycle_start_time) < execution_timeout and not self._shutdown_requested:
                 
                 # 1. Handle high-priority interrupts first
@@ -195,13 +199,13 @@ class NodeProcessor:
     
     def _should_plan_new_actions(self) -> bool:
         """Determine if we should run AI planning to add new actions to backlog"""
-        # Plan if backlog is low
+        # Plan if backlog is low (increased threshold for more aggressive planning)
         total_queued = sum(len(queue) for queue in self.action_backlog.queued_actions.values())
-        if total_queued < 3:
+        if total_queued < self._min_backlog_threshold:  # Increased from 3 to 5
             return True
             
-        # Plan if enough time has passed since last planning
-        if time.time() - self._last_planning_time > self._planning_interval:
+        # Plan more frequently if enough time has passed since last planning
+        if time.time() - self._last_planning_time > self._planning_interval:  # Reduced from 5s to 2s
             return True
             
         return False
@@ -244,10 +248,10 @@ class NodeProcessor:
         
         try:
             # Execute actions while respecting rate limits and WIP constraints
-            max_iterations = 10  # Prevent infinite loops
+            # Removed arbitrary max_iterations limit for more continuous execution
             iteration = 0
             
-            while iteration < max_iterations:
+            while iteration < 50:  # Increased from 10 to 50 for more continuous execution
                 iteration += 1
                 
                 # Get next executable action
@@ -1284,7 +1288,7 @@ class NodeProcessor:
                 "backlog_status": context.get("backlog_status", {}),
                 "cycle_id": context.get("cycle_id"),
                 "phase": "planning",
-                "instruction": "Analyze the current world state and backlog status. Plan 1-3 high-value actions to add to the execution backlog. Focus on responding to recent activity, mentions, or important updates. Consider the current backlog to avoid redundant actions."
+                "instruction": "Analyze the current world state and backlog status. Plan 3-8 high-value actions to add to the execution backlog based on current opportunities and context. Focus on responding to recent activity, mentions, or important updates, but also consider proactive engagement opportunities. Prioritize diverse actions across different channels and services when meaningful. Consider the current backlog to avoid redundant actions, but don't limit yourself unnecessarily - if there are genuine opportunities for valuable engagement, plan multiple complementary actions."
             }
             
             return payload
@@ -1325,3 +1329,44 @@ class NodeProcessor:
         except Exception as e:
             logger.error(f"Error getting planned actions: {e}", exc_info=True)
             return []
+    
+    async def _should_trigger_immediate_planning(self, context: Dict[str, Any]) -> bool:
+        """Check if we should trigger immediate planning based on world state changes"""
+        trigger_type = context.get("trigger_type", "")
+        
+        # Immediate planning for high-priority triggers
+        if trigger_type in ["mention", "dm", "direct_reply"]:
+            return True
+            
+        # Immediate planning if backlog is completely empty
+        if self._is_backlog_empty():
+            return True
+            
+        # Check for significant world state changes that warrant immediate re-planning
+        # (This could be extended with more sophisticated world state change detection)
+        
+        return False
+
+    def _should_continue_cycle(self, actions_executed_count: int, cycle_start_time: float) -> bool:
+        """Determine if the cycle should continue processing"""
+        # Continue if we have actions in the backlog and haven't hit timeout
+        if not self._is_backlog_empty():
+            return True
+            
+        # Continue if we're still within a reasonable execution window and being productive
+        cycle_duration = time.time() - cycle_start_time
+        if cycle_duration < 60.0 and actions_executed_count > 0:
+            return True
+            
+        return False
+
+    async def _adaptive_planning_check(self, cycle_id: str, primary_channel_id: Optional[str], 
+                                     context: Dict[str, Any], actions_executed_count: int):
+        """Perform adaptive planning based on execution patterns and world state"""
+        # If we've executed several actions, check if we need more
+        if actions_executed_count > 0 and actions_executed_count % 5 == 0:
+            total_queued = sum(len(queue) for queue in self.action_backlog.queued_actions.values())
+            if total_queued < 3:  # Low backlog after execution - plan more
+                logger.info(f"Adaptive planning triggered after {actions_executed_count} actions with low backlog")
+                await self._planning_phase(cycle_id, primary_channel_id, context)
+                self._last_planning_time = time.time()

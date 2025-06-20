@@ -108,7 +108,7 @@ class ActionBacklog:
     Prioritized action backlog with service rate limiting and WIP limits
     """
     
-    def __init__(self, max_total_wip: int = 10):
+    def __init__(self, max_total_wip: int = 15):  # Increased from 10 to 15
         self.max_total_wip = max_total_wip
         
         # Main backlog storage
@@ -119,12 +119,12 @@ class ActionBacklog:
         self.completed: Dict[str, QueuedAction] = {}
         self.failed: Dict[str, QueuedAction] = {}
         
-        # Service rate limiters
+        # Service rate limiters with increased capacity for continuous processing
         self.rate_limiters: Dict[str, ServiceRateLimiter] = {
-            "matrix": ServiceRateLimiter("matrix", max_concurrent=3, min_interval=0.3),
-            "farcaster": ServiceRateLimiter("farcaster", max_concurrent=2, min_interval=1.0),
-            "node_system": ServiceRateLimiter("node_system", max_concurrent=5, min_interval=0.1),
-            "search": ServiceRateLimiter("search", max_concurrent=2, min_interval=0.5),
+            "matrix": ServiceRateLimiter("matrix", max_concurrent=4, min_interval=0.2),  # Increased capacity
+            "farcaster": ServiceRateLimiter("farcaster", max_concurrent=3, min_interval=0.8),  # Increased capacity
+            "node_system": ServiceRateLimiter("node_system", max_concurrent=6, min_interval=0.05),  # Increased capacity
+            "search": ServiceRateLimiter("search", max_concurrent=3, min_interval=0.3),  # Increased capacity
         }
         
         # Dependency tracking

@@ -393,14 +393,13 @@ class EnhancedAIEngine:
         """Generate response and parse from text output."""
         
         try:
-            # Add instructions for JSON output
-            system_msg = self._get_system_message_for_parsing(response_type)
-            messages_with_instructions = [system_msg] + messages
+            # Integrate JSON parsing instructions into the existing system message
+            messages_with_json_instructions = self._integrate_json_instructions(messages, response_type)
             
-            logger.info(f"Making AI request with {len(messages_with_instructions)} messages")
+            logger.info(f"Making AI request with {len(messages_with_json_instructions)} messages")
             
             response = await self.provider.chat_completion(
-                messages=messages_with_instructions,
+                messages=messages_with_json_instructions,
                 tools=tools
             )
             
@@ -560,14 +559,41 @@ These are direct mentions requiring immediate attention."""
         
         return base_prompt
     
-    def _get_system_message_for_parsing(self, response_type: Type[BaseModel]) -> Dict[str, str]:
-        """Get system message that instructs JSON output format."""
+    def _integrate_json_instructions(self, messages: List[Dict[str, Any]], response_type: Type[BaseModel]) -> List[Dict[str, Any]]:
+        """Integrate JSON parsing instructions into the existing system message."""
+        if not messages:
+            return messages
+        
+        # Get the JSON schema and instructions
         schema = response_type.model_json_schema()
         
-        # Add clear examples based on response type
-        example_json = ""
+        # Build JSON formatting instructions
+        json_instructions = f"""
+
+RESPONSE FORMAT REQUIREMENTS:
+You must respond with valid JSON that matches this exact schema:
+
+{json.dumps(schema, indent=2)}
+
+IMPORTANT FORMATTING RULES:
+- Your response must be valid JSON only
+- You can wrap JSON in ```json code blocks if you prefer
+- Do not include explanatory text before or after the JSON
+- Do not include markdown formatting outside of code blocks
+- Ensure all JSON properties are properly quoted
+- Ensure all string values are properly escaped
+- Use empty arrays [] for tool_calls when no tools are needed
+- Always include reasoning even if brief
+
+Examples of acceptable formats:
+1. Raw JSON: {{"key": "value"}}
+2. Code block: ```json\\n{{"key": "value"}}\\n```
+3. Simple code block: ```\\n{{"key": "value"}}\\n```"""
+
+        # Add examples based on response type
         if response_type == AIResponse:
-            example_json = """
+            json_instructions += """
+
 Example response for a user mention:
 ```json
 {
@@ -597,30 +623,27 @@ Example response when no action is needed:
   "confidence": 0.8
 }
 ```"""
+
+        # Create a copy of messages to modify
+        integrated_messages = messages.copy()
         
-        return {
-            "role": "system",
-            "content": f"""You must respond with valid JSON that matches this exact schema:
-
-{json.dumps(schema, indent=2)}
-
-IMPORTANT FORMATTING RULES:
-- Your response must be valid JSON only
-- You can wrap JSON in ```json code blocks if you prefer
-- Do not include explanatory text before or after the JSON
-- Do not include markdown formatting outside of code blocks
-- Ensure all JSON properties are properly quoted
-- Ensure all string values are properly escaped
-- Use empty arrays [] for tool_calls when no tools are needed
-- Always include reasoning even if brief
-
-{example_json}
-
-Examples of acceptable formats:
-1. Raw JSON: {{"key": "value"}}
-2. Code block: ```json\n{{"key": "value"}}\n```
-3. Simple code block: ```\n{{"key": "value"}}\n```"""
-        }
+        # Find the system message and append JSON instructions
+        for i, message in enumerate(integrated_messages):
+            if message.get("role") == "system":
+                # Append JSON instructions to the existing system message
+                integrated_messages[i] = {
+                    "role": "system",
+                    "content": message["content"] + json_instructions
+                }
+                break
+        else:
+            # If no system message exists, create one with just the JSON instructions
+            integrated_messages.insert(0, {
+                "role": "system", 
+                "content": "You are a helpful AI assistant." + json_instructions
+            })
+        
+        return integrated_messages
     
     def _extract_json_from_text(self, text: str) -> Dict[str, Any]:
         """Extract JSON from text response with robust parsing."""
@@ -935,7 +958,7 @@ When you receive a direct mention or see relevant conversation:
 
 Provide your reasoning and any necessary actions."""
         
-        # Add context from world state
+        # Add context from world_state
         if world_state.get("recent_messages"):
             message_count = len(world_state["recent_messages"])
             prompt += f"\n\nRecent activity: {message_count} messages available for review"
