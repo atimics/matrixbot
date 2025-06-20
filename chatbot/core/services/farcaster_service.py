@@ -231,3 +231,36 @@ class FarcasterService(SocialServiceInterface):
                 "error": str(e),
                 "timestamp": time.time()
             }
+
+    async def search_casts(self, query: str, channel_id: Optional[str] = None, limit: int = 10) -> Dict[str, Any]:
+        """
+        Search for Farcaster casts.
+        
+        Args:
+            query: Search query
+            channel_id: Optional channel ID to search within
+            limit: Maximum number of results to return
+            
+        Returns:
+            Dict with success status and cast results
+        """
+        try:
+            if not await self.is_available():
+                return {
+                    "success": False,
+                    "casts": [],
+                    "error": "Farcaster service not available"
+                }
+            
+            # Delegate to the observer's search_casts method
+            result = await self._observer.search_casts(query, channel_id, limit)
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error searching Farcaster casts: {e}")
+            return {
+                "success": False,
+                "casts": [],
+                "error": str(e)
+            }
