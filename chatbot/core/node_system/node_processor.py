@@ -1588,6 +1588,14 @@ class NodeProcessor:
             primary_trigger_type = context.get("primary_trigger_type")
             base_instruction = "Analyze the current world state and backlog status. Plan 3-8 high-value actions to add to the execution backlog based on current opportunities and context."
             
+            # Get recent failures for AI feedback
+            recent_failures = self._get_recent_action_failures()
+            failure_summary = ""
+            if recent_failures:
+                failure_summary = f"Recent action failures ({len(recent_failures)}): " + ", ".join(
+                    [f"'{f['action_type']}' failed with error: '{f['error'][:100]}...'" for f in recent_failures]
+                )
+            
             # Customize instruction based on trigger type
             if primary_trigger_type == "mention":
                 instruction = f"{base_instruction} **IMPORTANT: You have been mentioned in a channel. This requires immediate attention and response. Check the recent messages in the primary channel ({primary_channel_id}) for the mention and respond appropriately.** Also consider other proactive engagement opportunities, but prioritize responding to the mention first."
@@ -1603,7 +1611,14 @@ class NodeProcessor:
                 "phase": "planning",
                 "primary_trigger_type": primary_trigger_type,
                 "triggers": context.get("triggers", []),
-                "instruction": instruction
+                "recent_failures": recent_failures,
+                "failure_summary": failure_summary,
+                "instruction": (
+                    f"{instruction} "
+                    "CRITICAL: Review 'recent_failures' to understand what did not work. Do not repeat failed actions. "
+                    "Choose only valid tools from the provided list. If a tool call failed with 'Tool not found in registry', "
+                    "that tool does not exist - use a different, valid tool instead."
+                )
             }
             
             return payload
