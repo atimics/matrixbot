@@ -838,30 +838,28 @@ class MainOrchestrator:
     async def _process_channel(self, channel_id: str) -> None:
         """Process a specific channel - simplified implementation for tests."""
         try:
-            # Get conversation messages
-            messages = await self.context_manager.get_conversation_messages(channel_id)
-            
-            # Build world state payload
-            payload = self.world_state.to_dict()
-            payload['messages'] = messages
-            
-            # Process using traditional processor
-            await self.process_payload(payload, [channel_id])
+            # Context management functionality has been removed as part of architectural cleanup
+            # This method is deprecated and should not be used in the new node-based architecture
+            logger.warning(f"process_channel called for {channel_id} - this method is deprecated")
             
         except Exception as e:
             logger.error(f"Error processing channel {channel_id}: {e}")
 
     async def add_user_message(self, channel_id: str, message_data: Dict[str, Any]) -> None:
         """Add a user message to the context."""
-        await self.context_manager.add_user_message(channel_id, message_data)
+        # Context management functionality has been removed as part of architectural cleanup
+        logger.warning("add_user_message called - this method is deprecated")
 
     async def get_context_summary(self, channel_id: str) -> Optional[Dict[str, Any]]:
         """Get context summary for a channel."""
-        return await self.context_manager.get_context_summary(channel_id)
+        # Context management functionality has been removed as part of architectural cleanup
+        logger.warning("get_context_summary called - this method is deprecated")
+        return None
 
     async def clear_context(self, channel_id: str) -> None:
         """Clear context for a channel."""
-        await self.context_manager.clear_context(channel_id)
+        # Context management functionality has been removed as part of architectural cleanup
+        logger.warning("clear_context called - this method is deprecated")
 
     async def _ensure_media_gallery_exists(self) -> None:
         """Check for, create, and configure the media gallery room."""
