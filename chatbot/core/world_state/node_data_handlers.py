@@ -177,6 +177,35 @@ class NodeDataHandlers:
 
     def get_user_node_data(self, world_state_data: 'WorldStateData', path_parts: List[str], expanded: bool = False) -> Optional[Dict]:
         """Get user node data."""
+        
+        # Handle hierarchical navigation nodes  
+        if len(path_parts) == 1:
+            # Root users node - provide overview
+            return {
+                "type": "users_overview",
+                "matrix_users": len(world_state_data.matrix_users) if hasattr(world_state_data, 'matrix_users') else 0,
+                "farcaster_users": len(world_state_data.farcaster_users) if hasattr(world_state_data, 'farcaster_users') else 0
+            }
+        
+        if len(path_parts) == 2:
+            # Platform-level user node - provide overview
+            user_type = path_parts[1]
+            if user_type == "matrix":
+                return {
+                    "type": "platform_users_overview",
+                    "platform": "matrix", 
+                    "user_count": len(world_state_data.matrix_users) if hasattr(world_state_data, 'matrix_users') else 0,
+                    "users": list(world_state_data.matrix_users.keys()) if hasattr(world_state_data, 'matrix_users') else []
+                }
+            elif user_type == "farcaster":
+                return {
+                    "type": "platform_users_overview",
+                    "platform": "farcaster",
+                    "user_count": len(world_state_data.farcaster_users) if hasattr(world_state_data, 'farcaster_users') else 0,
+                    "users": list(world_state_data.farcaster_users.keys()) if hasattr(world_state_data, 'farcaster_users') else []
+                }
+            return None
+        
         if len(path_parts) < 3: 
             return None
         _, user_type, user_id = path_parts[0], path_parts[1], path_parts[2]
