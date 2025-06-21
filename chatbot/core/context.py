@@ -25,7 +25,6 @@ from .persistence import (
 )
 from .world_state import WorldStateManager
 
-
 logger = logging.getLogger(__name__)
 
 
