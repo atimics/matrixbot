@@ -181,23 +181,6 @@ class MatrixMessageOperations:
         }
         
         try:
-                body_content = str(content)
-                msg_type = "m.text"
-                logger.debug(f"MatrixMessageOps: Reply - Stringified content: {body_content}")
-            
-            # Construct reply content with fallback body
-            fallback_body = f"> <{original_sender or 'unknown'}> {original_content or 'message'}\n\n{body_content}"
-            
-            reply_content = {
-                "msgtype": msg_type,
-                "body": fallback_body,
-                "m.relates_to": {
-                    "m.in_reply_to": {
-                        "event_id": reply_to_event_id
-                    }
-                }
-            }
-            
             response = await self.client.room_send(
                 room_id=room_id,
                 message_type="m.room.message",
@@ -261,18 +244,6 @@ class MatrixMessageOperations:
                     join_response = await self.client.join(room_id)
                     if hasattr(join_response, 'room_id'):
                         logger.info(f"MatrixMessageOps: Successfully joined room {room_id}, retrying reply send...")
-                        
-                        # Reconstruct reply content for retry
-                        fallback_body = f"> <{original_sender or 'unknown'}> {original_content or 'message'}\n\n{body_content}"
-                        reply_content = {
-                            "msgtype": msg_type,
-                            "body": fallback_body,
-                            "m.relates_to": {
-                                "m.in_reply_to": {
-                                    "event_id": reply_to_event_id
-                                }
-                            }
-                        }
                         
                         # Retry sending the reply
                         retry_response = await self.client.room_send(
