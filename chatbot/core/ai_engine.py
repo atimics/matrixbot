@@ -154,10 +154,33 @@ class OpenRouterProvider(AIProviderBase):
         last_exception = None
         for attempt in range(self.config.max_retries + 1):
             try:
+                # Log payload size and structure for debugging 400 errors
+                payload_size = len(str(payload))
+                if payload_size > 50000:  # Log if payload is suspiciously large
+                    logger.warning(f"Large payload detected: {payload_size} characters")
+                    
                 response = await self.client.post(settings.openrouter_api_url, headers=headers, json=payload)
                 response.raise_for_status()
                 return response.json()
             except httpx.HTTPStatusError as e:
+                if e.response.status_code == 400:
+                    # Log more details for 400 errors
+                    logger.error(f"400 Bad Request. Payload size: {len(str(payload))} chars")
+                    logger.error(f"Payload keys: {list(payload.keys())}")
+                    if 'messages' in payload:
+                        logger.error(f"Message count: {len(payload['messages'])}")
+                        for i, msg in enumerate(payload['messages']):
+                            logger.error(f"Message {i} length: {len(str(msg))}")
+                    if 'tools' in payload:
+                        logger.error(f"Tools count: {len(payload['tools'])}")
+                    
+                    try:
+                        error_detail = e.response.json()
+                        logger.error(f"OpenRouter error details: {error_detail}")
+                    except:
+                        logger.error(f"Response text: {e.response.text[:500]}")
+                        
+                last_exception = e
                 last_exception = e
                 if e.response.status_code in [401, 403]:
                     logger.error(f"Critical auth error ({e.response.status_code}): {e.response.text}")

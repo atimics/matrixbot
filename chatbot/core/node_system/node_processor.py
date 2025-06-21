@@ -1650,26 +1650,44 @@ class NodeProcessor:
                 await self._planning_phase(cycle_id, primary_channel_id, context)
                 self._last_planning_time = time.time()
 
-    def _get_recent_action_failures(self, limit: int = 5) -> List[Dict[str, Any]]:
-        """Get recent action failures to provide feedback to AI."""
-        if not hasattr(self, 'action_backlog') or not self.action_backlog:
-            return []
-        
-        recent_failures = []
-        current_time = time.time()
-        
-        # Get failures from the last 10 minutes
-        for action_id, action in self.action_backlog.failed.items():
-            if current_time - action.created_at < 600:  # 10 minutes
+    def _get_recent_action_failures(self, max_failures: int = 5) -> List[Dict[str, Any]]:
+        """Get recent action failures to provide feedback to AI"""
+        try:
+            if not hasattr(self, 'action_backlog') or not self.action_backlog:
+                return []
+            
+            # Get recent failures from the last 5 minutes
+            cutoff_time = time.time() - 300  # 5 minutes ago
+            recent_failures = []
+            
+            for action in self.action_backlog.failed.values():
+                if action.created_at < cutoff_time:
+                    continue
+                
+                # Sanitize and limit the failure info to prevent payload bloat
                 failure_info = {
                     "action_type": action.action_type,
-                    "parameters": action.parameters,
-                    "error": action.error or "Unknown error",
+                    "error": (action.error or "Unknown error")[:200],  # Limit error message length
+                    "parameters": {
+                        # Only include essential parameters, limit size
+                        k: str(v)[:100] if isinstance(v, str) else str(v)[:100]
+                        for k, v in (action.parameters or {}).items()
+                        if k in ["channel_id", "content", "message", "room_id"]
+                    },
                     "attempts": action.attempts,
                     "timestamp": action.created_at
                 }
                 recent_failures.append(failure_info)
-        
-        # Sort by timestamp (most recent first) and limit
-        recent_failures.sort(key=lambda x: x["timestamp"], reverse=True)
-        return recent_failures[:limit]
+                
+                # Limit number of failures to prevent payload bloat
+                if len(recent_failures) >= max_failures:
+                    break
+            
+            # Sort by timestamp, most recent first
+            recent_failures.sort(key=lambda x: x["timestamp"], reverse=True)
+            
+            return recent_failures
+            
+        except Exception as e:
+            logger.error(f"Error getting recent action failures: {e}")
+            return []  # Return empty list on error to prevent payload issues
