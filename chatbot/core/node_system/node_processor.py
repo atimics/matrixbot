@@ -405,6 +405,51 @@ class NodeProcessor:
         """Executes a single action and updates the world state."""
         tool_name = action["action_type"]
         tool_args = action["parameters"]
+
+        # --- BEGIN TOOL DISAMBIGUATION ---
+        # If the AI uses a generic tool name, attempt to map it to a specific one.
+        original_tool_name = tool_name
+        platform = None # Initialize platform to None
+        if tool_name in ["send_message", "send_reply", "react_to_message"]:
+            # Determine platform from channel_id/room_id
+            channel_id = tool_args.get("channel_id") or tool_args.get("room_id")
+            
+            if isinstance(channel_id, str) and channel_id.startswith("!"):
+                platform = "matrix"
+                if tool_name == "send_message":
+                    tool_name = "send_matrix_message"
+                    tool_args = {
+                        "room_id": channel_id,
+                        "message": tool_args.get("text") or tool_args.get("message", ""),
+                        "attach_image": tool_args.get("attach_image")
+                    }
+                elif tool_name == "send_reply":
+                    tool_name = "send_matrix_reply"
+                    tool_args = {
+                        "room_id": channel_id,
+                        "event_id": tool_args.get("event_id"),
+                        "message": tool_args.get("text") or tool_args.get("message", ""),
+                        "attach_image": tool_args.get("attach_image")
+                    }
+                elif tool_name == "react_to_message":
+                    tool_name = "react_to_matrix_message"
+                    tool_args = {
+                        "room_id": channel_id,
+                        "event_id": tool_args.get("event_id"),
+                        "reaction": tool_args.get("reaction") or tool_args.get("emoji")
+                    }
+            # TODO: Add disambiguation for other platforms like Farcaster if needed
+            
+            if tool_name != original_tool_name:
+                logger.warning(
+                    f"AI used generic tool '{original_tool_name}'. Disambiguated to "
+                    f"'{tool_name}' for platform '{platform}' based on channel_id."
+                )
+                # Update action details for execution
+                action["action_type"] = tool_name
+                action["parameters"] = tool_args
+
+        # --- END TOOL DISAMBIGUATION ---
         
         # Log AI reasoning for selecting this action
         logger.info(f"AI reasoning: {action.get('reasoning', 'No reasoning provided')}")
