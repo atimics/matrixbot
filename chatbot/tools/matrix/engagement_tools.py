@@ -73,13 +73,13 @@ class ReactToMatrixMessageTool(ToolInterface):
                 if result.get("status") == "success":
                     context.world_state_manager.add_action_result(
                         action_type=self.name,
-                        parameters={"room_id": room_id, "event_id": event_id, "emoji": emoji},
+                        parameters={"channel_id": channel_id, "event_id": event_id, "emoji": emoji},
                         result="success",
                     )
                 else:
                     context.world_state_manager.add_action_result(
                         action_type=self.name,
-                        parameters={"room_id": room_id, "event_id": event_id, "emoji": emoji},
+                        parameters={"channel_id": channel_id, "event_id": event_id, "emoji": emoji},
                         result=f"failure: {result.get('error', 'unknown error')}",
                     )
             
@@ -93,7 +93,7 @@ class ReactToMatrixMessageTool(ToolInterface):
             if context.world_state_manager:
                 context.world_state_manager.add_action_result(
                     action_type=self.name,
-                    parameters={"room_id": room_id, "event_id": event_id, "emoji": emoji},
+                    parameters={"channel_id": channel_id, "event_id": event_id, "emoji": emoji},
                     result=f"failure: {str(e)}",
                 )
 
