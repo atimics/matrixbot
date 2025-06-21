@@ -639,12 +639,12 @@ class MainOrchestrator:
                 logger.info("Continuing without Matrix integration")
 
         # Initialize Farcaster observer if credentials available
-        if settings.neynar_api_key:
+        if settings.farcaster.neynar_api_key:
             try:
                 self.farcaster_observer = FarcasterObserver(
-                    settings.neynar_api_key,
-                    settings.FARCASTER_BOT_SIGNER_UUID,
-                    settings.FARCASTER_BOT_FID,
+                    settings.farcaster.neynar_api_key,
+                    settings.farcaster.bot_signer_uuid,
+                    settings.farcaster.bot_fid,
                     world_state_manager=self.world_state,
                 )
                 await self.farcaster_observer.start()
@@ -800,7 +800,7 @@ class MainOrchestrator:
                 },
                 "farcaster": {
                     "connected": self.farcaster_observer is not None,
-                    "bot_fid": settings.FARCASTER_BOT_FID,
+                    "bot_fid": settings.farcaster.bot_fid,
                     "post_queue_size": getattr(self.farcaster_observer.scheduler.post_queue, 'qsize', lambda: 0)() if self.farcaster_observer and hasattr(self.farcaster_observer, 'scheduler') else 0,
                     "reply_queue_size": getattr(self.farcaster_observer.scheduler.reply_queue, 'qsize', lambda: 0)() if self.farcaster_observer and hasattr(self.farcaster_observer, 'scheduler') else 0
                 }
@@ -878,8 +878,8 @@ class MainOrchestrator:
 
     async def _ensure_media_gallery_exists(self) -> None:
         """Check for, create, and configure the media gallery room."""
-        if settings.matrix_media_gallery_room_id:
-            logger.info(f"Matrix media gallery is configured: {settings.matrix_media_gallery_room_id}")
+        if settings.matrix.media_gallery_room_id:
+            logger.info(f"Matrix media gallery is configured: {settings.matrix.media_gallery_room_id}")
             return
 
         logger.info("MATRIX_MEDIA_GALLERY_ROOM_ID not found in environment. Attempting to create a new gallery room...")
@@ -898,7 +898,7 @@ class MainOrchestrator:
             if isinstance(response, RoomCreateResponse) and response.room_id:
                 new_room_id = response.room_id
                 logger.info(f"Successfully created new Matrix media gallery: {new_room_id}")
-                settings.matrix_media_gallery_room_id = new_room_id
+                settings.matrix.media_gallery_room_id = new_room_id
                 logger.info(f"Set MATRIX_MEDIA_GALLERY_ROOM_ID to {new_room_id}. Please add this to your environment variables for persistence.")
             else:
                 logger.error(f"Failed to create gallery room. Response: {response}")
@@ -929,12 +929,12 @@ class MainOrchestrator:
                         integration_type='farcaster',
                         display_name='Farcaster Bot',
                         config={
-                            'username': settings.FARCASTER_BOT_USERNAME or 'farcaster_bot'
+                            'username': settings.farcaster.bot_username or 'farcaster_bot'
                         },
                         credentials={
-                            'api_key': settings.neynar_api_key,
-                            'bot_fid': settings.FARCASTER_BOT_FID,
-                            'signer_uuid': settings.FARCASTER_BOT_SIGNER_UUID
+                            'api_key': settings.farcaster.neynar_api_key,
+                            'bot_fid': settings.farcaster.bot_fid,
+                            'signer_uuid': settings.farcaster.bot_signer_uuid
                         }
                     )
                     logger.info("✓ Farcaster integration registered successfully")
@@ -956,9 +956,9 @@ class MainOrchestrator:
                         await self.integration_manager.update_credentials(
                             farcaster_integration['integration_id'],
                             {
-                                'api_key': settings.neynar_api_key,
-                                'bot_fid': settings.FARCASTER_BOT_FID,
-                                'signer_uuid': settings.FARCASTER_BOT_SIGNER_UUID
+                                'api_key': settings.farcaster.neynar_api_key,
+                                'bot_fid': settings.farcaster.bot_fid,
+                                'signer_uuid': settings.farcaster.bot_signer_uuid
                             }
                         )
                         logger.info("✓ Farcaster credentials updated from environment variables")
