@@ -152,7 +152,7 @@ class MainOrchestrator:
         self.action_context = ActionContext(
             service_registry=self.service_registry,
             world_state_manager=self.world_state,
-            context_manager=self.context_manager,
+            context_manager=None,  # Will be updated when modern context management is implemented
             arweave_client=self.arweave_client,
             arweave_service=arweave_service_instance
         )
@@ -538,7 +538,7 @@ class MainOrchestrator:
                         matrix_service = MatrixService(
                             matrix_observer=integration,
                             world_state_manager=self.world_state,
-                            context_manager=self.context_manager
+                            context_manager=None  # Will be updated when modern context management is implemented
                         )
                         self.service_registry.register_service(matrix_service)
                         logger.info(f"Registered Matrix service for integration {integration_id}")
@@ -548,7 +548,7 @@ class MainOrchestrator:
                         farcaster_service = FarcasterService(
                             farcaster_observer=integration,
                             world_state_manager=self.world_state,
-                            context_manager=self.context_manager
+                            context_manager=None  # Will be updated when modern context management is implemented
                         )
                         self.service_registry.register_service(farcaster_service)
                         logger.info(f"Registered Farcaster service for integration {integration_id}")
