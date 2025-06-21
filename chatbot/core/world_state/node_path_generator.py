@@ -107,7 +107,7 @@ class NodePathGenerator:
         yield "search"
         if hasattr(world_state_data, 'search_cache') and world_state_data.search_cache:
             for search_key in world_state_data.search_cache.keys():
-                yield f"search/{search_key}"
+                yield f"search.{search_key}"
 
     def _generate_memory_bank_paths(self, world_state_data: WorldStateData):
         """Generate paths for memory bank."""
