@@ -48,7 +48,8 @@ class MatrixObserver(Integration, BaseObserver):
         display_name: str = "Matrix Integration",
         config: Dict[str, Any] = None,
         world_state_manager: WorldStateManager = None,
-        arweave_client=None
+        arweave_client=None,
+        db_manager=None
     ):
         # Support legacy positional usage: MatrixObserver(world_state, arweave_client)
         if not isinstance(integration_id, str):
@@ -67,6 +68,7 @@ class MatrixObserver(Integration, BaseObserver):
         # Core properties
         self.world_state = world_state_manager
         self.arweave_client = arweave_client
+        self.db_manager = db_manager  # Store database manager for encryption handler
         self.homeserver = settings.matrix.homeserver
         self.user_id = settings.matrix.user_id
         self.password = settings.matrix.password
@@ -74,6 +76,10 @@ class MatrixObserver(Integration, BaseObserver):
         self.sync_task: Optional[asyncio.Task] = None
         self.channels_to_monitor = []
         self.processing_hub = None
+        
+        # E2EE initialization lock to prevent race conditions
+        self._e2ee_ready = asyncio.Event()
+        self._login_complete = asyncio.Event()
 
         # Create store directory
         self.store_path = Path("matrix_store")
@@ -177,7 +183,7 @@ class MatrixObserver(Integration, BaseObserver):
                 self.channels_to_monitor
             )
 
-        self.encryption_handler = MatrixEncryptionHandler(self.client, self.user_id)
+        self.encryption_handler = MatrixEncryptionHandler(self.client, self.user_id, self.db_manager)
 
         # After all components are initialized, make sure processing hub is set
         if self.processing_hub and self.event_handler:

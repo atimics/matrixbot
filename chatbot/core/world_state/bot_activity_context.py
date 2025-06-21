@@ -148,8 +148,27 @@ class BotActivityContextBuilder:
         elif action_type == "wait":
             return "You just waited. Now analyze if there are any new developments that require action, or continue waiting if appropriate."
         
+        # Add more specific guidance for common tools
+        elif action_type in ["like_farcaster_post", "quote_farcaster_post"]:
+            return "You just engaged with a post. Consider if you should continue engaging with other content or move to different activities."
+            
+        elif action_type in ["follow_farcaster_user", "unfollow_farcaster_user"]:
+            return "You just modified your following status. Focus on other activities rather than immediately following/unfollowing more users."
+            
+        elif action_type in ["join_matrix_room", "leave_matrix_room"]:
+            return "You just changed your room membership. Focus on participating in conversations or other activities."
+            
+        elif action_type in ["generate_image", "generate_video"]:
+            return "You just generated media content. Consider sharing it or using it in conversations rather than generating more media immediately."
+            
+        elif action_type == "web_search":
+            return "You just performed a web search. Use the search results to inform your next actions rather than searching again immediately."
+            
+        elif action_type in ["store_user_memory", "get_user_profile"]:
+            return "You just worked with user data. Use this information to enhance your interactions rather than immediately accessing more user data."
+        
         else:
-            return f"You just completed '{action_type}'. Build on this action's results rather than repeating the same analysis."
+            return f"You just completed '{action_type}'. Build on this action's results rather than repeating the same analysis or action type."
     
     def _build_bot_activity_context(self, world_state_data: 'WorldStateData') -> Dict[str, Any]:
         """
@@ -162,7 +181,6 @@ class BotActivityContextBuilder:
         - Make more informed decisions about when to respond
         """
         try:
-            import time
             from datetime import datetime, timedelta
             
             current_time = time.time()

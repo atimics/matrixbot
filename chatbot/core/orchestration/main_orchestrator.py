@@ -623,7 +623,11 @@ class MainOrchestrator:
         # Initialize Matrix observer if credentials available
         if settings.matrix.user_id and settings.matrix.password:
             try:
-                self.matrix_observer = MatrixObserver(self.world_state, self.arweave_client)
+                self.matrix_observer = MatrixObserver(
+                    world_state_manager=self.world_state, 
+                    arweave_client=self.arweave_client,
+                    db_manager=self.database_manager
+                )
                 
                 room_id = settings.matrix.room_id
                 self.matrix_observer.add_channel(room_id, "Robot Laboratory")

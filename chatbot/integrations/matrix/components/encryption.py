@@ -7,10 +7,8 @@ Enhanced with persistent retry queue and broadcast key requests.
 
 import asyncio
 import logging
-import json
 import time
 from typing import Any, Dict, Optional, Set, List
-from dataclasses import dataclass, asdict
 
 from nio import AsyncClient, MatrixRoom
 from sqlmodel import select
@@ -19,18 +17,6 @@ from sqlmodel import select
 from ....core.persistence import DatabaseManager, UndecryptableEventRecord
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class UndecryptableEvent:
-    """Represents an event that couldn't be decrypted."""
-    event_id: str
-    room_id: str
-    sender: str
-    timestamp: float
-    retry_count: int = 0
-    last_retry_time: float = 0
-    error_type: str = "megolm_session_missing"
 
 
 class MatrixEncryptionHandler:
