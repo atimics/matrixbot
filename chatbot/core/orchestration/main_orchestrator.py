@@ -70,15 +70,15 @@ class MainOrchestrator:
         self.unified_settings = get_settings()
         self.secret_manager = SecretManager()  # Use default SecretConfig
         
+        # Initialize modern database manager
+        from ..persistence import DatabaseManager
+        self.database_manager = DatabaseManager()  # Let it use the default configuration from settings
+
         # Core components
         self.world_state = WorldStateManager()
         self.payload_builder = PayloadBuilder()
         self.rate_limiter = RateLimiter(self.config.rate_limit_config)
-        self.context_manager = ContextManager(self.world_state, self.config.db_path)
-        
-        # Initialize modern database manager
-        from ..persistence import DatabaseManager
-        self.database_manager = DatabaseManager()  # Let it use the default configuration from settings
+        self.context_manager = ContextManager(self.world_state, self.database_manager)
         
         # Integration management
         self.integration_manager = IntegrationManager(

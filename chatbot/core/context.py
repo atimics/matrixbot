@@ -15,15 +15,15 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from sqlmodel import select, desc
+from sqlmodel import desc, select
 
-from .world_state import WorldStateManager
+from .history_recorder import StateChangeBlock
 from .persistence import (
-    DatabaseManager,
     ConsolidatedHistoryRecorder,
+    DatabaseManager,
     StateChangeRecord,
 )
-from .history_recorder import StateChangeBlock
+from .world_state import WorldStateManager
 
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,7 @@ class ContextManager:
     def __init__(self, world_state_manager: WorldStateManager, db_manager: DatabaseManager):
         self.world_state = world_state_manager
         self.contexts: Dict[str, ConversationContext] = {}
-        
+
         # Use ConsolidatedHistoryRecorder for state change persistence
         self.history_recorder = ConsolidatedHistoryRecorder(db_manager)
         # Track state changes in-memory for easy inspection
@@ -56,7 +56,9 @@ class ContextManager:
         self.storage_path = Path("context_storage")
         self.storage_path.mkdir(parents=True, exist_ok=True)
 
-        logger.info("ContextManager: Initialized with ConsolidatedHistoryRecorder for state persistence")
+        logger.info(
+            "ContextManager: Initialized with ConsolidatedHistoryRecorder for state persistence"
+        )
 
     async def get_context(self, channel_id: str) -> ConversationContext:
         """Get or create conversation context for a channel"""
@@ -212,11 +214,13 @@ Base your decisions on the current world state and user messages."""
                     return parsed
 
             # Try to find JSON within markdown code blocks
+
             json_match = re.search(
                 r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL
             )
             if json_match:
                 parsed = json.loads(json_match.group(1))
+                required_fields = ["observations"]
                 if all(field in parsed for field in required_fields):
                     return parsed
 
