@@ -23,27 +23,37 @@ class MatrixMessageOperations:
         self.client = client
         self.user_id = user_id
     
-    async def send_message(self, room_id: str, content: str) -> Dict[str, Any]:
+    async def send_message(self, room_id: str, content: Union[str, Dict[str, Any]]) -> Dict[str, Any]:
         """Send a plain text message to a room."""
         try:
             if not self.client:
                 return {"success": False, "error": "Matrix client not available"}
             
-            # Ensure content is always a string
-            if not isinstance(content, str):
-                content = str(content)
+            # Extract HTML content from the content object
+            if isinstance(content, dict) and 'html' in content:
+                body_content = content['html']
+                msg_type = "m.html"
+                logger.debug(f"MatrixMessageOps: Extracted HTML content: {body_content}")
+            elif isinstance(content, str):
+                body_content = content
+                msg_type = "m.text"
+                logger.debug(f"MatrixMessageOps: Using string content: {body_content}")
+            else:
+                body_content = str(content)
+                msg_type = "m.text"
+                logger.debug(f"MatrixMessageOps: Stringified content: {body_content}")
             
             response = await self.client.room_send(
                 room_id=room_id,
                 message_type="m.room.message",
                 content={
-                    "msgtype": "m.text",
-                    "body": content
+                    "msgtype": msg_type,
+                    "body": body_content
                 }
             )
             
             if isinstance(response, RoomSendResponse):
-                logger.debug(f"MatrixMessageOps: Message sent to {room_id}: {content[:100]}...")
+                logger.debug(f"MatrixMessageOps: Message sent to {room_id}: {str(body_content)[:100]}...")
                 return {
                     "success": True,
                     "event_id": response.event_id,
@@ -63,7 +73,7 @@ class MatrixMessageOperations:
         self,
         room_id: str,
         reply_to_event_id: str,
-        content: str,
+        content: Union[str, Dict[str, Any]],
         original_sender: Optional[str] = None,
         original_content: Optional[str] = None
     ) -> Dict[str, Any]:
@@ -72,15 +82,25 @@ class MatrixMessageOperations:
             if not self.client:
                 return {"success": False, "error": "Matrix client not available"}
             
-            # Ensure content is always a string
-            if not isinstance(content, str):
-                content = str(content)
+            # Extract HTML content from the content object
+            if isinstance(content, dict) and 'html' in content:
+                body_content = content['html']
+                msg_type = "m.html"
+                logger.debug(f"MatrixMessageOps: Reply - Extracted HTML content: {body_content}")
+            elif isinstance(content, str):
+                body_content = content
+                msg_type = "m.text"
+                logger.debug(f"MatrixMessageOps: Reply - Using string content: {body_content}")
+            else:
+                body_content = str(content)
+                msg_type = "m.text"
+                logger.debug(f"MatrixMessageOps: Reply - Stringified content: {body_content}")
             
             # Construct reply content with fallback body
-            fallback_body = f"> <{original_sender or 'unknown'}> {original_content or 'message'}\n\n{content}"
+            fallback_body = f"> <{original_sender or 'unknown'}> {original_content or 'message'}\n\n{body_content}"
             
             reply_content = {
-                "msgtype": "m.text",
+                "msgtype": msg_type,
                 "body": fallback_body,
                 "m.relates_to": {
                     "m.in_reply_to": {
@@ -116,7 +136,7 @@ class MatrixMessageOperations:
     async def send_formatted_message(
         self,
         room_id: str,
-        content: str,
+        content: Union[str, Dict[str, Any]],
         formatted_content: Optional[str] = None,
         format_type: str = "org.matrix.custom.html"
     ) -> Dict[str, Any]:
@@ -125,12 +145,24 @@ class MatrixMessageOperations:
             if not self.client:
                 return {"success": False, "error": "Matrix client not available"}
             
+            # Extract content from the content object
+            if isinstance(content, dict):
+                plain_content = content.get('plain', str(content))
+                html_content = content.get('html', plain_content)
+            else:
+                plain_content = content
+                html_content = content
+            
             message_content = {
                 "msgtype": "m.text",
-                "body": content
+                "body": plain_content
             }
             
-            if formatted_content:
+            # Use the HTML content from the object, or fallback to formatted_content parameter
+            if html_content and html_content != plain_content:
+                message_content["format"] = format_type
+                message_content["formatted_body"] = html_content
+            elif formatted_content:
                 message_content["format"] = format_type
                 message_content["formatted_body"] = formatted_content
             
@@ -162,7 +194,7 @@ class MatrixMessageOperations:
         self,
         room_id: str,
         reply_to_event_id: str,
-        content: str,
+        content: Union[str, Dict[str, Any]],
         formatted_content: Optional[str] = None,
         original_sender: Optional[str] = None,
         original_content: Optional[str] = None,
@@ -173,8 +205,16 @@ class MatrixMessageOperations:
             if not self.client:
                 return {"success": False, "error": "Matrix client not available"}
             
+            # Extract content from the content object
+            if isinstance(content, dict):
+                plain_content = content.get('plain', str(content))
+                html_content = content.get('html', plain_content)
+            else:
+                plain_content = content
+                html_content = content
+            
             # Construct fallback body for clients that don't support formatting
-            fallback_body = f"> <{original_sender or 'unknown'}> {original_content or 'message'}\n\n{content}"
+            fallback_body = f"> <{original_sender or 'unknown'}> {original_content or 'message'}\n\n{plain_content}"
             
             reply_content = {
                 "msgtype": "m.text",
@@ -186,7 +226,18 @@ class MatrixMessageOperations:
                 }
             }
             
-            if formatted_content:
+            # Use the HTML content from the object, or fallback to formatted_content parameter
+            if html_content and html_content != plain_content:
+                reply_content["format"] = format_type
+                # For formatted replies, include the quoted original in HTML
+                formatted_fallback = (
+                    f"<mx-reply><blockquote><a href=\"https://matrix.to/#/{room_id}/{reply_to_event_id}\">In reply to</a> "
+                    f"<a href=\"https://matrix.to/#/{original_sender or 'unknown'}\">{original_sender or 'unknown'}</a>"
+                    f"<br>{original_content or 'message'}</blockquote></mx-reply>"
+                    f"{html_content}"
+                )
+                reply_content["formatted_body"] = formatted_fallback
+            elif formatted_content:
                 reply_content["format"] = format_type
                 # For formatted replies, include the quoted original in HTML
                 formatted_fallback = (
