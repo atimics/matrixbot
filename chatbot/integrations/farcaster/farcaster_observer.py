@@ -89,7 +89,7 @@ class FarcasterObserver(Integration, BaseObserver):
         self.on_state_change: Optional[callable] = None
         
         # Processing hub connection for trigger generation
-        self.processing_hub = None
+        self.processing_hub = processing_hub
         
         logger.debug("Farcaster observer initialized (refactored)")
 
