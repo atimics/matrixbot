@@ -250,18 +250,20 @@ class NodeDataHandlers:
         if component == "action_history": 
             # Use optimized action history to prevent large payloads
             history = world_state_data.action_history[-10:]
-            return [
-                {
-                    "action_type": action.action_type,
-                    "result": (
-                        action.result[:100] + "..."
-                        if action.result and len(action.result) > 100
-                        else action.result
-                    ),
-                    "timestamp": action.timestamp,
-                }
-                for action in history
-            ]
+            return {
+                "action_history": [
+                    {
+                        "action_type": action.action_type,
+                        "result": (
+                            action.result[:100] + "..."
+                            if action.result and len(action.result) > 100
+                            else action.result
+                        ),
+                        "timestamp": action.timestamp,
+                    }
+                    for action in history
+                ]
+            }
         return None
 
     def get_media_gallery_node_data(self, world_state_data: 'WorldStateData', path_parts: List[str], expanded: bool = False) -> Optional[Dict]:
