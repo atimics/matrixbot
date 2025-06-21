@@ -10,7 +10,7 @@ import logging
 import time
 from typing import Any, Dict, Optional, Set, List
 
-from nio import AsyncClient, MatrixRoom
+from nio import AsyncClient, MatrixRoom, MegolmEvent
 from sqlmodel import select
 
 # Import database models and manager
@@ -147,9 +147,7 @@ class MatrixEncryptionHandler:
     async def handle_decryption_failure(
         self, 
         room: MatrixRoom, 
-        event_id: str, 
-        sender: str,
-        error_type: str = "megolm_session_missing"
+        event: MegolmEvent
     ) -> Dict[str, Any]:
         """
         Handle decryption failures and attempt recovery.
@@ -157,6 +155,9 @@ class MatrixEncryptionHandler:
         """
         try:
             room_id = room.room_id
+            event_id = event.event_id
+            sender = event.sender
+            error_type = "megolm_undecryptable"  # From event type
             
             logger.warning(
                 f"MatrixEncryption: Decryption failed for event {event_id} "
@@ -207,7 +208,7 @@ class MatrixEncryptionHandler:
             await self._broadcast_key_request(room_id, sender)
             
             # Attempt recovery strategies
-            recovery_result = await self._attempt_key_recovery(room, event_id, sender, error_type)
+            recovery_result = await self._attempt_key_recovery(room, event)
             
             return {
                 "success": True,
@@ -245,19 +246,20 @@ class MatrixEncryptionHandler:
     async def _attempt_key_recovery(
         self, 
         room: MatrixRoom, 
-        event_id: str, 
-        sender: str,
-        error_type: str
+        event: MegolmEvent
     ) -> Dict[str, Any]:
         """Attempt various key recovery strategies."""
         room_id = room.room_id
+        event_id = event.event_id  # Extract for logging/retry key
+        sender = event.sender  # Extract for logging/retry key
         recovery_attempts = []
         
         # Strategy 1: Request keys from other room members
         if self.client and hasattr(self.client, 'request_room_key'):
             try:
                 logger.debug(f"MatrixEncryption: Requesting room key for event {event_id}")
-                await self.client.request_room_key(event_id, room_id)
+                # Pass the full event object, not just the ID
+                await self.client.request_room_key(event)
                 recovery_attempts.append({"strategy": "room_key_request", "success": True})
             except Exception as e:
                 logger.warning(f"MatrixEncryption: Room key request failed: {e}")
@@ -277,7 +279,8 @@ class MatrixEncryptionHandler:
         if hasattr(self.client, 'keys_query'):
             try:
                 # Query keys for the sender to potentially start key exchange
-                await self.client.keys_query(user_keys={sender: []})
+                # Pass the dictionary as a positional argument, not a keyword argument
+                await self.client.keys_query({sender: []})
                 recovery_attempts.append({"strategy": "keys_query", "success": True})
             except Exception as e:
                 logger.warning(f"MatrixEncryption: Keys query failed: {e}")

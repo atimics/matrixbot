@@ -338,13 +338,13 @@ class MatrixObserver(Integration, BaseObserver):
 
     async def _on_bad_event(self, room: MatrixRoom, event):
         """Handle encryption errors and bad events."""
-        if self.encryption_handler:
-            await self.encryption_handler.handle_decryption_failure(
-                room, 
-                getattr(event, 'event_id', 'unknown'),
-                getattr(event, 'sender', 'unknown'),
-                "bad_event_type"
-            )
+        if self.encryption_handler and hasattr(event, 'event_id') and hasattr(event, 'sender'):
+            # Only handle if this is a MegolmEvent or similar decryptable event
+            if isinstance(event, MegolmEvent):
+                await self.encryption_handler.handle_decryption_failure(room, event)
+            else:
+                # For other event types, create a minimal object with required attributes
+                logger.debug(f"MatrixObserver: Non-Megolm bad event {getattr(event, 'event_id', 'unknown')} of type {type(event)}")
         
         # Also handle via event handler for logging
         if self.event_handler:
@@ -358,12 +358,8 @@ class MatrixObserver(Integration, BaseObserver):
         )
         
         if self.encryption_handler:
-            await self.encryption_handler.handle_decryption_failure(
-                room,
-                getattr(event, 'event_id', 'unknown'),
-                getattr(event, 'sender', 'unknown'),
-                'megolm_undecryptable'
-            )
+            # Pass the full event object since it's already a MegolmEvent
+            await self.encryption_handler.handle_decryption_failure(room, event)
 
     async def _on_login_response(self, response):
         """Handle login response for E2EE initialization."""
