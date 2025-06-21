@@ -53,6 +53,9 @@ class PayloadBuilder:
         self.world_state_manager = world_state_manager
         self.node_manager = node_manager
         self.logger = logging.getLogger(__name__)
+        
+        # Last action context for AI self-awareness (addresses repetitive loops)
+        self.last_action_result: Optional[Dict[str, Any]] = None
         # Dispatcher for node data retrieval, improving maintainability
         self._node_data_handlers = {
             "channels": self._get_channel_node_data,
@@ -64,7 +67,90 @@ class PayloadBuilder:
             "system": self._get_system_node_data,
             "media_gallery": self._get_media_gallery_node_data,
         }
-
+    
+    def set_last_action_result(self, action_result: Dict[str, Any]) -> None:
+        """
+        Set the last action result for AI self-awareness.
+        
+        This critical method stores information about the most recently executed action
+        to prevent repetitive loops by giving the AI context about what it just did.
+        
+        Args:
+            action_result: Dictionary containing:
+                - action_type: The tool/action that was executed
+                - parameters: Parameters passed to the action
+                - success: Whether the action succeeded
+                - result: The result/output of the action
+                - timestamp: When the action was executed
+                - reasoning: Why the AI chose this action
+        """
+        self.last_action_result = action_result
+        logger.debug(f"Set last action result: {action_result.get('action_type')} -> "
+                    f"{'SUCCESS' if action_result.get('success') else 'FAILED'}")
+    
+    def _build_immediate_action_context(self) -> Dict[str, Any]:
+        """
+        Build immediate action context to prevent repetitive AI behavior.
+        
+        This addresses the core issue where the AI doesn't remember what it just did,
+        causing it to repeat the same analysis and come to the same conclusion.
+        
+        Returns:
+            Dictionary with last action information and guidance for the AI
+        """
+        if not self.last_action_result:
+            return {
+                "status": "no_recent_action",
+                "guidance": "This is your first action in this session. Analyze the situation and choose an appropriate action."
+            }
+        
+        action_type = self.last_action_result.get("action_type", "unknown")
+        success = self.last_action_result.get("success", False)
+        result_preview = str(self.last_action_result.get("result", ""))[:200]
+        reasoning = self.last_action_result.get("reasoning", "No reasoning provided")
+        
+        # Generate specific guidance based on the last action
+        guidance = self._generate_action_specific_guidance(action_type, success, self.last_action_result)
+        
+        return {
+            "last_action_type": action_type,
+            "last_action_parameters": self.last_action_result.get("parameters", {}),
+            "last_action_success": success,
+            "last_action_result_preview": result_preview,
+            "last_action_reasoning": reasoning,
+            "seconds_since_last_action": time.time() - self.last_action_result.get("timestamp", time.time()),
+            "guidance": guidance,
+            "anti_loop_instruction": "CRITICAL: You just performed the action above. Do NOT repeat the same action unless the result indicates you should. Analyze the new information and decide the next logical step."
+        }
+    
+    def _generate_action_specific_guidance(self, action_type: str, success: bool, action_result: Dict[str, Any]) -> str:
+        """Generate specific guidance based on the type of action that was just performed."""
+        if not success:
+            return f"Your last action ({action_type}) failed. Consider why it failed and try a different approach or fix the issue."
+        
+        # Action-specific guidance for successful actions
+        if action_type == "expand_node":
+            node_path = action_result.get("parameters", {}).get("node_path", "unknown")
+            return f"You just expanded node '{node_path}'. The new information is now available. Analyze it and respond appropriately instead of expanding another node."
+        
+        elif action_type == "get_trending_casts":
+            return "You just retrieved trending casts. Review the trending content and decide if you should engage with any of it, or focus on other tasks."
+        
+        elif action_type in ["send_matrix_message", "send_farcaster_post", "send_farcaster_reply"]:
+            return "You just sent a message. Wait for responses or focus on other activities rather than sending another message immediately."
+        
+        elif action_type == "search_casts":
+            return "You just performed a search. Review the search results and engage with relevant content or move to other tasks."
+        
+        elif action_type == "collect_world_state":
+            return "You just collected world state information. Use this fresh data to make informed decisions about what to do next."
+        
+        elif action_type == "wait":
+            return "You just waited. Now analyze if there are any new developments that require action, or continue waiting if appropriate."
+        
+        else:
+            return f"You just completed '{action_type}'. Build on this action's results rather than repeating the same analysis."
+    
     def _build_action_history_payload(
         self, world_state_data: WorldStateData, max_history: int, optimize: bool
     ) -> List[Dict[str, Any]]:
@@ -445,7 +531,7 @@ class PayloadBuilder:
                 "timestamp": world_state_data.last_update,
                 "rate_limits": world_state_data.rate_limits,
             },
-            "bot_activity_context": self._build_bot_activity_context(world_state_data),
+            "bot_activity_context": self._build_enhanced_bot_activity_context(world_state_data),
             "available_channels": available_channels,  # NEW: Always visible for AI discovery
             "expanded_nodes": expanded_nodes,
             "collapsed_node_summaries": collapsed_node_summaries,
@@ -1617,5 +1703,6 @@ class PayloadBuilder:
             'unresponded_count': len(unresponded_notifications),
             'unresponded_notifications': unresponded_notifications[:10],  # Limit to 10 most recent
             'has_urgent_notifications': any(n['time_since'] < 3600 for n in unresponded_notifications),  # Within last hour
+
             'analysis_timestamp': current_time
         }
