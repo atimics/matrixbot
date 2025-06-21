@@ -143,6 +143,10 @@ class OpenRouterProvider(AIProviderBase):
 
         if response_model and self.supports_structured_outputs():
             schema = response_model.model_json_schema()
+            # Ensure additionalProperties is set to false for OpenAI compatibility
+            if "additionalProperties" not in schema:
+                schema["additionalProperties"] = False
+            
             payload["response_format"] = {
                 "type": "json_schema",
                 "json_schema": {
