@@ -62,9 +62,9 @@ class NodePathGenerator:
         
         # Farcaster users
         if hasattr(world_state_data, 'farcaster_users') and world_state_data.farcaster_users:
-            yield "farcaster/users"
+            yield "farcaster.users"
             for fid in world_state_data.farcaster_users.keys():
-                yield f"farcaster/users/{fid}"
+                yield f"farcaster.users.{fid}"
 
     def _generate_media_gallery_paths(self, world_state_data: WorldStateData):
         """Generate paths for media gallery."""
