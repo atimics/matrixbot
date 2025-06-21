@@ -79,7 +79,7 @@ class MainOrchestrator:
         
         # Initialize modern database manager
         from ..persistence import DatabaseManager
-        self.database_manager = DatabaseManager(self.unified_settings.chatbot_db_path)
+        self.database_manager = DatabaseManager()  # Let it use the default configuration from settings
         
         # Initialize HistoryRecorder for backward compatibility
         self.history_recorder = HistoryRecorder(self.config.db_path)
