@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import Mock, patch
 
-from chatbot.api_server.secure_server import create_secure_api_server
+from chatbot.api_server import create_secure_api_server
 from chatbot.api_server.services.setup_manager import SetupManager
 
 

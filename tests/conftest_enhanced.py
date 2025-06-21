@@ -156,8 +156,8 @@ async def orchestrator(
 @pytest.fixture
 def api_client(orchestrator: MainOrchestrator) -> TestClient:
     """Provide a FastAPI test client."""
-    from chatbot.api_server.secure_server import create_secure_api_server
-    app = create_api_server(orchestrator)
+    from chatbot.api_server import create_secure_api_server
+    app = create_secure_api_server(orchestrator)
     return TestClient(app)
 
 
