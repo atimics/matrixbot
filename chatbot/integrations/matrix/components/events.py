@@ -137,8 +137,10 @@ class MatrixEventHandler:
             from ....core.orchestration.processing_hub import Trigger
             
             # Determine trigger type and priority based on message content
-            bot_mentioned = self.user_id.lower() in message.content.lower()
-            logger.info(f"MatrixEventHandler: Bot mention check - user_id: {self.user_id}, content: '{message.content}', mentioned: {bot_mentioned}")
+            # Use the localpart of the user ID for mention checking
+            bot_localpart = self.user_id.split(':')[0].lstrip('@').lower()
+            bot_mentioned = bot_localpart in message.content.lower()
+            logger.info(f"MatrixEventHandler: Bot mention check - localpart: '{bot_localpart}', content: '{message.content}', mentioned: {bot_mentioned}")
             
             if bot_mentioned:
                 # High priority for bot mentions
@@ -264,8 +266,9 @@ class MatrixEventHandler:
                 return
             
             # Check for bot mention in any of the batched messages
-            bot_mentioned = any(self.user_id.lower() in msg.content.lower() for msg in messages)
-            logger.info(f"MatrixEventHandler: Batch trigger generation - user_id: {self.user_id}, bot_mentioned: {bot_mentioned}, batch_size: {len(messages)}")
+            bot_localpart = self.user_id.split(':')[0].lstrip('@').lower()
+            bot_mentioned = any(bot_localpart in msg.content.lower() for msg in messages)
+            logger.info(f"MatrixEventHandler: Batch trigger generation - localpart: '{bot_localpart}', bot_mentioned: {bot_mentioned}, batch_size: {len(messages)}")
             
             if bot_mentioned:
                 trigger = Trigger(

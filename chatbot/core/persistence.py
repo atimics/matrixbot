@@ -187,7 +187,12 @@ class DatabaseManager:
             db_path = Path(settings.chatbot_db_path).resolve()
             self.database_url = f"sqlite+aiosqlite:///{db_path}"
         else:
-            self.database_url = database_url
+            # If the provided URL doesn't look like a SQLAlchemy URL, assume it's a file path.
+            if not database_url.startswith("sqlite"):
+                self.database_url = f"sqlite+aiosqlite:///{database_url}"
+                logger.debug(f"Interpreted database path as SQLite URL: {self.database_url}")
+            else:
+                self.database_url = database_url
         self.engine = None
         self.session_factory = None
         self._initialized = False

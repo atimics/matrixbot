@@ -6,6 +6,7 @@ This replaces the monolithic 2000-line observer with a clean, maintainable struc
 """
 
 import asyncio
+import json
 import logging
 import time
 from pathlib import Path
@@ -269,6 +270,24 @@ class MatrixObserver(Integration, BaseObserver):
         
         if access_token:
             self.client.access_token = access_token
+            
+            # Set user_id and device_id from token file before loading store
+            try:
+                with open(self.auth_handler.token_file, 'r') as f:
+                    token_data = json.load(f)
+                self.client.user_id = token_data.get('user_id', self.user_id)
+                self.client.device_id = token_data.get('device_id')
+                
+                # Explicitly load the encryption store. This is the critical step.
+                self.client.load_store()
+                logger.info("MatrixObserver: Successfully loaded encryption store from session.")
+            except Exception as e:
+                logger.error(f"MatrixObserver: Failed to load encryption store: {e}. Proceeding with re-login.")
+                self.auth_handler.clear_token()
+                # Fall through to login
+                access_token = await self.auth_handler.login_with_retry(self.client)
+                return access_token is not None
+            
             # Verify token is still valid
             if await self.auth_handler.verify_token_with_backoff(self.client):
                 logger.info("MatrixObserver: Using existing valid token")
