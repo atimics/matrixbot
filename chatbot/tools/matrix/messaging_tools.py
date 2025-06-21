@@ -173,7 +173,7 @@ class SendMatrixMessageTool(ToolInterface):
 
     @property
     def description(self) -> str:
-        return ("Send a new message to a Matrix channel. Use 'room_id' for the channel and 'message' for the content. Use this when you want to start a new conversation or make an announcement. "
+        return ("Send a new message to a Matrix channel. Use 'channel_id' for the channel and 'message' for the content. Use this when you want to start a new conversation or make an announcement. "
                 "Use the 'attach_image' parameter to include an image - either provide a description to generate a new image, or reference an existing media_id from your library. "
                 "Recently generated media (within 5 minutes) will be automatically attached if no explicit attach_image is provided.")
 
