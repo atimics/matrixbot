@@ -104,6 +104,64 @@ def require_developer_tools_enabled(func):
 def require_admin_access(func):
     """Decorator to require admin access for dangerous operations."""
     async def wrapper(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
+        # First check if developer tools are enabled
+        if not _security.is_enabled():
+            return {
+                "status": "error", 
+                "message": "Developer tools are disabled",
+                "security_notice": "Set DEVELOPER_TOOLS_ENABLED=true to enable developer tools"
+            }
+        
+        # Check admin key in parameters
+        admin_key = params.get("admin_key")
+        if not admin_key:
+            return {
+                "status": "error",
+                "message": "Admin key required for this operation",
+                "security_notice": "Pass 'admin_key' parameter with valid admin key"
+            }
+        
+        if admin_key != _security.admin_key:
+            logger.warning(f"Invalid admin key attempt for {func.__name__}")
+            return {
+                "status": "error",
+                "message": "Invalid admin key",
+                "security_notice": "This incident has been logged"
+            }
+        
+        # Remove admin key from params before processing
+        filtered_params = {k: v for k, v in params.items() if k != "admin_key"}
+        return await func(self, filtered_params, context)
+    return wrapper
+
+def validate_sandbox_path(func):
+    """Decorator to validate and sanitize file paths."""
+    async def wrapper(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
+        # Validate any path parameters
+        path_params = ["path", "file_path", "workspace_path", "target_path"]
+        
+        for param_name in path_params:
+            if param_name in params:
+                try:
+                    # Sanitize and validate the path
+                    sanitized_path = _security.sanitize_path(params[param_name])
+                    params[param_name] = str(sanitized_path)
+                except ValueError as e:
+                    logger.error(f"Path validation failed for {param_name}: {e}")
+                    return {
+                        "status": "error",
+                        "message": f"Invalid path: {e}",
+                        "security_notice": "Path must be within allowed sandbox directory"
+                    }
+        
+        return await func(self, params, context)
+    return wrapper
+        return await func(self, params, context)
+    return wrapper
+
+def require_admin_access(func):
+    """Decorator to require admin access for dangerous operations."""
+    async def wrapper(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
         if not _security.validate_admin_access(context):
             return {
                 "status": "error",
@@ -1376,6 +1434,9 @@ class ImplementCodeChangesTool(ToolInterface):  # Phase 2
             "create_branch": "boolean (optional, default: true) - Whether to create a new branch for changes"
         }
 
+    @require_developer_tools_enabled
+    @require_admin_access
+    @validate_sandbox_path
     async def execute(
         self, params: Dict[str, Any], context: ActionContext
     ) -> Dict[str, Any]:

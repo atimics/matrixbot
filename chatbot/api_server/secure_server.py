@@ -225,7 +225,75 @@ class SecureAPIServer:
         self.get_rate_limiter = get_rate_limiter
     
     def _setup_routes(self):
-        """Setup API routes with appropriate security."""
+        """Setup API routes with global authentication protection."""
+        from fastapi import APIRouter
+        
+        # Create main protected API router with global authentication
+        protected_api_router = APIRouter(
+            prefix="/api",
+            dependencies=[Depends(self.api_key_auth.verify_api_key)]
+        )
+        
+        # Import and include all routers under the protected API router
+        try:
+            from .routers import tools, integrations, monitoring, ai, worldstate, setup
+            
+            # Remove /api prefix from routers since it's handled by the main router
+            protected_api_router.include_router(tools.router, prefix="", tags=["tools"])
+            protected_api_router.include_router(integrations.router, prefix="", tags=["integrations"]) 
+            protected_api_router.include_router(monitoring.router, prefix="", tags=["monitoring"])
+            protected_api_router.include_router(ai.router, prefix="", tags=["ai"])
+            protected_api_router.include_router(worldstate.router, prefix="", tags=["worldstate"])
+            protected_api_router.include_router(setup.router, prefix="", tags=["setup"])
+            
+            logger.info("Loaded modular API routers with global authentication")
+            
+        except ImportError as e:
+            logger.warning(f"Could not import modular routers: {e}, using fallback inline routes")
+            
+            # Fallback to inline protected routes if modular routers don't exist
+            @protected_api_router.get("/status")
+            async def get_status():
+                """Get system status (protected)."""
+                return {
+                    "status": "operational",
+                    "uptime_seconds": (datetime.now() - self._start_time).total_seconds(),
+                    "world_state_metrics": self.orchestrator.world_state.get_state_metrics() if hasattr(self.orchestrator, 'world_state') else {},
+                    "active_integrations": len(self.orchestrator.integration_manager.get_active_integrations()) if hasattr(self.orchestrator, 'integration_manager') else 0,
+                    "timestamp": datetime.now().isoformat()
+                }
+            
+            @protected_api_router.get("/worldstate")
+            async def get_world_state():
+                """Get world state data (protected)."""
+                try:
+                    if hasattr(self.orchestrator, 'world_state'):
+                        state_data = self.orchestrator.world_state.get_state_metrics()
+                        return {
+                            "state_metrics": state_data,
+                            "timestamp": datetime.now().isoformat()
+                        }
+                    else:
+                        return {"error": "World state not available"}
+                except Exception as e:
+                    logger.error(f"Error getting world state: {e}")
+                    raise HTTPException(status_code=500, detail="Failed to retrieve world state")
+            
+            @protected_api_router.get("/tools")
+            async def get_tools():
+                """Get available tools (protected)."""
+                try:
+                    if hasattr(self.orchestrator, 'tool_registry'):
+                        tools = self.orchestrator.tool_registry.get_all_tools()
+                        return {"tools": [{"name": tool.name, "description": tool.description} for tool in tools]}
+                    else:
+                        return {"tools": []}
+                except Exception as e:
+                    logger.error(f"Error getting tools: {e}")
+                    raise HTTPException(status_code=500, detail="Failed to retrieve tools")
+        
+        # Include the protected router in the main app
+        self.app.include_router(protected_api_router)
         
         # Public endpoints (no authentication required)
         @self.app.get("/health")
@@ -234,50 +302,23 @@ class SecureAPIServer:
             return {
                 "status": "healthy",
                 "timestamp": datetime.now().isoformat(),
-                "service": "secure_chatbot_api",
-                "version": "2.0.0"
+                "uptime_seconds": (datetime.now() - self._start_time).total_seconds(),
+                "version": "2.0.0",
+                "service": "secure_chatbot_api"
             }
         
         @self.app.get("/")
         async def root():
-            """Root endpoint with basic info."""
+            """Public root endpoint with basic info."""
             return {
-                "service": "Chatbot Management API",
+                "service": "Secure Chatbot Management API",
                 "version": "2.0.0",
-                "status": "running",
-                "docs": "/docs" if self.settings.LOG_LEVEL == "DEBUG" else "disabled"
+                "docs": "/docs" if self.settings.LOG_LEVEL == "DEBUG" else "Authentication required for API access",
+                "health": "/health",
+                "security": "All /api/* endpoints require authentication"
             }
         
-        # Protected endpoints (require API key)
-        @self.app.get("/api/status")
-        async def get_status(api_key: str = Depends(self.api_key_auth.verify_api_key)):
-            """Get system status (protected)."""
-            return {
-                "status": "operational",
-                "uptime_seconds": (datetime.now() - self._start_time).total_seconds(),
-                "world_state_metrics": self.orchestrator.world_state.get_state_metrics(),
-                "active_integrations": len(self.orchestrator.integration_manager.get_active_integrations()),
-                "timestamp": datetime.now().isoformat()
-            }
-        
-        @self.app.get("/api/worldstate")
-        async def get_world_state(api_key: str = Depends(self.api_key_auth.verify_api_key)):
-            """Get world state data (protected)."""
-            try:
-                state_data = self.orchestrator.world_state.get_state_metrics()
-                return {
-                    "state_metrics": state_data,
-                    "timestamp": datetime.now().isoformat()
-                }
-            except Exception as e:
-                logger.error(f"Error getting world state: {e}")
-                raise HTTPException(status_code=500, detail="Failed to retrieve world state")
-        
-        @self.app.get("/api/tools")
-        async def get_tools(api_key: str = Depends(self.api_key_auth.verify_api_key)):
-            """Get available tools (protected)."""
-            try:
-                tools = self.orchestrator.tool_registry.get_all_tools()
+        logger.info("API routes configured with global authentication protection for all /api/* endpoints")
                 return {
                     "tools": tools,
                     "count": len(tools),
