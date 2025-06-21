@@ -29,6 +29,10 @@ class MatrixMessageOperations:
             if not self.client:
                 return {"success": False, "error": "Matrix client not available"}
             
+            # Ensure content is always a string
+            if not isinstance(content, str):
+                content = str(content)
+            
             response = await self.client.room_send(
                 room_id=room_id,
                 message_type="m.room.message",
@@ -67,6 +71,10 @@ class MatrixMessageOperations:
         try:
             if not self.client:
                 return {"success": False, "error": "Matrix client not available"}
+            
+            # Ensure content is always a string
+            if not isinstance(content, str):
+                content = str(content)
             
             # Construct reply content with fallback body
             fallback_body = f"> <{original_sender or 'unknown'}> {original_content or 'message'}\n\n{content}"
