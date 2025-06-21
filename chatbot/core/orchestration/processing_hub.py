@@ -145,13 +145,29 @@ class ProcessingHub:
         self.running = False
         
     def add_trigger(self, trigger: Trigger):
-        """Add a trigger and schedule processing with intelligent batching."""
+        """Add a trigger and schedule processing with intelligent batching and anti-loop protection."""
         current_time = time.time()
         delay = self.trigger_delays.get(trigger.type, self.trigger_delays["default"])
         desired_time = current_time + delay
         
+        # Enhanced trigger handling for anti-loop protection
+        # High-priority triggers that should force immediate re-evaluation
+        force_immediate_triggers = {"mention", "direct_message", "new_message", "reply_to_bot"}
+        
         # Add trigger to pending set for deduplication
         self.pending_triggers.add(trigger)
+        
+        # If this is a high-priority trigger that should override previous "wait" decisions
+        if trigger.type in force_immediate_triggers:
+            # Cancel any existing wait delay and process immediately with minimal delay
+            delay = min(delay, 2.0)  # Max 2 seconds for high-priority triggers
+            desired_time = current_time + delay
+            
+            # Mark this trigger as requiring fresh AI evaluation
+            trigger.data["force_reevaluation"] = True
+            trigger.data["override_last_action"] = True
+            
+            logger.info(f"High-priority trigger added: {trigger.type} (forcing re-evaluation, delay: {delay}s)")
         
         # If a processing cycle is currently active, don't interrupt it
         # Just add the trigger and let it be processed in the next cycle
@@ -162,9 +178,11 @@ class ProcessingHub:
         
         # Intelligent batching: if this trigger arrives within the batching window
         # of the last trigger, extend the delay slightly to allow more triggers to batch
+        # BUT: Skip batching for high-priority triggers that need immediate attention
         time_since_last_trigger = current_time - self.last_trigger_time
         
-        if (time_since_last_trigger < self.batching_window and 
+        if (trigger.type not in force_immediate_triggers and
+            time_since_last_trigger < self.batching_window and 
             self.next_scheduled_time is not None and 
             len(self.pending_triggers) > 1):
             # Extend the current scheduling by a small amount to batch more triggers
