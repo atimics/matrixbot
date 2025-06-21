@@ -29,6 +29,7 @@ from .structures import Channel, WorldStateData
 from .node_path_generator import NodePathGenerator
 from .node_data_handler import NodeDataHandler
 from .payload_optimizer import PayloadOptimizer
+from .bot_activity_context import BotActivityContextBuilder
 
 if TYPE_CHECKING:
     from ..node_system.node_manager import NodeManager
@@ -64,6 +65,7 @@ class PayloadBuilder:
         self.node_path_generator = NodePathGenerator()
         self.node_data_handler = NodeDataHandler()
         self.payload_optimizer = PayloadOptimizer()
+        self.bot_activity_builder = BotActivityContextBuilder()
         
         # Last action context for AI self-awareness (addresses repetitive loops)
         self.last_action_result: Optional[Dict[str, Any]] = None
@@ -76,6 +78,7 @@ class PayloadBuilder:
             action_result: Dictionary containing action details
         """
         self.last_action_result = action_result
+        self.bot_activity_builder.set_last_action_result(action_result)
         logger.debug(f"Set last action result: {action_result.get('action_type')} -> "
                     f"{'SUCCESS' if action_result.get('success') else 'FAILED'}")
 
