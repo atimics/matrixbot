@@ -43,6 +43,7 @@ class FarcasterObserver(Integration, BaseObserver):
         signer_uuid: Optional[str] = None,
         bot_fid: Optional[str] = None,
         world_state_manager=None,
+        processing_hub=None,
     ):
         Integration.__init__(self, integration_id, display_name, config or {})
         BaseObserver.__init__(self, integration_id, display_name)
