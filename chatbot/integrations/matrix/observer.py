@@ -245,10 +245,14 @@ class MatrixObserver(Integration, BaseObserver):
         # Encryption events
         self.client.add_event_callback(self._on_bad_event, BadEventType)
         
+        # E2EE initialization callbacks
+        self.client.add_response_callback(self._on_login_response, LoginResponse)
+        
         # Import and add Megolm event callback for undecryptable messages
         try:
-            from nio import MegolmEvent
+            from nio import MegolmEvent, SyncResponse
             self.client.add_event_callback(self._on_megolm_event, MegolmEvent)
+            self.client.add_response_callback(self._on_sync_response, SyncResponse)
         except ImportError:
             logger.debug("MatrixObserver: MegolmEvent not available, skipping callback")
 
