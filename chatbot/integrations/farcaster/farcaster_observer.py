@@ -1192,10 +1192,8 @@ class FarcasterObserver(Integration, BaseObserver):
                 if total_messages > 0:
                     logger.debug(f"World state collection: stored {total_messages} messages across {len(world_state_data)} categories")
                     
-                    # Generate specific triggers for processing hub if connected
+                    # Mark state as stale for processing hub if connected
                     if self.processing_hub:
-                        from ...core.orchestration.processing_hub import Trigger
-                        
                         # Check for high-priority data types
                         for data_type, messages in world_state_data.items():
                             if not messages:
@@ -1203,28 +1201,22 @@ class FarcasterObserver(Integration, BaseObserver):
                                 
                             if data_type == "notifications":
                                 # High priority for notifications and mentions
-                                trigger = Trigger(
-                                    type='farcaster_notification',
-                                    priority=8,
-                                    data={'data_type': data_type, 'message_count': len(messages)}
+                                self.processing_hub.mark_state_as_stale(
+                                    'farcaster_notification',
+                                    {'data_type': data_type, 'message_count': len(messages)}
                                 )
-                                self.processing_hub.add_trigger(trigger)
                             elif data_type in ["trending", "for_you"]:
                                 # Medium priority for trending/discovery content
-                                trigger = Trigger(
-                                    type='farcaster_discovery',
-                                    priority=6,
-                                    data={'data_type': data_type, 'message_count': len(messages)}
+                                self.processing_hub.mark_state_as_stale(
+                                    'farcaster_discovery',
+                                    {'data_type': data_type, 'message_count': len(messages)}
                                 )
-                                self.processing_hub.add_trigger(trigger)
                             elif data_type == "home_feed":
                                 # Lower priority for general home feed
-                                trigger = Trigger(
-                                    type='farcaster_feed',
-                                    priority=4,
-                                    data={'data_type': data_type, 'message_count': len(messages)}
+                                self.processing_hub.mark_state_as_stale(
+                                    'farcaster_feed',
+                                    {'data_type': data_type, 'message_count': len(messages)}
                                 )
-                                self.processing_hub.add_trigger(trigger)
                     
                     # Fallback: Trigger legacy state change notification for backward compatibility
                     if hasattr(self, 'on_state_change') and self.on_state_change:

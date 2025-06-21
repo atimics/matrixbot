@@ -28,6 +28,7 @@ class ActionContext:
         arweave_service=None,
         base_nft_service=None,
         eligibility_service=None,
+        processing_hub=None,
         current_channel_id=None,
     ):
         # Service-oriented approach
@@ -40,6 +41,7 @@ class ActionContext:
         self.arweave_service = arweave_service
         self.base_nft_service = base_nft_service
         self.eligibility_service = eligibility_service
+        self.processing_hub = processing_hub
         
         # Current channel context for tool execution
         self.current_channel_id = current_channel_id

@@ -376,6 +376,20 @@ class MatrixObserver(Integration, BaseObserver):
             # Notify event handler about initial sync completion
             if self.event_handler:
                 self.event_handler.initial_sync_complete = True
+            
+            # Mark state as stale after initial sync completion
+            if self.processing_hub:
+                self.processing_hub.mark_state_as_stale(
+                    "matrix_initial_sync_complete",
+                    {"initial_sync": True}
+                )
+        else:
+            # For subsequent syncs, mark state as stale to trigger processing
+            if self.processing_hub:
+                self.processing_hub.mark_state_as_stale(
+                    "matrix_sync_response",
+                    {"sync_time": time.time()}
+                )
 
     # Public API methods that delegate to components
     async def send_message(self, room_id: str, content: str) -> Dict[str, Any]:

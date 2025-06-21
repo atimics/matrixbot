@@ -125,3 +125,83 @@ class LogInternalMonologueTool(ToolInterface):
         except Exception as e:
             logger.error(f"Error logging internal monologue: {e}", exc_info=True)
             return {"status": "failure", "error": str(e)}
+
+
+class RequestProcessingCycleTool(ToolInterface):
+    """
+    Tool for the AI to explicitly request a new processing cycle.
+    
+    This tool allows the AI to request that its understanding of the world
+    state be refreshed and a new processing cycle be triggered. This is useful
+    when the AI has taken an action that changes the world state significantly
+    and wants to re-evaluate the situation.
+    """
+
+    @property
+    def name(self) -> str:
+        return "request_reprocessing"
+
+    @property
+    def description(self) -> str:
+        return "Request a fresh processing cycle to re-evaluate the current world state. Use this after taking significant actions that might change the context or when you need to reconsider your approach with updated information."
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string",
+                    "description": "Reason for requesting reprocessing (e.g., 'posted_message', 'state_changed', 'need_fresh_perspective')"
+                },
+                "details": {
+                    "type": "string", 
+                    "description": "Additional details about why reprocessing is needed",
+                    "default": ""
+                }
+            },
+            "required": ["reason"]
+        }
+
+    async def execute(
+        self, params: Dict[str, Any], context: ActionContext
+    ) -> Dict[str, Any]:
+        """
+        Execute the reprocessing request by marking the world state as stale.
+        """
+        reason = params.get("reason", "explicit_request")
+        details_str = params.get("details", "")
+        
+        if not context.processing_hub:
+            logger.warning("Processing hub not available. Cannot request reprocessing.")
+            return {"status": "failure", "error": "Processing hub not available."}
+            
+        try:
+            # Mark state as stale with the provided reason
+            details = {
+                "tool_request": True,
+                "timestamp": time.time()
+            }
+            if details_str:
+                details["details"] = details_str
+                
+            context.processing_hub.mark_state_as_stale(
+                f"ai_requested_{reason}",
+                details
+            )
+
+            message = f"Requested reprocessing: {reason}"
+            if details_str:
+                message += f" - {details_str}"
+                
+            logger.debug(f"AI requested reprocessing: {reason}")
+
+            return {
+                "status": "success",
+                "message": message,
+                "timestamp": time.time(),
+                "reason": reason
+            }
+        except Exception as e:
+            logger.error(f"Error requesting reprocessing: {e}", exc_info=True)
+            return {"status": "failure", "error": str(e)}

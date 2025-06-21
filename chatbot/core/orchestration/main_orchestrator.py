@@ -154,7 +154,8 @@ class MainOrchestrator:
             world_state_manager=self.world_state,
             context_manager=None,  # Will be updated when modern context management is implemented
             arweave_client=self.arweave_client,
-            arweave_service=arweave_service_instance
+            arweave_service=arweave_service_instance,
+            processing_hub=self.processing_hub
         )
         
         # Legacy observer references for backward compatibility
@@ -174,7 +175,7 @@ class MainOrchestrator:
 
     def _register_all_tools(self):
         """Register all available tools with the tool registry."""
-        from ...tools.core_tools import WaitTool, LogInternalMonologueTool
+        from ...tools.core_tools import WaitTool, LogInternalMonologueTool, RequestProcessingCycleTool
         from ...tools.describe_image_tool import DescribeImageTool
         from ...tools.farcaster import (
             FollowFarcasterUserTool,

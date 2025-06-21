@@ -1,15 +1,15 @@
 """
 Processing Hub
 
-Central hub for handling different processing strategies (traditional event-based and node-based)
-and managing the main event loop logic.
+Central hub for state-driven processing. This replaces the complex trigger-based system
+with a simple state-driven loop that processes when the world state becomes stale.
 """
 
 import asyncio
 import logging
 import time
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING
+from dataclasses import dataclass
+from typing import Any, Dict, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..world_state.manager import WorldStateManager
@@ -23,56 +23,18 @@ logger = logging.getLogger(__name__)
 class ProcessingConfig:
     """Configuration for the processing hub."""
     enable_node_based_processing: bool = True
-    observation_interval: float = 60.0  # seconds
+    processing_interval: float = 5.0  # seconds - how often to check for stale state
     max_cycles_per_hour: int = 30
     rate_limit_window: int = 3600  # seconds
     max_queue_size: int = 1000
 
 
-@dataclass(frozen=True)
-class Trigger:
-    """Represents a trigger for processing."""
-    type: str
-    priority: int = 0  # Higher values = higher priority
-    timestamp: float = field(default_factory=time.time)
-    # Remove data field from comparison and hashing to allow deduplication by type
-    data: Dict[str, Any] = field(default_factory=dict, compare=False, hash=False)
-    
-    def __hash__(self):
-        # Hash only by type to deduplicate triggers of the same type
-        return hash(self.type)
-    
-    def __eq__(self, other):
-        # Consider triggers equal if they have the same type
-        if not isinstance(other, Trigger):
-            return False
-        return self.type == other.type
-    
-    @staticmethod
-    def can_combine(trigger_types: Set[str]) -> bool:
-        """
-        Check if multiple trigger types can be efficiently combined into a single processing cycle.
-        
-        Args:
-            trigger_types: Set of trigger type strings
-            
-        Returns:
-            True if these triggers can be efficiently processed together
-        """
-        # All triggers can be combined since world state updates are generic
-        # The AI will see the current state and decide what actions to take
-        return True
-    
-    @staticmethod
-    def get_combined_priority(triggers: Set['Trigger']) -> int:
-        """Get the priority for a combined set of triggers."""
-        return max(trigger.priority for trigger in triggers)
-
-
 class ProcessingHub:
     """
-    Central hub for processing different types of triggers.
-    Handles rate limiting and coordination between different processing strategies.
+    State-driven processing hub.
+    
+    Instead of complex trigger-based processing, this hub simply waits for the
+    world state to become "stale" and then processes the current state holistically.
     """
 
     def __init__(
@@ -91,303 +53,178 @@ class ProcessingHub:
         self.running = False
         self._processing_lock = asyncio.Lock()
         
-        # Scheduling system
-        self.next_scheduled_time = None
-        self.scheduled_task = None
-        self.pending_triggers = set()
-        
-        # Trigger scheduling configuration
-        self.trigger_delays = {
-            "mention": 1.0,       # 1 second for mentions (high priority)
-            "new_message": 2.0,   # 2 seconds for new messages
-            "channel_activity": 3.0,  # 3 seconds for channel activity (replaces new_message)
-            "proactive": 5.0,     # 5 seconds for proactive triggers
-            "periodic": 10.0,     # 10 seconds for periodic updates
-            "default": 3.0        # 3 seconds default delay
-        }
-        
-        # Batching configuration - improved for better rapid event handling
-        self.batching_window = 1.0  # 1 second window to collect rapid triggers (increased from 0.5)
-        self.max_batching_extension = 2.0  # Maximum time to extend batching (new)
-        self.last_trigger_time = 0.0
+        # State-driven architecture: simple event to signal when world state is stale
+        self._world_state_is_stale = asyncio.Event()
+        self.processing_interval = config.processing_interval
         
         # Component availability tracking
         self.node_processor = None
         
         # Processing statistics
-        self.total_triggers_processed = 0
+        self.total_cycles_processed = 0
         self.processing_errors = 0
         self.last_cycle_time = None
-        
-        # Active conversations tracking
-        self.active_conversations = set()
         
     def set_node_processor(self, processor):
         """Set the node-based processing component."""
         self.node_processor = processor
         
-    def start_processing_loop(self) -> asyncio.Task:
+    def start_processing_loop(self) -> Optional[asyncio.Task]:
         """Start the main processing loop as a background task."""
         if self.running:
             logger.warning("Processing hub already running")
             return None
 
-        logger.debug("Starting processing hub...")
+        logger.debug("Starting state-driven processing hub...")
         self.running = True
         
-        # Start the scheduled processing loop as a background task
-        logger.debug("Creating background task for scheduled processing loop...")
-        task = asyncio.create_task(self._scheduled_processing_loop())
+        # Start the main processing loop as a background task
+        logger.debug("Creating background task for main processing loop...")
+        task = asyncio.create_task(self._main_processing_loop())
         logger.debug(f"Background task created successfully: {task}")
+        
+        # Mark state as stale for initial startup
+        self.mark_state_as_stale("initial_startup")
+        
         return task
 
     def stop_processing_loop(self):
         """Stop the processing loop."""
         self.running = False
         
-    def add_trigger(self, trigger: Trigger):
-        """Add a trigger and schedule processing with intelligent batching and anti-loop protection."""
-        current_time = time.time()
-        delay = self.trigger_delays.get(trigger.type, self.trigger_delays["default"])
-        desired_time = current_time + delay
+    def mark_state_as_stale(self, reason: str, details: Optional[Dict] = None):
+        """
+        Mark the world state as stale, triggering a processing cycle.
         
-        # Enhanced trigger handling for anti-loop protection
-        # High-priority triggers that should force immediate re-evaluation
-        force_immediate_triggers = {"mention", "direct_message", "new_message", "reply_to_bot"}
+        This is the primary interface for signaling that something has changed
+        and the bot should re-evaluate the current state.
         
-        # Add trigger to pending set for deduplication
-        self.pending_triggers.add(trigger)
-        
-        # If this is a high-priority trigger that should override previous "wait" decisions
-        if trigger.type in force_immediate_triggers:
-            # Cancel any existing wait delay and process immediately with minimal delay
-            delay = min(delay, 2.0)  # Max 2 seconds for high-priority triggers
-            desired_time = current_time + delay
-            
-            # Mark this trigger as requiring fresh AI evaluation
-            trigger.data["force_reevaluation"] = True
-            trigger.data["override_last_action"] = True
-            
-            logger.debug(f"High-priority trigger added: {trigger.type} (forcing re-evaluation, delay: {delay}s)")
-        
-        # If a processing cycle is currently active, don't interrupt it
-        # Just add the trigger and let it be processed in the next cycle
-        if self._processing_lock.locked():
-            logger.debug(f"Trigger added: {trigger.type} (Priority: {trigger.priority}, "
-                       f"Delay: {delay}s, Queued due to active processing cycle)")
-            return
-        
-        # Intelligent batching: if this trigger arrives within the batching window
-        # of the last trigger, extend the delay slightly to allow more triggers to batch
-        # BUT: Skip batching for high-priority triggers that need immediate attention
-        time_since_last_trigger = current_time - self.last_trigger_time
-        
-        if (trigger.type not in force_immediate_triggers and
-            time_since_last_trigger < self.batching_window and 
-            self.next_scheduled_time is not None and 
-            len(self.pending_triggers) > 1):
-            # Extend the current scheduling by a small amount to batch more triggers
-            # Use progressive extension: longer extension for more triggers in batch
-            num_pending = len(self.pending_triggers)
-            base_extension = self.batching_window * 0.3  # 30% of batching window
-            progressive_extension = min(base_extension * (num_pending / 5), self.max_batching_extension)
-            new_desired_time = self.next_scheduled_time + progressive_extension
-            
-            # Only extend if it doesn't make high-priority triggers wait too long
-            max_wait_time = current_time + (delay * 1.5)  # 1.5x normal delay at most
-            if new_desired_time <= max_wait_time:
-                logger.debug(f"Trigger added: {trigger.type} (Priority: {trigger.priority}, "
-                           f"Extended batching window for {num_pending} triggers, extension: {progressive_extension:.2f}s)")
-                self._schedule_processing(new_desired_time, f"batched_{trigger.type}")
-                self.last_trigger_time = current_time
-                return
-        
-        # Normal scheduling logic
-        should_schedule = (
-            self.next_scheduled_time is None or 
-            desired_time < self.next_scheduled_time
-        )
-        
-        if should_schedule:
-            self._schedule_processing(desired_time, trigger.type)
-        
-        self.last_trigger_time = current_time
-        logger.debug(f"Trigger added: {trigger.type} (Priority: {trigger.priority}, "
-                   f"Delay: {delay}s, Scheduled for: {should_schedule})")
+        Args:
+            reason: Human-readable reason for the state change
+            details: Optional additional details about the change
+        """
+        logger.debug(f"World state marked as stale: {reason}" + 
+                    (f" (details: {details})" if details else ""))
+        self._world_state_is_stale.set()
 
-    def _schedule_processing(self, scheduled_time: float, trigger_type: str):
-        """Schedule processing for a specific time."""
-        # Cancel any existing scheduled task
-        if self.scheduled_task and not self.scheduled_task.done():
-            self.scheduled_task.cancel()
-            
-        self.next_scheduled_time = scheduled_time
-        delay = max(0, scheduled_time - time.time())
+    async def _main_processing_loop(self) -> None:
+        """
+        Main state-driven processing loop.
         
-        logger.debug(f"Scheduling processing in {delay:.2f}s due to {trigger_type} trigger")
-        self.scheduled_task = asyncio.create_task(self._delayed_process_triggers(delay))
-
-    async def _delayed_process_triggers(self, delay: float):
-        """Wait for the delay then process all pending triggers."""
+        This loop waits for the world state to become stale, then processes
+        the current state holistically. It also runs on a regular interval
+        to ensure periodic processing even if no events occur.
+        """
         try:
-            await asyncio.sleep(delay)
-            
-            # Clear the scheduled time since we're about to process
-            self.next_scheduled_time = None
-            
-            # Get all pending triggers
-            triggers_to_process = self.pending_triggers.copy()
-            self.pending_triggers.clear()
-            
-            # Process the triggers
-            await self._process_triggers(triggers_to_process)
-            
-        except asyncio.CancelledError:
-            # This is expected when we cancel to reschedule
-            pass
-        except Exception as e:
-            logger.error(f"Error in delayed processing: {e}", exc_info=True)
-
-    def add_generic_trigger(self, trigger_type: str = "new_message", priority: int = 5):
-        """Add a generic trigger for periodic processing."""
-        generic_trigger = Trigger(
-            type=trigger_type,
-            priority=priority,
-            data={"source": "generic"}
-        )
-        self.add_trigger(generic_trigger)
-
-    async def _scheduled_processing_loop(self) -> None:
-        """Main processing loop that runs scheduled processing cycles."""
-        try:
-            logger.debug("Starting scheduled processing loop...")
+            logger.debug("Starting main state-driven processing loop...")
             
             while self.running:
                 try:
-                    # Just wait and let the trigger-based scheduling handle everything
-                    await asyncio.sleep(self.config.observation_interval)
-                    
-                    # Periodic cleanup: trigger observers to clean up old tracking data
+                    # Wait for either:
+                    # 1. World state to become stale (someone called mark_state_as_stale)
+                    # 2. Processing interval timeout (periodic processing)
                     try:
-                        from ...integrations.matrix.observer import MatrixObserver
-                        # Find any Matrix observers connected to this hub and clean them up
-                        # This is a lightweight way to trigger periodic maintenance
-                        pass  # Observer cleanup is handled automatically when checking activity
-                    except Exception as cleanup_error:
-                        logger.debug(f"Periodic cleanup notice: {cleanup_error}")
-                    
+                        await asyncio.wait_for(
+                            self._world_state_is_stale.wait(), 
+                            timeout=self.processing_interval
+                        )
+                    except asyncio.TimeoutError:
+                        # Timeout is normal - just continue the loop for periodic processing
+                        continue
+                    except asyncio.CancelledError:
+                        logger.debug("Main processing loop cancelled.")
+                        break
+
+                    # If processing is already locked, skip this cycle
+                    if self._processing_lock.locked():
+                        logger.debug("Processing already in progress, skipping cycle")
+                        continue
+
+                    # Execute a full processing cycle
+                    async with self._processing_lock:
+                        # Clear the stale flag before processing
+                        self._world_state_is_stale.clear()
+                        await self._execute_full_cycle()
+                        
                 except asyncio.CancelledError:
-                    logger.debug("Scheduled processing loop cancelled.")
+                    logger.debug("Main processing loop cancelled.")
                     break
                 except Exception as e:
-                    logger.error(f"Error in scheduled processing loop: {e}", exc_info=True)
+                    logger.error(f"Error in main processing loop: {e}", exc_info=True)
                     await asyncio.sleep(5)  # Cooldown on error
                     
         except asyncio.CancelledError:
-            logger.debug("Scheduled processing loop cancelled.")
+            logger.debug("Main processing loop cancelled.")
         except Exception as e:
-            logger.error(f"Fatal error in scheduled processing loop: {e}", exc_info=True)
+            logger.error(f"Fatal error in main processing loop: {e}", exc_info=True)
         finally:
             self.running = False
-            logger.debug("Processing hub scheduled loop stopped")
+            logger.debug("Processing hub main loop stopped")
 
-    async def _process_triggers(self, triggers: Set[Trigger]):
-        """Deduplicates and processes a batch of triggers."""
-        if not triggers:
-            return
-
-        # Sort by priority to determine the primary reason for this cycle
-        highest_priority_trigger = max(triggers, key=lambda t: t.priority)
-        trigger_types = [t.type for t in triggers]
-        logger.debug(f"Processing {len(triggers)} triggers: {trigger_types}. Highest priority: {highest_priority_trigger.type}")
-
-        # Prevent re-processing if a cycle is already locked
-        if self._processing_lock.locked():
-            logger.warning(f"Processing lock is active. Skipping trigger batch.")
-            return
-
-        # Validate node processor is available
-        if not self.node_processor:
-            logger.warning("Node processor not available - cannot process triggers")
-            return
-
+    async def _execute_full_cycle(self):
+        """
+        Execute a complete processing cycle.
+        
+        This method handles rate limiting and delegates to the node processor
+        for the actual AI processing work.
+        """
         # Check rate limiting
         current_time = time.time()
         if not self.rate_limiter.can_process_cycle(current_time):
             rate_status = self.rate_limiter.get_rate_limit_status(current_time)
-            logger.warning(f"Rate limit exceeded. Status: {rate_status}")
+            logger.warning(f"Rate limit exceeded, skipping cycle. Status: {rate_status}")
             return
 
-        async with self._processing_lock:
-            try:
-                # Record the processing cycle start
-                self.rate_limiter.record_cycle(current_time)
-                
-                # Log rate limit status
-                self._log_rate_limit_status()
-                
-                # Dispatch to node-based processing
-                if self.config.enable_node_based_processing:
-                    await self._process_with_node_system(triggers)
-                else:
-                    logger.debug("Node-based processing disabled, skipping trigger processing")
-                    
-                # After processing completes, check if there are any remaining triggers
-                # that were added during the processing cycle
-                if self.pending_triggers:
-                    logger.debug(f"Found {len(self.pending_triggers)} pending triggers after cycle completion, combining them")
-                    # Combine all pending triggers into a single processing cycle
-                    # Use the shortest delay from all pending triggers to be responsive
-                    min_delay = min(
-                        self.trigger_delays.get(trigger.type, self.trigger_delays["default"]) 
-                        for trigger in self.pending_triggers
-                    )
-                    # Use the trigger types for logging
-                    pending_types = list(set(t.type for t in self.pending_triggers))
-                    self._schedule_processing(
-                        time.time() + min_delay, 
-                        f"combined_{len(self.pending_triggers)}_triggers_{'+'.join(pending_types)}"
-                    )
-                    
-            except Exception as e:
-                logger.error(f"Error during trigger processing: {e}", exc_info=True)
+        # Validate node processor is available
+        if not self.node_processor:
+            logger.warning("Node processor not available - cannot execute cycle")
+            return
 
-    async def _process_with_node_system(self, triggers: Set[Trigger]):
-        """Process triggers using the node-based system."""
         try:
-            # Convert triggers to node processor format if needed
-            trigger_data = []
-            for trigger in triggers:
-                trigger_data.append({
-                    'type': trigger.type,
-                    'priority': trigger.priority,
-                    'data': trigger.data,
-                    'timestamp': trigger.timestamp
-                })
+            # Record the processing cycle start
+            self.rate_limiter.record_cycle(current_time)
             
-            # Execute node-based processing
-            logger.debug(f"Executing node-based processing for {len(trigger_data)} triggers")
-            await self.node_processor.process_triggers(trigger_data)
+            # Log rate limit status
+            self._log_rate_limit_status()
             
-            # Update processing statistics
-            self.total_triggers_processed += len(trigger_data)
-            self.last_cycle_time = time.time()
-            
+            # Execute node-based processing with holistic evaluation
+            if self.config.enable_node_based_processing:
+                logger.debug("Executing full processing cycle (holistic state evaluation)")
+                
+                # Generate a unique cycle ID
+                cycle_id = f"cycle_{int(current_time * 1000)}"
+                
+                # Call process_cycle with primary_channel_id=None to force holistic evaluation
+                await self.node_processor.process_cycle(
+                    cycle_id=cycle_id,
+                    primary_channel_id=None,  # None = holistic evaluation of all channels
+                    context={}  # Additional context can be added here if needed
+                )
+                
+                # Update processing statistics
+                self.total_cycles_processed += 1
+                self.last_cycle_time = time.time()
+                
+                logger.debug(f"Processing cycle {cycle_id} completed successfully")
+            else:
+                logger.debug("Node-based processing disabled, skipping cycle")
+                
         except Exception as e:
-            logger.error(f"Error in node-based processing: {e}", exc_info=True)
+            logger.error(f"Error during processing cycle execution: {e}", exc_info=True)
             self.processing_errors += 1
 
     def get_status(self) -> Dict[str, Any]:
         """Get current processing hub status."""
         return {
             "running": self.running,
-            "next_scheduled_time": self.next_scheduled_time,
-            "pending_triggers": len(self.pending_triggers),
+            "world_state_is_stale": self._world_state_is_stale.is_set(),
             "processing_locked": self._processing_lock.locked(),
+            "total_cycles_processed": self.total_cycles_processed,
+            "processing_errors": self.processing_errors,
+            "last_cycle_time": self.last_cycle_time,
             "config": {
                 "enable_node_based_processing": self.config.enable_node_based_processing,
-                "observation_interval": self.config.observation_interval,
-                "trigger_delays": self.trigger_delays,
+                "processing_interval": self.processing_interval,
             }
         }
 
@@ -396,26 +233,25 @@ class ProcessingHub:
         current_time = time.time()
         return self.rate_limiter.get_rate_limit_status(current_time)
 
-    def get_processing_status(self) -> Dict[str, any]:
+    def get_processing_status(self) -> Dict[str, Any]:
         """
         Get the current processing status for API reporting.
         
         Returns:
             Dict containing processing hub status information
         """
-        next_scheduled_str = None
-        if self.next_scheduled_time:
-            import datetime
-            next_scheduled_str = datetime.datetime.fromtimestamp(self.next_scheduled_time).isoformat()
+        import datetime
+        
+        last_cycle_str = None
+        if self.last_cycle_time:
+            last_cycle_str = datetime.datetime.fromtimestamp(self.last_cycle_time).isoformat()
             
         return {
             "running": self.running,
-            "last_cycle": self.last_cycle_time.isoformat() if self.last_cycle_time else None,
-            "next_scheduled": next_scheduled_str,
-            "pending_triggers": len(self.pending_triggers),
-            "total_processed": self.total_triggers_processed,
+            "last_cycle": last_cycle_str,
+            "world_state_stale": self._world_state_is_stale.is_set(),
+            "total_processed": self.total_cycles_processed,
             "errors": self.processing_errors,
-            "active_conversations": len(self.active_conversations),
             "locked": self._processing_lock.locked()
         }
         
@@ -424,3 +260,17 @@ class ProcessingHub:
         current_time = time.time()
         status = self.rate_limiter.get_rate_limit_status(current_time)
         logger.debug(f"Rate limit status: {status['cycles_per_hour']}/{status['max_cycles_per_hour']} cycles/hour")
+
+    # Legacy methods for backward compatibility during transition
+    # These will be removed in cleanup phase
+    def add_trigger(self, trigger):
+        """Legacy method - converts trigger to state change signal."""
+        logger.warning(f"Legacy add_trigger called with {getattr(trigger, 'type', 'unknown')} - converting to mark_state_as_stale")
+        reason = getattr(trigger, 'type', 'legacy_trigger')
+        details = getattr(trigger, 'data', None)
+        self.mark_state_as_stale(reason, details)
+
+    def add_generic_trigger(self, trigger_type: str = "new_message", priority: int = 5):
+        """Legacy method - converts to state change signal."""
+        logger.warning(f"Legacy add_generic_trigger called with {trigger_type} - converting to mark_state_as_stale")
+        self.mark_state_as_stale(trigger_type)

@@ -137,71 +137,25 @@ class MatrixEventHandler:
                 f"{event.sender}: {log_content}"
             )
 
-            # Generate triggers for processing hub if connected
-            await self._generate_triggers(room, event, message)
-    
-    async def _generate_triggers(self, room: MatrixRoom, event, message: Message):
-        """Generate processing triggers based on message content and context."""
-        # Skip generating triggers for the bot's own messages to prevent loops
-        if message.sender == self.user_id:
-            logger.debug("Skipping trigger generation for bot's own message")
-            return
+            # Mark state as stale to trigger processing
+            if self.processing_hub:
+                # Determine the reason based on message content
+                bot_localpart = self.user_id.split(':')[0].lstrip('@').lower()
+                bot_mentioned = bot_localpart in content.lower()
+                
+                reason = 'matrix_mention' if bot_mentioned else 'matrix_new_message'
+                details = {
+                    'channel_id': room.room_id,
+                    'channel_type': 'matrix',
+                    'message_id': event.event_id,
+                    'sender': event.sender,
+                    'room_name': room.display_name or room.room_id,
+                    'mentioned': bot_mentioned
+                }
+                
+                self.processing_hub.mark_state_as_stale(reason, details)
+                logger.debug(f"MatrixEventHandler: Marked state as stale due to {reason} from {event.sender} in {room.room_id}")
 
-        logger.debug(f"MatrixEventHandler: _generate_triggers called for message from {message.sender} in {room.room_id}")
-        
-        # Debug processing hub availability
-        logger.debug(f"MatrixEventHandler: processing_hub check - hub={self.processing_hub is not None}, type={type(self.processing_hub)}")
-        
-        if not self.processing_hub:
-            logger.debug(f"MatrixEventHandler: No processing hub available for trigger generation (likely during initialization)")
-            return
-            
-        try:
-            # Import Trigger class from processing hub
-            from ....core.orchestration.processing_hub import Trigger
-            
-            # Determine trigger type and priority based on message content
-            # Use the localpart of the user ID for mention checking
-            bot_localpart = self.user_id.split(':')[0].lstrip('@').lower()
-            bot_mentioned = bot_localpart in message.content.lower()
-            logger.debug(f"MatrixEventHandler: Bot mention check - localpart: '{bot_localpart}', content: '{message.content}', mentioned: {bot_mentioned}")
-            
-            if bot_mentioned:
-                # High priority for bot mentions
-                trigger = Trigger(
-                    type='mention',
-                    priority=9,
-                    data={
-                        'channel_id': room.room_id,
-                        'channel_type': 'matrix',
-                        'message_id': message.id,
-                        'sender': message.sender,
-                        'room_name': room.display_name or room.room_id
-                    }
-                )
-                logger.debug(f"MatrixEventHandler: Generated mention trigger for {room.room_id} - sender: {message.sender}")
-            else:
-                # Medium priority for regular messages
-                trigger = Trigger(
-                    type='new_message',
-                    priority=7,
-                    data={
-                        'channel_id': room.room_id,
-                        'channel_type': 'matrix',
-                        'message_id': message.id,
-                        'sender': message.sender,
-                        'room_name': room.display_name or room.room_id
-                    }
-                )
-                logger.debug(f"MatrixEventHandler: Generated new_message trigger for {room.room_id} - sender: {message.sender}")
-            
-            # Add trigger to processing hub
-            self.processing_hub.add_trigger(trigger)
-            logger.debug(f"MatrixEventHandler: Successfully added trigger to processing hub")
-            
-        except Exception as e:
-            logger.error(f"MatrixEventHandler: Error generating triggers: {e}", exc_info=True)
-    
     async def _handle_message_batching(self, room: MatrixRoom, message: Message) -> bool:
         """Handle message batching for rapid-fire messages from same user."""
         room_id = room.room_id
@@ -288,50 +242,32 @@ class MatrixEventHandler:
             f"from {messages[0].sender} in {room.display_name or room.room_id}"
         )
         
-        # Generate trigger for the batch
+        # Mark state as stale for the batch
         if self.processing_hub:
-            from ....core.orchestration.processing_hub import Trigger
-            
-            # Skip generating triggers for the bot's own messages
+            # Skip for the bot's own messages
             if combined_message.sender == self.user_id:
-                logger.debug(f"MatrixEventHandler: Skipping batch trigger generation for bot's own messages")
+                logger.debug(f"MatrixEventHandler: Skipping batch state marking for bot's own messages")
                 return
             
             # Check for bot mention in any of the batched messages
             bot_localpart = self.user_id.split(':')[0].lstrip('@').lower()
             bot_mentioned = any(bot_localpart in msg.content.lower() for msg in messages)
-            logger.debug(f"MatrixEventHandler: Batch trigger generation - localpart: '{bot_localpart}', bot_mentioned: {bot_mentioned}, batch_size: {len(messages)}")
+            logger.debug(f"MatrixEventHandler: Batch state marking - localpart: '{bot_localpart}', bot_mentioned: {bot_mentioned}, batch_size: {len(messages)}")
             
-            if bot_mentioned:
-                trigger = Trigger(
-                    type="mention",
-                    priority=9,
-                    data={
-                        "channel_id": room.room_id,
-                        "channel_type": "matrix",
-                        "message_id": combined_message.id,
-                        "mentioned_user": self.user_id,
-                        "batch_size": len(messages)
-                    }
-                )
-                logger.debug(f"MatrixEventHandler: Generated batch mention trigger for {room.room_id} - sender: {combined_message.sender}")
-            else:
-                trigger = Trigger(
-                    type="new_message",
-                    priority=7,
-                    data={
-                        "channel_id": room.room_id,
-                        "channel_type": "matrix",
-                        "message_id": combined_message.id,
-                        "batch_size": len(messages)
-                    }
-                )
-                logger.debug(f"MatrixEventHandler: Generated batch new_message trigger for {room.room_id} - sender: {combined_message.sender}")
+            reason = 'matrix_batch_mention' if bot_mentioned else 'matrix_batch_message'
+            details = {
+                "channel_id": room.room_id,
+                "channel_type": "matrix",
+                "message_id": combined_message.id,
+                "sender": combined_message.sender,
+                "batch_size": len(messages),
+                "mentioned": bot_mentioned
+            }
             
-            self.processing_hub.add_trigger(trigger)
-            logger.debug(f"MatrixEventHandler: Successfully added batch trigger to processing hub")
+            self.processing_hub.mark_state_as_stale(reason, details)
+            logger.debug(f"MatrixEventHandler: Marked state as stale due to {reason} for batch from {combined_message.sender}")
         else:
-            logger.debug(f"MatrixEventHandler: No processing hub available for batch trigger generation (likely during initialization)")
+            logger.debug(f"MatrixEventHandler: No processing hub available for batch state marking (likely during initialization)")
     
     async def _update_activity_tracking(self, room: MatrixRoom, message: Message) -> None:
         """Update activity tracking for enhanced collapsed channel summaries."""
