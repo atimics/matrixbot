@@ -145,11 +145,11 @@ poetry run python -m chatbot.main
 Use VS Code tasks or run them directly:
 
 ```bash
-# Run the main chatbot
+# Run the main chatbot (standalone)
 poetry run python -m chatbot.main
 
 # Run with management UI
-poetry run python -m chatbot.main_with_ui
+poetry run python -m chatbot.main --with-ui
 
 # Run control panel
 poetry run python control_panel.py
@@ -215,11 +215,11 @@ code .
 # Start all services
 docker-compose up -d
 
-# Run the chatbot in development
-poetry run python run.py
+# Run the chatbot in development (standalone)
+poetry run python -m chatbot.main
 
 # Run with UI
-poetry run python chatbot/main_with_ui.py
+poetry run python -m chatbot.main --with-ui
 
 # Run tests
 poetry run pytest

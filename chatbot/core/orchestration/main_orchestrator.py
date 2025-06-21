@@ -913,9 +913,9 @@ class MainOrchestrator:
         existing_integrations = await self.integration_manager.list_integrations()
         
         # Check for Farcaster integration
-        if (settings.neynar_api_key and 
-            settings.FARCASTER_BOT_FID and 
-            settings.FARCASTER_BOT_SIGNER_UUID):
+        if (settings.farcaster.neynar_api_key and 
+            settings.farcaster.bot_fid and 
+            settings.farcaster.bot_signer_uuid):
             
             farcaster_exists = any(
                 integration.get('integration_type') == 'farcaster' 
