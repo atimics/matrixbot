@@ -152,6 +152,8 @@ class PayloadBuilder:
         # Separate expanded and collapsed nodes
         expanded_nodes = {}
         collapsed_node_summaries = {}
+        
+        logger.debug(f"Processing {len(all_node_paths)} node paths for payload construction")
 
         for node_path in all_node_paths:
             metadata = node_manager.get_node_metadata(node_path)
@@ -171,12 +173,31 @@ class PayloadBuilder:
             if metadata.is_expanded:
                 if node_data:
                     expanded_nodes[node_path] = node_data
+                    logger.debug(f"EXPANDED node {node_path}: {type(node_data)} with keys {list(node_data.keys()) if isinstance(node_data, dict) else 'not dict'}")
             else:
                 if node_data:
+                    # Check if this is a channel with messages
+                    if isinstance(node_data, dict) and "recent_messages" in node_data:
+                        logger.debug(f"COLLAPSED channel {node_path}: {len(node_data['recent_messages'])} messages being converted to summary")
+                        logger.debug(f"  Messages preview: {[msg.get('content', 'No content')[:50] for msg in node_data['recent_messages'][:2]]}")
+                    
                     collapsed_node_summaries[node_path] = {
                         "summary": node_manager.get_node_metadata(node_path).ai_summary or f"Summary for {node_path} not yet generated.",
                         "node_path_for_tools": node_path
                     }
+                    logger.debug(f"COLLAPSED node {node_path}: converted to summary only")
+
+        logger.debug(f"Final payload structure: {len(expanded_nodes)} expanded, {len(collapsed_node_summaries)} collapsed")
+        
+        # Count total messages in payload
+        total_messages_in_payload = 0
+        for node_data in expanded_nodes.values():
+            if isinstance(node_data, dict) and "recent_messages" in node_data:
+                total_messages_in_payload += len(node_data["recent_messages"])
+        
+        logger.debug(f"Total messages included in expanded nodes: {total_messages_in_payload}")
+        if total_messages_in_payload == 0:
+            logger.warning("NO MESSAGES FOUND IN EXPANDED NODES - AI will not see any messages!")
 
         # Build final payload
         payload = {
@@ -342,17 +363,28 @@ class PayloadBuilder:
 
     def _build_channels_payload(self, world_state_data: WorldStateData, optimize_for_size: bool) -> Dict[str, Any]:
         """Build channels payload with optional size optimization."""
+        logger.debug(f"Building channels payload - optimize_for_size: {optimize_for_size}")
+        logger.debug(f"Available platforms in world_state: {list(world_state_data.channels.keys())}")
+        
         if optimize_for_size:
-            return self.payload_optimizer.compress_channel_data(
+            compressed_payload = self.payload_optimizer.compress_channel_data(
                 self._flatten_channels(world_state_data.channels), 
                 max_messages_per_channel=5
             )
+            logger.debug(f"Compressed payload structure: {list(compressed_payload.keys())}")
+            return compressed_payload
         else:
             # Full channel data
             channels_payload = {}
             for platform, platform_channels in world_state_data.channels.items():
+                logger.debug(f"Processing platform: {platform} with {len(platform_channels)} channels")
                 channels_payload[platform] = {}
                 for channel_id, channel in platform_channels.items():
+                    messages_count = len(channel.recent_messages)
+                    logger.debug(f"Channel {channel_id} ({platform}): {messages_count} recent messages")
+                    if messages_count > 0:
+                        logger.debug(f"  Latest message: {channel.recent_messages[-1].content[:100] if channel.recent_messages[-1].content else 'No content'}")
+                    
                     channels_payload[platform][channel_id] = {
                         "id": channel.id,
                         "name": channel.name,
@@ -361,6 +393,14 @@ class PayloadBuilder:
                         "member_count": len(getattr(channel, 'members', [])),
                         "recent_messages": [msg.to_ai_summary_dict() for msg in channel.recent_messages[-10:]]
                     }
+            
+            total_channels = sum(len(platform_channels) for platform_channels in channels_payload.values())
+            total_messages = sum(
+                len(channel_data["recent_messages"]) 
+                for platform_data in channels_payload.values() 
+                for channel_data in platform_data.values()
+            )
+            logger.debug(f"Final payload: {total_channels} channels, {total_messages} total messages")
             return channels_payload
 
     def _get_full_detail_data(self, world_state_data: WorldStateData) -> Dict[str, Any]:

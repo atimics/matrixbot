@@ -98,6 +98,10 @@ class NodeProcessor:
 
         logger.info(f"Starting Kanban-style processing cycle {cycle_id}")
 
+        # Ensure primary_channel_id is in context for priority interrupt handling
+        if primary_channel_id:
+            context["primary_channel_id"] = primary_channel_id
+
         # Update ActionContext with current channel information
         if self.action_context and primary_channel_id:
             self.action_context.update_current_channel(primary_channel_id)
@@ -175,6 +179,7 @@ class NodeProcessor:
     async def _handle_priority_interrupts(self, context: Dict[str, Any], cycle_id: str):
         """Handle high-priority interrupts like mentions and DMs"""
         trigger_type = context.get("trigger_type", "")
+        primary_channel_id = context.get("primary_channel_id")
         
         if trigger_type in ["mention", "dm", "direct_reply"]:
             # Escalate priority of any queued communication actions
@@ -183,8 +188,26 @@ class NodeProcessor:
             # If this is a critical trigger, add immediate response actions
             if trigger_type == "mention":
                 logger.info(f"High-priority mention detected in cycle {cycle_id}, escalating response")
-                # Could add immediate high-priority response actions here if needed
-                logger.info(f"High-priority mention detected in cycle {cycle_id}, escalating response")
+                
+                # CRITICAL FIX: Auto-expand the primary channel so AI can see messages
+                if primary_channel_id:
+                    # Determine the correct node path for the channel
+                    if primary_channel_id.startswith('!'):
+                        # Matrix channel - determine platform type and use correct node path
+                        matrix_node_path = f"channels/matrix/{primary_channel_id}"
+                        self.node_manager.expand_node(matrix_node_path)
+                        logger.info(f"🔧 AUTO-EXPANDED Matrix channel {primary_channel_id} for mention visibility")
+                    elif primary_channel_id.startswith('farcaster:'):
+                        # Farcaster channel
+                        farcaster_node_path = f"channels/farcaster/{primary_channel_id}"
+                        self.node_manager.expand_node(farcaster_node_path)
+                        logger.info(f"🔧 AUTO-EXPANDED Farcaster channel {primary_channel_id} for mention visibility")
+                    else:
+                        # Try both formats to be safe
+                        for platform in ['matrix', 'farcaster']:
+                            node_path = f"channels/{platform}/{primary_channel_id}"
+                            self.node_manager.expand_node(node_path)
+                        logger.info(f"🔧 AUTO-EXPANDED channel {primary_channel_id} (tried both platforms) for mention visibility")
     
     async def _escalate_communication_actions(self):
         """Escalate priority of pending communication actions"""

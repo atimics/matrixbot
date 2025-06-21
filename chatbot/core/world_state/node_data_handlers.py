@@ -149,7 +149,8 @@ class NodeDataHandlers:
         
         channel = world_state_data.channels[channel_type].get(channel_id)
         if not channel: 
-            logger.warning(f"Channel '{channel_id}' not found in {channel_type} channels: {list(world_state_data.channels[channel_type].keys())}")
+            available_ids = list(world_state_data.channels[channel_type].keys())
+            logger.warning(f"Channel '{channel_id}' not found in {channel_type} channels. Available IDs: {available_ids}")
             return None
         
         # Determine message list based on expansion status
@@ -626,5 +627,53 @@ class NodeDataHandlers:
             "expanded": expanded,
             "note": "Search context node - provides search query information for AI context"
         }
+
+    def _normalize_matrix_room_id(self, world_state_data: 'WorldStateData', room_identifier: str) -> Optional[str]:
+        """
+        Normalize a Matrix room identifier (alias or room ID) to the canonical room ID.
+        
+        This ensures consistency between message storage and retrieval by always using
+        the canonical room ID (!room:server.com) instead of aliases (#room:server.com).
+        
+        Args:
+            world_state_data: The world state data
+            room_identifier: Room ID or alias to normalize
+            
+        Returns:
+            Canonical room ID if found, None otherwise
+        """
+        if not hasattr(world_state_data, 'channels') or 'matrix' not in world_state_data.channels:
+            return None
+            
+        matrix_channels = world_state_data.channels['matrix']
+        
+        # If it's already a canonical room ID (!room:server.com), return it if it exists
+        if room_identifier.startswith('!'):
+            if room_identifier in matrix_channels:
+                return room_identifier
+            else:
+                self.logger.warning(f"Canonical room ID {room_identifier} not found in Matrix channels")
+                return None
+        
+        # If it's an alias (#room:server.com), find the corresponding canonical room ID
+        if room_identifier.startswith('#'):
+            for canonical_id, channel in matrix_channels.items():
+                # Check canonical alias
+                if channel.canonical_alias == room_identifier:
+                    self.logger.debug(f"Normalized alias {room_identifier} to canonical room ID {canonical_id}")
+                    return canonical_id
+                # Check alternative aliases
+                if hasattr(channel, 'alt_aliases') and room_identifier in channel.alt_aliases:
+                    self.logger.debug(f"Normalized alias {room_identifier} to canonical room ID {canonical_id}")
+                    return canonical_id
+        
+        # As a fallback, check if it's a channel name
+        for canonical_id, channel in matrix_channels.items():
+            if channel.name == room_identifier:
+                self.logger.warning(f"Normalized channel name '{room_identifier}' to canonical room ID {canonical_id}")
+                return canonical_id
+        
+        self.logger.error(f"Could not normalize Matrix room identifier '{room_identifier}' to canonical room ID")
+        return None
 
 
