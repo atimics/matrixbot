@@ -8,7 +8,8 @@ from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from chatbot.core.world_state import WorldState, WorldStateManager, ActionHistory
 from chatbot.tools.media_generation_tools import GenerateImageTool
 from chatbot.tools.describe_image_tool import DescribeImageTool
-from chatbot.core.orchestrator import ActionContext
+from chatbot.core.orchestration import MainOrchestrator, OrchestratorConfig
+from chatbot.tools.base import ActionContext
 
 
 class TestMediaActionTracking:

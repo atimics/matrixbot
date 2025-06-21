@@ -11,7 +11,7 @@ import pytest
 import time
 from unittest.mock import Mock, AsyncMock, patch
 
-from chatbot.core.orchestrator import ContextAwareOrchestrator, OrchestratorConfig
+from chatbot.core.orchestration import MainOrchestrator, OrchestratorConfig
 from chatbot.core.orchestration.action_executor import ActionPlan
 from chatbot.config import settings
 
@@ -23,7 +23,7 @@ class TestAIBlindnessFix:
     def orchestrator(self):
         """Create a test orchestrator."""
         config = OrchestratorConfig(db_path=":memory:")
-        return ContextAwareOrchestrator(config)
+        return MainOrchestrator(config)
     
     @pytest.fixture
     def mock_matrix_observer(self):
