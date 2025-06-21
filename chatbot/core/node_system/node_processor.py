@@ -411,24 +411,26 @@ class NodeProcessor:
         original_tool_name = tool_name
         platform = None # Initialize platform to None
         if tool_name in ["send_message", "send_reply", "react_to_message"]:
-            # Determine platform from channel_id/room_id
-            channel_id = tool_args.get("channel_id") or tool_args.get("room_id")
+            # Determine platform from channel/channel_id/room_id
+            channel_id = tool_args.get("channel") or tool_args.get("channel_id") or tool_args.get("room_id")
             
             if isinstance(channel_id, str) and channel_id.startswith("!"):
                 platform = "matrix"
                 if tool_name == "send_message":
                     tool_name = "send_matrix_message"
+                    # Remap parameters to match the specific tool's schema
                     tool_args = {
                         "room_id": channel_id,
-                        "message": tool_args.get("text") or tool_args.get("message", ""),
+                        "message": tool_args.get("content") or tool_args.get("message", ""),
                         "attach_image": tool_args.get("attach_image")
                     }
                 elif tool_name == "send_reply":
                     tool_name = "send_matrix_reply"
+                    # Remap parameters to match the specific tool's schema
                     tool_args = {
                         "room_id": channel_id,
                         "event_id": tool_args.get("event_id"),
-                        "message": tool_args.get("text") or tool_args.get("message", ""),
+                        "message": tool_args.get("content") or tool_args.get("message", ""),
                         "attach_image": tool_args.get("attach_image")
                     }
                 elif tool_name == "react_to_message":

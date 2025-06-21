@@ -128,6 +128,11 @@ class MatrixEventHandler:
     
     async def _generate_triggers(self, room: MatrixRoom, event, message: Message):
         """Generate processing triggers based on message content and context."""
+        # Skip generating triggers for the bot's own messages to prevent loops
+        if message.sender == self.user_id:
+            logger.debug("Skipping trigger generation for bot's own message")
+            return
+
         logger.info(f"MatrixEventHandler: _generate_triggers called for message from {message.sender} in {room.room_id}")
         
         # Debug processing hub availability
