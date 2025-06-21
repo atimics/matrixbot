@@ -90,9 +90,9 @@ async def generate_image_from_description(
         service_used = "unknown"
 
         # Try Google Gemini first
-        if settings.GOOGLE_API_KEY:
+        if settings.media.google_api_key:
             try:
-                google_client = GoogleAIMediaClient(api_key=settings.GOOGLE_API_KEY)
+                google_client = GoogleAIMediaClient(api_key=settings.media.google_api_key)
                 image_data = await google_client.generate_image_gemini(image_description, aspect_ratio)
                 if image_data:
                     service_used = "google_gemini"

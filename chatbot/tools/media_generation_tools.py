@@ -169,9 +169,9 @@ class GenerateImageTool(ToolInterface):
             service_used = "unknown"
 
             # Try Google Gemini first
-            if settings.GOOGLE_API_KEY:
+            if settings.media.google_api_key:
                 try:
-                    google_client = GoogleAIMediaClient(api_key=settings.GOOGLE_API_KEY)
+                    google_client = GoogleAIMediaClient(api_key=settings.media.google_api_key)
                     image_data = await google_client.generate_image_gemini(prompt, aspect_ratio)
                     if image_data:
                         service_used = "google_gemini"
@@ -316,7 +316,7 @@ class GenerateVideoTool(ToolInterface):
             return {"status": "error", "message": "Prompt cannot be empty"}
         if not context.arweave_service or not context.arweave_service.is_configured():
             return {"status": "error", "message": "Arweave service is not configured."}
-        if not settings.GOOGLE_API_KEY:
+        if not settings.media.google_api_key:
             return {"status": "error", "message": "Google AI API key not configured for video generation."}
 
         # Check daily video generation limit (1 per day)
@@ -331,7 +331,7 @@ class GenerateVideoTool(ToolInterface):
                 }
 
         try:
-            google_client = GoogleAIMediaClient(api_key=settings.GOOGLE_API_KEY)
+            google_client = GoogleAIMediaClient(api_key=settings.media.google_api_key)
             video_list = await google_client.generate_video_veo(prompt=prompt, aspect_ratio=aspect_ratio)
 
             if not video_list:

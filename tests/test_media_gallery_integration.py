@@ -149,8 +149,8 @@ class TestMediaGalleryIntegration:
                     mock_client_class.return_value = mock_client
                     
                     # Configure settings for Google AI
-                    original_google_key = settings.GOOGLE_API_KEY
-                    settings.GOOGLE_API_KEY = "test-key"
+                    original_google_key = settings.media.google_api_key
+                    settings.media.google_api_key = "test-key"
                     
                     try:
                         # Execute
@@ -174,7 +174,7 @@ class TestMediaGalleryIntegration:
                         )
                         
                     finally:
-                        settings.GOOGLE_API_KEY = original_google_key
+                        settings.media.google_api_key = original_google_key
                         
         finally:
             settings.matrix_media_gallery_room_id = original_gallery_id
