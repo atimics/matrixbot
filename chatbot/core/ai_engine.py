@@ -30,9 +30,6 @@ from ..config import settings
 
 # --- Constants ---
 # Centralized constants for easier updates and maintenance.
-OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
-DEFAULT_MODEL = "openai/gpt-4o-mini"
-MULTIMODAL_MODEL = "openai/gpt-4"
 
 logger = logging.getLogger(__name__)
 
@@ -83,8 +80,8 @@ class AIEngineConfig:
     """Configuration settings for the AIEngine."""
     api_key: str
     provider: AIProvider = AIProvider.OPENROUTER
-    model: str = DEFAULT_MODEL
-    multimodal_model: str = MULTIMODAL_MODEL
+    model: str = settings.ai.model
+    multimodal_model: str = settings.ai.multimodal_model
     temperature: float = 0.7
     max_tokens: int = 4000
     timeout: float = 45.0
@@ -157,7 +154,7 @@ class OpenRouterProvider(AIProviderBase):
         last_exception = None
         for attempt in range(self.config.max_retries + 1):
             try:
-                response = await self.client.post(OPENROUTER_API_URL, headers=headers, json=payload)
+                response = await self.client.post(settings.openrouter_api_url, headers=headers, json=payload)
                 response.raise_for_status()
                 return response.json()
             except httpx.HTTPStatusError as e:
@@ -454,7 +451,7 @@ CORE DIRECTIVES:
 # --- Factory Function ---
 def create_ai_engine(
     api_key: str,
-    model: str = DEFAULT_MODEL,
+    model: str = settings.ai.model,
     **kwargs,
 ) -> AIEngine:
     """

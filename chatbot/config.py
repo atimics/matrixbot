@@ -195,6 +195,7 @@ class AppConfig(BaseSettings):
     
     # OpenRouter API configuration
     openrouter_api_key: Optional[str] = None
+    openrouter_api_url: str = "https://openrouter.ai/api/v1/chat/completions"
     your_site_url: Optional[str] = None
     your_site_name: Optional[str] = None
     
