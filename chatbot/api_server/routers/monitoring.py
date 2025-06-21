@@ -15,17 +15,11 @@ from chatbot.core.orchestration.main_orchestrator import MainOrchestrator
 from chatbot.core.error_handling import error_handler
 from chatbot.core.performance_monitor import performance_monitor
 from chatbot.core.config_manager import config_manager
+from ..dependencies import get_orchestrator
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/monitoring", tags=["monitoring"])
-
-
-# Dependency to get orchestrator
-async def get_orchestrator() -> MainOrchestrator:
-    """Dependency to get the orchestrator instance."""
-    # This will be overridden by dependency injection
-    raise HTTPException(status_code=500, detail="Orchestrator not available")
 
 
 @router.get("/health")
@@ -444,17 +438,3 @@ async def get_recent_logs(
     except Exception as e:
         logger.error(f"Error getting recent logs: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
-# Add the router to your main FastAPI app
-def setup_monitoring_router(app, orchestrator: MainOrchestrator):
-    """Set up the monitoring router with dependency injection."""
-    
-    def get_orchestrator_instance():
-        return orchestrator
-    
-    # Override the dependency
-    app.dependency_overrides[get_orchestrator] = get_orchestrator_instance
-    
-    # Include the router
-    app.include_router(router)

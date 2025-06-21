@@ -64,6 +64,10 @@ class AIConfig(BaseSettings):
     summary_model: str = "openai/gpt-4o-mini"
     web_search_model: str = "openai/gpt-4o-mini:online"
     
+    # API client configuration
+    http_referer: str = "https://github.com/ratichat/matrixbot"
+    x_title: str = "RatiChat Matrix Bot"
+    
     # Payload optimization
     conversation_history_length: int = 3
     action_history_length: int = 15

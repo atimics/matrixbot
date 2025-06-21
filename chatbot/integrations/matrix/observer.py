@@ -342,6 +342,23 @@ class MatrixObserver(Integration, BaseObserver):
                 'megolm_undecryptable'
             )
 
+    async def _on_login_response(self, response):
+        """Handle login response for E2EE initialization."""
+        logger.debug("MatrixObserver: Login response received for E2EE initialization")
+        
+        # Set the login complete event
+        self._login_complete.set()
+        logger.debug("MatrixObserver: Login response processed for E2EE")
+
+    async def _on_sync_response(self, response):
+        """Handle sync response for E2EE initialization."""
+        logger.debug("MatrixObserver: Sync response received for E2EE initialization")
+        
+        # Set E2EE ready after first sync if not already set
+        if not self._e2ee_ready.is_set():
+            self._e2ee_ready.set()
+            logger.debug("MatrixObserver: E2EE initialized after first sync")
+
     # Public API methods that delegate to components
     async def send_message(self, room_id: str, content: str) -> Dict[str, Any]:
         """Send a message to a room."""
@@ -366,7 +383,7 @@ class MatrixObserver(Integration, BaseObserver):
             return await self.room_ops.join_room(room_identifier)
         return {"success": False, "error": "Room operations not initialized"}
 
-    async def leave_room(self, room_id: str, reason: str = None) -> Dict[str, Any]:
+    async def leave_room(self, room_id: str, reason: Optional[str] = None) -> Dict[str, Any]:
         """Leave a Matrix room."""
         if self.room_ops:
             return await self.room_ops.leave_room(room_id, reason)

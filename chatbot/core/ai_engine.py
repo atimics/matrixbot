@@ -26,13 +26,13 @@ from typing import Any, Dict, List, Optional, Type
 import httpx
 from pydantic import BaseModel, Field, ValidationError
 
+from ..config import settings
+
 # --- Constants ---
 # Centralized constants for easier updates and maintenance.
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_MODEL = "openai/gpt-4o-mini"
 MULTIMODAL_MODEL = "openai/gpt-4o"
-HTTP_REFERER = "https://github.com/ratichat/matrixbot"
-X_TITLE = "RatiChat Matrix Bot"
 
 logger = logging.getLogger(__name__)
 
@@ -133,8 +133,8 @@ class OpenRouterProvider(AIProviderBase):
         headers = {
             "Authorization": f"Bearer {self.config.api_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": HTTP_REFERER,
-            "X-Title": X_TITLE,
+            "HTTP-Referer": settings.ai.http_referer,
+            "X-Title": settings.ai.x_title,
         }
 
         payload = {
