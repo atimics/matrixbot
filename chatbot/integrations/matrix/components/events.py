@@ -147,11 +147,6 @@ class MatrixEventHandler:
         if not self.processing_hub:
             logger.debug(f"MatrixEventHandler: No processing hub available for trigger generation (likely during initialization)")
             return
-        
-        # Skip generating triggers for the bot's own messages
-        if message.sender == self.user_id:
-            logger.debug(f"MatrixEventHandler: Skipping trigger generation for bot's own message")
-            return
             
         try:
             # Import Trigger class from processing hub

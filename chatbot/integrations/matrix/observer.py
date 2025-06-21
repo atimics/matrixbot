@@ -50,7 +50,8 @@ class MatrixObserver(Integration, BaseObserver):
         config: Dict[str, Any] = None,
         world_state_manager: WorldStateManager = None,
         arweave_client=None,
-        db_manager=None
+        db_manager=None,
+        processing_hub=None
     ):
         # Support legacy positional usage: MatrixObserver(world_state, arweave_client)
         if not isinstance(integration_id, str):
@@ -76,7 +77,7 @@ class MatrixObserver(Integration, BaseObserver):
         self.client: Optional[AsyncClient] = None
         self.sync_task: Optional[asyncio.Task] = None
         self.channels_to_monitor = []
-        self.processing_hub = None
+        self.processing_hub = processing_hub
         
         # State change callback for orchestrator notifications (matches FarcasterObserver pattern)
         self.on_state_change: Optional[Callable] = None
@@ -119,20 +120,6 @@ class MatrixObserver(Integration, BaseObserver):
     def integration_type(self) -> str:
         """Return the integration type identifier."""
         return "matrix"
-
-    def set_processing_hub(self, processing_hub):
-        """Set the processing hub for trigger generation."""
-        logger.debug(f"MatrixObserver: set_processing_hub called with processing_hub={processing_hub is not None}")
-        self.processing_hub = processing_hub
-        
-        # Also update the event handler if it exists
-        if hasattr(self, 'event_handler') and self.event_handler:
-            self.event_handler.processing_hub = processing_hub
-            logger.debug(f"MatrixObserver: Updated event handler with processing hub (event_handler exists)")
-        else:
-            logger.warning(f"MatrixObserver: Event handler not available yet (hasattr={hasattr(self, 'event_handler')}, exists={getattr(self, 'event_handler', None) is not None})")
-            
-        logger.debug(f"MatrixObserver: Processing hub connected: {processing_hub is not None}")
 
     async def start(self) -> bool:
         """Start the Matrix observer by connecting and beginning to observe."""

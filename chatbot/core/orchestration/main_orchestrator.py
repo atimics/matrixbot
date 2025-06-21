@@ -396,10 +396,6 @@ class MainOrchestrator:
             await self._initialize_observers()
             logger.debug("Observers initialized")
             
-            # Connect processing hub to observers for trigger generation
-            await self._connect_processing_hub_to_observers()
-            logger.debug("Processing hub connected to observers")
-            
             # Start the proactive conversation engine
             logger.debug("Starting proactive conversation engine...")
             await self.proactive_engine.start()
@@ -609,7 +605,8 @@ class MainOrchestrator:
                 self.matrix_observer = MatrixObserver(
                     world_state_manager=self.world_state, 
                     arweave_client=self.arweave_client,
-                    db_manager=self.database_manager
+                    db_manager=self.database_manager,
+                    processing_hub=self.processing_hub
                 )
                 
                 room_id = settings.matrix.room_id
@@ -1031,25 +1028,3 @@ class MainOrchestrator:
                     logger.debug("✓ Matrix integration removed successfully")
                 except Exception as e:
                     logger.error(f"Failed to remove Matrix integration: {e}")
-        
-    async def _connect_processing_hub_to_observers(self):
-        """Connect the processing hub to observers for trigger generation."""
-        try:
-            # Connect Matrix observer
-            if hasattr(self, 'matrix_observer') and self.matrix_observer:
-                self.matrix_observer.set_processing_hub(self.processing_hub)
-                logger.debug("Connected processing hub to Matrix observer via set_processing_hub")
-                await self.matrix_observer.start() # Start the observer AFTER hub is set
-                logger.debug("Matrix observer started.")
-            else:
-                logger.debug("No Matrix observer available to connect processing hub")
-                
-            # Connect Farcaster observer  
-            if hasattr(self, 'farcaster_observer') and self.farcaster_observer:
-                self.farcaster_observer.processing_hub = self.processing_hub
-                logger.debug("Connected processing hub to Farcaster observer")
-            else:
-                logger.debug("No Farcaster observer available to connect processing hub")
-                
-        except Exception as e:
-            logger.error(f"Error connecting processing hub to observers: {e}")
