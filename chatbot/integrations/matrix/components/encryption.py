@@ -468,3 +468,9 @@ class MatrixEncryptionHandler:
             
         except Exception as e:
             logger.error(f"MatrixEncryption: Error cleaning up old failures: {e}")
+    
+    async def _remove_pending_request_after_delay(self, request_key: str, delay_seconds: int):
+        """Remove a pending key request after a delay to prevent immediate re-requests."""
+        await asyncio.sleep(delay_seconds)
+        self.pending_key_requests.discard(request_key)
+        logger.debug(f"MatrixEncryption: Removed pending key request {request_key}")
