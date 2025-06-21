@@ -159,7 +159,7 @@ class PayloadBuilder:
             metadata = node_manager.get_node_metadata(node_path)
             
             # DEBUG: Log detailed expansion state for key nodes
-            if "channels/matrix/" in node_path or "farcaster/feeds/" in node_path:
+            if "channels.matrix." in node_path or "farcaster.feeds." in node_path:
                 logger.info(f"🔍 PAYLOAD BUILD: {node_path} -> is_expanded={metadata.is_expanded}, is_pinned={metadata.is_pinned}, last_expanded_ts={metadata.last_expanded_ts}")
             
             # Use the corrected path parsing and data retrieval logic
@@ -480,7 +480,7 @@ class PayloadBuilder:
         # Matrix channels
         if "matrix" in world_state_data.channels:
             for channel_id, channel in world_state_data.channels["matrix"].items():
-                node_path = f"channels/{channel_id}"
+                node_path = f"channels.matrix.{channel_id}"
                 metadata = node_manager.get_node_metadata(node_path)
                 
                 available_channels["matrix"][channel_id] = {
@@ -495,7 +495,7 @@ class PayloadBuilder:
         # Farcaster channels
         if "farcaster" in world_state_data.channels:
             for channel_id, channel in world_state_data.channels["farcaster"].items():
-                node_path = f"channels/{channel_id}"
+                node_path = f"channels.farcaster.{channel_id}"
                 metadata = node_manager.get_node_metadata(node_path)
                 
                 available_channels["farcaster"][channel_id] = {

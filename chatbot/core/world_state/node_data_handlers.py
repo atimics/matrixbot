@@ -43,7 +43,7 @@ class NodeDataHandlers:
         
         Args:
             world_state_data: The world state data to query
-            node_path: The node path (e.g., "channels/general", "users/farcaster/123")
+            node_path: The node path (e.g., "channels.matrix.general", "users.farcaster.123")
             expanded: Whether to return expanded/detailed data
             
         Returns:
