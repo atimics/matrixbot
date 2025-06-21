@@ -11,7 +11,7 @@ import json
 
 from chatbot.config.enhanced_config import (
     CoreConfig, AIConfig, MatrixConfig, FarcasterConfig, 
-    MediaConfig, SecurityConfig, PerformanceConfig, UnifiedSettings
+    MediaConfig, SecurityConfig, PerformanceConfig, AppConfig
 )
 from chatbot.config.secret_manager import (
     SecretManager, SecretConfig, SecretBackend,
