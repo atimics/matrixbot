@@ -85,6 +85,9 @@ class MatrixObserver(Integration, BaseObserver):
         # E2EE initialization lock to prevent race conditions
         self._e2ee_ready = asyncio.Event()
         self._login_complete = asyncio.Event()
+        
+        # Initial sync tracking to prevent spurious responses during startup
+        self._initial_sync_complete = False
 
         # Create store directory
         self.store_path = Path("matrix_store")
@@ -357,13 +360,22 @@ class MatrixObserver(Integration, BaseObserver):
         logger.debug("MatrixObserver: Login response processed for E2EE")
 
     async def _on_sync_response(self, response):
-        """Handle sync response for E2EE initialization."""
+        """Handle sync response for E2EE initialization and initial sync tracking."""
         logger.debug("MatrixObserver: Sync response received for E2EE initialization")
         
         # Set E2EE ready after first sync if not already set
         if not self._e2ee_ready.is_set():
             self._e2ee_ready.set()
             logger.debug("MatrixObserver: E2EE initialized after first sync")
+        
+        # Mark initial sync as complete after the first sync response
+        if not self._initial_sync_complete:
+            self._initial_sync_complete = True
+            logger.info("MatrixObserver: Initial sync complete - bot will now respond to events")
+            
+            # Notify event handler about initial sync completion
+            if self.event_handler:
+                self.event_handler.initial_sync_complete = True
 
     # Public API methods that delegate to components
     async def send_message(self, room_id: str, content: str) -> Dict[str, Any]:

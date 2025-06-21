@@ -39,6 +39,9 @@ class MatrixEventHandler:
         self.channels_to_monitor = channels_to_monitor or []
         self.observer = observer  # Store observer reference for state change callbacks
         
+        # Track initial sync completion to prevent spurious responses
+        self.initial_sync_complete = False
+        
         # Debug logging for processing hub initialization
         logger.debug(f"MatrixEventHandler.__init__: processing_hub={processing_hub is not None}, type={type(processing_hub)}")
         
@@ -53,6 +56,11 @@ class MatrixEventHandler:
     
     async def handle_message(self, room: MatrixRoom, event, client=None):
         """Handle incoming Matrix messages with enhanced batching and context tracking."""
+        # Skip processing during initial sync to prevent spurious responses
+        if not self.initial_sync_complete:
+            logger.debug(f"MatrixEventHandler: Skipping message during initial sync from {event.sender} in room {room.room_id}")
+            return
+            
         # --- FIX: Early exit to prevent processing the bot's own messages ---
         if event.sender == self.user_id:
             logger.debug(f"MatrixEventHandler: Ignoring own message from {event.sender} in room {room.room_id}")
@@ -448,6 +456,11 @@ class MatrixEventHandler:
 
     async def handle_invite(self, room, event):
         """Handle room invitations."""
+        # Skip processing during initial sync to prevent spurious responses
+        if not self.initial_sync_complete:
+            logger.debug(f"MatrixEventHandler: Skipping invite during initial sync to {room.room_id}")
+            return
+            
         try:
             room_id = room.room_id
             inviter = event.sender
@@ -473,6 +486,11 @@ class MatrixEventHandler:
     
     async def handle_membership_change(self, room, event):
         """Handle membership change events (join, leave, kick, ban)."""
+        # Skip processing during initial sync to prevent spurious responses
+        if not self.initial_sync_complete:
+            logger.debug(f"MatrixEventHandler: Skipping membership change during initial sync in {room.room_id}")
+            return
+            
         try:
             sender = event.sender
             membership = event.membership

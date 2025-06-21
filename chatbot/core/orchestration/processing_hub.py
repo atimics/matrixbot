@@ -106,8 +106,9 @@ class ProcessingHub:
             "default": 3.0        # 3 seconds default delay
         }
         
-        # Batching configuration
-        self.batching_window = 0.5  # 500ms window to collect rapid triggers
+        # Batching configuration - improved for better rapid event handling
+        self.batching_window = 1.0  # 1 second window to collect rapid triggers (increased from 0.5)
+        self.max_batching_extension = 2.0  # Maximum time to extend batching (new)
         self.last_trigger_time = 0.0
         
         # Component availability tracking
@@ -186,14 +187,17 @@ class ProcessingHub:
             self.next_scheduled_time is not None and 
             len(self.pending_triggers) > 1):
             # Extend the current scheduling by a small amount to batch more triggers
-            extended_delay = min(delay, self.batching_window * 0.5)  # Don't extend too much
-            new_desired_time = self.next_scheduled_time + extended_delay
+            # Use progressive extension: longer extension for more triggers in batch
+            num_pending = len(self.pending_triggers)
+            base_extension = self.batching_window * 0.3  # 30% of batching window
+            progressive_extension = min(base_extension * (num_pending / 5), self.max_batching_extension)
+            new_desired_time = self.next_scheduled_time + progressive_extension
             
             # Only extend if it doesn't make high-priority triggers wait too long
             max_wait_time = current_time + (delay * 1.5)  # 1.5x normal delay at most
             if new_desired_time <= max_wait_time:
                 logger.debug(f"Trigger added: {trigger.type} (Priority: {trigger.priority}, "
-                           f"Extended batching window for {len(self.pending_triggers)} triggers)")
+                           f"Extended batching window for {num_pending} triggers, extension: {progressive_extension:.2f}s)")
                 self._schedule_processing(new_desired_time, f"batched_{trigger.type}")
                 self.last_trigger_time = current_time
                 return
