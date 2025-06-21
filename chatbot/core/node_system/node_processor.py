@@ -1653,6 +1653,41 @@ class NodeProcessor:
             # Extract actions from the result
             planned_actions = decision_result.get('selected_actions', [])
 
+            # --- START OF NO ACTION FAILURE DETECTION ---
+            # Check if AI provided no tool calls and did not explicitly wait
+            is_wait_action = any(action.get('action_type') == 'wait' for action in planned_actions)
+            
+            if not planned_actions and not is_wait_action:
+                logger.warning("AI failed to select any action. This will be added to the failure context.")
+                # Create a synthetic failure record for the feedback loop
+                failure_record = {
+                    "action_type": "no_action_selected",
+                    "error": "The AI did not select any tool to execute.",
+                    "reasoning": decision_result.get('reasoning'),
+                    "message_generated": decision_result.get('message'),
+                    "timestamp": time.time()
+                }
+                
+                # Use the ActionBacklog to record this as a permanent failure for this cycle
+                # This ensures it will be picked up by _get_recent_action_failures
+                failed_action = QueuedAction(
+                    action_id=f"no_action_{cycle_id}",
+                    action_type="no_action_selected",
+                    parameters={"reasoning": decision_result.get('reasoning')},
+                    priority=ActionPriority.LOW,
+                    service="system",
+                    status=ActionStatus.FAILED,
+                    error="AI did not select any tool to execute.",
+                    last_attempt_at=time.time(),
+                    attempts=1,
+                    max_attempts=1
+                )
+                self.action_backlog.failed[failed_action.action_id] = failed_action
+                
+                # Return an empty list so the cycle ends and a new one can begin with failure context
+                return []
+            # --- END OF NO ACTION FAILURE DETECTION ---
+
             # Handle cases where the AI generates a direct message (inner monologue)
             if not planned_actions and decision_result.get('message'):
                 logger.warning("AI generated a direct message instead of a tool call. Converting to internal monologue.")

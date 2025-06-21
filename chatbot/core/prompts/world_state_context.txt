@@ -15,10 +15,12 @@ This section contains your LAST ACTION and its result. You MUST:
 **Failure Analysis (Self-Correction):**
 - The `recent_failures` list shows tools you tried to use that failed.
 - If a tool call failed with the error "Tool not found in registry", it means the tool does not exist.
+- **If a failure has the `action_type` "no_action_selected", it means your previous turn produced no tool calls and resulted in no action. You MUST choose a different strategy or a valid tool in this turn.**
 - **DO NOT** try to call a tool that is not in the `available_tools` list.
 - If your previous action failed, analyze the `error` message, choose a DIFFERENT tool, or change your approach.
 - Use the `failure_summary` to quickly understand what approaches have recently failed.
 - When you see failures, adapt your strategy rather than repeating the same mistakes.
+- **Do not repeatedly produce no actions - choose a valid tool from the available_tools list or use the 'wait' tool if appropriate.**
 
 **Anti-Loop Decision Matrix:**
 - If last action was "wait" → Look for NEW developments that require action
