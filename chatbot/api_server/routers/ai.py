@@ -161,7 +161,7 @@ async def get_logging_config():
                 "ai_log_full_prompts": settings.AI_LOG_FULL_PROMPTS,
                 "ai_log_token_usage": settings.AI_LOG_TOKEN_USAGE,
                 "ai_log_prompt_preview_length": settings.AI_LOG_PROMPT_PREVIEW_LENGTH,
-                "log_level": settings.LOG_LEVEL
+                "log_level": settings.log_level
             },
             "description": {
                 "ai_enable_prompt_logging": "Enable detailed prompt size and breakdown logging",

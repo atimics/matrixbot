@@ -145,8 +145,8 @@ class APIServer:
             title="Secure Chatbot Management API",
             description="Production-ready REST API for monitoring and controlling the chatbot system",
             version="2.0.0",
-            docs_url="/docs" if self.settings.LOG_LEVEL == "DEBUG" else None,  # Hide docs in production
-            redoc_url="/redoc" if self.settings.LOG_LEVEL == "DEBUG" else None
+            docs_url="/docs" if self.settings.log_level == "DEBUG" else None,  # Hide docs in production
+            redoc_url="/redoc" if self.settings.log_level == "DEBUG" else None
         )
         
         self._setup_middleware()
@@ -335,7 +335,7 @@ class APIServer:
             return {
                 "service": "Secure Chatbot Management API",
                 "version": "2.0.0",
-                "docs": "/docs" if self.settings.LOG_LEVEL == "DEBUG" else "Authentication required for API access",
+                "docs": "/docs" if self.settings.log_level == "DEBUG" else "Authentication required for API access",
                 "health": "/health",
                 "security": "All /api/* endpoints require authentication"
             }
@@ -348,7 +348,7 @@ class APIServer:
             """Handle HTTP exceptions with security in mind."""
             # Don't expose internal details in production
             detail = exc.detail
-            if self.settings.LOG_LEVEL != "DEBUG":
+            if self.settings.log_level != "DEBUG":
                 # Generic error messages in production
                 if exc.status_code == 500:
                     detail = "Internal server error"
@@ -373,7 +373,7 @@ class APIServer:
             
             # Don't expose exception details in production
             detail = "Internal server error"
-            if self.settings.LOG_LEVEL == "DEBUG":
+            if self.settings.log_level == "DEBUG":
                 detail = str(exc)
             
             return JSONResponse(
@@ -393,7 +393,7 @@ class APIServer:
             
             # Configure secret manager based on environment
             secret_config = SecretConfig(
-                backend=SecretBackend.ENCRYPTED_FILE if self.settings.LOG_LEVEL != "DEBUG" else SecretBackend.ENVIRONMENT
+                backend=SecretBackend.ENCRYPTED_FILE if self.settings.log_level != "DEBUG" else SecretBackend.ENVIRONMENT
             )
             
             await init_secret_manager(secret_config)
