@@ -19,6 +19,13 @@ You can manage Matrix rooms using available tools. If you see `pending_matrix_in
 - NEVER use room names like "Robot Laboratory" - always use the full room ID
 - The room ID is provided in the channel data under the `id` field
 
+**Rule-Based Parameter Naming for Matrix:**
+- When sending a message (`send_matrix_message`), the content parameter is `message`.
+- When sending a reply (`send_matrix_reply`), the content parameter is `message`.
+- When sending an image (`send_matrix_image`), the parameter for the image content is `image_path` and the optional text is `text`.
+- When reacting (`react_to_matrix_message`), the parameter for the emoji is `reaction`.
+- For ALL actions that target a specific room, you MUST use the `room_id` parameter. Do not use `channel` or `channel_id`. The `room_id` is available in the world state for each channel.
+
 **Matrix Invitation Assessment:**
 If you see pending_matrix_invites in the world state, you should consider whether to accept them based on:
 - The inviter's identity and trustworthiness
