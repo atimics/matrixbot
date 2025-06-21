@@ -39,12 +39,37 @@ class CreateTransactionFrameTool(ToolInterface):
     @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
-            "to_address": "string (Ethereum address to receive the payment)",
-            "amount": "string (amount to send - e.g. '0.001' for ETH, '100' for tokens)",
-            "token_contract": "string (token contract address or 'ETH' for native Ethereum)",
-            "title": "string (title for the transaction frame)",
-            "description": "string (optional - description explaining what the transaction is for)",
-            "button_text": "string (optional - text for the payment button, default: 'Send Transaction')"
+            "type": "object",
+            "properties": {
+                "to_address": {
+                    "type": "string",
+                    "description": "Ethereum address to receive the payment"
+                },
+                "amount": {
+                    "type": "string",
+                    "description": "Amount to send (e.g. '0.001' for ETH, '100' for tokens)"
+                },
+                "token_contract": {
+                    "type": "string",
+                    "description": "Token contract address or 'ETH' for native Ethereum",
+                    "default": "ETH"
+                },
+                "title": {
+                    "type": "string",
+                    "description": "Title for the transaction frame"
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Description explaining what the transaction is for",
+                    "default": ""
+                },
+                "button_text": {
+                    "type": "string",
+                    "description": "Text for the payment button",
+                    "default": "Send Transaction"
+                }
+            },
+            "required": ["to_address", "amount", "title"]
         }
 
     async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
