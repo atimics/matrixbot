@@ -101,6 +101,8 @@ class AIProviderBase(ABC):
     def __init__(self, config: AIEngineConfig, client: httpx.AsyncClient):
         self.config = config
         self.client = client
+        self._structured_output_cache = None  # Cache for model capabilities
+        self._cache_expiry = 0  # Cache expiry time
 
     @abstractmethod
     async def chat_completion(
@@ -146,19 +148,34 @@ class OpenRouterProvider(AIProviderBase):
         }
 
         if response_model and self.supports_structured_outputs():
-            schema = response_model.model_json_schema()
+            # Ensure we have fresh capability data
+            capabilities = await self._check_model_capabilities()
             
-            # Debug logging to see the actual schema being sent
-            logger.debug(f"Structured output schema for {response_model.__name__}: {json.dumps(schema, indent=2)}")
-            
-            payload["response_format"] = {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": response_model.__name__.lower(),
-                    "strict": True,
-                    "schema": schema
+            # Double-check if the current model supports structured outputs
+            if not capabilities.get(self.config.model.lower(), False):
+                logger.debug(f"Model {self.config.model} does not support structured outputs, skipping")
+            else:
+                schema = response_model.model_json_schema()
+                
+                # Enhanced debug logging to see exactly what we're sending
+                logger.info(f"=== STRUCTURED OUTPUT DEBUG ===")
+                logger.info(f"Model: {self.config.model}")
+                logger.info(f"Response model: {response_model.__name__}")
+                logger.info(f"Generated schema: {json.dumps(schema, indent=2)}")
+                
+                response_format = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": response_model.__name__.lower(),
+                        "strict": True,
+                        "schema": schema
+                    }
                 }
-            }
+                
+                logger.info(f"Complete response_format payload: {json.dumps(response_format, indent=2)}")
+                logger.info(f"=== END DEBUG ===")
+                
+                payload["response_format"] = response_format
 
         if tools:
             payload["tools"] = tools
@@ -167,8 +184,13 @@ class OpenRouterProvider(AIProviderBase):
         last_exception = None
         for attempt in range(self.config.max_retries + 1):
             try:
-                # Log payload size and structure for debugging 400 errors
+                # Enhanced logging for the complete payload
                 payload_size = len(str(payload))
+                logger.info(f"=== FULL PAYLOAD DEBUG ===")
+                logger.info(f"Payload size: {payload_size} characters")
+                logger.info(f"Complete payload: {json.dumps(payload, indent=2)}")
+                logger.info(f"=== END PAYLOAD DEBUG ===")
+                
                 if payload_size > 50000:  # Log if payload is suspiciously large
                     logger.warning(f"Large payload detected: {payload_size} characters")
                     
@@ -219,22 +241,74 @@ class OpenRouterProvider(AIProviderBase):
         raise ValueError(f"Chat completion failed after {self.config.max_retries} retries.") from last_exception
 
 
+    async def _check_model_capabilities(self) -> Dict[str, bool]:
+        """
+        Fetch model capabilities from OpenRouter Models API.
+        Returns a dict mapping model IDs to whether they support structured outputs.
+        """
+        current_time = time.time()
+        
+        # Use cache if it's still valid (cache for 1 hour)
+        if self._structured_output_cache and current_time < self._cache_expiry:
+            return self._structured_output_cache
+        
+        try:
+            logger.debug("Fetching model capabilities from OpenRouter Models API")
+            response = await self.client.get("https://openrouter.ai/api/v1/models")
+            response.raise_for_status()
+            
+            models_data = response.json()
+            capabilities = {}
+            
+            for model in models_data.get("data", []):
+                model_id = model.get("id", "")
+                supported_params = model.get("supported_parameters", [])
+                
+                # Check if the model supports structured outputs
+                supports_structured = "structured_outputs" in supported_params
+                capabilities[model_id.lower()] = supports_structured
+                
+                if supports_structured:
+                    logger.debug(f"Model {model_id} supports structured outputs")
+            
+            # Cache the results for 1 hour
+            self._structured_output_cache = capabilities
+            self._cache_expiry = current_time + 3600
+            
+            logger.info(f"Loaded capabilities for {len(capabilities)} models from OpenRouter API")
+            return capabilities
+            
+        except Exception as e:
+            logger.warning(f"Failed to fetch model capabilities from OpenRouter API: {e}")
+            
+            # Fallback to hardcoded list if API fails
+            fallback_models = {
+                "openai/gpt-4o": True,
+                "openai/gpt-4o-mini": True,
+                "openai/gpt-4-turbo": True,
+                "openai/gpt-4": True,
+            }
+            logger.debug("Using fallback hardcoded model capabilities")
+            return fallback_models
+
     def supports_structured_outputs(self) -> bool:
         """
         OpenRouter supports structured outputs for select models.
-        Check if the current model supports structured outputs.
+        Check if the current model supports structured outputs using the Models API.
         """
-        # List of models known to support structured outputs on OpenRouter
-        supported_models = [
-            "openai/gpt-4o",
-            "openai/gpt-4o-mini", 
-            "openai/gpt-4-turbo",
-            "openai/gpt-4",
-            "fireworks/",  # All Fireworks models
-        ]
+        logger.debug(f"Checking structured output support for model: {self.config.model}")
         
-        model = self.config.model.lower()
-        return any(model.startswith(supported.lower()) for supported in supported_models)
+        # This is a sync method but we need async data, so we'll use a cached approach
+        # The cache will be populated during the first async call
+        if self._structured_output_cache:
+            model_key = self.config.model.lower()
+            is_supported = self._structured_output_cache.get(model_key, False)
+            logger.debug(f"Model {model_key} structured output support: {is_supported}")
+            return is_supported
+        
+        # If no cache yet, assume no support for safety
+        logger.debug(f"No capability cache available for {self.config.model}, assuming no structured output support")
+        return False
 
 
 # --- Main AIEngine Class ---
