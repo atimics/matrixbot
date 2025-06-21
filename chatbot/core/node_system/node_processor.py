@@ -128,7 +128,7 @@ class NodeProcessor:
                     self._last_planning_time = time.time()
                 
                 # 3. Execution phase: Execute actions from backlog
-                executed_this_iteration = await self._execution_phase(cycle_id)
+                executed_this_iteration = await self._execution_phase(cycle_id, context)
                 actions_executed_count += executed_this_iteration
                 
                 # 4. If no actions executed and backlog is empty, break
@@ -250,7 +250,7 @@ class NodeProcessor:
         except Exception as e:
             logger.error(f"Error in planning phase: {e}", exc_info=True)
     
-    async def _execution_phase(self, cycle_id: str) -> int:
+    async def _execution_phase(self, cycle_id: str, context: Dict[str, Any]) -> int:
         """Execution phase - execute actions from backlog under rate limits"""
         actions_executed = 0
         
@@ -290,6 +290,18 @@ class NodeProcessor:
                     # Complete the action normally
                     success = result_status == "success"
                     error = execution_result.get("error") if not success else None
+                    
+                    if not success and context is not None:
+                        failure_info = {
+                            "tool_name": next_action.action_type,
+                            "parameters": next_action.parameters,
+                            "error": error or "Unknown failure",
+                        }
+                        if "last_action_failures" not in context:
+                            context["last_action_failures"] = []
+                        context["last_action_failures"].append(failure_info)
+                        logger.warning(f"Action failed, recording failure for AI context: {failure_info}")
+
                     self.action_backlog.complete_action(next_action.action_id, success, error)
                 
                 actions_executed += 1
@@ -435,6 +447,26 @@ class NodeProcessor:
         elif tool_name in ["send_message", "send_reply", "react_to_message"]:
             # Determine platform from channel/channel_id/room_id
             channel_id = tool_args.get("channel") or tool_args.get("channel_id") or tool_args.get("room_id")
+            
+            # --- NEW LOGIC ---
+            if not channel_id and tool_args.get("room"):
+                room_name_to_find = tool_args.get("room")
+                logger.debug(f"Attempting to resolve room name '{room_name_to_find}' to a channel_id.")
+                world_state_data = self.world_state.get_world_state_data()
+                
+                resolved = False
+                if hasattr(world_state_data, 'channels') and isinstance(world_state_data.channels, dict):
+                    for platform_name, platform_channels in world_state_data.channels.items():
+                        if isinstance(platform_channels, dict):
+                            for cid, cdata in platform_channels.items():
+                                if hasattr(cdata, 'name') and cdata.name == room_name_to_find:
+                                    channel_id = cid
+                                    logger.warning(f"Disambiguation: Resolved room name '{room_name_to_find}' to channel_id '{channel_id}' for platform '{platform_name}'")
+                                    resolved = True
+                                    break
+                        if resolved:
+                            break
+            # --- END OF NEW LOGIC ---
             
             # Debug logging for tool disambiguation
             logger.debug(f"Tool disambiguation: tool_name='{tool_name}', channel_id='{channel_id}', tool_args keys: {list(tool_args.keys())}")
