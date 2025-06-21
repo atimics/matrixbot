@@ -203,15 +203,15 @@ class SendMatrixMessageTool(ToolInterface):
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
         # Extract and validate parameters
-        room_id = params.get("room_id")
+        channel_id = params.get("channel_id")
         content = params.get("message")
         format_as_markdown = params.get("format_as_markdown", True)
         attach_image = params.get("attach_image")  # New: either media_id or description
         image_url = params.get("image_url")
 
         missing_params = []
-        if not room_id:
-            missing_params.append("room_id")
+        if not channel_id:
+            missing_params.append("channel_id")
         if not content:
             missing_params.append("message")
 
@@ -259,7 +259,7 @@ class SendMatrixMessageTool(ToolInterface):
         try:
             # Send message using the service layer
             result = await matrix_service.send_message(
-                room_id=room_id,
+                channel_id=channel_id,
                 content=content
             )
 
@@ -270,7 +270,7 @@ class SendMatrixMessageTool(ToolInterface):
                     media_service = context.get_media_service("matrix")
                     if media_service:
                         image_result = await media_service.send_image(
-                            channel_id=room_id,
+                            channel_id=channel_id,
                             image_url=image_url
                         )
                         if image_result.get("status") == "success":
