@@ -143,9 +143,25 @@ class OpenRouterProvider(AIProviderBase):
 
         if response_model and self.supports_structured_outputs():
             schema = response_model.model_json_schema()
-            # Ensure additionalProperties is set to false for OpenAI compatibility
-            if "additionalProperties" not in schema:
-                schema["additionalProperties"] = False
+            
+            # Recursively ensure additionalProperties is set to false for OpenAI compatibility
+            def ensure_additional_properties_false(obj):
+                if isinstance(obj, dict):
+                    if obj.get("type") == "object" and "additionalProperties" not in obj:
+                        obj["additionalProperties"] = False
+                    # Recursively process nested objects
+                    for key, value in obj.items():
+                        if isinstance(value, dict):
+                            ensure_additional_properties_false(value)
+                        elif isinstance(value, list):
+                            for item in value:
+                                if isinstance(item, dict):
+                                    ensure_additional_properties_false(item)
+            
+            ensure_additional_properties_false(schema)
+            
+            # Debug logging to see the actual schema being sent
+            logger.debug(f"Structured output schema for {response_model.__name__}: {json.dumps(schema, indent=2)}")
             
             payload["response_format"] = {
                 "type": "json_schema",
