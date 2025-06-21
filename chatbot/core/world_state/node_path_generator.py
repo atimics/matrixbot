@@ -48,13 +48,13 @@ class NodePathGenerator:
         yield from self._generate_system_paths(world_state_data)
 
     def _generate_channel_paths(self, world_state_data: WorldStateData):
-        """Generate paths for channels."""
-        yield "channels"
+        """Generate paths for channels using singular 'channel' type."""
+        yield "channel"
         if hasattr(world_state_data, 'channels') and world_state_data.channels:
             for platform, platform_channels in world_state_data.channels.items():
-                yield f"channels.{platform}"
+                yield f"channel.{platform}"
                 for channel_id in platform_channels.keys():
-                    yield f"channels.{platform}.{channel_id}"
+                    yield f"channel.{platform}.{channel_id}"
 
     def _generate_farcaster_feed_paths(self, world_state_data: WorldStateData):
         """Generate paths for Farcaster feed data."""
