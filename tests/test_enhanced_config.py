@@ -143,12 +143,12 @@ class TestFarcasterConfig:
             FarcasterConfig(min_post_interval_minutes=-1)
 
 
-class TestUnifiedSettings:
+class TestAppConfig:
     """Test the unified settings system."""
     
     def test_initialization(self):
         """Test basic initialization."""
-        settings = UnifiedSettings()
+        settings = AppConfig()
         assert isinstance(settings.core, CoreConfig)
         assert isinstance(settings.ai, AIConfig)
         assert isinstance(settings.matrix, MatrixConfig)
@@ -170,7 +170,7 @@ class TestUnifiedSettings:
             "_setup_timestamp": "2023-10-26T10:00:00"
         })
         
-        settings = UnifiedSettings()
+        settings = AppConfig()
         
         # Verify secrets are loaded
         assert settings.openrouter_api_key == "sk-or-test-key"
@@ -181,7 +181,7 @@ class TestUnifiedSettings:
     
     def test_config_status(self):
         """Test configuration status reporting."""
-        settings = UnifiedSettings(
+        settings = AppConfig(
             openrouter_api_key="sk-or-test",
             matrix_password="test-pass",
             neynar_api_key="test-neynar"
@@ -199,7 +199,7 @@ class TestUnifiedSettings:
     
     def test_legacy_format_conversion(self):
         """Test conversion to legacy format."""
-        settings = UnifiedSettings(
+        settings = AppConfig(
             openrouter_api_key="sk-or-test",
             matrix_password="test-pass"
         )
@@ -221,7 +221,7 @@ class TestUnifiedSettings:
             'OPENROUTER_API_KEY': 'env-key',
             'MATRIX_PASSWORD': 'env-password'
         }):
-            settings = UnifiedSettings()
+            settings = AppConfig()
             assert settings.openrouter_api_key == 'env-key'
             assert settings.matrix.password == 'env-password'
 

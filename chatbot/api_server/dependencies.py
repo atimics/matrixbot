@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from chatbot.core.orchestration import MainOrchestrator
 from chatbot.api_server.services.setup_manager import SetupManager
-from chatbot.config import UnifiedSettings
+from chatbot.config import AppConfig
 from chatbot.core.secrets import SecretManager
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ class DependencyContainer:
     def __init__(self):
         self._orchestrator: Optional[MainOrchestrator] = None
         self._setup_manager: Optional[SetupManager] = None
-        self._settings: Optional[UnifiedSettings] = None
+        self._settings: Optional[AppConfig] = None
         self._secret_manager: Optional[SecretManager] = None
         self._initialized = False
     
@@ -34,7 +34,7 @@ class DependencyContainer:
         self,
         orchestrator: MainOrchestrator,
         setup_manager: SetupManager,
-        settings: UnifiedSettings,
+        settings: AppConfig,
         secret_manager: SecretManager
     ):
         """Initialize the container with concrete instances."""
@@ -60,7 +60,7 @@ class DependencyContainer:
         return self._setup_manager
     
     @property
-    def settings(self) -> UnifiedSettings:
+    def settings(self) -> AppConfig:
         """Get settings instance."""
         if not self._initialized or not self._settings:
             raise HTTPException(status_code=500, detail="Settings not configured")
@@ -136,7 +136,7 @@ def get_setup_manager(
 
 def get_settings(
     container: DependencyContainer = Depends(get_dependency_container)
-) -> UnifiedSettings:
+) -> AppConfig:
     """Get settings instance via dependency injection."""
     return container.settings
 
@@ -149,7 +149,7 @@ def get_secret_manager(
 
 
 @lru_cache(maxsize=1)
-def get_cached_settings() -> UnifiedSettings:
+def get_cached_settings() -> AppConfig:
     """Get cached settings for performance-critical paths."""
     try:
         return _container.settings
@@ -218,7 +218,7 @@ def get_health_checker(
 def initialize_dependencies(
     orchestrator: MainOrchestrator,
     setup_manager: SetupManager,
-    settings: UnifiedSettings,
+    settings: AppConfig,
     secret_manager: SecretManager
 ):
     """Initialize the global dependency container."""
