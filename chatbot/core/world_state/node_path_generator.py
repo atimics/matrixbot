@@ -117,12 +117,12 @@ class NodePathGenerator:
                 yield f"memory_bank/{user_id}"
 
     def _generate_thread_paths(self, world_state_data: WorldStateData):
-        """Generate paths for threads."""
-        yield "threads"
+        """Generate paths for threads using singular 'thread' type."""
+        yield "thread"
         if hasattr(world_state_data, 'threads') and world_state_data.threads:
             # The threads dict maps root cast id to thread messages
             for thread_id in world_state_data.threads.keys():
-                yield f"threads/{thread_id}"
+                yield f"thread.farcaster.{thread_id}"
 
     def _generate_system_paths(self, world_state_data: WorldStateData):
         """Generate paths for system data."""
