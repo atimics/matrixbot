@@ -46,6 +46,8 @@ class AIProvider(Enum):
 
 class ToolCall(BaseModel):
     """A structured representation of a tool call requested by the AI."""
+    model_config = {"extra": "forbid"}  # Forbid additional properties
+    
     name: str = Field(description="The name of the tool to be called.")
     parameters: Dict[str, Any] = Field(
         default_factory=dict, description="The parameters for the tool call."
@@ -57,6 +59,8 @@ class ToolCall(BaseModel):
 
 class AIResponse(BaseModel):
     """The standard structured response from the AI for making decisions."""
+    model_config = {"extra": "forbid"}  # Forbid additional properties
+    
     reasoning: str = Field(
         description="The AI's high-level reasoning for its chosen actions or message."
     )
