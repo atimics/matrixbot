@@ -530,8 +530,15 @@ class NodeProcessor:
             elif tool_name == "refresh_summary":
                 refresh_result = await self._execute_summary_refresh(tool_args)
                 status = "success" if refresh_result.get("success") else "failure"
-                return {"status": status, "result": refresh_result}
+                error_msg = refresh_result.get("error") if status == "failure" else None
+                return {"status": status, "result": refresh_result, "error": error_msg}
             else:
+                # Check for tool existence before calling the executor
+                if self.tool_registry and not self.tool_registry.get_tool(tool_name):
+                    error_msg = f"Tool '{tool_name}' not found in registry"
+                    logger.warning(error_msg)
+                    return {"status": "failure", "error": error_msg}
+                
                 result = await self._execute_platform_tool(tool_name, tool_args, cycle_id)
                 
                 # The result from the tool itself is in result['tool_result'].
@@ -557,8 +564,13 @@ class NodeProcessor:
                 # If the outer tool execution failed, that should take precedence.
                 if not result.get("success", True):
                     status = "failure"
+                
+                # Extract error message for failed actions
+                error_msg = None
+                if status == "failure":
+                    error_msg = result.get("error") or tool_result.get("error") or "Unknown error"
                     
-                return {"status": status, "result": result}
+                return {"status": status, "result": result, "error": error_msg}
         except Exception as e:
             logger.error(f"Error executing action '{tool_name}': {e}", exc_info=True)
             return {"status": "failure", "error": str(e)}
@@ -1522,13 +1534,16 @@ class NodeProcessor:
             # Execute using existing action execution infrastructure
             result = await self._execute_action(action_dict, cycle_id)
             
-            # Log execution result
-            if result.get("status") == "success":
+            # Log execution result with specific error message
+            is_success = result.get("status") == "success"
+            error_message = result.get("error") if not is_success else None
+
+            if is_success:
                 logger.debug(f"Successfully executed backlog action {action.action_id}: {action.action_type}")
             else:
-                logger.warning(f"Failed to execute backlog action {action.action_id}: {result.get('error', 'Unknown error')}")
+                logger.warning(f"Failed to execute backlog action {action.action_id}: {error_message}")
             
-            return result
+            return {"status": result.get("status"), "result": result, "error": error_message}
             
         except Exception as e:
             logger.error(f"Error executing backlog action {action.action_id}: {e}", exc_info=True)
@@ -1690,44 +1705,31 @@ class NodeProcessor:
                 await self._planning_phase(cycle_id, primary_channel_id, context)
                 self._last_planning_time = time.time()
 
-    def _get_recent_action_failures(self, max_failures: int = 5) -> List[Dict[str, Any]]:
-        """Get recent action failures to provide feedback to AI"""
+    def _get_recent_action_failures(self, max_failures: int = 3) -> List[Dict[str, Any]]:
+        """Get recent action failures to provide feedback to AI."""
         try:
-            if not hasattr(self, 'action_backlog') or not self.action_backlog:
+            if not self.action_backlog:
                 return []
             
             # Get recent failures from the last 5 minutes
-            cutoff_time = time.time() - 300  # 5 minutes ago
+            cutoff_time = time.time() - 300
             recent_failures = []
             
-            for action in self.action_backlog.failed.values():
-                if action.created_at < cutoff_time:
-                    continue
-                
-                # Sanitize and limit the failure info to prevent payload bloat
-                failure_info = {
-                    "action_type": action.action_type,
-                    "error": (action.error or "Unknown error")[:200],  # Limit error message length
-                    "parameters": {
-                        # Only include essential parameters, limit size
-                        k: str(v)[:100] if isinstance(v, str) else str(v)[:100]
-                        for k, v in (action.parameters or {}).items()
-                        if k in ["channel_id", "content", "message", "room_id"]
-                    },
-                    "attempts": action.attempts,
-                    "timestamp": action.created_at
-                }
-                recent_failures.append(failure_info)
-                
-                # Limit number of failures to prevent payload bloat
-                if len(recent_failures) >= max_failures:
-                    break
+            # The 'failed' dict holds permanently failed actions
+            for action in list(self.action_backlog.failed.values()):
+                if action.last_attempt_at and action.last_attempt_at >= cutoff_time:
+                    failure_info = {
+                        "action_type": action.action_type,
+                        "error": (action.error or "Unknown error")[:200],  # Truncate error
+                        "parameters": {k: str(v)[:50] for k, v in (action.parameters or {}).items()},
+                        "attempts": action.attempts,
+                        "timestamp": action.last_attempt_at
+                    }
+                    recent_failures.append(failure_info)
             
             # Sort by timestamp, most recent first
-            recent_failures.sort(key=lambda x: x["timestamp"], reverse=True)
-            
-            return recent_failures
-            
+            recent_failures.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
+            return recent_failures[:max_failures]
         except Exception as e:
             logger.error(f"Error getting recent action failures: {e}")
-            return []  # Return empty list on error to prevent payload issues
+            return []
