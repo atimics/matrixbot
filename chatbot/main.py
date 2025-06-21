@@ -63,7 +63,7 @@ class ChatbotApp:
             db_path=settings.chatbot_db_path,
             processing_config=ProcessingConfig(
                 enable_node_based_processing=True,  # Advanced node-based mode
-                observation_interval=settings.observation_interval,
+                processing_interval=settings.observation_interval,
                 max_cycles_per_hour=settings.max_cycles_per_hour,
             ),
             ai_model=settings.ai.model,
@@ -83,6 +83,10 @@ class ChatbotApp:
         logger.debug("Secure API server configured successfully")
         
     def start_api_server(self):
+        if not self.api_server:
+            raise RuntimeError("API server must be set up before starting")
+    
+        
         """Start the API server in a separate thread."""
         def run_server():
             config = uvicorn.Config(

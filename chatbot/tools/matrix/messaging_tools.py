@@ -22,8 +22,9 @@ class SendMatrixReplyTool(ToolInterface):
 
     @property
     def description(self) -> str:
-        return ("Reply to a specific message in a Matrix channel. Use \'channel_id\' for the channel and \'message\' for the content. If reply_to_id is not provided, will send as a regular message to the channel. "
-                "Recently generated media (within 5 minutes) will be automatically attached as a separate image message if no explicit image_url is provided.")
+        return ("Reply to a specific message in a Matrix channel. "
+                "You MUST provide the 'channel_id' (e.g., '!Abc123:server.com') and the 'reply_to_id' (the event ID of the message you are replying to). "
+                "The message content goes in the 'message' parameter.")
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
@@ -173,9 +174,10 @@ class SendMatrixMessageTool(ToolInterface):
 
     @property
     def description(self) -> str:
-        return ("Send a new message to a Matrix channel. Use 'channel_id' for the channel and 'message' for the content. Use this when you want to start a new conversation or make an announcement. "
-                "Use the 'attach_image' parameter to include an image - either provide a description to generate a new image, or reference an existing media_id from your library. "
-                "Recently generated media (within 5 minutes) will be automatically attached if no explicit attach_image is provided.")
+        return ("Send a new message to a Matrix channel. "
+                "You MUST provide the 'channel_id' (e.g., '!Abc123:server.com'). "
+                "The message content goes in the 'message' parameter. "
+                "Use this when you want to start a new conversation or make an announcement.")
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:

@@ -152,7 +152,7 @@ class MainOrchestrator:
         self.action_context = ActionContext(
             service_registry=self.service_registry,
             world_state_manager=self.world_state,
-            context_manager=None,  # Will be updated when modern context management is implemented
+            context_manager=None  # Will be updated when modern context management is implemented
             arweave_client=self.arweave_client,
             arweave_service=arweave_service_instance,
             processing_hub=self.processing_hub
@@ -636,7 +636,7 @@ class MainOrchestrator:
                     world_state_manager=self.world_state,
                     processing_hub=self.processing_hub,
                 )
-                await self.farcaster_observer.start()
+                await self.farcaster_observer.connect()
                 
                 # Connect legacy state change callback for backward compatibility
                 self.farcaster_observer.on_state_change = self._on_world_state_change

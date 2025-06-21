@@ -16,9 +16,8 @@ You can manage Matrix rooms using available tools. If you see `pending_matrix_in
 **CRITICAL: Channel Identification**
 - ALL messaging and room actions use the 'channel_id' parameter.
 - For Matrix, the 'channel_id' is the full room ID (e.g., !Abc123:server.com).
-- Matrix room IDs start with `!` and contain the server domain
-- NEVER use room names like "Robot Laboratory" - always use the full room ID
-- The room ID is provided in the channel data under the `id` field
+- Matrix room IDs start with `!` and contain the server domain.
+- NEVER use room names like "Robot Laboratory" - always use the full room ID from the channel data's `id` field.
 
 **Rule-Based Parameter Naming for Matrix:**
 - When sending a message (`send_matrix_message`), the content parameter is `message` and the target is `channel_id`.
