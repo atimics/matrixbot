@@ -23,7 +23,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from chatbot.config import UnifiedSettings
+from chatbot.config import AppConfig
 from chatbot.core.orchestration import MainOrchestrator
 from chatbot.core.secrets import get_secret_manager
 
@@ -124,9 +124,9 @@ class APIKeyAuth:
 class APIServer:
     """Main API server implementation."""
     
-    def __init__(self, orchestrator: MainOrchestrator, settings: Optional[UnifiedSettings] = None):
+    def __init__(self, orchestrator: MainOrchestrator, settings: Optional[AppConfig] = None):
         self.orchestrator = orchestrator
-        self.settings = settings or UnifiedSettings()
+        self.settings = settings or AppConfig()
         self._start_time = datetime.now()
         
         # Security configuration
@@ -415,7 +415,7 @@ class APIServer:
             raise
 
 
-def create_api_server(orchestrator: MainOrchestrator, settings: Optional[UnifiedSettings] = None) -> FastAPI:
+def create_api_server(orchestrator: MainOrchestrator, settings: Optional[AppConfig] = None) -> FastAPI:
     """Factory function to create a secure API server."""
     server = APIServer(orchestrator, settings)
     return server.app
