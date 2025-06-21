@@ -150,6 +150,32 @@ class MemoryRecord(SQLModel, table=True):
         }
 
 
+class UndecryptableEventRecord(SQLModel, table=True):
+    """SQLModel for undecryptable Matrix events requiring retry."""
+    
+    __tablename__ = "undecryptable_events"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    event_id: str = Field(description="Matrix event ID")
+    room_id: str = Field(description="Matrix room ID")
+    sender: str = Field(description="Event sender user ID")
+    timestamp: float = Field(description="Unix timestamp when event was received")
+    retry_count: int = Field(default=0, description="Number of retry attempts")
+    last_retry_time: float = Field(default=0, description="Unix timestamp of last retry")
+    error_type: str = Field(default="megolm_session_missing", description="Type of decryption error")
+    max_retries: int = Field(default=5, description="Maximum number of retries")
+    
+    class Config:
+        schema_extra = {
+            "indexes": [
+                {"fields": ["room_id"]},
+                {"fields": ["retry_count"]},
+                {"fields": ["last_retry_time"]},
+                {"fields": ["event_id", "room_id"], "unique": True},  # Composite unique constraint
+            ]
+        }
+
+
 class DatabaseManager:
     """Centralized database manager with migrations and type safety."""
     
