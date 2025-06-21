@@ -198,6 +198,48 @@ class PayloadBuilder:
         logger.debug(f"Total messages included in expanded nodes: {total_messages_in_payload}")
         if total_messages_in_payload == 0:
             logger.warning("NO MESSAGES FOUND IN EXPANDED NODES - AI will not see any messages!")
+            
+            # FAILSAFE: Force expansion of channels with messages to ensure AI has context
+            logger.warning("ACTIVATING FAILSAFE: Forcing expansion of channels with messages")
+            
+            # Find channels with messages and force expand them
+            channels_with_messages = []
+            for node_path in all_node_paths:
+                if node_path.startswith("channels/"):
+                    # Get channel data to check for messages
+                    node_data = self.node_data_handlers.get_node_data_by_path(
+                        world_state_data, node_path, expanded=True  # Force expanded to see messages
+                    )
+                    if (isinstance(node_data, dict) and 
+                        "recent_messages" in node_data and 
+                        len(node_data["recent_messages"]) > 0):
+                        channels_with_messages.append((node_path, len(node_data["recent_messages"])))
+            
+            if channels_with_messages:
+                # Sort by message count and expand the top channels
+                channels_with_messages.sort(key=lambda x: x[1], reverse=True)
+                
+                for node_path, msg_count in channels_with_messages[:3]:  # Expand top 3 channels with messages
+                    logger.warning(f"FAILSAFE: Force expanding {node_path} ({msg_count} messages)")
+                    node_manager.expand_node(node_path)
+                    
+                    # Add to expanded_nodes immediately
+                    node_data = self.node_data_handlers.get_node_data_by_path(
+                        world_state_data, node_path, expanded=True
+                    )
+                    if node_data:
+                        expanded_nodes[node_path] = node_data
+                        if isinstance(node_data, dict) and "recent_messages" in node_data:
+                            total_messages_in_payload += len(node_data["recent_messages"])
+                            logger.warning(f"FAILSAFE: Added {len(node_data['recent_messages'])} messages from {node_path}")
+                        
+                        # Remove from collapsed summaries if it was there
+                        if node_path in collapsed_node_summaries:
+                            del collapsed_node_summaries[node_path]
+                
+                logger.warning(f"FAILSAFE COMPLETE: Now have {total_messages_in_payload} messages in expanded nodes")
+            else:
+                logger.error("FAILSAFE FAILED: No channels with messages found to expand!")
 
         # Build final payload
         payload = {

@@ -108,7 +108,10 @@ class NodeProcessor:
             logger.debug(f"Updated ActionContext with primary channel: {primary_channel_id}")
 
         try:
-            # Initial auto-expansion of active channels
+            # CRITICAL FIX: Always ensure core channels are expanded for context
+            await self._ensure_core_channels_expanded(primary_channel_id, context)
+            
+            # Also expand active channels for additional context
             await self._auto_expand_active_channels()
 
             # Main Kanban execution loop with extended timeout for continuous processing
@@ -188,28 +191,7 @@ class NodeProcessor:
             # If this is a critical trigger, add immediate response actions
             if trigger_type == "mention":
                 logger.info(f"🔔 MENTION TRIGGER: AI being instructed to respond to mention in channel {primary_channel_id}")
-                
-                # CRITICAL FIX: Auto-expand the primary channel so AI can see messages
-                if primary_channel_id:
-                    # Determine the correct node path for the channel
-                    if primary_channel_id.startswith('!'):
-                        # Matrix channel - use correct node path format
-                        matrix_node_path = f"channels/matrix/{primary_channel_id}"
-                        self.node_manager.expand_node(matrix_node_path)
-                        logger.info(f"🔧 AUTO-EXPANDED Matrix channel {primary_channel_id} for mention visibility")
-                    elif primary_channel_id.startswith('farcaster:'):
-                        # Farcaster channel
-                        farcaster_node_path = f"channels/farcaster/{primary_channel_id}"
-                        self.node_manager.expand_node(farcaster_node_path)
-                        logger.info(f"🔧 AUTO-EXPANDED Farcaster channel {primary_channel_id} for mention visibility")
-                    else:
-                        # Fallback - try both possible formats
-                        logger.warning(f"Unknown channel format {primary_channel_id}, trying fallback expansion")
-                        for platform in ['matrix', 'farcaster']:
-                            node_path = f"channels/{platform}/{primary_channel_id}"
-                            self.node_manager.expand_node(node_path)
-                        logger.info(f"🔧 AUTO-EXPANDED channel {primary_channel_id} (tried both platforms) for mention visibility")
-                
+                # Note: Core channel expansion is handled by _ensure_core_channels_expanded()
                 logger.info(f"High-priority mention detected in cycle {cycle_id}, escalating response")
     
     async def _escalate_communication_actions(self):
@@ -795,6 +777,97 @@ class NodeProcessor:
             "expansion_status": self.node_manager.get_expansion_status_summary() if self.node_manager else {}
         }
     
+    async def _ensure_core_channels_expanded(
+        self, 
+        primary_channel_id: Optional[str], 
+        context: Dict[str, Any]
+    ):
+        """
+        Ensure core channels are always expanded so the AI never receives empty context.
+        
+        This method guarantees that the AI always has access to:
+        1. The primary channel (Matrix/Farcaster)
+        2. Farcaster home timeline (for social context)
+        3. Any recently selected channels
+        
+        Unlike auto_expand_active_channels, this runs regardless of recent activity.
+        """
+        try:
+            channels_to_expand = []
+            trigger_type = context.get("trigger_type", "")
+            
+            # 1. Always expand the primary channel if specified
+            if primary_channel_id:
+                if primary_channel_id.startswith('!'):
+                    # Matrix channel
+                    primary_node_path = f"channels/matrix/{primary_channel_id}"
+                    channels_to_expand.append(("primary_matrix", primary_node_path))
+                elif primary_channel_id.startswith('farcaster:'):
+                    # Farcaster channel
+                    primary_node_path = f"channels/farcaster/{primary_channel_id}"
+                    channels_to_expand.append(("primary_farcaster", primary_node_path))
+                else:
+                    # Unknown format - try both
+                    channels_to_expand.append(("primary_matrix_fallback", f"channels/matrix/{primary_channel_id}"))
+                    channels_to_expand.append(("primary_farcaster_fallback", f"channels/farcaster/{primary_channel_id}"))
+            
+            # 2. Always expand Farcaster home timeline for social context
+            channels_to_expand.append(("farcaster_home", "farcaster/feeds/home"))
+            
+            # 3. Always expand notifications/mentions feeds
+            channels_to_expand.append(("farcaster_notifications", "farcaster/feeds/notifications"))
+            channels_to_expand.append(("farcaster_mentions", "farcaster/feeds/mentions"))
+            
+            # 4. Get the most recently active Matrix channel as fallback
+            try:
+                world_state_data = self.world_state.get_world_state_data()
+                matrix_channels = getattr(world_state_data, 'channels', {}).get('matrix', {})
+                
+                # Find the Matrix channel with the most recent activity
+                most_recent_matrix = None
+                latest_timestamp = 0
+                
+                for room_id, room_data in matrix_channels.items():
+                    if isinstance(room_data, dict) and 'recent_messages' in room_data:
+                        recent_messages = room_data['recent_messages']
+                        if recent_messages:
+                            room_latest = max(
+                                msg.get('timestamp', 0) for msg in recent_messages
+                                if isinstance(msg, dict)
+                            )
+                            if room_latest > latest_timestamp:
+                                latest_timestamp = room_latest
+                                most_recent_matrix = room_id
+                
+                if most_recent_matrix and most_recent_matrix != primary_channel_id:
+                    channels_to_expand.append(("recent_matrix", f"channels/matrix/{most_recent_matrix}"))
+                    
+            except Exception as e:
+                logger.debug(f"Error finding recent Matrix channel: {e}")
+            
+            # 5. Expand all identified channels
+            expanded_count = 0
+            for channel_type, node_path in channels_to_expand:
+                try:
+                    success, auto_collapsed, message = self.node_manager.expand_node(node_path)
+                    if success:
+                        expanded_count += 1
+                        logger.info(f"🔧 CORE EXPANSION: {channel_type} -> {node_path} (trigger: {trigger_type})")
+                        if auto_collapsed:
+                            logger.info(f"   ↳ Auto-collapsed {auto_collapsed} to make room")
+                    else:
+                        logger.debug(f"Core expansion skipped {channel_type} -> {node_path}: {message}")
+                except Exception as e:
+                    logger.warning(f"Error expanding core channel {channel_type} ({node_path}): {e}")
+            
+            if expanded_count > 0:
+                logger.info(f"🎯 CORE CHANNELS: Ensured {expanded_count} essential channels are expanded for AI context")
+            else:
+                logger.info("🎯 CORE CHANNELS: All essential channels were already expanded")
+                
+        except Exception as e:
+            logger.error(f"Error ensuring core channels expanded: {e}", exc_info=True)
+
     async def _auto_expand_active_channels(self):
         """Auto-expand the most active channels based on world state activity."""
         try:
