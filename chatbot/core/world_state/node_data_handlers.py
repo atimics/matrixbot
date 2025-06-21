@@ -152,7 +152,7 @@ class NodeDataHandlers:
                 return asdict(sentiment) if sentiment else None
             if sub_node == "memories": 
                 memories = getattr(user, 'memory_entries', [])
-                return [asdict(mem) for mem in memories[-5:]]
+                return {"memories": [asdict(mem) for mem in memories[-5:]]}
         
         if user:
             # Use to_ai_summary_dict if available, otherwise create basic dict
