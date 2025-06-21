@@ -611,12 +611,26 @@ class NodeProcessor:
                     logger.info(f"[OODA/{cycle_id}] Disambiguated '{original_action_type}' -> '{action_type}' (Matrix platform)")
                     
                     # Map generic parameters to Matrix-specific parameters
-                    if "message" in action_parameters:
-                        action_parameters["content"] = action_parameters.pop("message")
+                    # The Matrix tool expects 'message' parameter, not 'content'
                     if "room" in action_parameters:
-                        # Need to map room name to room ID - for now use the primary channel from context
-                        # TODO: Look up room ID from room name in WorldState
-                        action_parameters.pop("room")  # Remove generic room parameter
+                        # Map room name to room ID using the primary channel ID from context
+                        room_name = action_parameters.pop("room")
+                        logger.debug(f"[OODA/{cycle_id}] Mapping room name '{room_name}' to primary channel")
+                        # The AI doesn't know the Matrix room ID, so we'll use the one from the expanded nodes
+                        # From the logs, we see: "FAILSAFE: Force expanding channel.matrix.!zBaUOGAwGyzOEGWJFd:chat.ratimics.com"
+                        # We need to extract the room ID from the most recently active channel
+                        try:
+                            world_state_data = self.world_state.get_world_state_data()
+                            matrix_channels = getattr(world_state_data, 'channels', {}).get('matrix', {})
+                            if matrix_channels:
+                                # Use the first available Matrix channel - in production this should be smarter
+                                room_id = list(matrix_channels.keys())[0]
+                                action_parameters["channel_id"] = room_id
+                                logger.debug(f"[OODA/{cycle_id}] Using Matrix room ID: {room_id}")
+                            else:
+                                logger.warning(f"[OODA/{cycle_id}] No Matrix channels available for room mapping")
+                        except Exception as e:
+                            logger.error(f"[OODA/{cycle_id}] Error mapping room name to ID: {e}")
                     if "channel" in action_parameters:
                         action_parameters.pop("channel")  # Remove generic channel parameter
                         
