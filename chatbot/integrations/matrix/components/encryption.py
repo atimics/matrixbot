@@ -13,6 +13,10 @@ from typing import Any, Dict, Optional, Set, List
 from dataclasses import dataclass, asdict
 
 from nio import AsyncClient, MatrixRoom
+from sqlmodel import select
+
+# Import database models and manager
+from ....core.persistence import DatabaseManager, UndecryptableEventRecord
 
 logger = logging.getLogger(__name__)
 
@@ -34,51 +38,24 @@ class MatrixEncryptionHandler:
     Handles Matrix encryption and decryption error recovery.
     
     Enhanced features:
-    - Persistent retry queue for undecryptable events
+    - Persistent retry queue using SQLModel database
     - Broadcast key requests to all room members
     - Improved key recovery strategies
     """
     
-    def __init__(self, client: AsyncClient, user_id: str, storage_path: Optional[str] = None):
+    def __init__(self, client: AsyncClient, user_id: str, db_manager: Optional[DatabaseManager] = None):
         self.client = client
         self.user_id = user_id
         self.failed_decryption_events: Set[str] = set()
         self.key_request_retries: Dict[str, int] = {}
         self.max_key_retries = 5  # Increased from 3
-        self.storage_path = storage_path or "data/undecryptable_events.json"
         
-        # Persistent retry queue
-        self.undecryptable_events: Dict[str, UndecryptableEvent] = {}
-        self._load_persistent_queue()
+        # Database manager for persistent storage
+        self.db_manager = db_manager or DatabaseManager()
         
         # Background task for periodic retry
         self._retry_task: Optional[asyncio.Task] = None
         self._start_retry_background_task()
-    
-    def _load_persistent_queue(self):
-        """Load undecryptable events from persistent storage."""
-        try:
-            with open(self.storage_path, 'r') as f:
-                data = json.load(f)
-                for event_key, event_data in data.items():
-                    self.undecryptable_events[event_key] = UndecryptableEvent(**event_data)
-            logger.info(f"MatrixEncryption: Loaded {len(self.undecryptable_events)} persistent undecryptable events")
-        except FileNotFoundError:
-            logger.debug("MatrixEncryption: No persistent queue file found, starting fresh")
-        except Exception as e:
-            logger.error(f"MatrixEncryption: Error loading persistent queue: {e}")
-    
-    def _save_persistent_queue(self):
-        """Save undecryptable events to persistent storage."""
-        try:
-            import os
-            os.makedirs(os.path.dirname(self.storage_path), exist_ok=True)
-            
-            data = {key: asdict(event) for key, event in self.undecryptable_events.items()}
-            with open(self.storage_path, 'w') as f:
-                json.dump(data, f, indent=2)
-        except Exception as e:
-            logger.error(f"MatrixEncryption: Error saving persistent queue: {e}")
     
     def _start_retry_background_task(self):
         """Start background task for periodic retry of undecryptable events."""
@@ -100,43 +77,53 @@ class MatrixEncryptionHandler:
     async def _retry_undecryptable_events(self):
         """Retry decryption for events in the persistent queue."""
         current_time = time.time()
-        events_to_retry = []
         
-        for event_key, event in self.undecryptable_events.items():
-            # Retry events that haven't been retried recently and haven't exceeded max retries
-            time_since_last_retry = current_time - event.last_retry_time
-            if (event.retry_count < self.max_key_retries and 
-                time_since_last_retry > 300):  # Wait at least 5 minutes between retries
-                events_to_retry.append(event)
-        
-        if events_to_retry:
-            logger.info(f"MatrixEncryption: Retrying {len(events_to_retry)} undecryptable events")
-            
-            for event in events_to_retry:
-                await self._retry_event_decryption(event)
-                
-            self._save_persistent_queue()
-    
-    async def _retry_event_decryption(self, event: UndecryptableEvent):
-        """Retry decryption for a specific event."""
         try:
-            event.retry_count += 1
-            event.last_retry_time = time.time()
+            # Initialize database if needed
+            if not self.db_manager._initialized:
+                await self.db_manager.initialize()
             
-            # Broadcast key request to all room members
-            await self._broadcast_key_request(event.room_id, event.sender)
-            
-            logger.debug(f"MatrixEncryption: Retry #{event.retry_count} for event {event.event_id}")
-            
-            # If we've exceeded max retries, remove from queue
-            if event.retry_count >= self.max_key_retries:
-                event_key = f"{event.room_id}:{event.event_id}"
-                if event_key in self.undecryptable_events:
-                    del self.undecryptable_events[event_key]
-                    logger.info(f"MatrixEncryption: Removed event {event.event_id} after {event.retry_count} retries")
+            async with self.db_manager.get_session() as session:
+                # Get events that need retrying
+                query = select(UndecryptableEventRecord).where(
+                    UndecryptableEventRecord.retry_count < UndecryptableEventRecord.max_retries,
+                    UndecryptableEventRecord.last_retry_time < current_time - 300  # 5 minutes since last retry
+                )
+                
+                result = await session.execute(query)
+                events_to_retry = result.scalars().all()
+                
+                if events_to_retry:
+                    logger.info(f"MatrixEncryption: Retrying {len(events_to_retry)} undecryptable events")
+                    
+                    for event_record in events_to_retry:
+                        await self._retry_event_decryption(session, event_record)
+                    
+                    await session.commit()
                     
         except Exception as e:
-            logger.error(f"MatrixEncryption: Error retrying event {event.event_id}: {e}")
+            logger.error(f"MatrixEncryption: Error retrying undecryptable events: {e}")
+    
+    async def _retry_event_decryption(self, session, event_record: UndecryptableEventRecord):
+        """Retry decryption for a specific event."""
+        try:
+            event_record.retry_count += 1
+            event_record.last_retry_time = time.time()
+            
+            # Broadcast key request to all room members
+            await self._broadcast_key_request(event_record.room_id, event_record.sender)
+            
+            logger.debug(f"MatrixEncryption: Retry #{event_record.retry_count} for event {event_record.event_id}")
+            
+            # If we've exceeded max retries, remove from queue
+            if event_record.retry_count >= event_record.max_retries:
+                await session.delete(event_record)
+                logger.info(f"MatrixEncryption: Removed event {event_record.event_id} after {event_record.retry_count} retries")
+            else:
+                session.add(event_record)  # Update the record
+                    
+        except Exception as e:
+            logger.error(f"MatrixEncryption: Error retrying event {event_record.event_id}: {e}")
     
     async def _broadcast_key_request(self, room_id: str, original_sender: str):
         """Broadcast key request to all verified devices of all room members."""
