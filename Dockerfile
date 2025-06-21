@@ -26,21 +26,19 @@ ENV POETRY_NO_INTERACTION=1 \
 # Create and set work directory
 WORKDIR /app
 
-# Copy Poetry configuration files
-COPY pyproject.toml ./
+# Copy Poetry configuration files ONLY first (for better caching)
+COPY pyproject.toml poetry.lock* ./
 
-# Copy source code (needed for Poetry to resolve dependencies)
-COPY chatbot/ ./chatbot/
-COPY scripts/ ./scripts/
-COPY README.md ./
-
-# Generate poetry.lock if it's missing or out of sync, then install dependencies
-RUN poetry lock && \
-    poetry install --only=main --no-interaction --no-ansi --no-root && \
+# Install dependencies BEFORE copying source code
+# This layer will be cached unless pyproject.toml or poetry.lock changes
+RUN poetry install --only=main --no-interaction --no-ansi --no-root && \
     rm -rf $POETRY_CACHE_DIR
 
-# Copy control panel from scripts to root for Docker service
+# NOW copy source code (this layer rebuilds when code changes)
+COPY chatbot/ ./chatbot/
+COPY scripts/ ./scripts/
 COPY control_panel.py ./control_panel.py
+COPY README.md ./
 
 # Production stage
 FROM python:3.11-slim-bookworm AS production
