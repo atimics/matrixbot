@@ -37,6 +37,9 @@ class MatrixEventHandler:
         self.processing_hub = processing_hub
         self.channels_to_monitor = channels_to_monitor or []
         
+        # Debug logging for processing hub initialization
+        logger.info(f"MatrixEventHandler.__init__: processing_hub={processing_hub is not None}, type={type(processing_hub)}")
+        
         # Message batching for high-traffic channels
         self.message_batches = {}  # room_id -> list of recent messages
         self.batch_timers = {}     # room_id -> timestamp of last batch
@@ -116,6 +119,9 @@ class MatrixEventHandler:
     async def _generate_triggers(self, room: MatrixRoom, event, message: Message):
         """Generate processing triggers based on message content and context."""
         logger.info(f"MatrixEventHandler: _generate_triggers called for message from {message.sender} in {room.room_id}")
+        
+        # Debug processing hub availability
+        logger.info(f"MatrixEventHandler: processing_hub check - hub={self.processing_hub is not None}, type={type(self.processing_hub)}")
         
         if not self.processing_hub:
             logger.warning(f"MatrixEventHandler: No processing hub available for trigger generation")
