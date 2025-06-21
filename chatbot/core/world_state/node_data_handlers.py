@@ -522,12 +522,22 @@ class NodeDataHandlers:
 
     def get_search_node_data(self, world_state_data: 'WorldStateData', path_parts: List[str], expanded: bool = False) -> Optional[Dict]:
         """Get search node data."""
-        if len(path_parts) < 2:
-            logger.warning(f"Invalid search node path parts (too few): {path_parts}")
+        if len(path_parts) < 1:
+            logger.warning(f"Invalid search node path parts (empty): {path_parts}")
             return None
         
+        # Handle case where we only have ['search'] without a query
+        if len(path_parts) == 1:
+            return {
+                "query": "",
+                "search_type": "general",
+                "context": "General search context",
+                "expanded": expanded,
+                "note": "Search context node - no specific query provided"
+            }
+        
         # Parse search query from path
-        search_query = path_parts[1] if len(path_parts) > 1 else ""
+        search_query = path_parts[1]
         
         # Decode URL-encoded query if needed
         import urllib.parse
