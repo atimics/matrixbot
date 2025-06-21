@@ -28,7 +28,7 @@ async def test_persistent_memory_integration():
         db_path = temp_db.name
     
     try:
-        logger.info("Starting persistent memory integration test...")
+        logger.debug("Starting persistent memory integration test...")
         
         # Create orchestrator with test configuration
         config = OrchestratorConfig(
@@ -37,18 +37,18 @@ async def test_persistent_memory_integration():
         orchestrator = MainOrchestrator(config)
         
         # Test 1: Verify HistoryRecorder is initialized
-        logger.info("Test 1: Verifying HistoryRecorder initialization...")
+        logger.debug("Test 1: Verifying HistoryRecorder initialization...")
         assert orchestrator.history_recorder is not None
         assert orchestrator.world_state.history_recorder is not None
-        logger.info("✓ HistoryRecorder correctly initialized and connected")
+        logger.debug("✓ HistoryRecorder correctly initialized and connected")
         
         # Test 2: Initialize the database
-        logger.info("Test 2: Initializing database...")
+        logger.debug("Test 2: Initializing database...")
         await orchestrator.history_recorder.initialize()
-        logger.info("✓ Database initialized successfully")
+        logger.debug("✓ Database initialized successfully")
         
         # Test 3: Test memory persistence
-        logger.info("Test 3: Testing memory persistence...")
+        logger.debug("Test 3: Testing memory persistence...")
         
         # Create a test memory entry
         test_memory = MemoryEntry(
@@ -73,10 +73,10 @@ async def test_persistent_memory_integration():
         memories = orchestrator.world_state.get_user_memories("matrix:@testuser:example.com")
         assert len(memories) >= 1
         assert memories[0].content == test_memory.content
-        logger.info("✓ Memory added to world state successfully")
+        logger.debug("✓ Memory added to world state successfully")
         
         # Test 4: Test state restoration
-        logger.info("Test 4: Testing state restoration...")
+        logger.debug("Test 4: Testing state restoration...")
         
         # Create a new orchestrator instance with the same database
         config2 = OrchestratorConfig(db_path=db_path)
@@ -88,10 +88,10 @@ async def test_persistent_memory_integration():
         
         # Check if memories were restored (they'll be loaded on-demand)
         # For now, just verify the restore method runs without error
-        logger.info("✓ State restoration completed without errors")
+        logger.debug("✓ State restoration completed without errors")
         
         # Test 5: Test research entry persistence
-        logger.info("Test 5: Testing research entry persistence...")
+        logger.debug("Test 5: Testing research entry persistence...")
         
         research_data = {
             "title": "AI Safety Research",
@@ -107,16 +107,16 @@ async def test_persistent_memory_integration():
             "ai_safety", research_data
         )
         assert result is True
-        logger.info("✓ Research entry stored successfully")
+        logger.debug("✓ Research entry stored successfully")
         
         # Load and verify research entries
         research_entries = await orchestrator.history_recorder.load_research_entries()
         assert "ai_safety" in research_entries
         assert research_entries["ai_safety"]["title"] == "AI Safety Research"
-        logger.info("✓ Research entry loaded successfully")
+        logger.debug("✓ Research entry loaded successfully")
         
         # Test 6: Test state change recording
-        logger.info("Test 6: Testing state change recording...")
+        logger.debug("Test 6: Testing state change recording...")
         
         await orchestrator.history_recorder.record_user_input(
             "matrix:test_room",
@@ -135,14 +135,14 @@ async def test_persistent_memory_integration():
         # Verify state changes were recorded
         state_changes = await orchestrator.history_recorder.get_recent_state_changes(limit=10)
         assert len(state_changes) >= 2
-        logger.info("✓ State changes recorded successfully")
+        logger.debug("✓ State changes recorded successfully")
         
-        logger.info("All tests completed successfully! 🎉")
+        logger.debug("All tests completed successfully! 🎉")
         
         # Cleanup
         try:
             Path(db_path).unlink()
-            logger.info("Test database cleaned up")
+            logger.debug("Test database cleaned up")
         except:
             pass
             
@@ -163,7 +163,7 @@ async def test_memory_search_and_persistence():
         db_path = temp_db.name
     
     try:
-        logger.info("Testing memory search and persistence...")
+        logger.debug("Testing memory search and persistence...")
         
         config = OrchestratorConfig(db_path=db_path)
         orchestrator = MainOrchestrator(config)
@@ -214,7 +214,7 @@ async def test_memory_search_and_persistence():
         assert len(work_memories) >= 1
         assert "software engineer" in work_memories[0].content.lower()
         
-        logger.info("✓ Memory search functionality working correctly")
+        logger.debug("✓ Memory search functionality working correctly")
         
         # Test persistence across sessions
         config2 = OrchestratorConfig(db_path=db_path)
@@ -224,7 +224,7 @@ async def test_memory_search_and_persistence():
         # Load memories directly from persistence
         persisted_memories = await orchestrator2.history_recorder.load_user_memories(user_id)
         assert len(persisted_memories) == 3
-        logger.info("✓ Memories persisted correctly across sessions")
+        logger.debug("✓ Memories persisted correctly across sessions")
         
         # Cleanup
         Path(db_path).unlink()
@@ -243,7 +243,7 @@ async def main():
     try:
         await test_persistent_memory_integration()
         await test_memory_search_and_persistence()
-        logger.info("🎉 All persistent memory integration tests passed!")
+        logger.debug("🎉 All persistent memory integration tests passed!")
     except Exception as e:
         logger.error(f"Tests failed: {e}")
         exit(1)

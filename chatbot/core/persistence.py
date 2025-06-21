@@ -270,7 +270,7 @@ class DatabaseManager:
             await conn.run_sync(SQLModel.metadata.create_all)
         
         self._initialized = True
-        logger.info("Database initialized successfully")
+        logger.debug("Database initialized successfully")
     
     @asynccontextmanager
     async def get_session(self):
@@ -576,7 +576,7 @@ class ConsolidatedHistoryRecorder:
             Path(output_file).parent.mkdir(parents=True, exist_ok=True)
             with open(output_file, 'w') as f:
                 json.dump(export_data, f, indent=2)
-            logger.info(f"Training data exported to {output_file}")
+            logger.debug(f"Training data exported to {output_file}")
         
         return export_data
     
@@ -605,7 +605,7 @@ class ConsolidatedHistoryRecorder:
             await session.commit()
             
             cleaned_count = len(old_states) + len(old_messages)
-            logger.info(f"Cleaned up {cleaned_count} old records")
+            logger.debug(f"Cleaned up {cleaned_count} old records")
             return cleaned_count
 
 
@@ -647,14 +647,14 @@ class DatabaseMigrator:
         target_version = 1  # Current schema version
         
         if current_version < target_version:
-            logger.info(f"Migrating database from version {current_version} to {target_version}")
+            logger.debug(f"Migrating database from version {current_version} to {target_version}")
             
             # Run migrations
             if current_version < 1:
                 await self._migrate_to_v1()
             
             await self.set_schema_version(target_version)
-            logger.info("Database migration completed")
+            logger.debug("Database migration completed")
     
     async def _migrate_to_v1(self):
         """Migrate to version 1 (initial schema)."""

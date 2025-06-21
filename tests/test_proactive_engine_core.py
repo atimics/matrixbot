@@ -34,7 +34,7 @@ class ProactiveEngineTestSuite:
         
     async def setup_test_environment(self):
         """Set up a realistic test environment with mock data."""
-        logger.info("Setting up test environment...")
+        logger.debug("Setting up test environment...")
         
         # Create mock world state manager
         self.mock_world_state_manager = AsyncMock()
@@ -50,7 +50,7 @@ class ProactiveEngineTestSuite:
             context_manager=self.mock_context_manager
         )
         
-        logger.info("Test environment setup complete")
+        logger.debug("Test environment setup complete")
         
     def create_test_world_state(self) -> WorldStateData:
         """Create realistic test world state data."""
@@ -170,7 +170,7 @@ class ProactiveEngineTestSuite:
     
     async def test_opportunity_detection(self):
         """Test the opportunity detection algorithms."""
-        logger.info("Testing opportunity detection...")
+        logger.debug("Testing opportunity detection...")
         
         try:
             # Test basic opportunity detection
@@ -183,7 +183,7 @@ class ProactiveEngineTestSuite:
             # Check for specific opportunity types
             opportunity_types = [opp.opportunity_type for opp in opportunities]
             
-            logger.info(f"Detected opportunity types: {opportunity_types}")
+            logger.debug(f"Detected opportunity types: {opportunity_types}")
             
             # Verify that we're detecting reasonable opportunities
             expected_types = ["trending_topic", "quiet_channel", "content_sharing", "user_milestone"]
@@ -199,7 +199,7 @@ class ProactiveEngineTestSuite:
                 assert hasattr(opp, 'reasoning'), "Opportunity should have reasoning"
                 assert isinstance(opp.context, dict), "Context should be a dictionary"
             
-            logger.info(f"✅ Opportunity detection test passed - detected {len(opportunities)} opportunities")
+            logger.debug(f"✅ Opportunity detection test passed - detected {len(opportunities)} opportunities")
             self.test_results.append(("Opportunity Detection", True, f"Detected {len(opportunities)} opportunities of types: {opportunity_types}"))
             
         except Exception as e:
@@ -208,7 +208,7 @@ class ProactiveEngineTestSuite:
     
     async def test_trending_topic_detection(self):
         """Test specific trending topic detection."""
-        logger.info("Testing trending topic detection...")
+        logger.debug("Testing trending topic detection...")
         
         try:
             opportunities = self.proactive_engine._detect_trending_opportunities(self.test_world_state)
@@ -216,14 +216,14 @@ class ProactiveEngineTestSuite:
             # Should detect AI as a trending topic based on test messages
             ai_opportunities = [opp for opp in opportunities if "AI" in opp.reasoning or "ai" in str(opp.context)]
             
-            logger.info(f"Found {len(ai_opportunities)} AI-related opportunities")
+            logger.debug(f"Found {len(ai_opportunities)} AI-related opportunities")
             
             if ai_opportunities:
                 ai_opp = ai_opportunities[0]
                 assert ai_opp.opportunity_type == "trending_topic"
                 assert ai_opp.priority > 5  # Should be reasonably high priority
                 
-            logger.info("✅ Trending topic detection test passed")
+            logger.debug("✅ Trending topic detection test passed")
             self.test_results.append(("Trending Topic Detection", True, f"Detected {len(opportunities)} trending opportunities"))
             
         except Exception as e:
@@ -232,7 +232,7 @@ class ProactiveEngineTestSuite:
     
     async def test_quiet_channel_detection(self):
         """Test quiet channel detection."""
-        logger.info("Testing quiet channel detection...")
+        logger.debug("Testing quiet channel detection...")
         
         try:
             opportunities = self.proactive_engine._detect_activity_opportunities(self.test_world_state)
@@ -246,7 +246,7 @@ class ProactiveEngineTestSuite:
             assert quiet_opp.channel_id == "channel3"
             assert "quiet" in quiet_opp.reasoning.lower()
             
-            logger.info("✅ Quiet channel detection test passed")
+            logger.debug("✅ Quiet channel detection test passed")
             self.test_results.append(("Quiet Channel Detection", True, f"Detected {len(quiet_opportunities)} quiet channels"))
             
         except Exception as e:
@@ -255,7 +255,7 @@ class ProactiveEngineTestSuite:
     
     async def test_user_milestone_detection(self):
         """Test user milestone detection."""
-        logger.info("Testing user milestone detection...")
+        logger.debug("Testing user milestone detection...")
         
         try:
             opportunities = self.proactive_engine._detect_user_milestone_opportunities(self.test_world_state)
@@ -263,14 +263,14 @@ class ProactiveEngineTestSuite:
             # Should detect bob_crypto's 100 follower/message milestone
             milestone_opportunities = [opp for opp in opportunities if opp.opportunity_type == "user_milestone"]
             
-            logger.info(f"Found {len(milestone_opportunities)} milestone opportunities")
+            logger.debug(f"Found {len(milestone_opportunities)} milestone opportunities")
             
             if milestone_opportunities:
                 milestone_opp = milestone_opportunities[0]
                 assert milestone_opp.user_id in ["123", "@alice:matrix.org"]
                 assert "milestone" in milestone_opp.reasoning.lower()
             
-            logger.info("✅ User milestone detection test passed")
+            logger.debug("✅ User milestone detection test passed")
             self.test_results.append(("User Milestone Detection", True, f"Detected {len(milestone_opportunities)} milestones"))
             
         except Exception as e:
@@ -279,7 +279,7 @@ class ProactiveEngineTestSuite:
     
     async def test_content_sharing_detection(self):
         """Test content sharing opportunity detection."""
-        logger.info("Testing content sharing detection...")
+        logger.debug("Testing content sharing detection...")
         
         try:
             opportunities = self.proactive_engine._detect_content_sharing_opportunities(self.test_world_state)
@@ -287,13 +287,13 @@ class ProactiveEngineTestSuite:
             # Should detect the question about transformers as content sharing opportunity
             content_opportunities = [opp for opp in opportunities if opp.opportunity_type == "content_sharing"]
             
-            logger.info(f"Found {len(content_opportunities)} content sharing opportunities")
+            logger.debug(f"Found {len(content_opportunities)} content sharing opportunities")
             
             if content_opportunities:
                 content_opp = content_opportunities[0]
                 assert "transformers" in str(content_opp.context) or "?" in str(content_opp.context)
             
-            logger.info("✅ Content sharing detection test passed")
+            logger.debug("✅ Content sharing detection test passed")
             self.test_results.append(("Content Sharing Detection", True, f"Detected {len(content_opportunities)} content opportunities"))
             
         except Exception as e:
@@ -302,7 +302,7 @@ class ProactiveEngineTestSuite:
     
     async def test_engine_lifecycle(self):
         """Test the proactive engine lifecycle management."""
-        logger.info("Testing proactive engine lifecycle...")
+        logger.debug("Testing proactive engine lifecycle...")
         
         try:
             # Test start
@@ -335,7 +335,7 @@ class ProactiveEngineTestSuite:
             # Test stop
             await self.proactive_engine.stop()
             
-            logger.info("✅ Engine lifecycle test passed")
+            logger.debug("✅ Engine lifecycle test passed")
             self.test_results.append(("Engine Lifecycle", True, "Start/stop/opportunity management works"))
             
         except Exception as e:
@@ -344,7 +344,7 @@ class ProactiveEngineTestSuite:
     
     async def test_opportunity_filtering(self):
         """Test opportunity filtering and prioritization."""
-        logger.info("Testing opportunity filtering...")
+        logger.debug("Testing opportunity filtering...")
         
         try:
             # Generate opportunities
@@ -362,7 +362,7 @@ class ProactiveEngineTestSuite:
                 for i in range(len(filtered) - 1):
                     assert filtered[i].priority >= filtered[i + 1].priority, "Should be sorted by priority"
             
-            logger.info("✅ Opportunity filtering test passed")
+            logger.debug("✅ Opportunity filtering test passed")
             self.test_results.append(("Opportunity Filtering", True, f"Filtered {len(opportunities)} to {len(filtered)} opportunities"))
             
         except Exception as e:
@@ -371,7 +371,7 @@ class ProactiveEngineTestSuite:
     
     async def test_integration_scenario(self):
         """Test a complete integration scenario."""
-        logger.info("Testing complete integration scenario...")
+        logger.debug("Testing complete integration scenario...")
         
         try:
             # 1. Start the engine
@@ -401,7 +401,7 @@ class ProactiveEngineTestSuite:
                 
                 # Check engagement status
                 status = await self.proactive_engine.get_engagement_status(opp_id)
-                logger.info(f"Engagement status: {status}")
+                logger.debug(f"Engagement status: {status}")
             
             # 5. Test recent engagements
             recent = await self.proactive_engine.get_recent_engagements(
@@ -413,7 +413,7 @@ class ProactiveEngineTestSuite:
             # 6. Stop the engine
             await self.proactive_engine.stop()
             
-            logger.info("✅ Integration scenario test passed")
+            logger.debug("✅ Integration scenario test passed")
             self.test_results.append(("Integration Scenario", True, f"Complete workflow with {len(opportunities)} opportunities"))
             
         except Exception as e:
@@ -422,7 +422,7 @@ class ProactiveEngineTestSuite:
     
     async def test_edge_cases(self):
         """Test edge cases and error handling."""
-        logger.info("Testing edge cases...")
+        logger.debug("Testing edge cases...")
         
         try:
             # Test with empty world state
@@ -455,7 +455,7 @@ class ProactiveEngineTestSuite:
                 # Expected to handle errors gracefully
                 pass
             
-            logger.info("✅ Edge cases test passed")
+            logger.debug("✅ Edge cases test passed")
             self.test_results.append(("Edge Cases", True, "Error handling works correctly"))
             
         except Exception as e:
@@ -464,26 +464,26 @@ class ProactiveEngineTestSuite:
     
     def print_test_results(self):
         """Print comprehensive test results."""
-        logger.info("\n" + "="*70)
-        logger.info("PROACTIVE CONVERSATION ENGINE CORE TEST RESULTS")
-        logger.info("="*70)
+        logger.debug("\n" + "="*70)
+        logger.debug("PROACTIVE CONVERSATION ENGINE CORE TEST RESULTS")
+        logger.debug("="*70)
         
         passed = 0
         failed = 0
         
         for test_name, success, details in self.test_results:
             status = "✅ PASS" if success else "❌ FAIL"
-            logger.info(f"{status} | {test_name:<35} | {details}")
+            logger.debug(f"{status} | {test_name:<35} | {details}")
             if success:
                 passed += 1
             else:
                 failed += 1
         
-        logger.info("="*70)
-        logger.info(f"SUMMARY: {passed} passed, {failed} failed, {passed + failed} total")
+        logger.debug("="*70)
+        logger.debug(f"SUMMARY: {passed} passed, {failed} failed, {passed + failed} total")
         
         if failed == 0:
-            logger.info("🎉 ALL CORE TESTS PASSED! Proactive conversation engine is working correctly.")
+            logger.debug("🎉 ALL CORE TESTS PASSED! Proactive conversation engine is working correctly.")
         else:
             logger.warning(f"⚠️  {failed} tests failed. Please review the issues above.")
         
@@ -492,7 +492,7 @@ class ProactiveEngineTestSuite:
 
 async def run_core_tests():
     """Run the core test suite."""
-    logger.info("Starting proactive conversation engine core tests...")
+    logger.debug("Starting proactive conversation engine core tests...")
     
     # Create test instance
     test_suite = ProactiveEngineTestSuite()

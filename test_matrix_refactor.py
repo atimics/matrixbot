@@ -22,13 +22,13 @@ logger = logging.getLogger(__name__)
 async def test_matrix_observer():
     """Test that the new Matrix observer can be instantiated and has the right methods."""
     
-    logger.info("Testing Matrix observer refactoring...")
+    logger.debug("Testing Matrix observer refactoring...")
     
     # Test 1: Import and instantiate
     try:
         world_state = WorldStateManager()
         observer = MatrixObserver(world_state)
-        logger.info("✓ Matrix observer instantiated successfully")
+        logger.debug("✓ Matrix observer instantiated successfully")
     except Exception as e:
         logger.error(f"✗ Failed to instantiate Matrix observer: {e}")
         return False
@@ -42,7 +42,7 @@ async def test_matrix_observer():
     
     for method_name in essential_methods:
         if hasattr(observer, method_name):
-            logger.info(f"✓ Method {method_name} exists")
+            logger.debug(f"✓ Method {method_name} exists")
         else:
             logger.error(f"✗ Method {method_name} missing")
             return False
@@ -52,29 +52,29 @@ async def test_matrix_observer():
     
     for component_name in components:
         if hasattr(observer, component_name):
-            logger.info(f"✓ Component {component_name} initialized")
+            logger.debug(f"✓ Component {component_name} initialized")
         else:
             logger.error(f"✗ Component {component_name} missing")
             return False
     
-    logger.info("✓ All Matrix observer tests passed!")
+    logger.debug("✓ All Matrix observer tests passed!")
     return True
 
 async def test_node_tools():
     """Test that the node interaction tools work correctly."""
     
-    logger.info("Testing node interaction tools...")
+    logger.debug("Testing node interaction tools...")
     
     try:
         # Test 1: Create node manager and tools
         node_manager = NodeManager()
         node_tools = NodeInteractionTools(node_manager)
-        logger.info("✓ Node tools instantiated successfully")
+        logger.debug("✓ Node tools instantiated successfully")
         
         # Test 2: Check get_expansion_status tool
         tools = node_tools.get_tool_definitions()
         if 'get_expansion_status' in tools:
-            logger.info("✓ get_expansion_status tool definition exists")
+            logger.debug("✓ get_expansion_status tool definition exists")
         else:
             logger.error("✗ get_expansion_status tool definition missing")
             return False
@@ -82,12 +82,12 @@ async def test_node_tools():
         # Test 3: Execute get_expansion_status
         result = node_tools.execute_tool('get_expansion_status', {})
         if result.get('success'):
-            logger.info("✓ get_expansion_status tool executed successfully")
+            logger.debug("✓ get_expansion_status tool executed successfully")
         else:
             logger.error(f"✗ get_expansion_status tool failed: {result}")
             return False
         
-        logger.info("✓ All node tools tests passed!")
+        logger.debug("✓ All node tools tests passed!")
         return True
         
     except Exception as e:
@@ -97,7 +97,7 @@ async def test_node_tools():
 async def main():
     """Run all tests."""
     
-    logger.info("Starting Matrix observer refactoring tests...")
+    logger.debug("Starting Matrix observer refactoring tests...")
     
     success = True
     
@@ -110,7 +110,7 @@ async def main():
         success = False
     
     if success:
-        logger.info("🎉 All tests passed! Matrix observer refactoring is working correctly.")
+        logger.debug("🎉 All tests passed! Matrix observer refactoring is working correctly.")
         return 0
     else:
         logger.error("❌ Some tests failed. Please check the logs above.")

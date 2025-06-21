@@ -396,8 +396,8 @@ class ConfigurationManager:
         
         status = self.get_configuration_status()
         
-        logger.info(f"Configuration loaded: {status['configured_count']}/{status['total_rules']} items configured")
-        logger.info(f"Configuration coverage: {status['configuration_coverage']:.1%}")
+        logger.debug(f"Configuration loaded: {status['configured_count']}/{status['total_rules']} items configured")
+        logger.debug(f"Configuration coverage: {status['configuration_coverage']:.1%}")
         
         if status['validation_errors']:
             logger.error(f"Configuration validation errors: {len(status['validation_errors'])}")
@@ -438,7 +438,7 @@ class ConfigurationManager:
                 
                 f.write("\n")
         
-        logger.info(f"Configuration template exported to {filepath}")
+        logger.debug(f"Configuration template exported to {filepath}")
     
     def _export_json_template(self, filepath: str):
         """Export JSON template file."""
@@ -468,7 +468,7 @@ class ConfigurationManager:
         with open(filepath, 'w') as f:
             json.dump(template, f, indent=2)
         
-        logger.info(f"JSON configuration template exported to {filepath}")
+        logger.debug(f"JSON configuration template exported to {filepath}")
 
 
 # Global configuration manager instance

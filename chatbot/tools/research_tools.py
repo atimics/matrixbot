@@ -139,7 +139,7 @@ class UpdateResearchTool(ToolInterface):
                     entry.verification_notes = verification_notes
                     
                 action_message = f"Updated research entry for topic '{topic}'"
-                logger.info(f"Updated research entry for topic: {topic}")
+                logger.debug(f"Updated research entry for topic: {topic}")
             else:
                 # Create new entry
                 entry = ResearchEntry(
@@ -154,7 +154,7 @@ class UpdateResearchTool(ToolInterface):
                     verification_notes=verification_notes,
                 )
                 action_message = f"Created new research entry for topic '{topic}'"
-                logger.info(f"Created new research entry for topic: {topic}")
+                logger.debug(f"Created new research entry for topic: {topic}")
 
             # Store in research database as dict
             research_db[topic] = {
@@ -328,7 +328,7 @@ class QueryResearchTool(ToolInterface):
             results.sort(key=lambda x: (x["confidence_level"], x["last_updated"]), reverse=True)
             results = results[:max_results]
 
-            logger.info(f"Research query returned {len(results)} results")
+            logger.debug(f"Research query returned {len(results)} results")
 
             return {
                 "status": "success",

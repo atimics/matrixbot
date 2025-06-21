@@ -217,7 +217,7 @@ class ArweaveService:
             )
             
             if tx_id:
-                logger.info(f"ArweaveService: Successfully uploaded {media_type} ({len(media_data)} bytes) to Arweave: {tx_id}")
+                logger.debug(f"ArweaveService: Successfully uploaded {media_type} ({len(media_data)} bytes) to Arweave: {tx_id}")
                 return self.arweave_client.get_arweave_url(tx_id)
             else:
                 logger.error("ArweaveService: Failed to upload media - no transaction ID returned")

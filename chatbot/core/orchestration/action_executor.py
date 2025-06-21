@@ -65,7 +65,7 @@ class CircuitBreakerTracker:
             
             # Check if enough time has passed to reset
             if current_time - trip_time > self.config.reset_timeout_seconds:
-                logger.info(f"Circuit breaker reset for {tool_name} with params hash {params_hash}")
+                logger.debug(f"Circuit breaker reset for {tool_name} with params hash {params_hash}")
                 del self.tripped_circuits[circuit_key]
                 # Clear old failure history
                 if circuit_key in self.failure_history:
@@ -198,7 +198,7 @@ class ActionExecutor:
         self._execution_count += 1
         
         try:
-            logger.info(f"Executing action {action_plan.action_id}: {action_plan.tool_name} with params: {action_plan.parameters}")
+            logger.debug(f"Executing action {action_plan.action_id}: {action_plan.tool_name} with params: {action_plan.parameters}")
             
             # Get the tool from registry
             tool = self.tool_registry.get_tool(action_plan.tool_name)
@@ -242,7 +242,7 @@ class ActionExecutor:
                 if self.history_recorder:
                     await self._record_action_history(action_plan, result)
                 
-                logger.info(f"Action {action_plan.action_id} completed with status: {result.get('status', 'unknown')}")
+                logger.debug(f"Action {action_plan.action_id} completed with status: {result.get('status', 'unknown')}")
                 return result
                 
             except Exception as tool_error:

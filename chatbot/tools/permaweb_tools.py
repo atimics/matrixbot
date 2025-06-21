@@ -111,7 +111,7 @@ class StorePermanentMemoryTool(ToolInterface):
                     try:
                         data = await context.arweave_service.download_file_data(media_arweave_url)
                         content_type = media_content_type
-                        logger.info(
+                        logger.debug(
                             f"Downloaded media from Arweave for re-upload: {media_arweave_url}"
                         )
                     except Exception as e:
@@ -161,7 +161,7 @@ class StorePermanentMemoryTool(ToolInterface):
             if tx_id:
                 arweave_url = arweave_client.get_arweave_url(tx_id)
 
-                logger.info(f"Successfully stored memory on Arweave: {tx_id}")
+                logger.debug(f"Successfully stored memory on Arweave: {tx_id}")
 
                 return {
                     "status": "success",

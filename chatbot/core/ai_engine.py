@@ -201,7 +201,7 @@ class AIEngine:
         self.http_client = httpx.AsyncClient(timeout=config.timeout)
         self.provider = self._create_provider()
         self.tool_schemas: Dict[str, Dict[str, Any]] = {}
-        logger.info(
+        logger.debug(
             f"AIEngine initialized with provider '{config.provider.value}' and model '{config.model}'"
         )
 
@@ -445,7 +445,7 @@ CORE DIRECTIVES:
     async def cleanup(self):
         """Closes network connections and cleans up resources."""
         await self.http_client.aclose()
-        logger.info("AIEngine resources have been cleaned up.")
+        logger.debug("AIEngine resources have been cleaned up.")
 
 
 # --- Factory Function ---

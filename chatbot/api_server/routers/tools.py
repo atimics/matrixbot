@@ -69,7 +69,7 @@ async def update_tool_status(
             orchestrator.tool_registry.disable_tool(tool_name)
             message = f"Tool '{tool_name}' disabled successfully"
         
-        logger.info(f"Tool status updated: {tool_name} -> enabled={status_update.enabled}")
+        logger.debug(f"Tool status updated: {tool_name} -> enabled={status_update.enabled}")
         
         return StatusResponse(
             status="success",

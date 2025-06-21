@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 async def test_matrix_connection():
     """Test basic Matrix connection and authentication."""
-    logger.info("🔍 Testing Matrix connection...")
+    logger.debug("🔍 Testing Matrix connection...")
     
     wsm = WorldStateManager()
     observer = MatrixObserver(world_state_manager=wsm)
@@ -38,16 +38,16 @@ async def test_matrix_connection():
     try:
         # Test connection
         await observer.connect()
-        logger.info("✅ Matrix connection successful")
+        logger.debug("✅ Matrix connection successful")
         
         # Test health check
         is_healthy = await observer.check_connection_health()
-        logger.info(f"🏥 Connection health: {'✅ Healthy' if is_healthy else '❌ Unhealthy'}")
+        logger.debug(f"🏥 Connection health: {'✅ Healthy' if is_healthy else '❌ Unhealthy'}")
         
         # Test whoami
         if observer.client:
             whoami_response = await observer.client.whoami()
-            logger.info(f"👤 Authenticated as: {whoami_response.user_id if hasattr(whoami_response, 'user_id') else 'Unknown'}")
+            logger.debug(f"👤 Authenticated as: {whoami_response.user_id if hasattr(whoami_response, 'user_id') else 'Unknown'}")
         
         return observer
         
@@ -58,19 +58,19 @@ async def test_matrix_connection():
 
 async def test_room_access(observer: MatrixObserver, room_id: str):
     """Test access to a specific room."""
-    logger.info(f"🏠 Testing room access: {room_id}")
+    logger.debug(f"🏠 Testing room access: {room_id}")
     
     try:
         # Check room permissions
         permissions = await observer.check_room_permissions(room_id)
-        logger.info(f"🔐 Room permissions: {permissions}")
+        logger.debug(f"🔐 Room permissions: {permissions}")
         
         # Try to get room details
         if observer.client and room_id in observer.client.rooms:
             room = observer.client.rooms[room_id]
-            logger.info(f"📋 Room name: {room.display_name or room.name or 'Unknown'}")
-            logger.info(f"👥 Member count: {len(room.users)}")
-            logger.info(f"🔒 Encrypted: {getattr(room, 'encrypted', False)}")
+            logger.debug(f"📋 Room name: {room.display_name or room.name or 'Unknown'}")
+            logger.debug(f"👥 Member count: {len(room.users)}")
+            logger.debug(f"🔒 Encrypted: {getattr(room, 'encrypted', False)}")
         else:
             logger.warning("⚠️ Room not found in client rooms")
         
@@ -80,7 +80,7 @@ async def test_room_access(observer: MatrixObserver, room_id: str):
 
 async def test_message_sending(observer: MatrixObserver, room_id: str):
     """Test sending messages to a room."""
-    logger.info(f"📤 Testing message sending to: {room_id}")
+    logger.debug(f"📤 Testing message sending to: {room_id}")
     
     test_content = f"🤖 Matrix diagnostic test message - {int(time.time())}"
     
@@ -88,7 +88,7 @@ async def test_message_sending(observer: MatrixObserver, room_id: str):
         # Test simple message
         result = await observer.send_message(room_id, test_content)
         if result.get("success"):
-            logger.info(f"✅ Simple message sent: {result.get('event_id')}")
+            logger.debug(f"✅ Simple message sent: {result.get('event_id')}")
         else:
             logger.error(f"❌ Simple message failed: {result.get('error')}")
         
@@ -99,7 +99,7 @@ async def test_message_sending(observer: MatrixObserver, room_id: str):
             f"<p><strong>{test_content}</strong></p>"
         )
         if formatted_result.get("success"):
-            logger.info(f"✅ Formatted message sent: {formatted_result.get('event_id')}")
+            logger.debug(f"✅ Formatted message sent: {formatted_result.get('event_id')}")
         else:
             logger.error(f"❌ Formatted message failed: {formatted_result.get('error')}")
         
@@ -109,12 +109,12 @@ async def test_message_sending(observer: MatrixObserver, room_id: str):
 
 async def diagnose_server_issues():
     """Diagnose potential server-side issues."""
-    logger.info("🌐 Diagnosing server issues...")
+    logger.debug("🌐 Diagnosing server issues...")
     
     import httpx
     
     homeserver = settings.matrix.homeserver
-    logger.info(f"🏠 Homeserver: {homeserver}")
+    logger.debug(f"🏠 Homeserver: {homeserver}")
     
     try:
         # Test basic connectivity
@@ -122,11 +122,11 @@ async def diagnose_server_issues():
             # Test server versions
             versions_url = f"{homeserver}/_matrix/client/versions"
             response = await client.get(versions_url)
-            logger.info(f"📋 Server versions response: {response.status_code}")
+            logger.debug(f"📋 Server versions response: {response.status_code}")
             if response.status_code == 200:
-                logger.info(f"✅ Server is reachable")
+                logger.debug(f"✅ Server is reachable")
                 data = response.json()
-                logger.info(f"🔢 Supported versions: {data.get('versions', [])}")
+                logger.debug(f"🔢 Supported versions: {data.get('versions', [])}")
             else:
                 logger.error(f"❌ Server unreachable: {response.status_code}")
             
@@ -135,8 +135,8 @@ async def diagnose_server_issues():
             try:
                 wellknown_response = await client.get(wellknown_url)
                 if wellknown_response.status_code == 200:
-                    logger.info(f"✅ Server discovery working")
-                    logger.info(f"📋 Well-known: {wellknown_response.json()}")
+                    logger.debug(f"✅ Server discovery working")
+                    logger.debug(f"📋 Well-known: {wellknown_response.json()}")
                 else:
                     logger.warning(f"⚠️ Server discovery failed: {wellknown_response.status_code}")
             except:
@@ -148,17 +148,17 @@ async def diagnose_server_issues():
 
 async def main():
     """Main diagnostic routine."""
-    logger.info("🚀 Starting Matrix diagnostics...")
+    logger.debug("🚀 Starting Matrix diagnostics...")
     
     # Check environment variables
-    logger.info("🔧 Checking configuration...")
+    logger.debug("🔧 Checking configuration...")
     required_vars = ["MATRIX_HOMESERVER", "MATRIX_USER_ID", "MATRIX_PASSWORD"]
     for var in required_vars:
         value = getattr(settings, var, None)
         if value:
             # Mask password for security
             display_value = "***" if "PASSWORD" in var else value
-            logger.info(f"✅ {var}: {display_value}")
+            logger.debug(f"✅ {var}: {display_value}")
         else:
             logger.error(f"❌ {var}: Not set")
     
@@ -180,11 +180,11 @@ async def main():
     # Cleanup
     try:
         await observer.disconnect()
-        logger.info("🧹 Cleanup completed")
+        logger.debug("🧹 Cleanup completed")
     except:
         pass
     
-    logger.info("✅ Diagnostics completed")
+    logger.debug("✅ Diagnostics completed")
 
 
 if __name__ == "__main__":

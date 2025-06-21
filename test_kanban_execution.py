@@ -120,7 +120,7 @@ class MockInteractionTools:
 
 async def test_kanban_execution():
     """Test the Kanban-style execution model"""
-    logger.info("=== Starting Kanban Execution Test ===")
+    logger.debug("=== Starting Kanban Execution Test ===")
     
     # Import the NodeProcessor (assuming the path is correct)
     sys.path.append("/Users/ratimics/develop/matrixbot")
@@ -137,7 +137,7 @@ async def test_kanban_execution():
     
     # Mock the platform execution methods
     async def mock_execute_platform_tool(tool_name, tool_args, cycle_id):
-        logger.info(f"Mock executing platform tool: {tool_name} with args {tool_args}")
+        logger.debug(f"Mock executing platform tool: {tool_name} with args {tool_args}")
         await asyncio.sleep(0.1)  # Simulate execution time
         return {"success": True, "tool_result": {"status": "success", "message": "Mock execution successful"}}
     
@@ -156,13 +156,13 @@ async def test_kanban_execution():
     processor._execute_platform_tool = mock_execute_platform_tool
     
     # Test 1: Basic cycle execution
-    logger.info("Test 1: Basic cycle execution")
+    logger.debug("Test 1: Basic cycle execution")
     context = {
         "trigger_type": "periodic"
     }
     
     result = await processor.process_cycle("test_cycle_1", "!test:example.com", context)
-    logger.info(f"Cycle result: {result}")
+    logger.debug(f"Cycle result: {result}")
     
     # Verify results
     assert result["success"], "Cycle should succeed"
@@ -170,7 +170,7 @@ async def test_kanban_execution():
     assert result["planning_cycles"] > 0, "Should perform planning"
     
     # Test 2: High-priority interrupt handling
-    logger.info("Test 2: High-priority interrupt handling")
+    logger.debug("Test 2: High-priority interrupt handling")
     context_mention = {
         "trigger_type": "mention",
         "primary_channel_id": "!test:example.com"
@@ -186,10 +186,10 @@ async def test_kanban_execution():
     )
     
     result_mention = await processor.process_cycle(context_mention)
-    logger.info(f"Mention cycle result: {result_mention}")
+    logger.debug(f"Mention cycle result: {result_mention}")
     
     # Test 3: Rate limiting behavior
-    logger.info("Test 3: Rate limiting behavior")
+    logger.debug("Test 3: Rate limiting behavior")
     
     # Add multiple actions for the same service
     for i in range(5):
@@ -206,19 +206,19 @@ async def test_kanban_execution():
     result_rate_limit = await processor.process_cycle(context)
     execution_time = time.time() - start_time
     
-    logger.info(f"Rate limit cycle result: {result_rate_limit}, execution time: {execution_time:.2f}s")
+    logger.debug(f"Rate limit cycle result: {result_rate_limit}, execution time: {execution_time:.2f}s")
     
     # Test 4: Backlog status and monitoring
-    logger.info("Test 4: Backlog status monitoring")
+    logger.debug("Test 4: Backlog status monitoring")
     backlog_status = processor.action_backlog.get_status_summary()
-    logger.info(f"Final backlog status: {backlog_status}")
+    logger.debug(f"Final backlog status: {backlog_status}")
     
-    logger.info("=== Kanban Execution Test Completed Successfully ===")
+    logger.debug("=== Kanban Execution Test Completed Successfully ===")
     return True
 
 async def test_action_priority_escalation():
     """Test priority escalation functionality"""
-    logger.info("=== Testing Action Priority Escalation ===")
+    logger.debug("=== Testing Action Priority Escalation ===")
     
     sys.path.append("/Users/ratimics/develop/matrixbot")
     from chatbot.core.node_system.action_backlog import ActionBacklog, ActionPriority
@@ -243,8 +243,8 @@ async def test_action_priority_escalation():
         reasoning="Background response"
     )
     
-    logger.info(f"Before escalation - CRITICAL queue: {len(backlog.queued_actions[ActionPriority.CRITICAL])}")
-    logger.info(f"Before escalation - MEDIUM queue: {len(backlog.queued_actions[ActionPriority.MEDIUM])}")
+    logger.debug(f"Before escalation - CRITICAL queue: {len(backlog.queued_actions[ActionPriority.CRITICAL])}")
+    logger.debug(f"Before escalation - MEDIUM queue: {len(backlog.queued_actions[ActionPriority.MEDIUM])}")
     
     # Test escalation (simulating NodeProcessor._escalate_communication_actions)
     for priority_queue in backlog.queued_actions.values():
@@ -253,16 +253,16 @@ async def test_action_priority_escalation():
                 priority_queue.remove(action)
                 action.priority = ActionPriority.CRITICAL
                 backlog.queued_actions[ActionPriority.CRITICAL].appendleft(action)
-                logger.info(f"Escalated {action.action_id} to CRITICAL priority")
+                logger.debug(f"Escalated {action.action_id} to CRITICAL priority")
     
-    logger.info(f"After escalation - CRITICAL queue: {len(backlog.queued_actions[ActionPriority.CRITICAL])}")
-    logger.info(f"After escalation - MEDIUM queue: {len(backlog.queued_actions[ActionPriority.MEDIUM])}")
+    logger.debug(f"After escalation - CRITICAL queue: {len(backlog.queued_actions[ActionPriority.CRITICAL])}")
+    logger.debug(f"After escalation - MEDIUM queue: {len(backlog.queued_actions[ActionPriority.MEDIUM])}")
     
     # Verify that communication actions were escalated
     assert len(backlog.queued_actions[ActionPriority.CRITICAL]) == 2, "Both communication actions should be escalated"
     assert len(backlog.queued_actions[ActionPriority.MEDIUM]) == 0, "Medium queue should be empty"
     
-    logger.info("=== Priority Escalation Test Completed Successfully ===")
+    logger.debug("=== Priority Escalation Test Completed Successfully ===")
     return True
 
 if __name__ == "__main__":
@@ -270,7 +270,7 @@ if __name__ == "__main__":
         try:
             await test_action_priority_escalation()
             await test_kanban_execution()
-            logger.info("All tests passed!")
+            logger.debug("All tests passed!")
         except Exception as e:
             logger.error(f"Test failed: {e}", exc_info=True)
             return False

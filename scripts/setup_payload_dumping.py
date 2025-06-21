@@ -40,7 +40,7 @@ def enable_payload_dumping():
     with open(env_file, 'w') as f:
         f.writelines(lines)
     
-    logger.info("✅ Payload dumping enabled in .env file")
+    logger.debug("✅ Payload dumping enabled in .env file")
     return True
 
 def create_test_payload():
@@ -65,22 +65,22 @@ def create_test_payload():
         # Test the dumping function
         ai_engine._dump_payload_to_file(test_payload, "test_cycle_001")
         
-        logger.info("✅ Test payload dump completed")
+        logger.debug("✅ Test payload dump completed")
         
         # Check if file was created
         dump_dir = Path("data/payload_dumps")
         payload_files = list(dump_dir.glob("payload_*_test_cycle_001.json"))
         
         if payload_files:
-            logger.info(f"✅ Found dumped payload file: {payload_files[0]}")
+            logger.debug(f"✅ Found dumped payload file: {payload_files[0]}")
             
             # Read and verify the file
             with open(payload_files[0], 'r') as f:
                 dump_data = json.load(f)
             
-            logger.info(f"📊 Dumped payload metadata:")
+            logger.debug(f"📊 Dumped payload metadata:")
             for key, value in dump_data["metadata"].items():
-                logger.info(f"   {key}: {value}")
+                logger.debug(f"   {key}: {value}")
                 
             return True
         else:
@@ -98,12 +98,12 @@ def list_payload_dumps():
     dump_dir = Path("data/payload_dumps")
     
     if not dump_dir.exists():
-        logger.info("📁 Payload dump directory doesn't exist yet")
+        logger.debug("📁 Payload dump directory doesn't exist yet")
         return
     
     payload_files = sorted(dump_dir.glob("payload_*.json"))
     
-    logger.info(f"📁 Found {len(payload_files)} payload dump files:")
+    logger.debug(f"📁 Found {len(payload_files)} payload dump files:")
     
     for i, filepath in enumerate(payload_files[-10:], 1):  # Show last 10
         try:
@@ -118,20 +118,20 @@ def list_payload_dumps():
                 timestamp = metadata.get("timestamp", "unknown")
                 payload_size_kb = metadata.get("payload_size_kb", 0)
             
-            logger.info(f"{i:2d}. {filepath.name}")
-            logger.info(f"     Cycle: {cycle_id}, Size: {payload_size_kb:.2f} KB, File: {file_size/1024:.2f} KB")
-            logger.info(f"     Time: {timestamp}")
+            logger.debug(f"{i:2d}. {filepath.name}")
+            logger.debug(f"     Cycle: {cycle_id}, Size: {payload_size_kb:.2f} KB, File: {file_size/1024:.2f} KB")
+            logger.debug(f"     Time: {timestamp}")
             
         except Exception as e:
             logger.warning(f"     Error reading {filepath.name}: {e}")
 
 def main():
     """Main function to set up and test payload dumping."""
-    logger.info("🚀 Setting up payload dumping...")
+    logger.debug("🚀 Setting up payload dumping...")
     
     # Enable payload dumping
     if enable_payload_dumping():
-        logger.info("✅ Payload dumping enabled")
+        logger.debug("✅ Payload dumping enabled")
     else:
         logger.error("❌ Failed to enable payload dumping")
         return
@@ -139,31 +139,31 @@ def main():
     # Create dump directory
     dump_dir = Path("data/payload_dumps")
     dump_dir.mkdir(parents=True, exist_ok=True)
-    logger.info(f"📁 Dump directory created: {dump_dir.absolute()}")
+    logger.debug(f"📁 Dump directory created: {dump_dir.absolute()}")
     
     # Test payload dumping
-    logger.info("🧪 Testing payload dumping...")
+    logger.debug("🧪 Testing payload dumping...")
     if create_test_payload():
-        logger.info("✅ Payload dumping test successful")
+        logger.debug("✅ Payload dumping test successful")
     else:
         logger.error("❌ Payload dumping test failed")
     
     # List existing dumps
-    logger.info("📋 Listing payload dumps...")
+    logger.debug("📋 Listing payload dumps...")
     list_payload_dumps()
     
     # Instructions
-    logger.info("\n" + "="*60)
-    logger.info("📖 PAYLOAD DUMPING INSTRUCTIONS:")
-    logger.info("="*60)
-    logger.info("1. Payload dumping is now enabled")
-    logger.info("2. Live payloads will be saved to: data/payload_dumps/")
-    logger.info("3. Each file contains:")
-    logger.info("   - metadata (cycle_id, timestamp, size info)")
-    logger.info("   - full payload sent to OpenRouter")
-    logger.info("4. Files are automatically cleaned up (max 50 files)")
-    logger.info("5. To disable: Set AI_DUMP_PAYLOADS_TO_FILE=false in .env")
-    logger.info("6. To analyze dumps, use the analyze_payload_dump.py script")
+    logger.debug("\n" + "="*60)
+    logger.debug("📖 PAYLOAD DUMPING INSTRUCTIONS:")
+    logger.debug("="*60)
+    logger.debug("1. Payload dumping is now enabled")
+    logger.debug("2. Live payloads will be saved to: data/payload_dumps/")
+    logger.debug("3. Each file contains:")
+    logger.debug("   - metadata (cycle_id, timestamp, size info)")
+    logger.debug("   - full payload sent to OpenRouter")
+    logger.debug("4. Files are automatically cleaned up (max 50 files)")
+    logger.debug("5. To disable: Set AI_DUMP_PAYLOADS_TO_FILE=false in .env")
+    logger.debug("6. To analyze dumps, use the analyze_payload_dump.py script")
 
 if __name__ == "__main__":
     main()

@@ -136,7 +136,7 @@ class MatrixHealthMonitor:
             logger.info("Attempting Matrix connection recovery...")
             try:
                 await self.matrix_observer.ensure_connection()
-                logger.info("Connection recovery attempt completed")
+                logger.debug("Connection recovery attempt completed")
             except Exception as e:
                 logger.error(f"Connection recovery failed: {e}")
     
@@ -200,4 +200,4 @@ This is an automated alert from the Matrix Health Monitor.
         with open(filepath, 'w') as f:
             json.dump(health_data, f, indent=2)
         
-        logger.info(f"Health data exported to {filepath}")
+        logger.debug(f"Health data exported to {filepath}")

@@ -24,15 +24,15 @@ async def test_s3_storage():
         
         # Check status
         status = storage_manager.get_storage_status()
-        logger.info(f"Storage status: {status}")
+        logger.debug(f"Storage status: {status}")
         
         # Health check
         health = await storage_manager.health_check()
-        logger.info(f"Health check: {health}")
+        logger.debug(f"Health check: {health}")
         
         # Test with a small sample image if S3 is available
         if storage_manager.is_s3_available():
-            logger.info("S3 is available, testing upload...")
+            logger.debug("S3 is available, testing upload...")
             
             # Create a small test image (1x1 PNG)
             import base64
@@ -48,7 +48,7 @@ async def test_s3_storage():
             )
             
             if url:
-                logger.info(f"✅ Test upload successful: {url}")
+                logger.debug(f"✅ Test upload successful: {url}")
                 return True
             else:
                 logger.error("❌ Test upload failed")
@@ -76,7 +76,7 @@ async def test_nft_minting():
         # Mock world state manager
         class MockWorldStateManager:
             def record_generated_media(self, **kwargs):
-                logger.info(f"Mock: Recording generated media: {kwargs}")
+                logger.debug(f"Mock: Recording generated media: {kwargs}")
         
         context.world_state_manager = MockWorldStateManager()
         
@@ -84,9 +84,9 @@ async def test_nft_minting():
         nft_tool = MintNFTFromMediaTool()
         
         if storage_manager.is_arweave_available():
-            logger.info("Testing NFT minting (requires valid media URL)...")
+            logger.debug("Testing NFT minting (requires valid media URL)...")
             # This would need a real media URL to test
-            logger.info("NFT minting tool initialized successfully")
+            logger.debug("NFT minting tool initialized successfully")
             return True
         else:
             logger.warning("Arweave not configured, NFT minting not available")
@@ -98,7 +98,7 @@ async def test_nft_minting():
 
 def main():
     """Run all tests"""
-    logger.info("🚀 Testing S3 Storage Integration")
+    logger.debug("🚀 Testing S3 Storage Integration")
     
     # Check environment variables  
     required_vars = ['S3_API_KEY', 'S3_API_ENDPOINT', 'CLOUDFRONT_DOMAIN']
@@ -106,31 +106,31 @@ def main():
     
     if missing_vars:
         logger.warning(f"Missing environment variables: {missing_vars}")
-        logger.info("Set these variables to test S3 functionality")
+        logger.debug("Set these variables to test S3 functionality")
     else:
-        logger.info("✅ All required S3 environment variables are set")
+        logger.debug("✅ All required S3 environment variables are set")
     
     # Run async tests
     async def run_tests():
         results = []
         
-        logger.info("\n--- Testing S3 Storage ---")
+        logger.debug("\n--- Testing S3 Storage ---")
         s3_result = await test_s3_storage()
         results.append(("S3 Storage", s3_result))
         
-        logger.info("\n--- Testing NFT Minting ---")
+        logger.debug("\n--- Testing NFT Minting ---")
         nft_result = await test_nft_minting()
         results.append(("NFT Minting", nft_result))
         
         # Summary
-        logger.info("\n=== Test Results ===")
+        logger.debug("\n=== Test Results ===")
         for test_name, result in results:
             status = "✅ PASS" if result else "❌ FAIL"
-            logger.info(f"{test_name}: {status}")
+            logger.debug(f"{test_name}: {status}")
         
         passed = sum(1 for _, result in results if result)
         total = len(results)
-        logger.info(f"\nOverall: {passed}/{total} tests passed")
+        logger.debug(f"\nOverall: {passed}/{total} tests passed")
         
         return passed == total
     
@@ -139,7 +139,7 @@ def main():
         success = asyncio.run(run_tests())
         exit(0 if success else 1)
     except KeyboardInterrupt:
-        logger.info("Tests interrupted by user")
+        logger.debug("Tests interrupted by user")
         exit(1)
     except Exception as e:
         logger.error(f"Test runner failed: {e}")

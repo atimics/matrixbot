@@ -38,7 +38,7 @@ class MockWorldStateManager:
             'media_id': media_id,
             'timestamp': time.time()
         })
-        logger.info(f"Recorded generated media: {media_id} -> {media_url}")
+        logger.debug(f"Recorded generated media: {media_id} -> {media_url}")
     
     def get_last_generated_media_url(self):
         """Get the URL of the most recently generated media."""
@@ -74,7 +74,7 @@ class MockActionContext:
 
 async def test_ai_action_planning():
     """Test that the AI can plan multiple sequential actions."""
-    logger.info("Testing AI action planning for sequential actions...")
+    logger.debug("Testing AI action planning for sequential actions...")
     
     # Create a mock payload that simulates a user request to generate and post an image
     mock_payload = {
@@ -130,11 +130,11 @@ async def test_ai_action_planning():
     try:
         # Initialize AI engine (this will require proper configuration)
         # For this test, we'll just verify the structure is correct
-        logger.info("Mock test completed successfully - AI should now be able to plan multiple actions")
-        logger.info("Key fixes applied:")
-        logger.info("1. Updated instruction to allow multiple sequential actions")
-        logger.info("2. Fixed status propagation in _execute_action method")
-        logger.info("3. Fixed tool success detection in _execute_platform_tool method")
+        logger.debug("Mock test completed successfully - AI should now be able to plan multiple actions")
+        logger.debug("Key fixes applied:")
+        logger.debug("1. Updated instruction to allow multiple sequential actions")
+        logger.debug("2. Fixed status propagation in _execute_action method")
+        logger.debug("3. Fixed tool success detection in _execute_platform_tool method")
         
         return True
         
@@ -144,7 +144,7 @@ async def test_ai_action_planning():
 
 async def test_status_propagation():
     """Test that tool failures are properly propagated."""
-    logger.info("Testing status propagation...")
+    logger.debug("Testing status propagation...")
     
     # Mock a tool result with error status
     mock_tool_result = {"status": "error", "message": "Test error"}
@@ -153,7 +153,7 @@ async def test_status_propagation():
     tool_success = mock_tool_result.get("status") == "success"
     
     if not tool_success:
-        logger.info("✓ Status propagation test passed - errors are correctly detected")
+        logger.debug("✓ Status propagation test passed - errors are correctly detected")
         return True
     else:
         logger.error("✗ Status propagation test failed - errors not detected")
@@ -161,21 +161,21 @@ async def test_status_propagation():
 
 async def main():
     """Run all tests."""
-    logger.info("Running action sequence fix tests...")
+    logger.debug("Running action sequence fix tests...")
     
     test1_result = await test_ai_action_planning()
     test2_result = await test_status_propagation()
     
     if test1_result and test2_result:
-        logger.info("🎉 All tests passed! The action sequence fix should work correctly.")
-        logger.info("\nSummary of fixes applied:")
-        logger.info("- Updated AI instruction to allow multiple sequential actions")
-        logger.info("- Fixed status propagation in action execution methods")
-        logger.info("- Enhanced error detection for tool failures")
-        logger.info("\nThe AI should now be able to:")
-        logger.info("1. Plan both generate_image and send_farcaster_post actions in sequence")
-        logger.info("2. Execute both actions if generate_image succeeds")
-        logger.info("3. Stop the sequence if generate_image fails")
+        logger.debug("🎉 All tests passed! The action sequence fix should work correctly.")
+        logger.debug("\nSummary of fixes applied:")
+        logger.debug("- Updated AI instruction to allow multiple sequential actions")
+        logger.debug("- Fixed status propagation in action execution methods")
+        logger.debug("- Enhanced error detection for tool failures")
+        logger.debug("\nThe AI should now be able to:")
+        logger.debug("1. Plan both generate_image and send_farcaster_post actions in sequence")
+        logger.debug("2. Execute both actions if generate_image succeeds")
+        logger.debug("3. Stop the sequence if generate_image fails")
     else:
         logger.error("❌ Some tests failed. Please review the fixes.")
     

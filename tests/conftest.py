@@ -56,31 +56,31 @@ async def context_manager(temp_dir: Path) -> AsyncGenerator[ContextManager, None
 @pytest_asyncio.fixture  # Changed from @pytest.fixture
 async def history_recorder(tmp_path):
     """Provides an initialized HistoryRecorder instance for async tests."""
-    logging.info(f"[Fixture history_recorder] STARTING. tmp_path: {tmp_path}")
+    logging.debug(f"[Fixture history_recorder] STARTING. tmp_path: {tmp_path}")
     db_path = tmp_path / "test_chat.db"
     recorder = HistoryRecorder(db_path=str(db_path))
-    logging.info(f"[Fixture history_recorder] HistoryRecorder instance created: {recorder}")
+    logging.debug(f"[Fixture history_recorder] HistoryRecorder instance created: {recorder}")
 
     # Ensure initialize is awaited and check its type
     init_coro = recorder.initialize()
-    logging.info(f"[Fixture history_recorder] recorder.initialize() called, type of result: {type(init_coro)}")
+    logging.debug(f"[Fixture history_recorder] recorder.initialize() called, type of result: {type(init_coro)}")
     if not asyncio.iscoroutine(init_coro):
         logging.error(f"[Fixture history_recorder] Expected coroutine, got {type(init_coro)}")
         raise TypeError(f"recorder.initialize() should return a coroutine, got {type(init_coro)}")
     else:
-        logging.info("[Fixture history_recorder] Awaiting initialization...")
+        logging.debug("[Fixture history_recorder] Awaiting initialization...")
         await init_coro
-        logging.info("[Fixture history_recorder] Initialization complete")
+        logging.debug("[Fixture history_recorder] Initialization complete")
 
     yield recorder
 
     # Cleanup
-    logging.info("[Fixture history_recorder] CLEANUP starting...")
+    logging.debug("[Fixture history_recorder] CLEANUP starting...")
     try:
         cleanup_coro = recorder.cleanup()
         if asyncio.iscoroutine(cleanup_coro):
             await cleanup_coro
-        logging.info("[Fixture history_recorder] Cleanup complete")
+        logging.debug("[Fixture history_recorder] Cleanup complete")
     except Exception as e:
         logging.error(f"[Fixture history_recorder] Cleanup error: {e}")
 

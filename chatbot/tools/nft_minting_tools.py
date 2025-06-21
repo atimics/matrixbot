@@ -87,7 +87,7 @@ class MintNFTFromMediaTool(ToolInterface):
                     "message": "Arweave service not configured - required for NFT minting"
                 }
 
-            logger.info(f"Minting NFT from media: {media_url}")
+            logger.debug(f"Minting NFT from media: {media_url}")
 
             # Download the media from the source URL
             media_data = None
@@ -148,7 +148,7 @@ class MintNFTFromMediaTool(ToolInterface):
                 **custom_tags
             }
 
-            logger.info(f"Uploading {len(media_data)} bytes to Arweave for NFT: {nft_title}")
+            logger.debug(f"Uploading {len(media_data)} bytes to Arweave for NFT: {nft_title}")
 
             # Upload to Arweave with NFT metadata
             arweave_url = await context.dual_storage_manager.mint_nft_from_media(
@@ -177,7 +177,7 @@ class MintNFTFromMediaTool(ToolInterface):
                     }
                 )
 
-            logger.info(f"Successfully minted NFT on Arweave: {arweave_url}")
+            logger.debug(f"Successfully minted NFT on Arweave: {arweave_url}")
 
             return {
                 "status": "success",
@@ -266,7 +266,7 @@ class BatchMintNFTsTool(ToolInterface):
                     "message": "Arweave service not configured - required for NFT minting"
                 }
 
-            logger.info(f"Starting batch NFT minting for {len(media_items)} items")
+            logger.debug(f"Starting batch NFT minting for {len(media_items)} items")
 
             minted_nfts = []
             failed_items = []
@@ -296,7 +296,7 @@ class BatchMintNFTsTool(ToolInterface):
                             "arweave_url": result.get("nft_arweave_url"),
                             "source_url": item.get("media_url")
                         })
-                        logger.info(f"Successfully minted NFT {i+1}/{len(media_items)}: {item.get('nft_title')}")
+                        logger.debug(f"Successfully minted NFT {i+1}/{len(media_items)}: {item.get('nft_title')}")
                     else:
                         failed_items.append({
                             "index": i + 1,

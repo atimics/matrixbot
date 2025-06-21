@@ -140,7 +140,7 @@ class NodeDataHandlers:
         else:
             _, channel_type, channel_id = path_parts
         
-        logger.info(f"Getting channel node data: type={channel_type}, id={channel_id}, expanded={expanded}")
+        logger.debug(f"Getting channel node data: type={channel_type}, id={channel_id}, expanded={expanded}")
         
         # Access channel from nested structure: channels[platform][channel_id]
         if channel_type not in world_state_data.channels:
@@ -157,11 +157,11 @@ class NodeDataHandlers:
         if expanded:
             # For expanded nodes, provide enhanced summaries with more messages and context
             messages_for_payload = [msg.to_ai_summary_dict() for msg in channel.recent_messages[-8:]] # More messages but still summaries
-            logger.info(f"Channel {channel_id} EXPANDED: {len(channel.recent_messages)} total messages, including {len(messages_for_payload)} in payload")
+            logger.debug(f"Channel {channel_id} EXPANDED: {len(channel.recent_messages)} total messages, including {len(messages_for_payload)} in payload")
         else:
             # For collapsed nodes, provide basic summaries
             messages_for_payload = [msg.to_ai_summary_dict() for msg in channel.recent_messages[-3:]]
-            logger.info(f"Channel {channel_id} COLLAPSED: {len(channel.recent_messages)} total messages, including {len(messages_for_payload)} in payload")
+            logger.debug(f"Channel {channel_id} COLLAPSED: {len(channel.recent_messages)} total messages, including {len(messages_for_payload)} in payload")
 
         result = {
             "id": channel.id,
@@ -173,7 +173,7 @@ class NodeDataHandlers:
             "recent_messages": messages_for_payload,
         }
         
-        logger.info(f"Returning channel data for {channel_id}: {result['name']} with {len(result['recent_messages'])} messages")
+        logger.debug(f"Returning channel data for {channel_id}: {result['name']} with {len(result['recent_messages'])} messages")
         return result
 
     def get_user_node_data(self, world_state_data: 'WorldStateData', path_parts: List[str], expanded: bool = False) -> Optional[Dict]:

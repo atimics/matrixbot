@@ -90,7 +90,7 @@ class FarcasterObserver(Integration, BaseObserver):
         # Processing hub connection for trigger generation
         self.processing_hub = None
         
-        logger.info("Farcaster observer initialized (refactored)")
+        logger.debug("Farcaster observer initialized (refactored)")
 
     def _initialize_api_client(self) -> None:
         """Initialize the API client with proper error handling"""
@@ -120,7 +120,7 @@ class FarcasterObserver(Integration, BaseObserver):
                     "WorldStateManager not provided to FarcasterObserver; scheduler actions will not be recorded in WSM."
                 )
             
-            logger.info("Farcaster API client initialized successfully")
+            logger.debug("Farcaster API client initialized successfully")
         except Exception as e:
             error_msg = f"Failed to initialize Farcaster API client: {e}"
             self._set_status(ObserverStatus.ERROR, error_msg)
@@ -133,10 +133,10 @@ class FarcasterObserver(Integration, BaseObserver):
                 with open(self.state_file, 'r') as f:
                     state_data = json.load(f)
                 self.last_check_time = state_data.get('last_check_time', time.time())
-                logger.info(f"Loaded persistent state: last_check_time={self.last_check_time}")
+                logger.debug(f"Loaded persistent state: last_check_time={self.last_check_time}")
             else:
                 self.last_check_time = time.time()
-                logger.info("No persistent state found, starting fresh")
+                logger.debug("No persistent state found, starting fresh")
         except Exception as e:
             logger.error(f"Error loading persistent state: {e}", exc_info=True)
             self.last_check_time = time.time()
@@ -190,12 +190,12 @@ class FarcasterObserver(Integration, BaseObserver):
                 from ...integrations.ecosystem_token_service import EcosystemTokenService
                 self.ecosystem_token_service = EcosystemTokenService(self.api_client, self.world_state_manager)
                 await self.ecosystem_token_service.start()
-                logger.info("Ecosystem Token Service started.")
+                logger.debug("Ecosystem Token Service started.")
                 
             # Start world state collection loop if enabled
             if self.world_state_collection_enabled and self.world_state_manager:
                 self._world_state_task = asyncio.create_task(self._world_state_collection_loop())
-                logger.info("World state collection loop started.")
+                logger.debug("World state collection loop started.")
                 
             self.is_connected = True
             self._set_status(ObserverStatus.CONNECTED)
@@ -213,7 +213,7 @@ class FarcasterObserver(Integration, BaseObserver):
         if not self.enabled:
             return
             
-        logger.info("FarcasterObserver: Disconnecting from Farcaster...")
+        logger.debug("FarcasterObserver: Disconnecting from Farcaster...")
         
         try:
             # Stop ecosystem token service
@@ -227,7 +227,7 @@ class FarcasterObserver(Integration, BaseObserver):
                 try:
                     await self._world_state_task
                 except asyncio.CancelledError:
-                    logger.info("World state collection task cancelled successfully.")
+                    logger.debug("World state collection task cancelled successfully.")
                 except Exception as e:
                     logger.error(f"Error during world state task cancellation: {e}")
                 self._world_state_task = None
@@ -340,7 +340,7 @@ class FarcasterObserver(Integration, BaseObserver):
             
             if self._enabled:
                 self._clear_error()
-                logger.info(f"Farcaster credentials updated with API key and bot FID: {self.bot_fid}")
+                logger.debug(f"Farcaster credentials updated with API key and bot FID: {self.bot_fid}")
             
         except Exception as e:
             error_msg = f"Failed to set Farcaster credentials: {e}"
@@ -360,9 +360,9 @@ class FarcasterObserver(Integration, BaseObserver):
         if not self.scheduler:
             logger.error("Cannot schedule post: Scheduler not initialized.")
             return
-        logger.info(f"🎯 FarcasterObserver.schedule_post action_id={action_id}")
+        logger.debug(f"🎯 FarcasterObserver.schedule_post action_id={action_id}")
         if self.scheduler.schedule_post(content, channel, action_id, embeds):
-            logger.info("Farcaster post scheduled successfully via observer.")
+            logger.debug("Farcaster post scheduled successfully via observer.")
         else:
             logger.warning(
                 "Farcaster post not scheduled (e.g. duplicate or other issue)."
@@ -374,9 +374,9 @@ class FarcasterObserver(Integration, BaseObserver):
         if not self.scheduler:
             logger.error("Cannot schedule reply: Scheduler not initialized.")
             return
-        logger.info(f"🎯 FarcasterObserver.schedule_reply action_id={action_id}")
+        logger.debug(f"🎯 FarcasterObserver.schedule_reply action_id={action_id}")
         if self.scheduler.schedule_reply(content, reply_to_hash, action_id):
-            logger.info("Farcaster reply scheduled successfully via observer.")
+            logger.debug("Farcaster reply scheduled successfully via observer.")
         else:
             logger.warning(
                 "Farcaster reply not scheduled (e.g. duplicate or other issue)."
@@ -421,7 +421,7 @@ class FarcasterObserver(Integration, BaseObserver):
                 
             # Enhanced world state data collection
             if include_world_state_data:
-                logger.info("Collecting enhanced world state data...")
+                logger.debug("Collecting enhanced world state data...")
                 world_state_data = await self.observe_world_state_data(
                     include_trending=True,
                     include_home_feed=False,  # Already collected above if requested
@@ -433,7 +433,7 @@ class FarcasterObserver(Integration, BaseObserver):
                 for data_type, messages in world_state_data.items():
                     new_messages.extend(messages)
                     if self.world_state_manager and messages:
-                        logger.info(f"Storing {len(messages)} {data_type} messages in world state")
+                        logger.debug(f"Storing {len(messages)} {data_type} messages in world state")
                         self._store_world_state_data(data_type, messages)
                         
             # Check for new casts from monitored token holders
@@ -462,7 +462,7 @@ class FarcasterObserver(Integration, BaseObserver):
                                     cast_hash=cast_data.get('hash'),
                                 )
                                 new_messages.append(bot_message)
-                        logger.info(f"Added {len(bot_recent_casts)} bot's own recent casts to feed for self-awareness")
+                        logger.debug(f"Added {len(bot_recent_casts)} bot's own recent casts to feed for self-awareness")
                 except Exception as e:
                     logger.warning(f"Failed to fetch bot's own recent casts: {e}")
                         
@@ -476,7 +476,7 @@ class FarcasterObserver(Integration, BaseObserver):
             # Sync rate limits after API calls
             self._sync_rate_limits_to_world_state()
             
-            logger.info(f"Observed {len(new_messages)} new Farcaster messages.")
+            logger.debug(f"Observed {len(new_messages)} new Farcaster messages.")
             return new_messages
         except Exception as e:
             logger.error(f"Error observing Farcaster feeds: {e}", exc_info=True)
@@ -632,23 +632,23 @@ class FarcasterObserver(Integration, BaseObserver):
             if include_trending:
                 trending_messages = await self._observe_trending_casts(limit=trending_limit)
                 world_state_data["trending"] = trending_messages
-                logger.info(f"Collected {len(trending_messages)} trending casts for world state")
+                logger.debug(f"Collected {len(trending_messages)} trending casts for world state")
 
             if include_home_feed:
                 home_messages = await self._observe_home_feed()
                 world_state_data["home"] = home_messages
-                logger.info(f"Collected {len(home_messages)} home feed messages for world state")
+                logger.debug(f"Collected {len(home_messages)} home feed messages for world state")
                 
             if include_for_you_feed and self.bot_fid:
                 for_you_messages = await self._observe_for_you_feed(limit=for_you_limit)
                 world_state_data["for_you"] = for_you_messages
-                logger.info(f"Collected {len(for_you_messages)} 'For You' feed messages for world state")
+                logger.debug(f"Collected {len(for_you_messages)} 'For You' feed messages for world state")
 
             if include_notifications and self.bot_fid:
                 notification_messages = await self._observe_notifications()
                 mention_messages = await self._observe_mentions()
                 world_state_data["notifications"] = notification_messages + mention_messages
-                logger.info(f"Collected {len(notification_messages + mention_messages)} notifications for world state")
+                logger.debug(f"Collected {len(notification_messages + mention_messages)} notifications for world state")
 
         except Exception as e:
             logger.error(f"Error collecting world state data: {e}", exc_info=True)
@@ -690,7 +690,7 @@ class FarcasterObserver(Integration, BaseObserver):
                 if remaining is not None and remaining < 10:
                     logger.warning(f"Farcaster API rate limit critical: {remaining} requests remaining!")
                 elif remaining is not None and remaining < 50:
-                    logger.info(f"Farcaster API rate limit status: {remaining} requests remaining")
+                    logger.debug(f"Farcaster API rate limit status: {remaining} requests remaining")
 
     # --- Direct Action Methods ---
 
@@ -716,7 +716,7 @@ class FarcasterObserver(Integration, BaseObserver):
                 "network_unavailable": True
             }
         
-        logger.info(f"🎯 FarcasterObserver.post_cast action_id={action_id}, embeds: {embed_urls}")
+        logger.debug(f"🎯 FarcasterObserver.post_cast action_id={action_id}, embeds: {embed_urls}")
         
         try:
             # Check timing constraints (only for new posts, not replies)
@@ -804,7 +804,7 @@ class FarcasterObserver(Integration, BaseObserver):
         action_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Reply to a cast directly (not scheduled)."""
-        logger.info(f"🎯 FarcasterObserver.reply_to_cast action_id={action_id}")
+        logger.debug(f"🎯 FarcasterObserver.reply_to_cast action_id={action_id}")
         return await self.post_cast(
             content=content, channel=None, reply_to=reply_to_hash
         )
@@ -1161,7 +1161,7 @@ class FarcasterObserver(Integration, BaseObserver):
         - Direct messages
         - Notifications and mentions
         """
-        logger.info(f"Starting world state collection loop (interval: {self.world_state_collection_interval}s)")
+        logger.debug(f"Starting world state collection loop (interval: {self.world_state_collection_interval}s)")
         
         while True:
             try:
@@ -1189,7 +1189,7 @@ class FarcasterObserver(Integration, BaseObserver):
                         total_messages += len(messages)
                         
                 if total_messages > 0:
-                    logger.info(f"World state collection: stored {total_messages} messages across {len(world_state_data)} categories")
+                    logger.debug(f"World state collection: stored {total_messages} messages across {len(world_state_data)} categories")
                     
                     # Generate specific triggers for processing hub if connected
                     if self.processing_hub:
@@ -1236,7 +1236,7 @@ class FarcasterObserver(Integration, BaseObserver):
                     logger.debug("World state collection: no new messages found")
                     
             except asyncio.CancelledError:
-                logger.info("World state collection loop cancelled")
+                logger.debug("World state collection loop cancelled")
                 break
             except Exception as e:
                 logger.error(f"Error in world state collection loop: {e}", exc_info=True)
@@ -1254,7 +1254,7 @@ class FarcasterObserver(Integration, BaseObserver):
             return {"error": "World state manager not available"}
             
         try:
-            logger.info("Manual world state collection triggered")
+            logger.debug("Manual world state collection triggered")
             
             world_state_data = await self.observe_world_state_data(
                 include_trending=True,
@@ -1277,7 +1277,7 @@ class FarcasterObserver(Integration, BaseObserver):
             results["total_messages"] = total_messages
             results["success"] = True
             
-            logger.info(f"Manual world state collection complete: {total_messages} messages collected")
+            logger.debug(f"Manual world state collection complete: {total_messages} messages collected")
             return results
             
         except Exception as e:

@@ -103,7 +103,7 @@ class ServiceRegistry:
         if service_id not in self._service_types[service_type]:
             self._service_types[service_type].append(service_id)
             
-        logger.info(f"Registered service: {service_id} (type: {service_type})")
+        logger.debug(f"Registered service: {service_id} (type: {service_type})")
     
     def unregister_service(self, service_id: str) -> None:
         """Unregister a service from the registry"""
@@ -124,7 +124,7 @@ class ServiceRegistry:
             if not self._service_types[service_type]:
                 del self._service_types[service_type]
                 
-        logger.info(f"Unregistered service: {service_id}")
+        logger.debug(f"Unregistered service: {service_id}")
     
     def get_service(self, service_id: str) -> Optional[ServiceInterface]:
         """Get a service by ID"""

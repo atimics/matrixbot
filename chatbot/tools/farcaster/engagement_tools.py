@@ -42,7 +42,7 @@ class LikeFarcasterPostTool(ToolInterface):
         """
         Execute the Farcaster like action using service-oriented approach.
         """
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
+        logger.debug(f"Executing tool '{self.name}' with params: {params}")
 
         # Get Farcaster service from service registry
         social_service = context.get_social_service("farcaster")
@@ -94,7 +94,7 @@ class LikeFarcasterPostTool(ToolInterface):
         try:
             # Use the service's react method
             result = await social_service.react_to_post(cast_hash, "like")
-            logger.info(f"Farcaster service react_to_post returned: {result}")
+            logger.debug(f"Farcaster service react_to_post returned: {result}")
 
             # Record this action in world state
             if context.world_state_manager:
@@ -113,7 +113,7 @@ class LikeFarcasterPostTool(ToolInterface):
 
             if result.get("status") == "success":
                 success_msg = f"Successfully liked Farcaster cast: {cast_hash}"
-                logger.info(success_msg)
+                logger.debug(success_msg)
 
                 return {
                     "status": "success",
@@ -174,7 +174,7 @@ class FollowFarcasterUserTool(ToolInterface):
     async def execute(
         self, params: Dict[str, Any], context: ActionContext
     ) -> Dict[str, Any]:
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
+        logger.debug(f"Executing tool '{self.name}' with params: {params}")
         
         # Get Farcaster service from service registry
         social_service = context.get_social_service("farcaster")
@@ -239,7 +239,7 @@ class FollowFarcasterUserTool(ToolInterface):
         
         if result.get("success"):
             success_msg = f"Successfully followed Farcaster user: {fid}"
-            logger.info(success_msg)
+            logger.debug(success_msg)
             return {
                 "status": "success",
                 "message": success_msg,
@@ -286,7 +286,7 @@ class UnfollowFarcasterUserTool(ToolInterface):
     async def execute(
         self, params: Dict[str, Any], context: ActionContext
     ) -> Dict[str, Any]:
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
+        logger.debug(f"Executing tool '{self.name}' with params: {params}")
         
         # Get Farcaster service from service registry
         social_service = context.get_social_service("farcaster")
@@ -344,7 +344,7 @@ class DeleteFarcasterReactionTool(ToolInterface):
         """
         Execute the Farcaster delete reaction action using service-oriented approach.
         """
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
+        logger.debug(f"Executing tool '{self.name}' with params: {params}")
 
         # Get Farcaster service from service registry
         social_service = context.get_social_service("farcaster")
@@ -364,7 +364,7 @@ class DeleteFarcasterReactionTool(ToolInterface):
         try:
             # Use the service's delete_reaction method
             result = await social_service.delete_reaction(cast_hash)
-            logger.info(f"Farcaster service delete_reaction returned: {result}")
+            logger.debug(f"Farcaster service delete_reaction returned: {result}")
 
             # Record this action in world state
             if context.world_state_manager:
@@ -383,7 +383,7 @@ class DeleteFarcasterReactionTool(ToolInterface):
 
             if result.get("success"):
                 success_msg = f"Successfully deleted reaction from Farcaster cast: {cast_hash}"
-                logger.info(success_msg)
+                logger.debug(success_msg)
                 return {
                     "status": "success",
                     "message": success_msg,

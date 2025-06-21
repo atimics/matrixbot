@@ -68,7 +68,7 @@ class WorldStateManager:
         # Configuration (can be injected for better testability)
         self._matrix_user_id = matrix_user_id
         
-        logger.info("WorldStateManager: Initialized empty world state")
+        logger.debug("WorldStateManager: Initialized empty world state")
 
     def set_matrix_user_id(self, matrix_user_id: str):
         """Set the Matrix user ID for bot identification."""
@@ -101,7 +101,7 @@ class WorldStateManager:
             if channel.type not in self.state.channels:
                 self.state.channels[channel.type] = {}
             self.state.channels[channel.type][channel.id] = channel
-            logger.info(
+            logger.debug(
                 f"WorldState: Added {channel.type} channel '{channel.name}' ({channel.id}) with status '{channel.status}'"
             )
         elif isinstance(channel_or_id, str):
@@ -128,7 +128,7 @@ class WorldStateManager:
             # Set last_checked after creation
             channel.update_last_checked()
             self.state.channels[channel_type][channel_id] = channel
-            logger.info(
+            logger.debug(
                 f"WorldState: Added {channel_type} channel '{name}' ({channel_id}) with status '{status}'"
             )
         else:
@@ -214,7 +214,7 @@ class WorldStateManager:
         channel.update_last_checked()
         
         # Log the message addition
-        logger.info(
+        logger.debug(
             f"WorldState: New message in {channel.name}: {message.sender}: {message.content[:100]}..."
         )
 
@@ -222,7 +222,7 @@ class WorldStateManager:
         """Add Farcaster message to thread tracking."""
         thread_id = message.reply_to or message.id
         self.state.threads.setdefault(thread_id, []).append(message)
-        logger.info(f"WorldStateManager: Added message to thread '{thread_id}'")
+        logger.debug(f"WorldStateManager: Added message to thread '{thread_id}'")
 
     def add_messages(self, messages: List[Message]) -> None:
         """Batch add multiple messages to the world state."""
@@ -272,7 +272,7 @@ class WorldStateManager:
 
         self.state.last_update = time.time()
 
-        logger.info(
+        logger.debug(
             f"WorldState: Action completed - {action_type}: {result} (ID: {action_id})"
         )
         return action_id
@@ -331,7 +331,7 @@ class WorldStateManager:
                     action.parameters["cast_hash"] = cast_hash
 
                 self.state.last_update = time.time()
-                logger.info(
+                logger.debug(
                     f"WorldState: Action {action_id} updated - {action.action_type}: {old_result} -> {new_result}"
                 )
                 return True
@@ -347,7 +347,7 @@ class WorldStateManager:
         self.state.last_update = time.time()
 
         for key, value in updates.items():
-            logger.info(f"WorldState: System status update - {key}: {value}")
+            logger.debug(f"WorldState: System status update - {key}: {value}")
 
     def get_observation_data(self, channels_or_lookback=None, lookback_seconds: int = 300) -> Dict[str, Any]:
         """Get current world state data for AI observation
@@ -389,7 +389,7 @@ class WorldStateManager:
         self.state.system_status["total_cycles"] += 1
         self.state.system_status["last_observation_cycle"] = time.time()
 
-        logger.info(
+        logger.debug(
             f"WorldState: Generated observation #{self.state.system_status['total_cycles']} "
             f"with {len(observation['recent_messages'])} recent messages and "
             f"{len(observation['recent_actions'])} recent actions"
@@ -624,7 +624,7 @@ class WorldStateManager:
             'last_updated': time.time()
         }
         
-        logger.info(f"WorldState: Updated rate limits for {platform}: {limits}")
+        logger.debug(f"WorldState: Updated rate limits for {platform}: {limits}")
         self.state.last_update = time.time()
 
     def get_rate_limits(self, platform: str) -> Optional[Dict[str, Any]]:
@@ -659,7 +659,7 @@ class WorldStateManager:
             if existing_invite.get("room_id") == room_id:
                 # Update existing invite with new information
                 existing_invite.update(invite_info)
-                logger.info(
+                logger.debug(
                     f"WorldState: Updated existing pending invite for room {room_id} from {invite_info.get('inviter')}"
                 )
                 self.state.last_update = time.time()
@@ -671,7 +671,7 @@ class WorldStateManager:
 
         self.state.pending_matrix_invites.append(invite_info)
         self.state.last_update = time.time()
-        logger.info(
+        logger.debug(
             f"WorldState: Added new pending Matrix invite for room {room_id} from {invite_info.get('inviter')}"
         )
 
@@ -695,7 +695,7 @@ class WorldStateManager:
         removed = len(self.state.pending_matrix_invites) < original_count
         if removed:
             self.state.last_update = time.time()
-            logger.info(f"WorldState: Removed pending Matrix invite for room {room_id}")
+            logger.debug(f"WorldState: Removed pending Matrix invite for room {room_id}")
         else:
             logger.debug(f"No pending Matrix invite found for room {room_id}")
         return removed
@@ -718,7 +718,7 @@ class WorldStateManager:
             channel.status = new_status
             channel.last_status_update = time.time()
             self.state.last_update = time.time()
-            logger.info(
+            logger.debug(
                 f"WorldState: Updated channel {channel_id} ({channel.name}) status from '{old_status}' to '{new_status}'"
             )
         elif room_name:
@@ -760,7 +760,7 @@ class WorldStateManager:
             "posted_timestamp": time.time(),
             "channel_id": channel_id,
         }
-        logger.info(f"WorldState: Recorded bot media post {cast_hash} ({media_type})")
+        logger.debug(f"WorldState: Recorded bot media post {cast_hash} ({media_type})")
 
     def update_bot_media_likes(self, cast_hash: str, current_likes: int):
         """
@@ -817,7 +817,7 @@ class WorldStateManager:
             self.state.bot_media_on_farcaster[cast_hash][
                 "arweave_tx_id"
             ] = arweave_tx_id
-            logger.info(
+            logger.debug(
                 f"WorldState: Marked {cast_hash} as archived to Arweave: {arweave_tx_id}"
             )
 
@@ -870,7 +870,7 @@ class WorldStateManager:
         self.state.generated_media_library.append(media_entry)
         self.state.last_update = time.time()
         
-        logger.info(
+        logger.debug(
             f"WorldState: Added {media_type} to generated media library: {prompt[:50]}... (media_id: {media_id})"
         )
 
@@ -920,11 +920,11 @@ class WorldStateManager:
             if platform == "farcaster":
                 user = self.get_or_create_farcaster_user(user_identifier)
                 user.sentiment = sentiment_data
-                logger.info(f"Updated sentiment for Farcaster user {user_identifier}: {sentiment_data.label} ({sentiment_data.score})")
+                logger.debug(f"Updated sentiment for Farcaster user {user_identifier}: {sentiment_data.label} ({sentiment_data.score})")
             elif platform == "matrix":
                 user = self.get_or_create_matrix_user(user_identifier)
                 user.sentiment = sentiment_data
-                logger.info(f"Updated sentiment for Matrix user {user_identifier}: {sentiment_data.label} ({sentiment_data.score})")
+                logger.debug(f"Updated sentiment for Matrix user {user_identifier}: {sentiment_data.label} ({sentiment_data.score})")
             else:
                 raise ValueError(f"Unknown platform for sentiment update: {platform}")
                 
@@ -959,7 +959,7 @@ class WorldStateManager:
                 self.state.user_memory_bank[user_platform_id] = memories[:100]
             
             self.state.last_update = time.time()
-            logger.info(f"Added memory for user {user_platform_id}: {memory_entry.memory_type}")
+            logger.debug(f"Added memory for user {user_platform_id}: {memory_entry.memory_type}")
             
         except (AttributeError, TypeError) as e:
             logger.error(f"Error adding user memory for {user_platform_id}: {e}", exc_info=True)
@@ -1061,7 +1061,7 @@ class WorldStateManager:
             user.timeline_cache = timeline_data
             user.last_timeline_fetch = time.time()
             self.state.last_update = time.time()
-            logger.info(f"Updated timeline cache for Farcaster user {fid}")
+            logger.debug(f"Updated timeline cache for Farcaster user {fid}")
         except Exception as e:
             logger.error(f"Error updating Farcaster user timeline cache: {e}", exc_info=True)
 
@@ -1146,7 +1146,7 @@ class WorldStateManager:
                 result=f"success: {reaction_event_id}",
             )
             
-            logger.info(f"WorldState: Recorded Matrix reaction {reaction} to {event_id} in {room_id}")
+            logger.debug(f"WorldState: Recorded Matrix reaction {reaction} to {event_id} in {room_id}")
             
         except Exception as e:
             logger.error(f"Error recording Matrix reaction: {e}", exc_info=True)
@@ -1167,7 +1167,7 @@ class WorldStateManager:
                 result=f"success: {like_hash}",
             )
             
-            logger.info(f"WorldState: Recorded Farcaster like for cast {cast_hash}")
+            logger.debug(f"WorldState: Recorded Farcaster like for cast {cast_hash}")
             
         except Exception as e:
             logger.error(f"Error recording Farcaster like: {e}", exc_info=True)

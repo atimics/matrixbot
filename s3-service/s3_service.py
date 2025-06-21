@@ -87,7 +87,7 @@ class S3Service:
             )
             
             if s3_path:
-                logger.info(f"S3Service: Successfully uploaded image ({len(image_data)} bytes) to S3")
+                logger.debug(f"S3Service: Successfully uploaded image ({len(image_data)} bytes) to S3")
                 return self.s3_client.get_arweave_url(s3_path)
             else:
                 logger.error("S3Service: Failed to upload image - no URL returned")
@@ -238,7 +238,7 @@ class S3Service:
             )
             
             if s3_path:
-                logger.info(f"S3Service: Successfully uploaded {media_type} ({len(media_data)} bytes) to S3")
+                logger.debug(f"S3Service: Successfully uploaded {media_type} ({len(media_data)} bytes) to S3")
                 return self.s3_client.get_arweave_url(s3_path)
             else:
                 logger.error("S3Service: Failed to upload media - no URL returned")

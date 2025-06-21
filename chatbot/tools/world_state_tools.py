@@ -58,7 +58,7 @@ class QueryChannelActivityTool(ToolInterface):
         """
         Execute the channel activity query.
         """
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
+        logger.debug(f"Executing tool '{self.name}' with params: {params}")
         
         channel_id = params.get("channel_id")
         time_window_minutes = params.get("time_window_minutes", 60)
@@ -157,7 +157,7 @@ class QueryChannelActivityTool(ToolInterface):
                 "timestamp": time.time()
             }
             
-            logger.info(f"Channel activity query successful: {len(recent_messages)} messages found")
+            logger.debug(f"Channel activity query successful: {len(recent_messages)} messages found")
             return result
             
         except Exception as e:
@@ -208,7 +208,7 @@ class FindMessagesFromUserTool(ToolInterface):
         """
         Execute the user message search.
         """
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
+        logger.debug(f"Executing tool '{self.name}' with params: {params}")
         
         user_identifier = params.get("user_identifier")
         max_messages = params.get("max_messages", 5)
@@ -288,7 +288,7 @@ class FindMessagesFromUserTool(ToolInterface):
                 "timestamp": time.time()
             }
             
-            logger.info(f"User message search successful: {len(formatted_messages)} messages found for {user_identifier}")
+            logger.debug(f"User message search successful: {len(formatted_messages)} messages found for {user_identifier}")
             return result
             
         except Exception as e:
@@ -339,7 +339,7 @@ class CheckActionHistoryTool(ToolInterface):
         """
         Execute the action history check.
         """
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
+        logger.debug(f"Executing tool '{self.name}' with params: {params}")
         
         action_type = params.get("action_type")
         time_window_minutes = params.get("time_window_minutes", 60)
@@ -398,7 +398,7 @@ class CheckActionHistoryTool(ToolInterface):
                 "timestamp": time.time()
             }
             
-            logger.info(f"Action history check successful: {len(matching_actions)} matching actions found")
+            logger.debug(f"Action history check successful: {len(matching_actions)} matching actions found")
             return result
             
         except Exception as e:

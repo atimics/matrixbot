@@ -164,7 +164,7 @@ class APIServer:
                 allow_methods=["GET", "POST", "PUT", "DELETE"],
                 allow_headers=["Authorization", "Content-Type", "X-API-Key"],
             )
-            logger.info(f"CORS configured with origins: {self.security_config.allowed_origins}")
+            logger.debug(f"CORS configured with origins: {self.security_config.allowed_origins}")
         else:
             logger.warning("CORS configured with wildcard origins - SECURITY RISK in production")
             self.app.add_middleware(
@@ -219,7 +219,7 @@ class APIServer:
             protected_api_router.include_router(worldstate.router, prefix="", tags=["worldstate"])
             protected_api_router.include_router(setup.router, prefix="", tags=["setup"])
             
-            logger.info("Loaded modular API routers with global authentication")
+            logger.debug("Loaded modular API routers with global authentication")
             
         except ImportError as e:
             logger.warning(f"Could not import modular routers: {e}, using fallback inline routes")
@@ -231,7 +231,7 @@ class APIServer:
         # Public endpoints (no authentication required)
         self._setup_public_routes()
         
-        logger.info("API routes configured with global authentication protection for all /api/* endpoints")
+        logger.debug("API routes configured with global authentication protection for all /api/* endpoints")
     
     def _setup_fallback_routes(self, router: "APIRouter"):
         """Setup fallback routes when modular routers are not available."""
@@ -408,7 +408,7 @@ class APIServer:
                 await secret_manager.set_secret("API_KEY", temp_key)
                 logger.warning(f"Temporary API key: {temp_key}")
             
-            logger.info("Security initialization complete")
+            logger.debug("Security initialization complete")
             
         except Exception as e:
             logger.error(f"Security initialization failed: {e}")

@@ -83,7 +83,7 @@ class S3UploaderClient:
                 s3_url = result.get("arweave_url")
 
                 if s3_url:
-                    logger.info(
+                    logger.debug(
                         f"S3UploaderClient: Successfully uploaded data to S3: {s3_url}"
                     )
                     # Return just the path part to mimic Arweave transaction ID format

@@ -665,7 +665,7 @@ class EngagementStrategyRegistry:
     def register_strategy(self, strategy: EngagementStrategy):
         """Register a new engagement strategy."""
         self.strategies[strategy.name] = strategy
-        logger.info(f"EngagementRegistry: Registered strategy '{strategy.name}'")
+        logger.debug(f"EngagementRegistry: Registered strategy '{strategy.name}'")
     
     def get_strategy(self, name: str) -> Optional[EngagementStrategy]:
         """Get a strategy by name."""

@@ -39,7 +39,7 @@ class TestProactiveSystem:
         
     async def setup_test_environment(self):
         """Set up a realistic test environment with mock data."""
-        logger.info("Setting up test environment...")
+        logger.debug("Setting up test environment...")
         
         # Create mock world state manager
         self.mock_world_state_manager = AsyncMock()
@@ -66,7 +66,7 @@ class TestProactiveSystem:
             action_record_id="test_action_123"
         )
         
-        logger.info("Test environment setup complete")
+        logger.debug("Test environment setup complete")
         
     def create_test_world_state(self) -> WorldStateData:
         """Create realistic test world state data."""
@@ -195,7 +195,7 @@ class TestProactiveSystem:
     
     async def test_opportunity_detection(self):
         """Test the opportunity detection algorithms."""
-        logger.info("Testing opportunity detection...")
+        logger.debug("Testing opportunity detection...")
         
         try:
             # Test basic opportunity detection
@@ -220,7 +220,7 @@ class TestProactiveSystem:
             # Should detect user milestone (bob with 100 messages)
             assert "user_milestone" in opportunity_types, "Should detect user milestone"
             
-            logger.info(f"✅ Opportunity detection test passed - detected {len(opportunities)} opportunities")
+            logger.debug(f"✅ Opportunity detection test passed - detected {len(opportunities)} opportunities")
             self.test_results.append(("Opportunity Detection", True, f"Detected {len(opportunities)} opportunities"))
             
         except Exception as e:
@@ -229,7 +229,7 @@ class TestProactiveSystem:
     
     async def test_proactive_tools(self):
         """Test the proactive conversation tools."""
-        logger.info("Testing proactive conversation tools...")
+        logger.debug("Testing proactive conversation tools...")
         
         # Test DetectConversationOpportunitiesTool
         await self.test_detect_opportunities_tool()
@@ -259,7 +259,7 @@ class TestProactiveSystem:
             assert result["opportunities_found"] > 0, "Should find opportunities"
             assert "opportunities" in result, "Should include opportunities list"
             
-            logger.info(f"✅ DetectConversationOpportunitiesTool test passed - found {result['opportunities_found']} opportunities")
+            logger.debug(f"✅ DetectConversationOpportunitiesTool test passed - found {result['opportunities_found']} opportunities")
             self.test_results.append(("DetectConversationOpportunitiesTool", True, f"Found {result['opportunities_found']} opportunities"))
             
         except Exception as e:
@@ -287,7 +287,7 @@ class TestProactiveSystem:
             assert "opportunity_id" in result, "Should return opportunity ID"
             assert result["channel_id"] == "channel1", "Should match requested channel"
             
-            logger.info("✅ InitiateProactiveConversationTool test passed")
+            logger.debug("✅ InitiateProactiveConversationTool test passed")
             self.test_results.append(("InitiateProactiveConversationTool", True, "Successfully initiated proactive conversation"))
             
         except Exception as e:
@@ -315,7 +315,7 @@ class TestProactiveSystem:
             assert result["status"] == "success", f"Tool should succeed: {result.get('message', '')}"
             assert result["opportunity_id"] == "test_opportunity_123", "Should match opportunity ID"
             
-            logger.info("✅ ScheduleProactiveEngagementTool test passed")
+            logger.debug("✅ ScheduleProactiveEngagementTool test passed")
             self.test_results.append(("ScheduleProactiveEngagementTool", True, "Successfully scheduled engagement"))
             
         except Exception as e:
@@ -338,7 +338,7 @@ class TestProactiveSystem:
             assert "total_engagements" in result, "Should include total engagements"
             assert "success_rate" in result, "Should include success rate"
             
-            logger.info("✅ GetProactiveEngagementStatusTool test passed")
+            logger.debug("✅ GetProactiveEngagementStatusTool test passed")
             self.test_results.append(("GetProactiveEngagementStatusTool", True, "Successfully retrieved engagement status"))
             
         except Exception as e:
@@ -347,7 +347,7 @@ class TestProactiveSystem:
     
     async def test_engine_lifecycle(self):
         """Test the proactive engine lifecycle management."""
-        logger.info("Testing proactive engine lifecycle...")
+        logger.debug("Testing proactive engine lifecycle...")
         
         try:
             # Test start
@@ -359,7 +359,7 @@ class TestProactiveSystem:
             # Test stop
             await self.proactive_engine.stop()
             
-            logger.info("✅ Engine lifecycle test passed")
+            logger.debug("✅ Engine lifecycle test passed")
             self.test_results.append(("Engine Lifecycle", True, "Start/stop/world state change handling works"))
             
         except Exception as e:
@@ -368,7 +368,7 @@ class TestProactiveSystem:
     
     async def test_integration_scenario(self):
         """Test a complete integration scenario."""
-        logger.info("Testing complete integration scenario...")
+        logger.debug("Testing complete integration scenario...")
         
         try:
             # 1. Start the engine
@@ -415,7 +415,7 @@ class TestProactiveSystem:
             # 6. Stop the engine
             await self.proactive_engine.stop()
             
-            logger.info("✅ Integration scenario test passed")
+            logger.debug("✅ Integration scenario test passed")
             self.test_results.append(("Integration Scenario", True, "Complete workflow executed successfully"))
             
         except Exception as e:
@@ -424,7 +424,7 @@ class TestProactiveSystem:
     
     async def test_edge_cases(self):
         """Test edge cases and error handling."""
-        logger.info("Testing edge cases...")
+        logger.debug("Testing edge cases...")
         
         try:
             # Test with empty world state
@@ -449,7 +449,7 @@ class TestProactiveSystem:
             # Should handle gracefully (either error or clamp value)
             assert "status" in result, "Should return status"
             
-            logger.info("✅ Edge cases test passed")
+            logger.debug("✅ Edge cases test passed")
             self.test_results.append(("Edge Cases", True, "Error handling works correctly"))
             
         except Exception as e:
@@ -458,26 +458,26 @@ class TestProactiveSystem:
     
     def print_test_results(self):
         """Print comprehensive test results."""
-        logger.info("\n" + "="*60)
-        logger.info("PROACTIVE CONVERSATION SYSTEM TEST RESULTS")
-        logger.info("="*60)
+        logger.debug("\n" + "="*60)
+        logger.debug("PROACTIVE CONVERSATION SYSTEM TEST RESULTS")
+        logger.debug("="*60)
         
         passed = 0
         failed = 0
         
         for test_name, success, details in self.test_results:
             status = "✅ PASS" if success else "❌ FAIL"
-            logger.info(f"{status} | {test_name:<30} | {details}")
+            logger.debug(f"{status} | {test_name:<30} | {details}")
             if success:
                 passed += 1
             else:
                 failed += 1
         
-        logger.info("="*60)
-        logger.info(f"SUMMARY: {passed} passed, {failed} failed, {passed + failed} total")
+        logger.debug("="*60)
+        logger.debug(f"SUMMARY: {passed} passed, {failed} failed, {passed + failed} total")
         
         if failed == 0:
-            logger.info("🎉 ALL TESTS PASSED! Proactive conversation system is working correctly.")
+            logger.debug("🎉 ALL TESTS PASSED! Proactive conversation system is working correctly.")
         else:
             logger.warning(f"⚠️  {failed} tests failed. Please review the issues above.")
         
@@ -486,7 +486,7 @@ class TestProactiveSystem:
 
 async def run_comprehensive_tests():
     """Run the comprehensive test suite."""
-    logger.info("Starting comprehensive proactive conversation system tests...")
+    logger.debug("Starting comprehensive proactive conversation system tests...")
     
     # Create test instance
     test_suite = TestProactiveSystem()

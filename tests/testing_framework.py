@@ -218,7 +218,7 @@ class TestEnvironment:
         # Initialize test database
         await self._setup_test_database()
         
-        logger.info(f"Test environment '{self.name}' set up at {self.temp_dir}")
+        logger.debug(f"Test environment '{self.name}' set up at {self.temp_dir}")
     
     async def cleanup(self):
         """Clean up test environment."""
@@ -237,7 +237,7 @@ class TestEnvironment:
             import shutil
             shutil.rmtree(self.temp_dir)
         
-        logger.info(f"Test environment '{self.name}' cleaned up")
+        logger.debug(f"Test environment '{self.name}' cleaned up")
     
     def add_cleanup_task(self, task: Callable):
         """Add a cleanup task to be executed during teardown."""
@@ -306,7 +306,7 @@ class IntegrationTestRunner:
         """Run a single test scenario."""
         start_time = time.time()
         
-        logger.info(f"Running test scenario: {scenario.name}")
+        logger.debug(f"Running test scenario: {scenario.name}")
         
         try:
             # Run setup steps
@@ -339,7 +339,7 @@ class IntegrationTestRunner:
                 outcomes=outcomes
             )
             
-            logger.info(f"Scenario '{scenario.name}' {'PASSED' if success else 'FAILED'} in {execution_time:.2f}s")
+            logger.debug(f"Scenario '{scenario.name}' {'PASSED' if success else 'FAILED'} in {execution_time:.2f}s")
             
         except Exception as e:
             execution_time = time.time() - start_time
@@ -421,7 +421,7 @@ class IntegrationTestRunner:
         with open(filepath, 'w') as f:
             json.dump(report, f, indent=2)
         
-        logger.info(f"Test report exported to {filepath}")
+        logger.debug(f"Test report exported to {filepath}")
 
 
 class PerformanceTestSuite:

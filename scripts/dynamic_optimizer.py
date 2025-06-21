@@ -130,7 +130,7 @@ class DynamicPayloadOptimizer:
                 'AI_OTHER_CHANNELS_SUMMARY_COUNT': 1,
                 'AI_OTHER_CHANNELS_MESSAGE_SNIPPET_LENGTH': 40,
             })
-            logger.info("Applying aggressive token optimization")
+            logger.debug("Applying aggressive token optimization")
             
         elif metrics.avg_token_usage > self.MODERATE_TOKEN_THRESHOLD:
             # Moderate optimization
@@ -141,25 +141,25 @@ class DynamicPayloadOptimizer:
                 'AI_OTHER_CHANNELS_SUMMARY_COUNT': 2,
                 'AI_OTHER_CHANNELS_MESSAGE_SNIPPET_LENGTH': 50,
             })
-            logger.info("Applying moderate token optimization")
+            logger.debug("Applying moderate token optimization")
             
         else:
             # Standard parameters
             params.update(base_params)
-            logger.info("Using standard parameters")
+            logger.debug("Using standard parameters")
         
         # Adjust based on payload size
         if metrics.avg_payload_size > self.HIGH_PAYLOAD_THRESHOLD:
             params['AI_OTHER_CHANNELS_SUMMARY_COUNT'] = max(1, params.get('AI_OTHER_CHANNELS_SUMMARY_COUNT', 2) - 1)
             params['AI_OTHER_CHANNELS_MESSAGE_SNIPPET_LENGTH'] = max(30, params.get('AI_OTHER_CHANNELS_MESSAGE_SNIPPET_LENGTH', 50) - 10)
-            logger.info("Applying payload size optimization")
+            logger.debug("Applying payload size optimization")
         
         # Adjust based on response time
         if metrics.avg_response_time > self.HIGH_RESPONSE_THRESHOLD:
             # Reduce payload complexity
             params['AI_CONVERSATION_HISTORY_LENGTH'] = max(3, params.get('AI_CONVERSATION_HISTORY_LENGTH', 6) - 1)
             params['AI_ACTION_HISTORY_LENGTH'] = max(2, params.get('AI_ACTION_HISTORY_LENGTH', 3) - 1)
-            logger.info("Applying response time optimization")
+            logger.debug("Applying response time optimization")
         
         return params
     
@@ -183,7 +183,7 @@ class DynamicPayloadOptimizer:
                         old_value = line.strip().split('=')[1]
                         if old_value != str(value):
                             lines[i] = f"{param}={value}\n"
-                            logger.info(f"Updated {param}: {old_value} -> {value}")
+                            logger.debug(f"Updated {param}: {old_value} -> {value}")
                             updated = True
                         break
             
@@ -191,10 +191,10 @@ class DynamicPayloadOptimizer:
             if updated:
                 with open(env_file, 'w') as f:
                     f.writelines(lines)
-                logger.info("Environment variables updated")
+                logger.debug("Environment variables updated")
                 return True
             else:
-                logger.info("No optimization changes needed")
+                logger.debug("No optimization changes needed")
                 return False
                 
         except Exception as e:
@@ -212,7 +212,7 @@ class DynamicPayloadOptimizer:
     
     def run_optimization_cycle(self) -> bool:
         """Run a complete optimization cycle."""
-        logger.info("Starting optimization cycle")
+        logger.debug("Starting optimization cycle")
         
         # Analyze current performance
         metrics = self.analyze_current_performance()
@@ -223,7 +223,7 @@ class DynamicPayloadOptimizer:
         
         # Check if optimization is needed
         if not self.should_optimize(metrics):
-            logger.info("Performance is within acceptable thresholds, no optimization needed")
+            logger.debug("Performance is within acceptable thresholds, no optimization needed")
             return False
         
         # Calculate optimal parameters
@@ -233,7 +233,7 @@ class DynamicPayloadOptimizer:
         updated = self.update_environment_variables(optimal_params)
         
         if updated:
-            logger.info("Optimization cycle completed successfully")
+            logger.debug("Optimization cycle completed successfully")
             # Note: In a production system, you might want to restart the service
             # or reload configuration to apply changes
         

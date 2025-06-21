@@ -39,14 +39,14 @@ class ArweaveWalletManager:
                 self.wallet = None
                 return
                 
-            logger.info(f"Loading wallet from {self.wallet_file_path}")
+            logger.debug(f"Loading wallet from {self.wallet_file_path}")
             self.wallet = Wallet(self.wallet_file_path)
-            logger.info(f"Wallet loaded successfully. Address: {self.wallet.address}")
+            logger.debug(f"Wallet loaded successfully. Address: {self.wallet.address}")
             
             # Log wallet balance for operational visibility
             try:
                 balance = await self.get_balance()
-                logger.info(f"Wallet balance: {balance} AR")
+                logger.debug(f"Wallet balance: {balance} AR")
             except Exception as e:
                 logger.warning(f"Could not fetch wallet balance: {e}")
                 
@@ -252,7 +252,7 @@ async def upload_to_arweave(
         if not file_content:
             raise HTTPException(status_code=400, detail="Empty file provided")
         
-        logger.info(f"Uploading file: {file.filename} ({len(file_content)} bytes)")
+        logger.debug(f"Uploading file: {file.filename} ({len(file_content)} bytes)")
         
         # Parse custom tags
         custom_tags = await _parse_tags(tags)
@@ -277,7 +277,7 @@ async def upload_to_arweave(
             content_type=file.content_type or "application/octet-stream"
         )
         
-        logger.info(f"Upload successful: {transaction.id}")
+        logger.debug(f"Upload successful: {transaction.id}")
         return response
         
     except Exception as e:
@@ -308,7 +308,7 @@ async def upload_data_to_arweave(
     
     try:
         data_bytes = data.encode('utf-8')
-        logger.info(f"Uploading data ({len(data_bytes)} bytes)")
+        logger.debug(f"Uploading data ({len(data_bytes)} bytes)")
         
         # Parse custom tags
         custom_tags = await _parse_tags(tags)
@@ -327,7 +327,7 @@ async def upload_data_to_arweave(
             content_type=content_type
         )
         
-        logger.info(f"Data upload successful: {transaction.id}")
+        logger.debug(f"Data upload successful: {transaction.id}")
         return response
         
     except Exception as e:

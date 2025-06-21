@@ -31,9 +31,9 @@ class ArweaveWalletManager:
         """Initialize the wallet by loading it from the guaranteed path."""
         try:
             # The entrypoint script guarantees this file exists.
-            logger.info(f"Loading wallet from {self.wallet_file_path}")
+            logger.debug(f"Loading wallet from {self.wallet_file_path}")
             self.wallet = Wallet(self.wallet_file_path)
-            logger.info(f"Wallet loaded successfully. Address: {self.wallet.address}")
+            logger.debug(f"Wallet loaded successfully. Address: {self.wallet.address}")
         except FileNotFoundError:
             logger.error(f"CRITICAL: Wallet file not found at {self.wallet_file_path}. The entrypoint script should have created it.")
             # The service will fail health checks if the wallet is not initialized.
@@ -80,7 +80,7 @@ class ArweaveWalletManager:
             await self._sign_and_send_transaction(transaction)
             
             if transaction.id:
-                logger.info(f"Data uploaded to Arweave. TX ID: {transaction.id}")
+                logger.debug(f"Data uploaded to Arweave. TX ID: {transaction.id}")
                 return transaction.id
             else:
                 logger.error("Transaction sent but no ID received")
@@ -155,9 +155,9 @@ async def startup_event():
     wallet_file_path = os.getenv("ARWEAVE_WALLET_FILE_PATH", "/data/arweave_wallet.json")
     gateway_url = os.getenv("ARWEAVE_GATEWAY_URL", "https://arweave.net")
     
-    logger.info(f"Starting Arweave Uploader Service")
-    logger.info(f"Wallet file path: {wallet_file_path}")
-    logger.info(f"Gateway URL: {gateway_url}")
+    logger.debug(f"Starting Arweave Uploader Service")
+    logger.debug(f"Wallet file path: {wallet_file_path}")
+    logger.debug(f"Gateway URL: {gateway_url}")
     
     wallet_manager = ArweaveWalletManager(wallet_file_path, gateway_url)
     await wallet_manager.initialize()

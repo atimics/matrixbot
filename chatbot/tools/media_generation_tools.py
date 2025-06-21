@@ -70,7 +70,7 @@ async def _auto_post_to_gallery(
             if media_type in ["image", "video"]:
                 result = await tool.execute(params, context)
                 if result.get("status") == "success":
-                    logger.info(f"Successfully auto-posted generated {media_type} to Matrix gallery.")
+                    logger.debug(f"Successfully auto-posted generated {media_type} to Matrix gallery.")
                     results["gallery_success"] = True
                 else:
                     logger.warning(f"Failed to auto-post generated {media_type} to gallery: {result.get('error')}")
@@ -105,7 +105,7 @@ async def _auto_post_to_gallery(
             if media_type in ["image", "video"]:
                 result = await tool.execute(params, context)
                 if result.get("status") == "success":
-                    logger.info(f"Successfully posted generated {media_type} to user channel {user_channel_id}.")
+                    logger.debug(f"Successfully posted generated {media_type} to user channel {user_channel_id}.")
                     results["user_channel_success"] = True
                 else:
                     logger.warning(f"Failed to post generated {media_type} to user channel: {result.get('error')}")
@@ -175,7 +175,7 @@ class GenerateImageTool(ToolInterface):
                     image_data = await google_client.generate_image_gemini(prompt, aspect_ratio)
                     if image_data:
                         service_used = "google_gemini"
-                        logger.info(f"Generated image using Google Gemini: {prompt[:50]}...")
+                        logger.debug(f"Generated image using Google Gemini: {prompt[:50]}...")
                 except Exception as e:
                     # Check if it's the known multi-modal output limitation
                     if "Multi-modal output is not supported" in str(e):
@@ -194,7 +194,7 @@ class GenerateImageTool(ToolInterface):
                             response.raise_for_status()
                             image_data = response.content
                         service_used = "replicate"
-                        logger.info(f"Generated and downloaded image using Replicate: {prompt[:50]}...")
+                        logger.debug(f"Generated and downloaded image using Replicate: {prompt[:50]}...")
                 except Exception as e:
                     logger.warning(f"Replicate image generation failed: {e}")
 

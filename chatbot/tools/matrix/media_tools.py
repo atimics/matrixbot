@@ -38,7 +38,7 @@ class SendMatrixImageTool(ToolInterface):
         """
         Execute the Matrix image sending action using the service layer.
         """
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
+        logger.debug(f"Executing tool '{self.name}' with params: {params}")
 
         # Get Matrix media service from service registry
         media_service = context.get_media_service("matrix")
@@ -130,7 +130,7 @@ class SendMatrixVideoTool(ToolInterface):
         """
         Execute the Matrix video sending action using the service layer.
         """
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
+        logger.debug(f"Executing tool '{self.name}' with params: {params}")
 
         # Get Matrix media service from service registry
         media_service = context.get_media_service("matrix")
@@ -217,7 +217,7 @@ class SendMatrixVideoLinkTool(ToolInterface):
         """
         Execute the Matrix video link sharing action using the service layer.
         """
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
+        logger.debug(f"Executing tool '{self.name}' with params: {params}")
         
         # Get Matrix messaging service from service registry
         messaging_service = context.get_messaging_service("matrix")

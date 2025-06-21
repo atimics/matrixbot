@@ -66,7 +66,7 @@ class NodeProcessor:
         self._min_backlog_threshold = 5  # Increased from 3 to 5 for more aggressive planning
         self._max_execution_timeout = 120.0  # Increased from 30s to 2 minutes for more continuous processing
         
-        logger.info("NodeProcessor initialized with Kanban-style action backlog system")
+        logger.debug("NodeProcessor initialized with Kanban-style action backlog system")
     
     async def process_cycle(
         self,
@@ -96,7 +96,7 @@ class NodeProcessor:
         actions_executed_count = 0
         planning_cycles = 0
 
-        logger.info(f"Starting Kanban-style processing cycle {cycle_id}")
+        logger.debug(f"Starting Kanban-style processing cycle {cycle_id}")
 
         # Ensure primary_channel_id is in context for priority interrupt handling
         if primary_channel_id:
@@ -133,7 +133,7 @@ class NodeProcessor:
                 
                 # 4. If no actions executed and backlog is empty, break
                 if executed_this_iteration == 0 and self._is_backlog_empty():
-                    logger.info(f"No actions in backlog and none executed, ending cycle {cycle_id}")
+                    logger.debug(f"No actions in backlog and none executed, ending cycle {cycle_id}")
                     break
                 
                 # 5. Brief pause to prevent tight loops
@@ -164,7 +164,7 @@ class NodeProcessor:
         cycle_duration = time.time() - cycle_start_time
         backlog_status = self.action_backlog.get_status_summary()
         
-        logger.info(
+        logger.debug(
             f"Completed Kanban cycle {cycle_id} in {cycle_duration:.2f}s - "
             f"{actions_executed_count} actions executed, {planning_cycles} planning cycles, "
             f"backlog: {backlog_status['total_queued']} queued, {backlog_status['in_progress']} in progress"
@@ -190,9 +190,9 @@ class NodeProcessor:
             
             # If this is a critical trigger, add immediate response actions
             if trigger_type == "mention":
-                logger.info(f"🔔 MENTION TRIGGER: AI being instructed to respond to mention in channel {primary_channel_id}")
+                logger.debug(f"🔔 MENTION TRIGGER: AI being instructed to respond to mention in channel {primary_channel_id}")
                 # Note: Core channel expansion is handled by _ensure_core_channels_expanded()
-                logger.info(f"High-priority mention detected in cycle {cycle_id}, escalating response")
+                logger.debug(f"High-priority mention detected in cycle {cycle_id}, escalating response")
     
     async def _escalate_communication_actions(self):
         """Escalate priority of pending communication actions"""
@@ -243,7 +243,7 @@ class NodeProcessor:
                     ai_actions, 
                     cycle_context=planning_context
                 )
-                logger.info(f"Planning phase added {len(action_ids)} actions to backlog")
+                logger.debug(f"Planning phase added {len(action_ids)} actions to backlog")
             else:
                 logger.debug("Planning phase: AI suggested no new actions")
                 
@@ -273,7 +273,7 @@ class NodeProcessor:
                     continue
                 
                 # Execute the action
-                logger.info(f"Executing backlog action: {next_action.action_type} (priority: {next_action.priority.name})")
+                logger.debug(f"Executing backlog action: {next_action.action_type} (priority: {next_action.priority.name})")
                 execution_result = await self._execute_backlog_action(next_action, cycle_id)
                 
                 # Handle the action result
@@ -281,7 +281,7 @@ class NodeProcessor:
                 if result_status == "rate_limited":
                     # For rate limited actions, put them back in the queue with a delay
                     retry_after = execution_result.get("retry_after", 30)
-                    logger.info(f"Action {next_action.action_id} rate limited, will retry after {retry_after} seconds")
+                    logger.debug(f"Action {next_action.action_id} rate limited, will retry after {retry_after} seconds")
                     
                     # Mark the action as queued again for retry, but don't increment attempts
                     # since this is a temporary condition
@@ -368,7 +368,7 @@ class NodeProcessor:
                 "has_self_state": "self_state" in payload,
                 "payload_size_kb": len(str(payload)) / 1024 if payload else 0
             }
-            logger.info(f"Built AI Payload Summary: {payload_summary}")
+            logger.debug(f"Built AI Payload Summary: {payload_summary}")
             
             return payload
         except Exception as e:
@@ -388,14 +388,14 @@ class NodeProcessor:
                 "primary_channel": payload_data.get("processing_context", {}).get("primary_channel"),
                 "payload_size_kb": len(str(payload_data)) / 1024 if payload_data else 0
             }
-            logger.info(f"AI Payload Summary: {payload_summary}")
+            logger.debug(f"AI Payload Summary: {payload_summary}")
             
             decision_result = await self.ai_engine.decide_actions(
                 world_state=payload_data
             )
             # Log the AI's reasoning for this step
             if decision_result.get('reasoning'):
-                logger.info(f"AI Reasoning for step {step}: {decision_result['reasoning']}")
+                logger.debug(f"AI Reasoning for step {step}: {decision_result['reasoning']}")
             return decision_result.get('selected_actions', [])
         except Exception as e:
             logger.error(f"Error in AI action selection for cycle {cycle_id}, step {step}: {e}", exc_info=True)
@@ -454,16 +454,16 @@ class NodeProcessor:
         # --- END TOOL DISAMBIGUATION ---
         
         # Log AI reasoning for selecting this action
-        logger.info(f"AI reasoning: {action.get('reasoning', 'No reasoning provided')}")
+        logger.debug(f"AI reasoning: {action.get('reasoning', 'No reasoning provided')}")
         
         # *** VERBOSE LOGGING FOR BUG DIAGNOSIS ***
-        logger.info(f"Executing action '{tool_name}' with args: {tool_args}")
+        logger.debug(f"Executing action '{tool_name}' with args: {tool_args}")
 
         try:
             # Dispatch to the correct tool executor
             if tool_name in ["select_nodes_to_expand", "expand_node", "collapse_node", "pin_node", "unpin_node", "get_expansion_status"]:
                 result = await self._execute_node_tool(tool_name, tool_args)
-                logger.info(f"Node tool '{tool_name}' result: {result}")
+                logger.debug(f"Node tool '{tool_name}' result: {result}")
                 # Node tools return success/fail, let's normalize to status
                 return {"status": "success" if result.get("success") else "failure", "result": result}
             elif tool_name == "refresh_summary":
@@ -485,7 +485,7 @@ class NodeProcessor:
                 if status == "rate_limited":
                     retry_after = tool_result.get("retry_after", 30)
                     next_attempt_time = tool_result.get("next_attempt_time", time.time() + retry_after)
-                    logger.info(f"Action rate limited, will retry after {retry_after} seconds")
+                    logger.debug(f"Action rate limited, will retry after {retry_after} seconds")
                     return {
                         "status": "rate_limited", 
                         "result": result,
@@ -517,10 +517,10 @@ class NodeProcessor:
             # It's essentially multiple 'expand_node' calls.
             if tool_name == "select_nodes_to_expand":
                 node_paths = tool_args.get("node_paths", [])
-                logger.info(f"AI selected {len(node_paths)} nodes for expansion: {node_paths}")
+                logger.debug(f"AI selected {len(node_paths)} nodes for expansion: {node_paths}")
                 for node_path in node_paths:
                     success, auto_collapsed, message = self.node_manager.expand_node(node_path)
-                    logger.info(f"Expansion of '{node_path}': {message}")
+                    logger.debug(f"Expansion of '{node_path}': {message}")
                 return {"success": True, "message": f"Expanded {len(node_paths)} nodes."}
 
             node_path = tool_args.get("node_path", "")
@@ -733,7 +733,7 @@ class NodeProcessor:
                 return {"success": False, "error": f"Tool {tool_name} not found"}
             
             # Execute the tool directly
-            logger.info(f"Executing platform tool: {tool_name} with args {tool_args}")
+            logger.debug(f"Executing platform tool: {tool_name} with args {tool_args}")
             result = await tool_instance.execute(tool_args, action_context)
             
             # Check if the tool execution was successful
@@ -788,7 +788,7 @@ class NodeProcessor:
         try:
             events = self.node_manager.get_system_events()
             for event in events:
-                logger.info(f"Node system event: {event['event_type']} - {event['message']}")
+                logger.debug(f"Node system event: {event['event_type']} - {event['message']}")
         except Exception as e:
             logger.error(f"Error logging node system events: {e}")
     
@@ -899,23 +899,23 @@ class NodeProcessor:
                     success, auto_collapsed, message = self.node_manager.expand_node(node_path)
                     if success:
                         expanded_count += 1
-                        logger.info(f"🔧 CORE EXPANSION: {channel_type} -> {node_path} (trigger: {trigger_type})")
+                        logger.debug(f"🔧 CORE EXPANSION: {channel_type} -> {node_path} (trigger: {trigger_type})")
                         if auto_collapsed:
-                            logger.info(f"   ↳ Auto-collapsed {auto_collapsed} to make room")
+                            logger.debug(f"   ↳ Auto-collapsed {auto_collapsed} to make room")
                     else:
                         logger.debug(f"Core expansion skipped {channel_type} -> {node_path}: {message}")
                 except Exception as e:
                     logger.warning(f"Error expanding core channel {channel_type} ({node_path}): {e}")
             
             if expanded_count > 0:
-                logger.info(f"🎯 CORE CHANNELS: Ensured {expanded_count} essential channels are expanded for AI context")
+                logger.debug(f"🎯 CORE CHANNELS: Ensured {expanded_count} essential channels are expanded for AI context")
                 
                 # DEBUG: Verify the expansion state immediately after expansion
                 for channel_type, node_path in channels_to_expand:
                     metadata = self.node_manager.get_node_metadata(node_path)
-                    logger.info(f"🔍 VERIFY EXPANSION: {node_path} -> is_expanded={metadata.is_expanded}, is_pinned={metadata.is_pinned}")
+                    logger.debug(f"🔍 VERIFY EXPANSION: {node_path} -> is_expanded={metadata.is_expanded}, is_pinned={metadata.is_pinned}")
             else:
-                logger.info("🎯 CORE CHANNELS: All essential channels were already expanded")
+                logger.debug("🎯 CORE CHANNELS: All essential channels were already expanded")
                 
         except Exception as e:
             logger.error(f"Error ensuring core channels expanded: {e}", exc_info=True)
@@ -988,7 +988,7 @@ class NodeProcessor:
             if channel_activity:
                 auto_expanded = self.node_manager.auto_expand_active_channels(channel_activity)
                 if auto_expanded:
-                    logger.info(f"Auto-expanded {len(auto_expanded)} active channels: {auto_expanded}")
+                    logger.debug(f"Auto-expanded {len(auto_expanded)} active channels: {auto_expanded}")
                     
         except Exception as e:
             logger.error(f"Error in auto-expanding active channels: {e}", exc_info=True)
@@ -1141,7 +1141,7 @@ class NodeProcessor:
                 "tools_count": len(payload_data.get("tools", [])),
                 "payload_size_kb": len(str(payload_data)) / 1024 if payload_data else 0
             }
-            logger.info(f"AI Node Selection Payload Summary: {payload_summary}")
+            logger.debug(f"AI Node Selection Payload Summary: {payload_summary}")
 
             # Send to AI engine for node selection
             decision_result = await self.ai_engine.decide_actions(
@@ -1185,7 +1185,7 @@ class NodeProcessor:
                 "tools_count": len(payload_data.get("tools", [])),
                 "payload_size_kb": len(str(payload_data)) / 1024 if payload_data else 0
             }
-            logger.info(f"AI Action Selection Payload Summary: {payload_summary}")
+            logger.debug(f"AI Action Selection Payload Summary: {payload_summary}")
 
             # Send to AI engine for action selection
             decision_result = await self.ai_engine.decide_actions(
@@ -1228,8 +1228,8 @@ class NodeProcessor:
                 logger.debug("No nodes selected for expansion")
                 return {"nodes_expanded": 0, "expansion_results": []}
             
-            logger.info(f"AI selected {len(node_paths)} nodes for expansion: {node_paths}")
-            logger.info(f"AI reasoning: {reasoning}")
+            logger.debug(f"AI selected {len(node_paths)} nodes for expansion: {node_paths}")
+            logger.debug(f"AI reasoning: {reasoning}")
             
             expansion_results = []
             nodes_expanded = 0
@@ -1371,10 +1371,10 @@ class NodeProcessor:
             Dict containing processing results
         """
         if not trigger_data:
-            logger.info("No triggers to process")
+            logger.debug("No triggers to process")
             return {"triggers_processed": 0, "cycles_executed": 0}
         
-        logger.info(f"Processing {len(trigger_data)} triggers")
+        logger.debug(f"Processing {len(trigger_data)} triggers")
         
         # Sort triggers by priority (highest first)
         sorted_triggers = sorted(trigger_data, key=lambda t: t.get('priority', 0), reverse=True)
@@ -1405,7 +1405,7 @@ class NodeProcessor:
                 context=context
             )
             
-            logger.info(f"Trigger processing completed for cycle {cycle_id}")
+            logger.debug(f"Trigger processing completed for cycle {cycle_id}")
             return {
                 "triggers_processed": len(trigger_data),
                 "cycles_executed": 1,
@@ -1487,7 +1487,7 @@ class NodeProcessor:
             # Customize instruction based on trigger type
             if primary_trigger_type == "mention":
                 instruction = f"{base_instruction} **IMPORTANT: You have been mentioned in a channel. This requires immediate attention and response. Check the recent messages in the primary channel ({primary_channel_id}) for the mention and respond appropriately.** Also consider other proactive engagement opportunities, but prioritize responding to the mention first."
-                logger.info(f"🔔 MENTION TRIGGER: AI being instructed to respond to mention in channel {primary_channel_id}")
+                logger.debug(f"🔔 MENTION TRIGGER: AI being instructed to respond to mention in channel {primary_channel_id}")
             else:
                 instruction = f"{base_instruction} Focus on responding to recent activity, mentions, or important updates, but also consider proactive engagement opportunities. Prioritize diverse actions across different channels and services when meaningful. Consider the current backlog to avoid redundant actions, but don't limit yourself unnecessarily - if there are genuine opportunities for valuable engagement, plan multiple complementary actions."
             
@@ -1520,7 +1520,7 @@ class NodeProcessor:
                 "payload_size_kb": len(str(payload)) / 1024 if payload else 0,
                 "trigger_type": payload.get("processing_context", {}).get("primary_trigger_type")
             }
-            logger.info(f"AI Planning Payload Summary: {payload_summary}")
+            logger.debug(f"AI Planning Payload Summary: {payload_summary}")
             
             # Use AI engine to get planning decisions
             decision_result = await self.ai_engine.decide_actions(
@@ -1529,7 +1529,7 @@ class NodeProcessor:
             
             # Log AI reasoning for planning
             if decision_result.get('reasoning'):
-                logger.info(f"AI Planning Reasoning: {decision_result['reasoning']}")
+                logger.debug(f"AI Planning Reasoning: {decision_result['reasoning']}")
             
             # Extract actions from the result
             planned_actions = decision_result.get('selected_actions', [])
@@ -1541,7 +1541,7 @@ class NodeProcessor:
             ]
             
             if actionable_plans:
-                logger.info(f"AI planned {len(actionable_plans)} new actions for backlog")
+                logger.debug(f"AI planned {len(actionable_plans)} new actions for backlog")
                 for action in actionable_plans:
                     logger.debug(f"Planned action: {action.get('action_type')} - {action.get('reasoning', 'No reasoning')}")
             
@@ -1588,6 +1588,6 @@ class NodeProcessor:
         if actions_executed_count > 0 and actions_executed_count % 5 == 0:
             total_queued = sum(len(queue) for queue in self.action_backlog.queued_actions.values())
             if total_queued < 3:  # Low backlog after execution - plan more
-                logger.info(f"Adaptive planning triggered after {actions_executed_count} actions with low backlog")
+                logger.debug(f"Adaptive planning triggered after {actions_executed_count} actions with low backlog")
                 await self._planning_phase(cycle_id, primary_channel_id, context)
                 self._last_planning_time = time.time()

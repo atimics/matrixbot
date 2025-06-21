@@ -120,7 +120,7 @@ class ProactiveConversationEngine:
             # Filter and prioritize opportunities
             opportunities = self._filter_and_prioritize_opportunities(opportunities, current_time)
             
-            logger.info(f"ProactiveEngine: Detected {len(opportunities)} conversation opportunities")
+            logger.debug(f"ProactiveEngine: Detected {len(opportunities)} conversation opportunities")
             return opportunities
             
         except Exception as e:
@@ -673,7 +673,7 @@ class ProactiveConversationEngine:
             cooldown_key = f"{opportunity.channel_id}_{opportunity.user_id}"
             self.recent_engagements.add(cooldown_key)
         
-        logger.info(f"ProactiveEngine: Registered active opportunity: {opportunity.opportunity_type} - {opportunity.reasoning}")
+        logger.debug(f"ProactiveEngine: Registered active opportunity: {opportunity.opportunity_type} - {opportunity.reasoning}")
     
     def cleanup_expired_opportunities(self) -> None:
         """Remove expired opportunities from active tracking."""
@@ -716,7 +716,7 @@ class ProactiveConversationEngine:
         if opportunity_id in self.active_opportunities:
             del self.active_opportunities[opportunity_id]
         
-        logger.info(f"ProactiveEngine: Recorded engagement result for {opportunity_id}: {'success' if success else 'failure'}")
+        logger.debug(f"ProactiveEngine: Recorded engagement result for {opportunity_id}: {'success' if success else 'failure'}")
 
     async def start(self) -> None:
         """Start the proactive conversation engine."""
@@ -799,13 +799,13 @@ class ProactiveConversationEngine:
     async def execute_engagement_plan(self, engagement_plan) -> bool:
         """Execute a proactive engagement plan."""
         try:
-            logger.info(f"Executing engagement plan: {engagement_plan.opportunity_id}")
+            logger.debug(f"Executing engagement plan: {engagement_plan.opportunity_id}")
             
             # For now, simulate execution by logging the plan
             # In a full implementation, this would execute the actual actions
-            logger.info(f"Engagement plan actions: {engagement_plan.actions}")
-            logger.info(f"Target channel: {engagement_plan.channel_id}")
-            logger.info(f"Strategy: {engagement_plan.opportunity_type}")
+            logger.debug(f"Engagement plan actions: {engagement_plan.actions}")
+            logger.debug(f"Target channel: {engagement_plan.channel_id}")
+            logger.debug(f"Strategy: {engagement_plan.opportunity_type}")
             
             # Mark as executed (simplified)
             return True
@@ -827,7 +827,7 @@ class ProactiveConversationEngine:
             # Store in engagement history
             self.engagement_success_history.append(outcome_record)
             
-            logger.info(f"Tracked engagement outcome: {opportunity_id} -> {status}")
+            logger.debug(f"Tracked engagement outcome: {opportunity_id} -> {status}")
             
         except Exception as e:
             logger.error(f"Error tracking engagement outcome: {e}", exc_info=True)
@@ -837,7 +837,7 @@ class ProactiveConversationEngine:
         try:
             # For now, just log the scheduled engagement
             # In a full implementation, this would integrate with a task scheduler
-            logger.info(f"Scheduled engagement: {scheduled_engagement['opportunity_id']} for {scheduled_engagement['scheduled_time']}")
+            logger.debug(f"Scheduled engagement: {scheduled_engagement['opportunity_id']} for {scheduled_engagement['scheduled_time']}")
             
             # Store in engagement plans for tracking
             plan_id = f"scheduled_{scheduled_engagement['opportunity_id']}"

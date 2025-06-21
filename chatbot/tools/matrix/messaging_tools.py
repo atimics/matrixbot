@@ -41,7 +41,7 @@ class SendMatrixReplyTool(ToolInterface):
         """
         Execute the Matrix reply action using the observer directly.
         """
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
+        logger.debug(f"Executing tool '{self.name}' with params: {params}")
 
         # Get Matrix messaging service from service registry
         matrix_service = context.get_messaging_service("matrix")
@@ -94,12 +94,12 @@ class SendMatrixReplyTool(ToolInterface):
                         media_age = time.time() - last_media.get('timestamp', 0)
                         if media_age <= 300:  # 5 minutes
                             image_url = recent_media_url
-                            logger.info(f"Auto-attaching recently generated media to Matrix reply: {image_url}")
+                            logger.debug(f"Auto-attaching recently generated media to Matrix reply: {image_url}")
 
         try:
             # If reply_to_id is missing but we have channel_id and content, fall back to regular message
             if not reply_to_event_id:
-                logger.info(f"reply_to_id missing, falling back to regular message in {channel_id}")
+                logger.debug(f"reply_to_id missing, falling back to regular message in {channel_id}")
                 result = await matrix_service.send_message(
                     channel_id=channel_id,
                     content=content
@@ -117,7 +117,7 @@ class SendMatrixReplyTool(ToolInterface):
                             )
                             if image_result.get("status") == "success":
                                 image_event_id = image_result.get("event_id")
-                                logger.info(f"Auto-attached image to Matrix fallback message: {image_event_id}")
+                                logger.debug(f"Auto-attached image to Matrix fallback message: {image_event_id}")
                     
                     result.update({
                         "fallback_to_message": True,
@@ -146,7 +146,7 @@ class SendMatrixReplyTool(ToolInterface):
                         )
                         if image_result.get("status") == "success":
                             image_event_id = image_result.get("event_id")
-                            logger.info(f"Auto-attached image to Matrix reply: {image_event_id}")
+                            logger.debug(f"Auto-attached image to Matrix reply: {image_event_id}")
                 
                 result.update({
                     "auto_attached_image": image_url if image_url else None,
@@ -193,7 +193,7 @@ class SendMatrixMessageTool(ToolInterface):
         """
         Execute the Matrix message action using the service layer.
         """
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
+        logger.debug(f"Executing tool '{self.name}' with params: {params}")
 
         # Get Matrix messaging service from service registry
         matrix_service = context.get_messaging_service("matrix")
@@ -229,7 +229,7 @@ class SendMatrixMessageTool(ToolInterface):
                 if context.world_state_manager:
                     image_url = context.world_state_manager.get_media_url_by_id(attach_image)
                     if image_url:
-                        logger.info(f"Using existing image from library: {attach_image} -> {image_url}")
+                        logger.debug(f"Using existing image from library: {attach_image} -> {image_url}")
                     else:
                         logger.warning(f"Media ID {attach_image} not found in library")
             else:
@@ -238,7 +238,7 @@ class SendMatrixMessageTool(ToolInterface):
                 generated_image_info = await generate_image_from_description(attach_image, context)
                 if generated_image_info:
                     image_url = generated_image_info["image_url"]
-                    logger.info(f"Generated new image from description: '{attach_image}' -> {image_url}")
+                    logger.debug(f"Generated new image from description: '{attach_image}' -> {image_url}")
                 else:
                     logger.warning(f"Failed to generate image from description: {attach_image}")
 
@@ -254,7 +254,7 @@ class SendMatrixMessageTool(ToolInterface):
                         media_age = time.time() - last_media.get('timestamp', 0)
                         if media_age <= 300:  # 5 minutes
                             image_url = recent_media_url
-                            logger.info(f"Auto-attaching recently generated media to Matrix message: {image_url}")
+                            logger.debug(f"Auto-attaching recently generated media to Matrix message: {image_url}")
 
         try:
             # Send message using the service layer
@@ -275,7 +275,7 @@ class SendMatrixMessageTool(ToolInterface):
                         )
                         if image_result.get("status") == "success":
                             image_event_id = image_result.get("event_id")
-                            logger.info(f"Auto-attached image to Matrix message: {image_event_id}")
+                            logger.debug(f"Auto-attached image to Matrix message: {image_event_id}")
                 
                 result.update({
                     "auto_attached_image": image_url if image_url else None,

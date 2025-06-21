@@ -101,7 +101,7 @@ class SentimentAnalysisTool(ToolInterface):
                     platform, user_identifier, sentiment_data
                 )
                 
-                logger.info(f"Updated sentiment for {platform} user {user_identifier}: {sentiment_label} ({sentiment_score:.2f})")
+                logger.debug(f"Updated sentiment for {platform} user {user_identifier}: {sentiment_label} ({sentiment_score:.2f})")
                 
                 return {
                     "status": "success",
@@ -261,7 +261,7 @@ class StoreUserMemoryTool(ToolInterface):
                 
                 context.world_state_manager.add_user_memory(user_platform_id, memory_entry)
                 
-                logger.info(f"Stored {memory_type} memory for {platform} user {user_identifier}: {content[:50]}...")
+                logger.debug(f"Stored {memory_type} memory for {platform} user {user_identifier}: {content[:50]}...")
                 
                 return {
                     "status": "success",
@@ -417,7 +417,7 @@ class GetUserProfileTool(ToolInterface):
                     for memory in memories
                 ]
 
-            logger.info(f"Retrieved profile for {platform} user {user_identifier}")
+            logger.debug(f"Retrieved profile for {platform} user {user_identifier}")
             
             return {
                 "status": "success",

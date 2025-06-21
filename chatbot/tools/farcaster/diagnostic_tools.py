@@ -43,7 +43,7 @@ class FarcasterDiagnosticTool(ToolInterface):
         """
         Execute the Farcaster diagnostic check.
         """
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
+        logger.debug(f"Executing tool '{self.name}' with params: {params}")
         
         detailed = params.get("detailed", False)
         diagnosis = {
@@ -210,7 +210,7 @@ class FarcasterRecentPostsTool(ToolInterface):
         """
         Execute the recent posts check.
         """
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
+        logger.debug(f"Executing tool '{self.name}' with params: {params}")
         
         limit = params.get("limit", 5)
         

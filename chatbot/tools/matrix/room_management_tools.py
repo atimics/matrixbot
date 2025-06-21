@@ -35,7 +35,7 @@ class JoinMatrixRoomTool(ToolInterface):
         """
         Execute the Matrix room join action using the service layer.
         """
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
+        logger.debug(f"Executing tool '{self.name}' with params: {params}")
 
         # Get Matrix service from service registry
         matrix_service = context.get_messaging_service("matrix")
@@ -89,7 +89,7 @@ class LeaveMatrixRoomTool(ToolInterface):
         """
         Execute the Matrix room leave action using the service layer.
         """
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
+        logger.debug(f"Executing tool '{self.name}' with params: {params}")
 
         # Get Matrix service from service registry
         matrix_service = context.get_messaging_service("matrix")
@@ -143,7 +143,7 @@ class AcceptMatrixInviteTool(ToolInterface):
         """
         Execute the Matrix invite acceptance action using the service layer.
         """
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
+        logger.debug(f"Executing tool '{self.name}' with params: {params}")
 
         # Get Matrix service from service registry
         matrix_service = context.get_messaging_service("matrix")
@@ -197,7 +197,7 @@ class IgnoreMatrixInviteTool(ToolInterface):
         """
         Execute the Matrix invite ignoring action using the service layer.
         """
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
+        logger.debug(f"Executing tool '{self.name}' with params: {params}")
 
         # Get Matrix service from service registry
         matrix_service = context.get_messaging_service("matrix")

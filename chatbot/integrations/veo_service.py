@@ -163,7 +163,7 @@ class VeoService:
                     logger.error("VeoService: No operation name returned")
                     return []
 
-                logger.info(f"VeoService: Started operation {operation_name}")
+                logger.debug(f"VeoService: Started operation {operation_name}")
 
                 # Poll until complete with enhanced logic
                 operation = operation_data
@@ -186,7 +186,7 @@ class VeoService:
                     if poll_response.is_success:
                         operation = poll_response.json()
                         elapsed = time.time() - start_time
-                        logger.info(
+                        logger.debug(
                             f"VeoService: Video generation in progress... ({elapsed:.1f}s)"
                         )
                     else:
@@ -224,7 +224,7 @@ class VeoService:
                         # Add API key to URI
                         video_url = f"{video_uri}&key={self.api_key}"
 
-                        logger.info(f"VeoService: Downloading video from {video_uri}")
+                        logger.debug(f"VeoService: Downloading video from {video_uri}")
 
                         # Download with browser headers
                         download_response = await client.get(
@@ -233,7 +233,7 @@ class VeoService:
 
                         if download_response.is_success:
                             video_bytes = download_response.content
-                            logger.info(
+                            logger.debug(
                                 f"VeoService: Downloaded video ({len(video_bytes)} bytes)"
                             )
 
@@ -247,14 +247,14 @@ class VeoService:
                                     temp_path = temp_file.name
 
                                 try:
-                                    logger.info(
+                                    logger.debug(
                                         f"VeoService: Uploading video to Arweave: {temp_path}"
                                     )
                                     arweave_url = await self.arweave_service.upload_image(
                                         temp_path
                                     )
                                     arweave_urls.append(arweave_url)
-                                    logger.info(
+                                    logger.debug(
                                         f"VeoService: Video uploaded to Arweave: {arweave_url}"
                                     )
                                 finally:

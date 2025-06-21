@@ -91,7 +91,7 @@ class GetUserTimelineTool(ToolInterface):
         """
         Execute the get user timeline action.
         """
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
+        logger.debug(f"Executing tool '{self.name}' with params: {params}")
 
         # Try service-oriented approach first, then fallback to direct attribute access
         farcaster_service = None
@@ -132,7 +132,7 @@ class GetUserTimelineTool(ToolInterface):
 
             # Check if the service operation was successful
             if result.get("success", True):  # Default to True for backward compatibility
-                logger.info(
+                logger.debug(
                     f"Retrieved {len(result.get('casts', []))} casts for user {user_identifier}"
                 )
                 # Create AI-optimized summaries of the casts
@@ -171,7 +171,7 @@ class GetUserTimelineTool(ToolInterface):
                                 }
                             )
                             
-                            logger.info(f"Cached timeline data for Farcaster user FID {fid}")
+                            logger.debug(f"Cached timeline data for Farcaster user FID {fid}")
                     except Exception as cache_error:
                         logger.warning(f"Failed to cache timeline data: {cache_error}")
                 
@@ -380,7 +380,7 @@ class GetTrendingCastsTool(ToolInterface):
                                 "timestamp": time.time()
                             }
                         )
-                        logger.info(f"Cached trending casts for channel: {channel_id or 'all'}")
+                        logger.debug(f"Cached trending casts for channel: {channel_id or 'all'}")
                     
                     return {
                         "status": "success",
@@ -536,7 +536,7 @@ class SearchCastsTool(ToolInterface):
                         }
                     )
                     
-                    logger.info(f"Cached search results for query: {query} (hash: {query_hash})")
+                    logger.debug(f"Cached search results for query: {query} (hash: {query_hash})")
                 
                 return {
                     "status": "success",
@@ -651,7 +651,7 @@ class GetCastByUrlTool(ToolInterface):
                             "timestamp": time.time()
                         }
                     )
-                    logger.info(f"Cached cast data for URL: {farcaster_url}")
+                    logger.debug(f"Cached cast data for URL: {farcaster_url}")
                 
                 return {
                     "status": "success",

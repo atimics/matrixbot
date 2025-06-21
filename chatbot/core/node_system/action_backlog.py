@@ -154,7 +154,7 @@ class ActionBacklog:
         for dep_id in action.depends_on:
             self.dependency_graph[dep_id].add(action_id)
             
-        logger.info(f"Added action {action_id} to backlog (priority: {priority.name}, service: {service})")
+        logger.debug(f"Added action {action_id} to backlog (priority: {priority.name}, service: {service})")
         return action_id
     
     def add_actions_batch(self, actions: List[Dict[str, Any]], 
@@ -256,7 +256,7 @@ class ActionBacklog:
             if action.attempts < action.max_attempts:
                 action.status = ActionStatus.QUEUED
                 self.queued_actions[action.priority].appendleft(action)  # High priority for retry
-                logger.info(f"Retrying action {action_id} (attempt {action.attempts}/{action.max_attempts})")
+                logger.debug(f"Retrying action {action_id} (attempt {action.attempts}/{action.max_attempts})")
             else:
                 self.failed[action_id] = action
                 logger.warning(f"Action {action_id} failed permanently: {error}")
@@ -353,4 +353,4 @@ class ActionBacklog:
         # Put back in queue with high priority since it was already being executed
         self.queued_actions[ActionPriority.HIGH].appendleft(action)
         
-        logger.info(f"Scheduled delayed retry for action {action_id} in {delay_seconds} seconds")
+        logger.debug(f"Scheduled delayed retry for action {action_id} in {delay_seconds} seconds")

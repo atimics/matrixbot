@@ -294,7 +294,7 @@ class MatrixEncryptionHandler:
             self.key_request_retries[retry_key] = current_retries + 1
             retry_delay = min(300, 30 * (2 ** current_retries))  # Exponential backoff, max 5 minutes
             
-            logger.info(
+            logger.debug(
                 f"MatrixEncryption: Scheduling retry #{current_retries + 1} for {event_id} "
                 f"in {retry_delay} seconds"
             )

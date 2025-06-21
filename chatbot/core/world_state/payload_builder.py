@@ -160,7 +160,7 @@ class PayloadBuilder:
             
             # DEBUG: Log detailed expansion state for key nodes
             if "channels.matrix." in node_path or "farcaster.feeds." in node_path:
-                logger.info(f"🔍 PAYLOAD BUILD: {node_path} -> is_expanded={metadata.is_expanded}, is_pinned={metadata.is_pinned}, last_expanded_ts={metadata.last_expanded_ts}")
+                logger.debug(f"🔍 PAYLOAD BUILD: {node_path} -> is_expanded={metadata.is_expanded}, is_pinned={metadata.is_pinned}, last_expanded_ts={metadata.last_expanded_ts}")
             
             # Use the corrected path parsing and data retrieval logic
             path_parts = self.node_path_generator.parse_node_path(node_path)

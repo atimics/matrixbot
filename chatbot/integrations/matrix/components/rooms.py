@@ -93,7 +93,7 @@ class MatrixRoomManager:
                         logger.debug(f"MatrixRoomManager: Error processing timeline event in {room.room_id}: {e}")
                         continue
                 
-                logger.info(f"MatrixRoomManager: Extracted {len(messages)} messages from {room.room_id} timeline")
+                logger.debug(f"MatrixRoomManager: Extracted {len(messages)} messages from {room.room_id} timeline")
                 
         except Exception as e:
             logger.warning(f"MatrixRoomManager: Error extracting messages from {room.room_id}: {e}")
@@ -171,7 +171,7 @@ class MatrixRoomManager:
                         continue
                 
                 if messages:
-                    logger.info(f"MatrixRoomManager: Extracted {len(messages)} messages from {room.room_id} timeline")
+                    logger.debug(f"MatrixRoomManager: Extracted {len(messages)} messages from {room.room_id} timeline")
                 else:
                     logger.debug(f"MatrixRoomManager: No readable messages found in {room.room_id} (may be encrypted or empty)")
                 
@@ -207,7 +207,7 @@ class MatrixRoomManager:
             
             self.world_state.add_channel(channel)
             message_count = len(recent_messages)
-            logger.info(
+            logger.debug(
                 f"MatrixRoomManager: Registered room {room_id} "
                 f"({room_details.get('name', 'Unnamed Room')}) with {message_count} messages"
             )

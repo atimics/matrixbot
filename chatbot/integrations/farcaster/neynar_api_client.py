@@ -152,7 +152,7 @@ class NeynarAPIClient:
                 
                 if attempt < self.max_retries:
                     delay = min(self.base_delay * (2 ** attempt), self.max_delay)
-                    logger.info(f"Retrying in {delay} seconds...")
+                    logger.debug(f"Retrying in {delay} seconds...")
                     await asyncio.sleep(delay)
                 else:
                     self.network_health["is_available"] = False
@@ -166,7 +166,7 @@ class NeynarAPIClient:
                 
                 if attempt < self.max_retries:
                     delay = min(self.base_delay * (2 ** attempt), self.max_delay)
-                    logger.info(f"Retrying in {delay} seconds...")
+                    logger.debug(f"Retrying in {delay} seconds...")
                     await asyncio.sleep(delay)
                 else:
                     self.network_health["is_available"] = False
@@ -185,7 +185,7 @@ class NeynarAPIClient:
                     
                     if attempt < self.max_retries:
                         delay = min(self.base_delay * (2 ** attempt), self.max_delay)
-                        logger.info(f"Retrying server error in {delay} seconds...")
+                        logger.debug(f"Retrying server error in {delay} seconds...")
                         await asyncio.sleep(delay)
                     else:
                         raise NeynarAPIError(f"Server error after {self.max_retries} attempts: {e.response.status_code} - {e.response.text}")
@@ -202,7 +202,7 @@ class NeynarAPIClient:
                 
                 if attempt < self.max_retries:
                     delay = min(self.base_delay * (2 ** attempt), self.max_delay)
-                    logger.info(f"Retrying request error in {delay} seconds...")
+                    logger.debug(f"Retrying request error in {delay} seconds...")
                     await asyncio.sleep(delay)
                 else:
                     self.network_health["is_available"] = False
@@ -256,7 +256,7 @@ class NeynarAPIClient:
                 if remaining < 10:
                     logger.warning(f"Farcaster API rate limit approaching: {remaining} requests remaining")
                 elif remaining < 50:
-                    logger.info(f"Farcaster API rate limit status: {remaining} requests remaining")
+                    logger.debug(f"Farcaster API rate limit status: {remaining} requests remaining")
                     
             if reset_hdr:
                 try:

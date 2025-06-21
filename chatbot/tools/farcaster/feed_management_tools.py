@@ -108,7 +108,7 @@ class AddFarcasterFeedTool(ToolInterface):
                     result="success",
                 )
                 
-                logger.info(f"Added custom Farcaster feed: {feed_name} ({feed_type}: {feed_identifier})")
+                logger.debug(f"Added custom Farcaster feed: {feed_name} ({feed_type}: {feed_identifier})")
                 
                 return {
                     "status": "success",
@@ -256,7 +256,7 @@ class RemoveFarcasterFeedTool(ToolInterface):
                     result="success",
                 )
                 
-                logger.info(f"Removed custom Farcaster feed: {feed_name} ({feed_id})")
+                logger.debug(f"Removed custom Farcaster feed: {feed_name} ({feed_id})")
                 
                 return {
                     "status": "success",

@@ -32,7 +32,7 @@ class S3StorageService:
         if not self.s3_client:
             try:
                 self.s3_client = S3StorageClient()
-                logger.info("S3StorageService: Initialized with environment configuration")
+                logger.debug("S3StorageService: Initialized with environment configuration")
             except ValueError as e:
                 logger.warning(f"S3StorageService: Could not initialize - {e}")
                 self.s3_client = None

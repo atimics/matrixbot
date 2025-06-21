@@ -103,7 +103,7 @@ class BaseObserver(ABC):
         self._last_error = error
         
         if status != old_status:
-            logger.info(f"{self.display_name}: Status changed from {old_status.value} to {status.value}")
+            logger.debug(f"{self.display_name}: Status changed from {old_status.value} to {status.value}")
             
         if error:
             logger.error(f"{self.display_name}: Error - {error}")

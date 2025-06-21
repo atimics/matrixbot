@@ -162,7 +162,7 @@ def log_with_context(**context):
     Usage:
         @log_with_context(user_id="123", request_id="abc")
         def my_function():
-            logger.info("This will include user_id and request_id")
+            logger.debug("This will include user_id and request_id")
     """
     def decorator(func):
         def wrapper(*args, **kwargs):
@@ -182,7 +182,7 @@ class PerformanceLogger:
     
     def log_api_call(self, method: str, endpoint: str, duration_ms: float, status_code: int):
         """Log API call performance metrics."""
-        self.logger.info(
+        self.logger.debug(
             "api_call",
             method=method,
             endpoint=endpoint,
@@ -193,7 +193,7 @@ class PerformanceLogger:
     
     def log_ai_generation(self, model: str, tokens: int, duration_ms: float, success: bool):
         """Log AI generation performance metrics."""
-        self.logger.info(
+        self.logger.debug(
             "ai_generation",
             model=model,
             tokens=tokens,
@@ -204,7 +204,7 @@ class PerformanceLogger:
     
     def log_database_query(self, query_type: str, duration_ms: float, rows_affected: int = 0):
         """Log database query performance metrics."""
-        self.logger.info(
+        self.logger.debug(
             "database_query",
             query_type=query_type,
             duration_ms=duration_ms,

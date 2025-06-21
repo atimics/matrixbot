@@ -31,7 +31,7 @@ class APIKeyAuth(HTTPBearer):
             hashlib.sha256(key.encode()).hexdigest(): key[:8] + "..." 
             for key in valid_api_keys
         }
-        logger.info(f"Initialized API key auth with {len(valid_api_keys)} keys")
+        logger.debug(f"Initialized API key auth with {len(valid_api_keys)} keys")
     
     async def __call__(self, request: Request) -> Optional[HTTPAuthorizationCredentials]:
         """Validate API key from Authorization header."""
@@ -82,7 +82,7 @@ class RateLimiter:
         self.buckets: Dict[str, Tuple[float, float]] = {}
         self.last_cleanup = time.time()
         
-        logger.info(
+        logger.debug(
             f"Initialized rate limiter: {requests_per_minute} req/min, "
             f"burst: {burst_size}"
         )
@@ -189,7 +189,7 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         self.rate_limiter = rate_limiter
         self.enable_security_headers = enable_security_headers
         
-        logger.info("Initialized security middleware")
+        logger.debug("Initialized security middleware")
     
     async def dispatch(self, request: Request, call_next) -> Response:
         """Process request through security checks."""
@@ -246,7 +246,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         
         # Log request
         client_ip = request.client.host if request.client else "unknown"
-        logger.info(
+        logger.debug(
             f"Request: {request.method} {request.url.path} "
             f"from {client_ip} "
             f"User-Agent: {request.headers.get('User-Agent', 'unknown')}"
@@ -272,7 +272,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             
             # Log response
             process_time = time.time() - start_time
-            logger.info(
+            logger.debug(
                 f"Response: {response.status_code} "
                 f"for {request.method} {request.url.path} "
                 f"in {process_time:.3f}s"
@@ -301,7 +301,7 @@ def setup_cors_middleware(app, allowed_origins: List[str]):
         expose_headers=["X-RateLimit-*", "X-Process-Time"]
     )
     
-    logger.info(f"CORS configured for origins: {allowed_origins}")
+    logger.debug(f"CORS configured for origins: {allowed_origins}")
 
 
 def create_api_security_setup(
@@ -341,6 +341,6 @@ def create_api_security_setup(
         )
         middleware.append(logging_middleware)
     
-    logger.info("API security setup complete")
+    logger.debug("API security setup complete")
     
     return api_key_auth, middleware

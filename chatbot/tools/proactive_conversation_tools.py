@@ -122,7 +122,7 @@ class InitiateProactiveConversationTool(ToolInterface):
             message_content = params.get("message_content")
             context_data = params.get("context_data", {})
             
-            logger.info(f"Initiating proactive conversation: {opportunity_type} in {channel_id}")
+            logger.debug(f"Initiating proactive conversation: {opportunity_type} in {channel_id}")
             
             # Get the proactive conversation engine from world state
             if hasattr(context.world_state_manager, 'proactive_engine'):
@@ -255,7 +255,7 @@ class DetectConversationOpportunitiesTool(ToolInterface):
             minimum_priority = kwargs.get("minimum_priority", 0.5)
             max_opportunities = kwargs.get("max_opportunities", 5)
             
-            logger.info(f"Detecting conversation opportunities with scope: {analysis_scope}")
+            logger.debug(f"Detecting conversation opportunities with scope: {analysis_scope}")
             
             # Get the proactive conversation engine
             if hasattr(context.world_state_manager, 'proactive_engine'):
@@ -365,7 +365,7 @@ class ScheduleProactiveEngagementTool(ToolInterface):
             priority_score = kwargs.get("priority_score", 0.5)
             context_data = kwargs.get("context_data", {})
             
-            logger.info(f"Scheduling proactive engagement: {opportunity_id} for {scheduled_time}")
+            logger.debug(f"Scheduling proactive engagement: {opportunity_id} for {scheduled_time}")
             
             # Parse scheduled time
             try:
@@ -486,7 +486,7 @@ class GetProactiveEngagementStatusTool(ToolInterface):
             include_metrics = kwargs.get("include_metrics", True)
             status_filter = kwargs.get("status_filter", [])
             
-            logger.info(f"Checking proactive engagement status for range: {time_range_hours}h")
+            logger.debug(f"Checking proactive engagement status for range: {time_range_hours}h")
             
             # Get the proactive conversation engine
             if hasattr(context.world_state_manager, 'proactive_engine'):

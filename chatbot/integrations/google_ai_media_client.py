@@ -117,7 +117,7 @@ class GoogleAIMediaClient:
                     # Look for inline_data containing image bytes
                     if hasattr(part, "inline_data") and part.inline_data and \
                        hasattr(part.inline_data, "data") and part.inline_data.data:
-                        logger.info(f"GoogleAIMediaClient: Successfully generated image using Gemini 2.0 Flash Preview")
+                        logger.debug(f"GoogleAIMediaClient: Successfully generated image using Gemini 2.0 Flash Preview")
                         return part.inline_data.data
             
             # If no image data found, log details
@@ -144,7 +144,7 @@ class GoogleAIMediaClient:
             # Check if it's the specific "Multi-modal output is not supported" error
             error_message = str(e)
             if "Multi-modal output is not supported" in error_message:
-                logger.info(f"GoogleAIMediaClient: Gemini 2.0 Flash Preview Image Generation is not available in this region or configuration. Falling back to Replicate.")
+                logger.debug(f"GoogleAIMediaClient: Gemini 2.0 Flash Preview Image Generation is not available in this region or configuration. Falling back to Replicate.")
                 return None
             elif "APIError" in str(type(e)):
                 logger.error(f"GoogleAIMediaClient: Gemini image generation failed with API error: {error_message}")
@@ -281,7 +281,7 @@ class GoogleAIMediaClient:
 
         operation_name = "unknown_veo_operation"  # Initialize before operation to avoid reference errors
         try:
-            logger.info(f"GoogleAIMediaClient: Starting Veo video generation for prompt: '{prompt}' with model {self.default_veo_video_model}")
+            logger.debug(f"GoogleAIMediaClient: Starting Veo video generation for prompt: '{prompt}' with model {self.default_veo_video_model}")
             
             # This returns an AsyncOperation object
             operation = await self.client.aio.models.generate_videos(
@@ -296,7 +296,7 @@ class GoogleAIMediaClient:
                 logger.debug(f"GoogleAIMediaClient: Operation dict: {operation.__dict__}")
             
             operation_name = str(operation.name) if hasattr(operation, 'name') else "unknown_veo_operation"
-            logger.info(f"GoogleAIMediaClient: Veo video generation operation started: {operation_name}. Waiting for completion...")
+            logger.debug(f"GoogleAIMediaClient: Veo video generation operation started: {operation_name}. Waiting for completion...")
 
             # Use polling pattern as shown in Google AI documentation
             max_wait_seconds = 600  # 10 minutes timeout for the operation to complete
@@ -341,9 +341,9 @@ class GoogleAIMediaClient:
                         video_detail = gen_video_info.video
                         if video_detail.video_bytes:
                             video_bytes_list.append(video_detail.video_bytes)
-                            logger.info(f"GoogleAIMediaClient: Veo video generated ({len(video_detail.video_bytes)} bytes).")
+                            logger.debug(f"GoogleAIMediaClient: Veo video generated ({len(video_detail.video_bytes)} bytes).")
                         elif video_detail.uri:
-                            logger.info(f"GoogleAIMediaClient: Veo video generated, URI: {video_detail.uri}. Attempting download.")
+                            logger.debug(f"GoogleAIMediaClient: Veo video generated, URI: {video_detail.uri}. Attempting download.")
                             async with httpx.AsyncClient(timeout=300.0) as http_client:
                                 try:
                                     initial_download_url = video_detail.uri
@@ -361,17 +361,17 @@ class GoogleAIMediaClient:
                                             logger.error("GoogleAIMediaClient: Received 302 redirect but no Location header was found.")
                                             continue
 
-                                        logger.info(f"GoogleAIMediaClient: Redirected to {redirect_url[:80]}...")
+                                        logger.debug(f"GoogleAIMediaClient: Redirected to {redirect_url[:80]}...")
                                         
                                         # Make a new, clean request to the pre-signed URL with NO auth headers
                                         final_response = await http_client.get(redirect_url)
                                         final_response.raise_for_status() # Check for errors on the final download
                                         video_bytes_list.append(final_response.content)
-                                        logger.info(f"GoogleAIMediaClient: Downloaded Veo video from redirected URL ({len(final_response.content)} bytes).")
+                                        logger.debug(f"GoogleAIMediaClient: Downloaded Veo video from redirected URL ({len(final_response.content)} bytes).")
 
                                     elif initial_response.status_code == 200:
                                         # In the unlikely case it returns data directly
-                                        logger.info("GoogleAIMediaClient: Downloaded Veo video directly without redirect.")
+                                        logger.debug("GoogleAIMediaClient: Downloaded Veo video directly without redirect.")
                                         video_bytes_list.append(initial_response.content)
 
                                     else:
@@ -396,13 +396,13 @@ class GoogleAIMediaClient:
             # Log final status if possible
             try:
                 if 'operation' in locals() and not operation.done(): # Check if operation exists and is not done
-                    logger.info(f"Attempting to get latest status for timed-out operation {operation_name}")
+                    logger.debug(f"Attempting to get latest status for timed-out operation {operation_name}")
                     updated_op = await self.client.aio.operations.get(name=operation_name)
                     if updated_op.error:
                         error_message = updated_op.error.message if hasattr(updated_op.error, 'message') else str(updated_op.error)
                         logger.error(f"Timed-out Veo operation {operation_name} ended with error: {error_message}")
                     elif updated_op.done():
-                         logger.info(f"Timed-out Veo operation {operation_name} was found to be completed after timeout check.")
+                         logger.debug(f"Timed-out Veo operation {operation_name} was found to be completed after timeout check.")
             except Exception as final_status_e:
                 logger.warning(f"Could not fetch final status for timed-out operation {operation_name}: {final_status_e}")
             return []

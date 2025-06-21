@@ -50,11 +50,11 @@ class DualStorageManager:
             if self.arweave_service.is_configured():
                 logger.info("DualStorageManager: Arweave service initialized")
             else:
-                logger.info("DualStorageManager: Arweave service not configured (optional for NFT-only)")
+                logger.debug("DualStorageManager: Arweave service not configured (optional for NFT-only)")
 
         # Configuration
         self.use_s3_primary = getattr(settings, 'USE_S3_FOR_MEDIA', True)
-        logger.info(f"DualStorageManager: S3 primary storage: {self.use_s3_primary}")
+        logger.debug(f"DualStorageManager: S3 primary storage: {self.use_s3_primary}")
 
     def is_s3_available(self) -> bool:
         """Check if S3 storage is available"""
@@ -140,7 +140,7 @@ class DualStorageManager:
             logger.error("Arweave service not available for NFT minting")
             return None
         
-        logger.info(f"Minting NFT on Arweave: {filename}")
+        logger.debug(f"Minting NFT on Arweave: {filename}")
         return await self.arweave_service.upload_image_data(media_data, filename, content_type)
 
     async def upload_dual(self, media_data: bytes, filename: str = "media.png",
@@ -165,7 +165,7 @@ class DualStorageManager:
             try:
                 s3_url = await self.upload_media(media_data, filename, content_type)
                 if s3_url:
-                    logger.info(f"Successfully uploaded to S3: {s3_url}")
+                    logger.debug(f"Successfully uploaded to S3: {s3_url}")
             except Exception as e:
                 logger.error(f"Failed to upload to S3: {e}")
         
@@ -174,7 +174,7 @@ class DualStorageManager:
             try:
                 arweave_url = await self.mint_nft_from_media(media_data, filename, content_type)
                 if arweave_url:
-                    logger.info(f"Successfully uploaded to Arweave: {arweave_url}")
+                    logger.debug(f"Successfully uploaded to Arweave: {arweave_url}")
             except Exception as e:
                 logger.error(f"Failed to upload to Arweave: {e}")
         

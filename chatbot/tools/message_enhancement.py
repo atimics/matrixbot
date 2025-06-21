@@ -53,7 +53,7 @@ def extract_image_description(content: str) -> Tuple[Optional[str], str]:
         if match:
             image_desc = match.group(1).strip()
             remaining_content = match.group(2).strip()
-            logger.info(f"Extracted image description: '{image_desc[:50]}...'")
+            logger.debug(f"Extracted image description: '{image_desc[:50]}...'")
             return image_desc, remaining_content
     
     return None, content
@@ -96,7 +96,7 @@ async def generate_image_from_description(
                 image_data = await google_client.generate_image_gemini(image_description, aspect_ratio)
                 if image_data:
                     service_used = "google_gemini"
-                    logger.info(f"Generated image using Google Gemini: {image_description[:50]}...")
+                    logger.debug(f"Generated image using Google Gemini: {image_description[:50]}...")
             except Exception as e:
                 if "Multi-modal output is not supported" in str(e):
                     logger.debug("Google Gemini multi-modal output not supported, falling back to Replicate")
@@ -114,7 +114,7 @@ async def generate_image_from_description(
                         response.raise_for_status()
                         image_data = response.content
                     service_used = "replicate"
-                    logger.info(f"Generated and downloaded image using Replicate: {image_description[:50]}...")
+                    logger.debug(f"Generated and downloaded image using Replicate: {image_description[:50]}...")
             except Exception as e:
                 logger.warning(f"Replicate image generation failed: {e}")
 
@@ -210,7 +210,7 @@ async def enhance_message_with_image(
                 "caption": gallery_caption
             }, context)
             
-            logger.info("Auto-posted generated image to gallery")
+            logger.debug("Auto-posted generated image to gallery")
             
         except Exception as e:
             logger.warning(f"Failed to auto-post to gallery: {e}")

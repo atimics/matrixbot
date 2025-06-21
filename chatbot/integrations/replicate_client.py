@@ -97,7 +97,7 @@ class ReplicateClient:
                     selected_image = images
                 elif isinstance(images, list) and len(images) > 0:
                     selected_image = random.choice(images)
-                    logger.info(
+                    logger.debug(
                         f"ReplicateClient: Randomly selected image from {len(images)} options"
                     )
 
@@ -105,7 +105,7 @@ class ReplicateClient:
             enhanced_prompt = prompt
             if self.lora_trigger_word:
                 enhanced_prompt = f"{self.lora_trigger_word} {prompt}"
-                logger.info(
+                logger.debug(
                     f"ReplicateClient: Enhanced prompt with trigger word: {self.lora_trigger_word}"
                 )
 
@@ -138,7 +138,7 @@ class ReplicateClient:
             if self.style:
                 payload["input"]["style"] = self.style
 
-            logger.info(
+            logger.debug(
                 f"ReplicateClient: Starting generation with model {payload['version']}"
             )
 
@@ -167,7 +167,7 @@ class ReplicateClient:
                     logger.error("ReplicateClient: No prediction ID returned")
                     return None
 
-                logger.info(f"ReplicateClient: Started prediction {prediction_id}")
+                logger.debug(f"ReplicateClient: Started prediction {prediction_id}")
 
                 # Enhanced polling with exponential backoff (JavaScript style)
                 prediction = prediction_data
@@ -210,7 +210,7 @@ class ReplicateClient:
                     output = prediction.get("output")
                     if isinstance(output, list) and len(output) > 0:
                         result_url = output[0]
-                        logger.info(
+                        logger.debug(
                             f"ReplicateClient: Generation succeeded: {result_url}"
                         )
                         return result_url

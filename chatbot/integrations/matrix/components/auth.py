@@ -97,7 +97,7 @@ class MatrixAuthHandler:
                 
             # Set restrictive permissions
             os.chmod(self.token_file, 0o600)
-            logger.info("MatrixAuthHandler: Token saved successfully")
+            logger.debug("MatrixAuthHandler: Token saved successfully")
             
         except Exception as e:
             logger.error(f"MatrixAuthHandler: Error saving token: {e}")
@@ -106,12 +106,12 @@ class MatrixAuthHandler:
         """Attempt login with retry logic and rate limit handling."""
         for attempt in range(max_attempts):
             try:
-                logger.info(f"MatrixAuthHandler: Login attempt {attempt + 1} for {self.user_id}")
+                logger.debug(f"MatrixAuthHandler: Login attempt {attempt + 1} for {self.user_id}")
                 
                 response = await client.login(self.password)
                 
                 if isinstance(response, LoginResponse):
-                    logger.info("MatrixAuthHandler: Login successful")
+                    logger.debug("MatrixAuthHandler: Login successful")
                     await self.save_token(response.access_token, response.device_id)
                     return response.access_token
                 else:
@@ -149,7 +149,7 @@ class MatrixAuthHandler:
             if self.token_file.exists():
                 try:
                     self.token_file.unlink()
-                    logger.info("MatrixAuthHandler: Cleared invalid token file")
+                    logger.debug("MatrixAuthHandler: Cleared invalid token file")
                 except Exception as e:
                     logger.error(f"MatrixAuthHandler: Error removing token file: {e}")
             
@@ -162,6 +162,6 @@ class MatrixAuthHandler:
         if self.token_file.exists():
             try:
                 self.token_file.unlink()
-                logger.info("MatrixAuthHandler: Cleared token file")
+                logger.debug("MatrixAuthHandler: Cleared token file")
             except Exception as e:
                 logger.error(f"MatrixAuthHandler: Error clearing token file: {e}")

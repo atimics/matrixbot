@@ -76,7 +76,7 @@ class ChatbotApp:
         # Import here to avoid circular imports
         from chatbot.api_server import create_secure_api_server
         self.api_server = create_secure_api_server(self.orchestrator, settings)
-        logger.info("Secure API server configured successfully")
+        logger.debug("Secure API server configured successfully")
         
     def start_api_server(self):
         """Start the API server in a separate thread."""
@@ -114,13 +114,13 @@ class ChatbotApp:
         setup_logging()
         
         if self.with_ui:
-            logger.info("Starting Chatbot with Management UI...")
+            logger.debug("Starting Chatbot with Management UI...")
         else:
-            logger.info("Starting Chatbot in standalone mode...")
+            logger.debug("Starting Chatbot in standalone mode...")
         
         # Set up signal handlers for graceful shutdown
         def signal_handler(signum, frame):
-            logger.info(f"Received signal {signum}, shutting down gracefully...")
+            logger.debug(f"Received signal {signum}, shutting down gracefully...")
             self.running = False
             
         signal.signal(signal.SIGINT, signal_handler)
@@ -158,14 +158,14 @@ class ChatbotApp:
                 await asyncio.sleep(1)
                 
         except KeyboardInterrupt:
-            logger.info("Keyboard interrupt received, shutting down...")
+            logger.debug("Keyboard interrupt received, shutting down...")
         except Exception as e:
             logger.error(f"Application error: {e}")
             raise
         finally:
             # Clean shutdown
             await self.stop_chatbot()
-            logger.info("Application shutdown complete")
+            logger.debug("Application shutdown complete")
 
 
 def parse_arguments():

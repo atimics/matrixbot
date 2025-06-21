@@ -37,15 +37,15 @@ class FarcasterScheduler:
         self._post_task: Optional[asyncio.Task] = None
         self._reply_task: Optional[asyncio.Task] = None
         self.replied_to_hashes: set[str] = set()
-        logger.info("FarcasterScheduler initialized.")
+        logger.debug("FarcasterScheduler initialized.")
 
     async def start(self):
         if self._post_task is None or self._post_task.done():
             self._post_task = asyncio.create_task(self._send_posts_loop())
-            logger.info("Post scheduler task started.")
+            logger.debug("Post scheduler task started.")
         if self._reply_task is None or self._reply_task.done():
             self._reply_task = asyncio.create_task(self._send_replies_loop())
-            logger.info("Reply scheduler task started.")
+            logger.debug("Reply scheduler task started.")
 
     async def stop(self):
         if self._post_task and not self._post_task.done():
@@ -53,7 +53,7 @@ class FarcasterScheduler:
             try:
                 await self._post_task
             except asyncio.CancelledError:
-                logger.info("Post scheduler task cancelled successfully.")
+                logger.debug("Post scheduler task cancelled successfully.")
             except Exception as e:
                 logger.error(f"Error during post task cancellation: {e}")
         if self._reply_task and not self._reply_task.done():
@@ -61,10 +61,10 @@ class FarcasterScheduler:
             try:
                 await self._reply_task
             except asyncio.CancelledError:
-                logger.info("Reply scheduler task cancelled successfully.")
+                logger.debug("Reply scheduler task cancelled successfully.")
             except Exception as e:
                 logger.error(f"Error during reply task cancellation: {e}")
-        logger.info("FarcasterScheduler stopped.")
+        logger.debug("FarcasterScheduler stopped.")
 
     def schedule_post(
         self,
@@ -73,7 +73,7 @@ class FarcasterScheduler:
         action_id: Optional[str] = None,
         embeds: Optional[list] = None,
     ) -> bool:
-        logger.info(
+        logger.debug(
             f"Attempting to schedule post: action_id={action_id}, content='{content[:50]}...', channel={channel}, embeds={len(embeds) if embeds else 0}"
         )
         if self._is_duplicate_in_queue(
@@ -91,13 +91,13 @@ class FarcasterScheduler:
             "scheduled_at": time.time(),
         }
         self.post_queue.put_nowait(post_data)
-        logger.info(f"Post added to queue. New queue size: {self.post_queue.qsize()}")
+        logger.debug(f"Post added to queue. New queue size: {self.post_queue.qsize()}")
         return True
 
     def schedule_reply(
         self, content: str, reply_to_hash: str, action_id: Optional[str] = None
     ) -> bool:
-        logger.info(
+        logger.debug(
             f"Attempting to schedule reply: action_id={action_id}, reply_to_hash={reply_to_hash}, content='{content[:50]}...'"
         )
         if reply_to_hash in self.replied_to_hashes:
@@ -119,15 +119,15 @@ class FarcasterScheduler:
         }
         self.reply_queue.put_nowait(reply_data)
         self.replied_to_hashes.add(reply_to_hash)
-        logger.info(f"Reply added to queue. New queue size: {self.reply_queue.qsize()}")
+        logger.debug(f"Reply added to queue. New queue size: {self.reply_queue.qsize()}")
         return True
 
     def add_to_replied_hashes(self, cast_hash: str):
         self.replied_to_hashes.add(cast_hash)
-        logger.info(f"Manually added {cast_hash} to replied_to_hashes set.")
+        logger.debug(f"Manually added {cast_hash} to replied_to_hashes set.")
 
     async def _send_posts_loop(self) -> None:
-        logger.info("Starting Farcaster posts scheduler loop.")
+        logger.debug("Starting Farcaster posts scheduler loop.")
         while True:
             try:
                 logger.debug(
@@ -138,7 +138,7 @@ class FarcasterScheduler:
                 channel_id = post_data["channel"]
                 action_id = post_data.get("action_id")
                 embeds = post_data.get("embeds")
-                logger.info(
+                logger.debug(
                     f"Dequeued scheduled post for channel {channel_id or 'default'}: {content[:70]}... (embeds: {len(embeds) if embeds else 0})"
                 )
                 cast_result_data: Optional[Dict[str, Any]] = None
@@ -156,7 +156,7 @@ class FarcasterScheduler:
                     )
                     if "cast" in api_response and "hash" in api_response["cast"]:
                         cast_result_data = api_response["cast"]
-                        logger.info(
+                        logger.debug(
                             f"Successfully sent scheduled post. Cast hash: {cast_result_data.get('hash')}"
                         )
                     else:
@@ -194,7 +194,7 @@ class FarcasterScheduler:
                 self.post_queue.task_done()
                 await asyncio.sleep(self.scheduler_interval)
             except asyncio.CancelledError:
-                logger.info("Post scheduler loop cancelled.")
+                logger.debug("Post scheduler loop cancelled.")
                 break
             except Exception as e:
                 logger.error(
@@ -203,7 +203,7 @@ class FarcasterScheduler:
                 await asyncio.sleep(5)
 
     async def _send_replies_loop(self) -> None:
-        logger.info("Starting Farcaster replies scheduler loop.")
+        logger.debug("Starting Farcaster replies scheduler loop.")
         while True:
             try:
                 logger.debug(
@@ -213,7 +213,7 @@ class FarcasterScheduler:
                 content = reply_data["content"]
                 reply_to_hash = reply_data["reply_to_hash"]
                 action_id = reply_data.get("action_id")
-                logger.info(
+                logger.debug(
                     f"Dequeued scheduled reply to {reply_to_hash}: {content[:70]}..."
                 )
                 cast_result_data: Optional[Dict[str, Any]] = None
@@ -230,7 +230,7 @@ class FarcasterScheduler:
                     )
                     if "cast" in api_response and "hash" in api_response["cast"]:
                         cast_result_data = api_response["cast"]
-                        logger.info(
+                        logger.debug(
                             f"Successfully sent scheduled reply. Cast hash: {cast_result_data.get('hash')}"
                         )
                     else:
@@ -273,7 +273,7 @@ class FarcasterScheduler:
                 self.reply_queue.task_done()
                 await asyncio.sleep(self.scheduler_interval)
             except asyncio.CancelledError:
-                logger.info("Reply scheduler loop cancelled.")
+                logger.debug("Reply scheduler loop cancelled.")
                 break
             except Exception as e:
                 logger.error(

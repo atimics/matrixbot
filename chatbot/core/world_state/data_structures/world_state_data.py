@@ -201,14 +201,14 @@ class WorldStateData:
     def add_goal(self, goal: Goal):
         """Add a new goal to active goals."""
         self.active_goals.append(goal)
-        logger.info(f"Added new goal: {goal.title} (ID: {goal.id})")
+        logger.debug(f"Added new goal: {goal.title} (ID: {goal.id})")
         
     def update_goal_progress(self, goal_id: str, update: str, metrics: Optional[Dict[str, Any]] = None):
         """Update progress on a specific goal."""
         for goal in self.active_goals:
             if goal.id == goal_id:
                 goal.add_progress_update(update, metrics)
-                logger.info(f"Updated goal {goal.title}: {update}")
+                logger.debug(f"Updated goal {goal.title}: {update}")
                 return True
         return False
         
@@ -221,7 +221,7 @@ class WorldStateData:
         for goal in self.active_goals:
             if goal.id == goal_id:
                 goal.mark_completed(completion_note)
-                logger.info(f"Completed goal: {goal.title}")
+                logger.debug(f"Completed goal: {goal.title}")
                 return True
         return False
         
@@ -237,7 +237,7 @@ class WorldStateData:
         for i, goal in enumerate(self.active_goals):
             if goal.id == goal_id:
                 removed_goal = self.active_goals.pop(i)
-                logger.info(f"Removed goal: {removed_goal.title} (ID: {goal_id})")
+                logger.debug(f"Removed goal: {removed_goal.title} (ID: {goal_id})")
                 return True
         return False
 

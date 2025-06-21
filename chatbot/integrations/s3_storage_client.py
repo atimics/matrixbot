@@ -48,7 +48,7 @@ class S3StorageClient:
                 missing.append('CLOUDFRONT_DOMAIN')
             raise ValueError(f'Missing required environment variables: {", ".join(missing)}')
 
-        logger.info(f"S3StorageClient initialized - endpoint: {self.api_endpoint}")
+        logger.debug(f"S3StorageClient initialized - endpoint: {self.api_endpoint}")
 
     def is_network_available(self) -> bool:
         """Check if network is available for S3 operations"""
@@ -130,7 +130,7 @@ class S3StorageClient:
                 'x-api-key': self.api_key,
             }
 
-            logger.info(f"Uploading {len(image_data)} bytes ({image_type}) to S3")
+            logger.debug(f"Uploading {len(image_data)} bytes ({image_type}) to S3")
 
             # Make the request using httpx
             async with httpx.AsyncClient(timeout=120.0) as client:
@@ -155,7 +155,7 @@ class S3StorageClient:
                             return None
 
                         s3_url = response_data['url']
-                        logger.info(f"Upload successful! S3 URL: {s3_url}")
+                        logger.debug(f"Upload successful! S3 URL: {s3_url}")
                         return s3_url
 
                     except json.JSONDecodeError as e:
@@ -207,7 +207,7 @@ class S3StorageClient:
                 if response.status_code in [301, 302, 307, 308]:
                     location = response.headers.get('location')
                     if location:
-                        logger.info(f"Following redirect ({response.status_code}) to: {location}")
+                        logger.debug(f"Following redirect ({response.status_code}) to: {location}")
                         # Make location absolute if it's relative
                         if location.startswith('/'):
                             location = f"{parsed_url.scheme}://{parsed_url.netloc}{location}"
@@ -217,7 +217,7 @@ class S3StorageClient:
                         return None
 
                 elif response.status_code == 200:
-                    logger.info(f"Successfully downloaded image from: {image_url}")
+                    logger.debug(f"Successfully downloaded image from: {image_url}")
                     return response.content
 
                 else:

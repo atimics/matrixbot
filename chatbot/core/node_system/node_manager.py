@@ -477,7 +477,7 @@ class NodeManager:
                 if is_high_priority:
                     # Pin high-priority feeds like notifications to keep them expanded
                     metadata.is_pinned = True
-                    logger.info(f"Auto-expanded and pinned high-priority feed: {channel_id}")
+                    logger.debug(f"Auto-expanded and pinned high-priority feed: {channel_id}")
                 else:
                     metadata.is_pinned = False  # Auto-expanded nodes are not pinned
                 

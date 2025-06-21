@@ -135,7 +135,7 @@ class CreateTransactionFrameTool(ToolInterface):
                 frame_data = response.json()
                 frame_url = frame_data.get("frame_url", f"https://frames.neynar.com/transaction?to={to_address}&amount={amount}&token={token_contract}")
                 
-                logger.info(f"Created transaction frame via Neynar API: {frame_url}")
+                logger.debug(f"Created transaction frame via Neynar API: {frame_url}")
                 
                 return {
                     "status": "success",
@@ -282,7 +282,7 @@ class CreatePollFrameTool(ToolInterface):
             options_encoded = "|".join(options)
             frame_url = f"https://poll.neynar.com/create?q={question}&opts={options_encoded}&duration={duration_hours}&multiple={allow_multiple_votes}"
             
-            logger.info(f"Created poll frame: {question} with {len(options)} options")
+            logger.debug(f"Created poll frame: {question} with {len(options)} options")
 
             return {
                 "status": "success",
@@ -400,7 +400,7 @@ class CreateCustomFrameTool(ToolInterface):
             # This could integrate with services like frames.js, frog, or similar
             frame_url = f"https://frame-builder.neynar.com/custom?title={title}&img={image_url}&btns={len(buttons)}"
             
-            logger.info(f"Created custom frame: {title} with {len(buttons)} buttons")
+            logger.debug(f"Created custom frame: {title} with {len(buttons)} buttons")
 
             return {
                 "status": "success",
@@ -505,7 +505,7 @@ class SearchFramesTool(ToolInterface):
                 data = response.json()
                 frames = data.get("frames", [])
                 
-                logger.info(f"Found {len(frames)} frames for query: {query}")
+                logger.debug(f"Found {len(frames)} frames for query: {query}")
                 
                 return {
                     "status": "success",
@@ -592,7 +592,7 @@ class GetFrameCatalogTool(ToolInterface):
                 data = response.json()
                 frames = data.get("frames", [])
                 
-                logger.info(f"Retrieved {len(frames)} frames from catalog")
+                logger.debug(f"Retrieved {len(frames)} frames from catalog")
                 
                 return {
                     "status": "success",

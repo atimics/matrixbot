@@ -49,7 +49,7 @@ async def get_live_prompt_analysis():
         
         if response.status_code == 200:
             data = response.json()
-            logger.info("✅ Successfully got live prompt analysis from API")
+            logger.debug("✅ Successfully got live prompt analysis from API")
             return data
         else:
             logger.error(f"❌ API returned {response.status_code}: {response.text}")
@@ -64,7 +64,7 @@ async def get_live_prompt_analysis():
 
 def analyze_system_logs():
     """Analyze recent system logs for payload information."""
-    logger.info("📋 Analyzing recent system logs for payload size patterns...")
+    logger.debug("📋 Analyzing recent system logs for payload size patterns...")
     
     try:
         # Try to read recent logs if available
@@ -78,72 +78,72 @@ def analyze_system_logs():
                 payload_logs.append(line.strip())
                 
         if payload_logs:
-            logger.info(f"📊 Found {len(payload_logs)} recent payload size logs:")
+            logger.debug(f"📊 Found {len(payload_logs)} recent payload size logs:")
             for log in payload_logs[-10:]:  # Show last 10
-                logger.info(f"  {log}")
+                logger.debug(f"  {log}")
         else:
-            logger.info("No recent payload size logs found")
+            logger.debug("No recent payload size logs found")
             
     except FileNotFoundError:
-        logger.info("No chatbot.log file found")
+        logger.debug("No chatbot.log file found")
     except Exception as e:
         logger.warning(f"Error reading logs: {e}")
 
 def main():
     """Main analysis function."""
-    logger.info("🔍 Starting Live AI Prompt Analysis")
-    logger.info("=" * 60)
+    logger.debug("🔍 Starting Live AI Prompt Analysis")
+    logger.debug("=" * 60)
     
     # Get live analysis from API
     api_analysis = asyncio.run(get_live_prompt_analysis())
     
     if api_analysis:
-        logger.info("\n📊 LIVE PAYLOAD ANALYSIS:")
-        logger.info("=" * 40)
+        logger.debug("\n📊 LIVE PAYLOAD ANALYSIS:")
+        logger.debug("=" * 40)
         
         analysis = api_analysis.get("analysis", {})
         config = api_analysis.get("configuration", {})
         recommendations = api_analysis.get("recommendations", [])
         
-        logger.info(f"Total payload size: {analysis.get('total_payload_size_kb')} KB")
-        logger.info(f"System prompt size: {analysis.get('system_prompt_size_kb')} KB")
-        logger.info(f"User prompt size: {analysis.get('user_prompt_size_kb')} KB")
-        logger.info(f"Model: {analysis.get('model')}")
+        logger.debug(f"Total payload size: {analysis.get('total_payload_size_kb')} KB")
+        logger.debug(f"System prompt size: {analysis.get('system_prompt_size_kb')} KB")
+        logger.debug(f"User prompt size: {analysis.get('user_prompt_size_kb')} KB")
+        logger.debug(f"Model: {analysis.get('model')}")
         
-        logger.info("\n⚙️  CURRENT CONFIGURATION:")
-        logger.info("=" * 30)
+        logger.debug("\n⚙️  CURRENT CONFIGURATION:")
+        logger.debug("=" * 30)
         for key, value in config.items():
-            logger.info(f"{key}: {value}")
+            logger.debug(f"{key}: {value}")
             
         if recommendations:
-            logger.info("\n💡 RECOMMENDATIONS:")
-            logger.info("=" * 20)
+            logger.debug("\n💡 RECOMMENDATIONS:")
+            logger.debug("=" * 20)
             for rec in recommendations:
-                logger.info(f"• {rec}")
+                logger.debug(f"• {rec}")
         
         # Check thresholds
         thresholds = api_analysis.get("payload_thresholds", {})
         current_size = analysis.get('total_payload_size_kb', 0)
         
-        logger.info(f"\n🚦 PAYLOAD SIZE STATUS:")
-        logger.info("=" * 25)
-        logger.info(f"Current: {current_size} KB")
-        logger.info(f"Warning threshold: {thresholds.get('warning_kb')} KB")
-        logger.info(f"Critical threshold: {thresholds.get('critical_kb')} KB")
-        logger.info(f"OpenRouter limit estimate: {thresholds.get('openrouter_limit_estimate_kb')} KB")
+        logger.debug(f"\n🚦 PAYLOAD SIZE STATUS:")
+        logger.debug("=" * 25)
+        logger.debug(f"Current: {current_size} KB")
+        logger.debug(f"Warning threshold: {thresholds.get('warning_kb')} KB")
+        logger.debug(f"Critical threshold: {thresholds.get('critical_kb')} KB")
+        logger.debug(f"OpenRouter limit estimate: {thresholds.get('openrouter_limit_estimate_kb')} KB")
         
         if current_size > thresholds.get('critical_kb', 300):
             logger.warning("🔴 CRITICAL: Payload size is very large!")
         elif current_size > thresholds.get('warning_kb', 200):
             logger.warning("🟡 WARNING: Payload size is getting large")
         else:
-            logger.info("🟢 GOOD: Payload size is within acceptable range")
+            logger.debug("🟢 GOOD: Payload size is within acceptable range")
     
     # Analyze system logs
-    logger.info("\n" + "=" * 60)
+    logger.debug("\n" + "=" * 60)
     analyze_system_logs()
     
-    logger.info("\n✅ Live analysis complete!")
+    logger.debug("\n✅ Live analysis complete!")
 
 if __name__ == "__main__":
     main()

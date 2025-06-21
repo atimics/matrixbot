@@ -46,7 +46,7 @@ class WaitTool(ToolInterface):
         loop to continue to its next natural cycle.
         """
         message = "Waited for the next observation cycle."
-        logger.info(message)
+        logger.debug(message)
 
         return {
             "status": "success",

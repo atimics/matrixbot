@@ -32,7 +32,7 @@ class ToolRegistry:
 
         self._tools[tool.name] = tool
         self._tool_enabled_status[tool.name] = enabled
-        logger.info(f"Tool '{tool.name}' registered successfully (enabled: {enabled}).")
+        logger.debug(f"Tool '{tool.name}' registered successfully (enabled: {enabled}).")
 
     def get_tool(self, name: str) -> Optional[ToolInterface]:
         """
@@ -141,7 +141,7 @@ class ToolRegistry:
             return False
         
         self._tool_enabled_status[tool_name] = enabled
-        logger.info(f"Tool '{tool_name}' enabled status set to: {enabled}")
+        logger.debug(f"Tool '{tool_name}' enabled status set to: {enabled}")
         return True
 
     def is_tool_enabled(self, tool_name: str) -> bool:

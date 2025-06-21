@@ -56,7 +56,7 @@ logger.error(error_msg, exc_info=True)
 logger.warning(f"Retrying operation: {e}")
 
 # Info for status changes
-logger.info(f"Status changed: {old_status} -> {new_status}")
+logger.debug(f"Status changed: {old_status} -> {new_status}")
 ```
 
 ### 4. Graceful Degradation

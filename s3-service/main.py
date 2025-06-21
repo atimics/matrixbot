@@ -39,7 +39,7 @@ class S3Manager:
             logger.critical("FATAL: Missing required environment variables (S3_API_KEY, S3_API_ENDPOINT, CLOUDFRONT_DOMAIN)")
             return False
         
-        logger.info(f"S3 Manager initialized with endpoint: {self.api_endpoint}")
+        logger.debug(f"S3 Manager initialized with endpoint: {self.api_endpoint}")
         return True
     
     def is_ready(self) -> bool:
@@ -93,7 +93,7 @@ class S3Manager:
                 'x-api-key': self.api_key,
             }
             
-            logger.info(f"Uploading {len(data)} bytes to S3 as {filename}")
+            logger.debug(f"Uploading {len(data)} bytes to S3 as {filename}")
             
             response = await self.client.post(
                 self.api_endpoint,
@@ -112,7 +112,7 @@ class S3Manager:
                     
                     if response_data and response_data.get('url'):
                         s3_url = response_data['url']
-                        logger.info(f"Upload successful: {s3_url}")
+                        logger.debug(f"Upload successful: {s3_url}")
                         return s3_url
                     else:
                         logger.error(f"Invalid S3 response format - missing URL. Response: {result}")
@@ -143,7 +143,7 @@ class S3Manager:
         try:
             response = await self.client.get(url, follow_redirects=True)
             if response.status_code == 200:
-                logger.info(f"Successfully downloaded data from {url} ({len(response.content)} bytes)")
+                logger.debug(f"Successfully downloaded data from {url} ({len(response.content)} bytes)")
                 return response.content
             else:
                 logger.error(f"Failed to download from {url}: {response.status_code}")
@@ -216,7 +216,7 @@ async def startup_event():
     if not success:
         logger.error("Failed to initialize S3 manager")
     else:
-        logger.info("S3 service started successfully")
+        logger.debug("S3 service started successfully")
 
 
 @app.on_event("shutdown")
@@ -308,7 +308,7 @@ async def upload_to_s3(
         if not file_content:
             raise HTTPException(status_code=400, detail="Empty file provided")
         
-        logger.info(f"Uploading file: {file.filename} ({len(file_content)} bytes)")
+        logger.debug(f"Uploading file: {file.filename} ({len(file_content)} bytes)")
         
         # Parse custom tags (for compatibility, though S3 doesn't use them the same way)
         custom_tags = await _parse_tags(tags)
@@ -329,7 +329,7 @@ async def upload_to_s3(
             content_type=file.content_type or "application/octet-stream"
         )
         
-        logger.info(f"Upload successful: {s3_url}")
+        logger.debug(f"Upload successful: {s3_url}")
         return response
         
     except HTTPException:
@@ -363,7 +363,7 @@ async def upload_data_to_s3(
     
     try:
         data_bytes = data.encode('utf-8')
-        logger.info(f"Uploading data ({len(data_bytes)} bytes)")
+        logger.debug(f"Uploading data ({len(data_bytes)} bytes)")
         
         # Parse custom tags
         custom_tags = await _parse_tags(tags)
@@ -384,7 +384,7 @@ async def upload_data_to_s3(
             content_type=content_type
         )
         
-        logger.info(f"Data upload successful: {s3_url}")
+        logger.debug(f"Data upload successful: {s3_url}")
         return response
         
     except HTTPException:

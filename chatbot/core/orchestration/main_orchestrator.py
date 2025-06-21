@@ -127,7 +127,7 @@ class MainOrchestrator:
             timeout=30.0  # Default timeout since not in AppConfig
         )
         self.ai_engine = AIEngine(config)
-        logger.info(f"MainOrchestrator: Using unified AIEngine with model {self.unified_settings.ai.model}")
+        logger.debug(f"MainOrchestrator: Using unified AIEngine with model {self.unified_settings.ai.model}")
         
         # Initialize Arweave client for internal uploader service
         self.arweave_client = None
@@ -136,7 +136,7 @@ class MainOrchestrator:
                 uploader_service_url=settings.storage.arweave_internal_uploader_service_url,
                 gateway_url=settings.storage.arweave_gateway_url,
             )
-            logger.info("Arweave client initialized for internal uploader service.")
+            logger.debug("Arweave client initialized for internal uploader service.")
         
         # Initialize service registry for service-oriented architecture
         from ..services import ServiceRegistry
@@ -334,7 +334,7 @@ class MainOrchestrator:
             self.tool_registry.register_tool(ImplementCodeChangesTool(), enabled=True)
             self.tool_registry.register_tool(CreatePullRequestTool(), enabled=True)
         else:
-            logger.info("Developer tools are disabled by default for security. Set DEVELOPER_TOOLS_ENABLED=true to enable.")
+            logger.debug("Developer tools are disabled by default for security. Set DEVELOPER_TOOLS_ENABLED=true to enable.")
         
         # User Profiling tools (Initiative B)
         self.tool_registry.register_tool(SentimentAnalysisTool())
@@ -353,7 +353,7 @@ class MainOrchestrator:
             logger.warning("Main orchestrator already running")
             return
 
-        logger.info("Starting main orchestrator system...")
+        logger.debug("Starting main orchestrator system...")
         self.running = True
 
         try:
@@ -364,15 +364,15 @@ class MainOrchestrator:
             await self._register_integrations_from_env()
             
             # Set up processing hub early - it doesn't depend on integrations
-            logger.info("Setting up processing components...")
+            logger.debug("Setting up processing components...")
             self._setup_processing_components()
-            logger.info("Processing components setup complete")
+            logger.debug("Processing components setup complete")
             
             # Start the processing loop early as a background task
-            logger.info("Starting processing hub background task...")
+            logger.debug("Starting processing hub background task...")
             self.processing_task = self.processing_hub.start_processing_loop()
             if self.processing_task:
-                logger.info(f"Processing hub task started successfully: {self.processing_task}")
+                logger.debug(f"Processing hub task started successfully: {self.processing_task}")
             else:
                 logger.warning("Processing hub task was not created!")
             
@@ -394,16 +394,16 @@ class MainOrchestrator:
             
             # Initialize observers (Matrix, Farcaster, etc.)
             await self._initialize_observers()
-            logger.info("Observers initialized")
+            logger.debug("Observers initialized")
             
             # Connect processing hub to observers for trigger generation
             self._connect_processing_hub_to_observers()
-            logger.info("Processing hub connected to observers")
+            logger.debug("Processing hub connected to observers")
             
             # Start the proactive conversation engine
-            logger.info("Starting proactive conversation engine...")
+            logger.debug("Starting proactive conversation engine...")
             await self.proactive_engine.start()
-            logger.info("Proactive conversation engine started")
+            logger.debug("Proactive conversation engine started")
             
         except Exception as e:
             logger.error(f"Error starting main orchestrator: {e}", exc_info=True)
@@ -415,7 +415,7 @@ class MainOrchestrator:
         if not self.running:
             return
 
-        logger.info("Stopping main orchestrator system...")
+        logger.debug("Stopping main orchestrator system...")
         self.running = False
 
         # Stop processing hub
@@ -448,13 +448,13 @@ class MainOrchestrator:
         self.matrix_observer = None
         self.farcaster_observer = None
 
-        logger.info("Main orchestrator system stopped")
+        logger.debug("Main orchestrator system stopped")
 
     def _setup_processing_components(self):
         """Set up processing components for the processing hub."""
         try:
             # Initialize node system components
-            logger.info("Setting up node-based processing components...")
+            logger.debug("Setting up node-based processing components...")
             
             # Create node manager with critical pinned nodes
             critical_pins = self._get_critical_node_pins()
@@ -462,7 +462,7 @@ class MainOrchestrator:
                 max_expanded_nodes=8,
                 default_pinned_nodes=critical_pins
             )
-            logger.info(f"Node manager initialized with {len(critical_pins)} critical pins: {critical_pins}")
+            logger.debug(f"Node manager initialized with {len(critical_pins)} critical pins: {critical_pins}")
             
             # Create node summary service
             if settings.openrouter_api_key:
@@ -495,12 +495,12 @@ class MainOrchestrator:
                 # Set the node processor in the processing hub
                 self.processing_hub.node_processor = self.node_processor
                 
-                logger.info("Node processor successfully initialized and connected to processing hub")
+                logger.debug("Node processor successfully initialized and connected to processing hub")
             else:
                 logger.error("Failed to initialize node processor - missing dependencies")
                 self.node_processor = None
             
-            logger.info("Processing components setup complete - node-based processing ready")
+            logger.debug("Processing components setup complete - node-based processing ready")
             
         except Exception as e:
             logger.error(f"Error setting up processing components: {e}", exc_info=True)
@@ -541,7 +541,7 @@ class MainOrchestrator:
                             context_manager=None  # Will be updated when modern context management is implemented
                         )
                         self.service_registry.register_service(matrix_service)
-                        logger.info(f"Registered Matrix service for integration {integration_id}")
+                        logger.debug(f"Registered Matrix service for integration {integration_id}")
                         
                     elif integration.integration_type == 'farcaster':
                         from ..services import FarcasterService
@@ -551,7 +551,7 @@ class MainOrchestrator:
                             context_manager=None  # Will be updated when modern context management is implemented
                         )
                         self.service_registry.register_service(farcaster_service)
-                        logger.info(f"Registered Farcaster service for integration {integration_id}")
+                        logger.debug(f"Registered Farcaster service for integration {integration_id}")
                         
         except Exception as e:
             logger.error(f"Error registering integration services: {e}")
@@ -568,7 +568,7 @@ class MainOrchestrator:
                 
                 # Initialize the service
                 if await self.base_nft_service.initialize():
-                    logger.info("Base NFT service initialized successfully")
+                    logger.debug("Base NFT service initialized successfully")
                     
                     # Initialize eligibility service if we have Farcaster observer
                     if (settings.ecosystem.token_contract_address and 
@@ -582,24 +582,24 @@ class MainOrchestrator:
                             world_state_manager=self.world_state
                         )
                         await self.eligibility_service.start()
-                        logger.info("User eligibility service started")
+                        logger.debug("User eligibility service started")
                         
                         # Update action context with NFT services
                         self.action_context.base_nft_service = self.base_nft_service
                         self.action_context.eligibility_service = self.eligibility_service
                     else:
-                        logger.info("Eligibility service not started - missing dependencies")
+                        logger.debug("Eligibility service not started - missing dependencies")
                         
                 else:
                     logger.warning("Failed to initialize Base NFT service")
                     self.base_nft_service = None
                 
             else:
-                logger.info("NFT service configuration incomplete - NFT features disabled")
+                logger.debug("NFT service configuration incomplete - NFT features disabled")
                 
         except Exception as e:
             logger.error(f"Failed to initialize NFT services: {e}")
-            logger.info("Continuing without NFT integration")
+            logger.debug("Continuing without NFT integration")
 
     async def _initialize_observers(self) -> None:
         """Initialize available observers based on environment configuration."""
@@ -619,11 +619,11 @@ class MainOrchestrator:
                 # Connect legacy state change callback for backward compatibility
                 self.matrix_observer.on_state_change = self._on_world_state_change
                 
-                logger.info("Matrix observer initialized and started")
+                logger.debug("Matrix observer initialized and started")
             except Exception as e:
                 logger.error(f"Failed to initialize Matrix observer: {e}")
-                logger.info("Continuing without Matrix integration")
-                logger.info("Continuing without Matrix integration")
+                logger.debug("Continuing without Matrix integration")
+                logger.debug("Continuing without Matrix integration")
 
         # Initialize Farcaster observer if credentials available
         if settings.farcaster.neynar_api_key:
@@ -643,10 +643,10 @@ class MainOrchestrator:
                 self.farcaster_observer.on_state_change = self._on_world_state_change
                 
                 self.world_state.update_system_status({"farcaster_connected": True})
-                logger.info("Farcaster observer initialized and started")
+                logger.debug("Farcaster observer initialized and started")
             except Exception as e:
                 logger.error(f"Failed to initialize Farcaster observer: {e}")
-                logger.info("Continuing without Farcaster integration")
+                logger.debug("Continuing without Farcaster integration")
         
         # Update action context with initialized observers
         self.action_context.matrix_observer = self.matrix_observer
@@ -676,13 +676,13 @@ class MainOrchestrator:
         
         # Debug logging to track which observer is being used
         if farcaster_integration:
-            logger.info(f"✓ Using Farcaster integration from IntegrationManager (ID: {farcaster_integration.integration_id})")
-            logger.info(f"  API client initialized: {farcaster_integration.api_client is not None}")
+            logger.debug(f"✓ Using Farcaster integration from IntegrationManager (ID: {farcaster_integration.integration_id})")
+            logger.debug(f"  API client initialized: {farcaster_integration.api_client is not None}")
         elif self.farcaster_observer:
-            logger.info(f"⚠ Using legacy Farcaster observer (fallback)")
-            logger.info(f"  API client initialized: {self.farcaster_observer.api_client is not None}")
+            logger.debug(f"⚠ Using legacy Farcaster observer (fallback)")
+            logger.debug(f"  API client initialized: {self.farcaster_observer.api_client is not None}")
         else:
-            logger.info("ℹ No Farcaster observer available")
+            logger.debug("ℹ No Farcaster observer available")
 
     def _configure_critical_node_pinning(self):
         """Configure critical node paths for pinning based on active integrations."""
@@ -691,7 +691,7 @@ class MainOrchestrator:
         # Add Matrix room if available
         if self.matrix_observer and settings.matrix.room_id:
             critical_pins.append(f"channels.matrix.{settings.matrix.room_id}")
-            logger.info(f"Added Matrix room to critical pins: channels.matrix.{settings.matrix.room_id}")
+            logger.debug(f"Added Matrix room to critical pins: channels.matrix.{settings.matrix.room_id}")
         
         # Add Farcaster feeds if available
         if self.farcaster_observer:
@@ -699,7 +699,7 @@ class MainOrchestrator:
                 "farcaster.feeds.home",
                 "farcaster.feeds.notifications"
             ])
-            logger.info("Added Farcaster feeds to critical pins: home, notifications")
+            logger.debug("Added Farcaster feeds to critical pins: home, notifications")
         
         # Try to apply critical pins to available node managers
         node_manager = None
@@ -723,7 +723,7 @@ class MainOrchestrator:
                     f"Node '{pin_path}' pinned as critical integration point.",
                     [pin_path]
                 )
-            logger.info(f"Configured {len(critical_pins)} critical node pins")
+            logger.debug(f"Configured {len(critical_pins)} critical node pins")
         else:
             if critical_pins:  # Only warn if there are actually pins to configure
                 logger.warning("NodeManager not available for critical pinning")
@@ -864,10 +864,10 @@ class MainOrchestrator:
     async def _ensure_media_gallery_exists(self) -> None:
         """Check for, create, and configure the media gallery room."""
         if settings.matrix.media_gallery_room_id:
-            logger.info(f"Matrix media gallery is configured: {settings.matrix.media_gallery_room_id}")
+            logger.debug(f"Matrix media gallery is configured: {settings.matrix.media_gallery_room_id}")
             return
 
-        logger.info("MATRIX_MEDIA_GALLERY_ROOM_ID not found in environment. Attempting to create a new gallery room...")
+        logger.debug("MATRIX_MEDIA_GALLERY_ROOM_ID not found in environment. Attempting to create a new gallery room...")
         if not self.action_context.matrix_observer:
             logger.error("Cannot create gallery room: Matrix observer is not available.")
             return
@@ -882,9 +882,9 @@ class MainOrchestrator:
             )
             if isinstance(response, RoomCreateResponse) and response.room_id:
                 new_room_id = response.room_id
-                logger.info(f"Successfully created new Matrix media gallery: {new_room_id}")
+                logger.debug(f"Successfully created new Matrix media gallery: {new_room_id}")
                 settings.matrix.media_gallery_room_id = new_room_id
-                logger.info(f"Set MATRIX_MEDIA_GALLERY_ROOM_ID to {new_room_id}. Please add this to your environment variables for persistence.")
+                logger.debug(f"Set MATRIX_MEDIA_GALLERY_ROOM_ID to {new_room_id}. Please add this to your environment variables for persistence.")
             else:
                 logger.error(f"Failed to create gallery room. Response: {response}")
         except Exception as e:
@@ -892,7 +892,7 @@ class MainOrchestrator:
 
     async def _register_integrations_from_env(self) -> None:
         """Register integrations from environment variables if they don't exist."""
-        logger.info("Checking for integrations to register from environment variables...")
+        logger.debug("Checking for integrations to register from environment variables...")
         
         # Get existing integrations
         existing_integrations = await self.integration_manager.list_integrations()
@@ -908,7 +908,7 @@ class MainOrchestrator:
             )
             
             if not farcaster_exists:
-                logger.info("Registering Farcaster integration from environment variables...")
+                logger.debug("Registering Farcaster integration from environment variables...")
                 try:
                     await self.integration_manager.add_integration(
                         integration_type='farcaster',
@@ -922,11 +922,11 @@ class MainOrchestrator:
                             'signer_uuid': settings.farcaster.bot_signer_uuid
                         }
                     )
-                    logger.info("✓ Farcaster integration registered successfully")
+                    logger.debug("✓ Farcaster integration registered successfully")
                 except Exception as e:
                     logger.error(f"Failed to register Farcaster integration: {e}")
             else:
-                logger.info("Farcaster integration already exists, updating credentials from environment...")
+                logger.debug("Farcaster integration already exists, updating credentials from environment...")
                 # Update credentials for existing integration
                 farcaster_integration = next(
                     (integration for integration in existing_integrations 
@@ -946,7 +946,7 @@ class MainOrchestrator:
                                 'signer_uuid': settings.farcaster.bot_signer_uuid
                             }
                         )
-                        logger.info("✓ Farcaster credentials updated from environment variables")
+                        logger.debug("✓ Farcaster credentials updated from environment variables")
                     except Exception as e:
                         logger.error(f"Failed to update Farcaster credentials: {e}")
         else:
@@ -957,10 +957,10 @@ class MainOrchestrator:
                  if integration.get('integration_type') == 'farcaster'), None
             )
             if farcaster_integration:
-                logger.info("Removing Farcaster integration since environment variables are not configured")
+                logger.debug("Removing Farcaster integration since environment variables are not configured")
                 try:
                     await self.integration_manager.remove_integration(farcaster_integration['integration_id'])
-                    logger.info("✓ Farcaster integration removed successfully")
+                    logger.debug("✓ Farcaster integration removed successfully")
                 except Exception as e:
                     logger.error(f"Failed to remove Farcaster integration: {e}")
         
@@ -975,7 +975,7 @@ class MainOrchestrator:
             )
             
             if not matrix_exists:
-                logger.info("Registering Matrix integration from environment variables...")
+                logger.debug("Registering Matrix integration from environment variables...")
                 try:
                     await self.integration_manager.add_integration(
                         integration_type='matrix',
@@ -990,11 +990,11 @@ class MainOrchestrator:
                             'password': settings.matrix.password
                         }
                     )
-                    logger.info("✓ Matrix integration registered successfully")
+                    logger.debug("✓ Matrix integration registered successfully")
                 except Exception as e:
                     logger.error(f"Failed to register Matrix integration: {e}")
             else:
-                logger.info("Matrix integration already exists, updating credentials from environment...")
+                logger.debug("Matrix integration already exists, updating credentials from environment...")
                 # Update credentials for existing integration
                 matrix_integration = next(
                     (integration for integration in existing_integrations 
@@ -1014,7 +1014,7 @@ class MainOrchestrator:
                                 'password': settings.matrix.password
                             }
                         )
-                        logger.info("✓ Matrix credentials updated from environment variables")
+                        logger.debug("✓ Matrix credentials updated from environment variables")
                     except Exception as e:
                         logger.error(f"Failed to update Matrix credentials: {e}")
         else:
@@ -1025,10 +1025,10 @@ class MainOrchestrator:
                  if integration.get('integration_type') == 'matrix'), None
             )
             if matrix_integration:
-                logger.info("Removing Matrix integration since environment variables are not configured")
+                logger.debug("Removing Matrix integration since environment variables are not configured")
                 try:
                     await self.integration_manager.remove_integration(matrix_integration['integration_id'])
-                    logger.info("✓ Matrix integration removed successfully")
+                    logger.debug("✓ Matrix integration removed successfully")
                 except Exception as e:
                     logger.error(f"Failed to remove Matrix integration: {e}")
         
@@ -1038,14 +1038,14 @@ class MainOrchestrator:
             # Connect Matrix observer
             if hasattr(self, 'matrix_observer') and self.matrix_observer:
                 self.matrix_observer.set_processing_hub(self.processing_hub)
-                logger.info("Connected processing hub to Matrix observer via set_processing_hub")
+                logger.debug("Connected processing hub to Matrix observer via set_processing_hub")
             else:
                 logger.debug("No Matrix observer available to connect processing hub")
                 
             # Connect Farcaster observer  
             if hasattr(self, 'farcaster_observer') and self.farcaster_observer:
                 self.farcaster_observer.processing_hub = self.processing_hub
-                logger.info("Connected processing hub to Farcaster observer")
+                logger.debug("Connected processing hub to Farcaster observer")
             else:
                 logger.debug("No Farcaster observer available to connect processing hub")
                 

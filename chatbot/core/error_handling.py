@@ -273,7 +273,7 @@ class ErrorHandlingManager:
         with open(filepath, 'w') as f:
             json.dump(report, f, indent=2)
         
-        logger.info(f"Error report exported to {filepath}")
+        logger.debug(f"Error report exported to {filepath}")
     
     def _categorize_error(self, error: Exception) -> ErrorCategory:
         """Categorize error based on type and message."""
@@ -329,7 +329,7 @@ class ErrorHandlingManager:
         
         error_context.recovery_attempts += 1
         
-        logger.info(f"Attempting recovery for error {error_context.error_id} (attempt {error_context.recovery_attempts})")
+        logger.debug(f"Attempting recovery for error {error_context.error_id} (attempt {error_context.recovery_attempts})")
         
         # Simple recovery strategies
         if error_context.category == ErrorCategory.NETWORK:
@@ -364,7 +364,7 @@ class ErrorHandlingManager:
         elif error_context.severity == ErrorSeverity.MEDIUM:
             logger.warning(log_message)
         else:
-            logger.info(log_message)
+            logger.debug(log_message)
     
     def _calculate_recovery_rate(self, errors: List[ErrorContext]) -> float:
         """Calculate recovery success rate."""

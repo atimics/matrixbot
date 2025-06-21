@@ -26,10 +26,10 @@ class Trigger:
 
 async def test_trigger_basics():
     """Test basic trigger functionality."""
-    logger.info("=== Testing Trigger System Basics ===")
+    logger.debug("=== Testing Trigger System Basics ===")
     
     # Test 1: Create triggers
-    logger.info("\n--- Test 1: Creating triggers ---")
+    logger.debug("\n--- Test 1: Creating triggers ---")
     
     mention_trigger = Trigger(
         type='mention',
@@ -52,23 +52,23 @@ async def test_trigger_basics():
         context={'sender': 'user1'}
     )
     
-    logger.info(f"✓ Created triggers: {mention_trigger.type}, {message_trigger.type}")
+    logger.debug(f"✓ Created triggers: {mention_trigger.type}, {message_trigger.type}")
     
     # Test 2: Test deduplication with sets
-    logger.info("\n--- Test 2: Testing deduplication ---")
+    logger.debug("\n--- Test 2: Testing deduplication ---")
     
     trigger_set = {mention_trigger, message_trigger, duplicate_mention}
-    logger.info(f"✓ Set with 3 triggers (1 duplicate) has {len(trigger_set)} unique items")
+    logger.debug(f"✓ Set with 3 triggers (1 duplicate) has {len(trigger_set)} unique items")
     
     # Test 3: Test priority sorting
-    logger.info("\n--- Test 3: Testing priority sorting ---")
+    logger.debug("\n--- Test 3: Testing priority sorting ---")
     
     triggers = [message_trigger, mention_trigger]  # Lower priority first
     highest_priority = max(triggers, key=lambda t: t.priority)
-    logger.info(f"✓ Highest priority trigger: {highest_priority.type} (priority {highest_priority.priority})")
+    logger.debug(f"✓ Highest priority trigger: {highest_priority.type} (priority {highest_priority.priority})")
     
     # Test 4: Test trigger queue simulation
-    logger.info("\n--- Test 4: Testing trigger queue simulation ---")
+    logger.debug("\n--- Test 4: Testing trigger queue simulation ---")
     
     trigger_queue = asyncio.Queue()
     
@@ -76,25 +76,25 @@ async def test_trigger_basics():
     for trigger in [mention_trigger, message_trigger]:
         trigger_queue.put_nowait(trigger)
     
-    logger.info(f"✓ Added {trigger_queue.qsize()} triggers to queue")
+    logger.debug(f"✓ Added {trigger_queue.qsize()} triggers to queue")
     
     # Drain queue into set for deduplication
     triggers_set = set()
     while not trigger_queue.empty():
         triggers_set.add(trigger_queue.get_nowait())
     
-    logger.info(f"✓ Drained queue into set with {len(triggers_set)} unique triggers")
+    logger.debug(f"✓ Drained queue into set with {len(triggers_set)} unique triggers")
     
     # Test priority processing
     if triggers_set:
         highest = max(triggers_set, key=lambda t: t.priority)
-        logger.info(f"✓ Would process {highest.type} trigger first (priority {highest.priority})")
+        logger.debug(f"✓ Would process {highest.type} trigger first (priority {highest.priority})")
     
-    logger.info("\n=== Trigger System Validation Complete ===")
-    logger.info("✓ All basic trigger operations work correctly!")
-    logger.info("✓ Deduplication works as expected")
-    logger.info("✓ Priority-based processing will work correctly")
-    logger.info("✓ The trigger-based architecture is sound!")
+    logger.debug("\n=== Trigger System Validation Complete ===")
+    logger.debug("✓ All basic trigger operations work correctly!")
+    logger.debug("✓ Deduplication works as expected")
+    logger.debug("✓ Priority-based processing will work correctly")
+    logger.debug("✓ The trigger-based architecture is sound!")
 
 
 if __name__ == "__main__":

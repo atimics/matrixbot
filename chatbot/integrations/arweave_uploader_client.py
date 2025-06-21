@@ -83,7 +83,7 @@ class ArweaveUploaderClient:
                 tx_id = result.get("transaction_id")
 
                 if tx_id:
-                    logger.info(
+                    logger.debug(
                         f"ArweaveUploaderClient: Successfully uploaded data to Arweave: {tx_id}"
                     )
                     return tx_id

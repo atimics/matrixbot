@@ -58,7 +58,7 @@ class EcosystemTokenService:
             return []
 
         try:
-            logger.info(f"Fetching relevant Farcaster token owners for {self.token_contract} on {self.token_network}")
+            logger.debug(f"Fetching relevant Farcaster token owners for {self.token_contract} on {self.token_network}")
             
             # Use the proper Neynar API endpoint for relevant fungible owners
             owners_response = await self.neynar_api_client.get_relevant_fungible_owners(
@@ -88,13 +88,13 @@ class EcosystemTokenService:
                         # The API returns relevant owners but not their specific holding amounts
                     })
                 
-                logger.info(f"Successfully fetched {len(holders_data)} relevant Farcaster token owners for {self.token_contract}")
+                logger.debug(f"Successfully fetched {len(holders_data)} relevant Farcaster token owners for {self.token_contract}")
                 return holders_data[:self.num_top_holders]  # Limit to configured number
                 
             elif owners_response and "all_relevant_fungible_owners_dehydrated" in owners_response:
                 # Fallback to dehydrated owners if hydrated ones aren't available
                 dehydrated_owners = owners_response["all_relevant_fungible_owners_dehydrated"]
-                logger.info(f"Using dehydrated owner data, found {len(dehydrated_owners)} owners")
+                logger.debug(f"Using dehydrated owner data, found {len(dehydrated_owners)} owners")
                 
                 holders_data = []
                 for owner_profile in dehydrated_owners:
@@ -110,7 +110,7 @@ class EcosystemTokenService:
             else:
                 # Check if this is a test contract for simulation
                 if self.token_contract == "0xTESTCONTRACT":
-                    logger.info("Using simulated holder data for 0xTESTCONTRACT")
+                    logger.debug("Using simulated holder data for 0xTESTCONTRACT")
                     simulated_fids = [i for i in range(1, 25)]  # Simulate some FIDs
                     return [
                         {"fid": fid, "username": f"holder{fid}", "display_name": f"Holder #{fid}"} 
@@ -126,7 +126,7 @@ class EcosystemTokenService:
 
     async def update_top_token_holders_in_world_state(self):
         """Update the world state with current top token holders and their activity."""
-        logger.info("Updating top token holders...")
+        logger.debug("Updating top token holders...")
         if not self.token_contract or not self.token_network:
             logger.warning("ECOSYSTEM_TOKEN_CONTRACT_ADDRESS or ECOSYSTEM_TOKEN_NETWORK not set. Skipping holder update.")
             self.world_state_manager.state.monitored_token_holders.clear()  # Clear if contract removed
@@ -136,11 +136,11 @@ class EcosystemTokenService:
         top_holder_data = await self._fetch_and_rank_holders()  # This needs to return a list of dicts with at least 'fid'
 
         if not top_holder_data:
-            logger.info("No top holder data fetched.")
+            logger.debug("No top holder data fetched.")
             # Consider whether to clear existing monitored_token_holders or keep them
             # For now, let's keep them but log that they might be stale if fetch fails
             if not self.world_state_manager.state.monitored_token_holders:
-                logger.info("No existing holders to maintain, monitored list is empty.")
+                logger.debug("No existing holders to maintain, monitored list is empty.")
             else:
                 logger.warning("Failed to fetch new holder data, existing monitored holders might be stale.")
             return
@@ -164,7 +164,7 @@ class EcosystemTokenService:
                     username=user_detail.get('username', holder_info.get('username')),
                     display_name=user_detail.get('display_name', holder_info.get('display_name'))
                 )
-                logger.info(f"Added new top token holder to monitor: FID {fid_str}")
+                logger.debug(f"Added new top token holder to monitor: FID {fid_str}")
             else:  # Update existing details if necessary
                 self.world_state_manager.state.monitored_token_holders[fid_str].username = user_detail.get('username', holder_info.get('username'))
                 self.world_state_manager.state.monitored_token_holders[fid_str].display_name = user_detail.get('display_name', holder_info.get('display_name'))
@@ -176,9 +176,9 @@ class EcosystemTokenService:
         fids_to_remove = current_monitored_fids - new_holder_fids
         for fid_to_remove in fids_to_remove:
             del self.world_state_manager.state.monitored_token_holders[fid_to_remove]
-            logger.info(f"Removed token holder from monitoring (no longer in top list): FID {fid_to_remove}")
+            logger.debug(f"Removed token holder from monitoring (no longer in top list): FID {fid_to_remove}")
 
-        logger.info(f"Finished updating top token holders. Monitoring {len(self.world_state_manager.state.monitored_token_holders)} holders.")
+        logger.debug(f"Finished updating top token holders. Monitoring {len(self.world_state_manager.state.monitored_token_holders)} holders.")
 
     async def _update_holder_recent_casts(self, fid: str):
         """Update recent casts for a specific holder."""
@@ -206,7 +206,7 @@ class EcosystemTokenService:
                     for msg in messages:  # Add all new casts to general pool
                         self.world_state_manager.add_message(msg.channel_id, msg)  # Use the special channel_id
                         new_casts.append(msg)
-            logger.info(f"Updated {len(holder_state.recent_casts)} recent casts for holder FID {fid}. {len(new_casts)} added to general pool.")
+            logger.debug(f"Updated {len(holder_state.recent_casts)} recent casts for holder FID {fid}. {len(new_casts)} added to general pool.")
         except Exception as e:
             logger.error(f"Error updating casts for holder FID {fid}: {e}", exc_info=True)
             # Don't fail the entire update process for one holder
@@ -214,7 +214,7 @@ class EcosystemTokenService:
     async def periodic_holder_update_loop(self):
         """Main loop for periodic token holder updates and metadata refresh."""
         self._running = True
-        logger.info("Starting periodic token holder update loop with metadata tracking.")
+        logger.debug("Starting periodic token holder update loop with metadata tracking.")
         while self._running:
             try:
                 # Update token metadata (has its own frequency control)
@@ -228,7 +228,7 @@ class EcosystemTokenService:
                 
                 await asyncio.sleep(self.update_interval)
             except asyncio.CancelledError:
-                logger.info("Token holder update loop cancelled.")
+                logger.debug("Token holder update loop cancelled.")
                 break
             except Exception as e:
                 logger.error(f"Error in token holder update loop: {e}", exc_info=True)
@@ -249,7 +249,7 @@ class EcosystemTokenService:
                 await self._task
             except asyncio.CancelledError:
                 pass
-            logger.info("EcosystemTokenService stopped.")
+            logger.debug("EcosystemTokenService stopped.")
 
     async def observe_monitored_holder_feeds(self) -> List[Message]:
         """
@@ -297,7 +297,7 @@ class EcosystemTokenService:
                             key=lambda m: m.timestamp,
                             reverse=True
                         )[:self.cast_history_length]
-                        logger.info(f"Found {len(newly_seen_casts_for_this_holder)} new casts for holder FID {holder.fid}. Total recent: {len(holder.recent_casts)}")
+                        logger.debug(f"Found {len(newly_seen_casts_for_this_holder)} new casts for holder FID {holder.fid}. Total recent: {len(holder.recent_casts)}")
 
                     if latest_timestamp_this_fetch > (holder.last_cast_seen_timestamp or 0):  # Update only if there are actually newer casts or first time
                         holder.last_cast_seen_timestamp = latest_timestamp_this_fetch
@@ -307,7 +307,7 @@ class EcosystemTokenService:
                 # Continue with other holders even if one fails
 
         if all_new_holder_casts:
-            logger.info(f"Collected {len(all_new_holder_casts)} new casts from monitored token holders.")
+            logger.debug(f"Collected {len(all_new_holder_casts)} new casts from monitored token holders.")
         return all_new_holder_casts
 
     async def _fetch_token_metadata_from_dexscreener(self, contract_address: str) -> Optional[TokenMetadata]:
@@ -332,7 +332,7 @@ class EcosystemTokenService:
                     data = await response.json()
                     
                     if not data.get("pairs"):
-                        logger.info(f"No trading pairs found for token {contract_address}")
+                        logger.debug(f"No trading pairs found for token {contract_address}")
                         return None
                     
                     # Get the most liquid pair (highest liquidity USD)
@@ -384,7 +384,7 @@ class EcosystemTokenService:
                         dex_info=dex_info
                     )
                     
-                    logger.info(f"Successfully fetched metadata for token {contract_address}: {metadata.ticker} (${metadata.price_usd:.6f})")
+                    logger.debug(f"Successfully fetched metadata for token {contract_address}: {metadata.ticker} (${metadata.price_usd:.6f})")
                     return metadata
                     
         except Exception as e:
@@ -423,7 +423,7 @@ class EcosystemTokenService:
             }
             
             # TODO: Implement actual social media tracking
-            logger.info(f"Social metrics placeholder for {ticker} ({contract_address})")
+            logger.debug(f"Social metrics placeholder for {ticker} ({contract_address})")
             return social_metrics
             
         except Exception as e:
@@ -442,7 +442,7 @@ class EcosystemTokenService:
         if current_time - self.last_metadata_update < self.token_metadata_update_interval:
             return  # Skip if updated recently
         
-        logger.info(f"Updating token metadata for contract {self.token_contract}")
+        logger.debug(f"Updating token metadata for contract {self.token_contract}")
         
         try:
             # Fetch market data
@@ -463,7 +463,7 @@ class EcosystemTokenService:
                 self.world_state_manager.state.token_metadata = token_metadata
                 self.last_metadata_update = current_time
                 
-                logger.info(f"Updated token metadata: {token_metadata.ticker} - "
+                logger.debug(f"Updated token metadata: {token_metadata.ticker} - "
                            f"Price: ${token_metadata.price_usd:.6f}, "
                            f"Market Cap: ${token_metadata.market_cap:,.2f}" if token_metadata.market_cap else "Market Cap: N/A")
             else:

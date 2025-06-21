@@ -39,7 +39,7 @@ class MatrixMessageOperations:
             )
             
             if isinstance(response, RoomSendResponse):
-                logger.info(f"MatrixMessageOps: Message sent to {room_id}: {content[:100]}...")
+                logger.debug(f"MatrixMessageOps: Message sent to {room_id}: {content[:100]}...")
                 return {
                     "success": True,
                     "event_id": response.event_id,
@@ -88,7 +88,7 @@ class MatrixMessageOperations:
             )
             
             if isinstance(response, RoomSendResponse):
-                logger.info(f"MatrixMessageOps: Reply sent to {room_id}")
+                logger.debug(f"MatrixMessageOps: Reply sent to {room_id}")
                 return {
                     "success": True,
                     "event_id": response.event_id,
@@ -133,7 +133,7 @@ class MatrixMessageOperations:
             )
             
             if isinstance(response, RoomSendResponse):
-                logger.info(f"MatrixMessageOps: Formatted message sent to {room_id}")
+                logger.debug(f"MatrixMessageOps: Formatted message sent to {room_id}")
                 return {
                     "success": True,
                     "event_id": response.event_id,
@@ -196,7 +196,7 @@ class MatrixMessageOperations:
             )
             
             if isinstance(response, RoomSendResponse):
-                logger.info(f"MatrixMessageOps: Formatted reply sent to {room_id}")
+                logger.debug(f"MatrixMessageOps: Formatted reply sent to {room_id}")
                 return {
                     "success": True,
                     "event_id": response.event_id,
@@ -259,7 +259,7 @@ class MatrixMessageOperations:
                 )
                 
                 if isinstance(response, RoomSendResponse):
-                    logger.info(f"MatrixMessageOps: Image sent to {room_id}: {filename}")
+                    logger.debug(f"MatrixMessageOps: Image sent to {room_id}: {filename}")
                     return {
                         "success": True,
                         "event_id": response.event_id,
@@ -307,7 +307,7 @@ class MatrixMessageOperations:
             )
             
             if isinstance(response, RoomSendResponse):
-                logger.info(f"MatrixMessageOps: Reaction '{reaction}' sent to message {event_id} in {room_id}")
+                logger.debug(f"MatrixMessageOps: Reaction '{reaction}' sent to message {event_id} in {room_id}")
                 return {
                     "success": True,
                     "event_id": response.event_id,

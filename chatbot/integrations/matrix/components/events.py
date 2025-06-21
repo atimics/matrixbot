@@ -40,7 +40,7 @@ class MatrixEventHandler:
         self.observer = observer  # Store observer reference for state change callbacks
         
         # Debug logging for processing hub initialization
-        logger.info(f"MatrixEventHandler.__init__: processing_hub={processing_hub is not None}, type={type(processing_hub)}")
+        logger.debug(f"MatrixEventHandler.__init__: processing_hub={processing_hub is not None}, type={type(processing_hub)}")
         
         # Message batching for high-traffic channels
         self.message_batches = {}  # room_id -> list of recent messages
@@ -54,7 +54,7 @@ class MatrixEventHandler:
     async def handle_message(self, room: MatrixRoom, event, client=None):
         """Handle incoming Matrix messages with enhanced batching and context tracking."""
         # Include all messages, including our own, for full conversation context
-        logger.info(f"MatrixEventHandler: Processing message from sender='{event.sender}' (user_id='{self.user_id}')")
+        logger.debug(f"MatrixEventHandler: Processing message from sender='{event.sender}' (user_id='{self.user_id}')")
 
         # Extract comprehensive room details
         room_details = self.room_manager.extract_room_details(room)
@@ -62,7 +62,7 @@ class MatrixEventHandler:
         # Ensure a full room object is registered in the world state
         existing_channel = self.world_state.get_channel(room.room_id, "matrix")
         if not existing_channel or not existing_channel.name or not existing_channel.member_count:
-            logger.info(f"MatrixEventHandler: Registering or updating full details for room {room.room_id}")
+            logger.debug(f"MatrixEventHandler: Registering or updating full details for room {room.room_id}")
             self.room_manager.register_room(room.room_id, room_details, room)
         else:
             # Update existing room details to ensure they're current
@@ -118,7 +118,7 @@ class MatrixEventHandler:
             if image_urls_list:
                 log_content += f" [Image: {image_urls_list[0]}]"
 
-            logger.info(
+            logger.debug(
                 f"MatrixEventHandler: New message in {room.display_name or room.room_id}: "
                 f"{event.sender}: {log_content}"
             )
@@ -133,10 +133,10 @@ class MatrixEventHandler:
             logger.debug("Skipping trigger generation for bot's own message")
             return
 
-        logger.info(f"MatrixEventHandler: _generate_triggers called for message from {message.sender} in {room.room_id}")
+        logger.debug(f"MatrixEventHandler: _generate_triggers called for message from {message.sender} in {room.room_id}")
         
         # Debug processing hub availability
-        logger.info(f"MatrixEventHandler: processing_hub check - hub={self.processing_hub is not None}, type={type(self.processing_hub)}")
+        logger.debug(f"MatrixEventHandler: processing_hub check - hub={self.processing_hub is not None}, type={type(self.processing_hub)}")
         
         if not self.processing_hub:
             logger.warning(f"MatrixEventHandler: No processing hub available for trigger generation")
@@ -155,7 +155,7 @@ class MatrixEventHandler:
             # Use the localpart of the user ID for mention checking
             bot_localpart = self.user_id.split(':')[0].lstrip('@').lower()
             bot_mentioned = bot_localpart in message.content.lower()
-            logger.info(f"MatrixEventHandler: Bot mention check - localpart: '{bot_localpart}', content: '{message.content}', mentioned: {bot_mentioned}")
+            logger.debug(f"MatrixEventHandler: Bot mention check - localpart: '{bot_localpart}', content: '{message.content}', mentioned: {bot_mentioned}")
             
             if bot_mentioned:
                 # High priority for bot mentions
@@ -170,7 +170,7 @@ class MatrixEventHandler:
                         'room_name': room.display_name or room.room_id
                     }
                 )
-                logger.info(f"MatrixEventHandler: Generated mention trigger for {room.room_id} - sender: {message.sender}")
+                logger.debug(f"MatrixEventHandler: Generated mention trigger for {room.room_id} - sender: {message.sender}")
             else:
                 # Medium priority for regular messages
                 trigger = Trigger(
@@ -184,11 +184,11 @@ class MatrixEventHandler:
                         'room_name': room.display_name or room.room_id
                     }
                 )
-                logger.info(f"MatrixEventHandler: Generated new_message trigger for {room.room_id} - sender: {message.sender}")
+                logger.debug(f"MatrixEventHandler: Generated new_message trigger for {room.room_id} - sender: {message.sender}")
             
             # Add trigger to processing hub
             self.processing_hub.add_trigger(trigger)
-            logger.info(f"MatrixEventHandler: Successfully added trigger to processing hub")
+            logger.debug(f"MatrixEventHandler: Successfully added trigger to processing hub")
             
         except Exception as e:
             logger.error(f"MatrixEventHandler: Error generating triggers: {e}", exc_info=True)
@@ -274,7 +274,7 @@ class MatrixEventHandler:
         # Update activity tracking
         await self._update_activity_tracking(room, combined_message)
         
-        logger.info(
+        logger.debug(
             f"MatrixEventHandler: Processed message batch of {len(messages)} messages "
             f"from {messages[0].sender} in {room.display_name or room.room_id}"
         )
@@ -291,7 +291,7 @@ class MatrixEventHandler:
             # Check for bot mention in any of the batched messages
             bot_localpart = self.user_id.split(':')[0].lstrip('@').lower()
             bot_mentioned = any(bot_localpart in msg.content.lower() for msg in messages)
-            logger.info(f"MatrixEventHandler: Batch trigger generation - localpart: '{bot_localpart}', bot_mentioned: {bot_mentioned}, batch_size: {len(messages)}")
+            logger.debug(f"MatrixEventHandler: Batch trigger generation - localpart: '{bot_localpart}', bot_mentioned: {bot_mentioned}, batch_size: {len(messages)}")
             
             if bot_mentioned:
                 trigger = Trigger(
@@ -305,7 +305,7 @@ class MatrixEventHandler:
                         "batch_size": len(messages)
                     }
                 )
-                logger.info(f"MatrixEventHandler: Generated batch mention trigger for {room.room_id} - sender: {combined_message.sender}")
+                logger.debug(f"MatrixEventHandler: Generated batch mention trigger for {room.room_id} - sender: {combined_message.sender}")
             else:
                 trigger = Trigger(
                     type="new_message",
@@ -317,10 +317,10 @@ class MatrixEventHandler:
                         "batch_size": len(messages)
                     }
                 )
-                logger.info(f"MatrixEventHandler: Generated batch new_message trigger for {room.room_id} - sender: {combined_message.sender}")
+                logger.debug(f"MatrixEventHandler: Generated batch new_message trigger for {room.room_id} - sender: {combined_message.sender}")
             
             self.processing_hub.add_trigger(trigger)
-            logger.info(f"MatrixEventHandler: Successfully added batch trigger to processing hub")
+            logger.debug(f"MatrixEventHandler: Successfully added batch trigger to processing hub")
         else:
             logger.warning(f"MatrixEventHandler: No processing hub available for batch trigger generation")
     
@@ -451,7 +451,7 @@ class MatrixEventHandler:
             room_id = room.room_id
             inviter = event.sender
             
-            logger.info(f"MatrixEventHandler: Received invite to {room_id} from {inviter}")
+            logger.debug(f"MatrixEventHandler: Received invite to {room_id} from {inviter}")
             
             # Register the invite in world state as a pending invite
             if hasattr(self.world_state, 'add_pending_matrix_invite'):
@@ -465,7 +465,7 @@ class MatrixEventHandler:
                 }
                 self.world_state.add_pending_matrix_invite(invite_details)
                 
-            logger.info(f"MatrixEventHandler: Added pending invite for room {room_id}")
+            logger.debug(f"MatrixEventHandler: Added pending invite for room {room_id}")
             
         except Exception as e:
             logger.error(f"MatrixEventHandler: Error processing invite: {e}", exc_info=True)
@@ -478,7 +478,7 @@ class MatrixEventHandler:
             target = getattr(event, 'state_key', sender)  # Who the membership change affects
             room_id = room.room_id
             
-            logger.info(
+            logger.debug(
                 f"MatrixEventHandler: Membership change in {room_id}: "
                 f"{sender} -> {target} ({membership})"
             )
@@ -492,7 +492,7 @@ class MatrixEventHandler:
                     # Check if it was voluntary (bot left) or involuntary (kicked/banned)
                     if sender == self.user_id:
                         status = "left"
-                        logger.info(f"MatrixEventHandler: Bot left room {room_id}")
+                        logger.debug(f"MatrixEventHandler: Bot left room {room_id}")
                     else:
                         # Check if it was a ban by looking at the event content
                         reason = event.content.get("reason", "")
@@ -520,13 +520,13 @@ class MatrixEventHandler:
                         and room_id in self.channels_to_monitor
                     ):
                         self.channels_to_monitor.remove(room_id)
-                        logger.info(
+                        logger.debug(
                             f"MatrixEventHandler: Removed {room_id} from monitoring due to {status}"
                         )
 
                 elif membership == "join":
                     # Bot joined a room (usually handled by join/accept methods, but this catches edge cases)
-                    logger.info(f"MatrixEventHandler: Bot joined room {room_id}")
+                    logger.debug(f"MatrixEventHandler: Bot joined room {room_id}")
 
                     # Ensure the channel is registered in the world state
                     existing_channel = self.world_state.get_channel(room_id, "matrix")
@@ -602,7 +602,7 @@ class MatrixEventHandler:
             # 2. Check if keys become available later
             # 3. Mark room for key refresh
             
-            logger.info(
+            logger.debug(
                 f"MatrixEventHandler: Added placeholder for undecryptable message in {room.display_name or room_id}"
             )
             
@@ -634,7 +634,7 @@ class MatrixEventHandler:
                                 )
                                 if arweave_url:
                                     image_urls_list.append(arweave_url)
-                                    logger.info(f"MatrixEventHandler: Uploaded image to Arweave: {arweave_url}")
+                                    logger.debug(f"MatrixEventHandler: Uploaded image to Arweave: {arweave_url}")
                         
                         # Fallback to matrix URL if Arweave upload failed
                         if not image_urls_list:

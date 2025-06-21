@@ -157,13 +157,13 @@ class SetupManager:
             for step_key, secret_key in step_to_secret.items():
                 if step_key in self.completed_steps:
                     await secret_manager.set_secret(secret_key, self.completed_steps[step_key])
-                    logger.info(f"Securely stored {secret_key}")
+                    logger.debug(f"Securely stored {secret_key}")
             
             # Save setup completion flag
             await secret_manager.set_secret("SETUP_COMPLETED", "true")
             await secret_manager.set_secret("SETUP_TIMESTAMP", datetime.now().isoformat())
             
-            logger.info("Configuration saved securely using SecretManager")
+            logger.debug("Configuration saved securely using SecretManager")
             
         except Exception as e:
             logger.error(f"Failed to save configuration securely: {e}")

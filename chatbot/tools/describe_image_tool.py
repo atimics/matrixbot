@@ -39,7 +39,7 @@ async def ensure_publicly_accessible_image_url(image_url: str, context: ActionCo
             server_name = matrix_match.group(2)
             media_id = matrix_match.group(3)
             mxc_uri = f"mxc://{server_name}/{media_id}"
-            logger.info(f"Downloading Matrix media via service: {mxc_uri}")
+            logger.debug(f"Downloading Matrix media via service: {mxc_uri}")
             
             # Access the underlying client through the service
             matrix_client = getattr(matrix_service._observer, 'client', None) if hasattr(matrix_service, '_observer') else None
@@ -53,7 +53,7 @@ async def ensure_publicly_accessible_image_url(image_url: str, context: ActionCo
             if hasattr(download_response, "body") and download_response.body:
                 image_data = download_response.body
                 content_type = getattr(download_response, "content_type", "image/jpeg")
-                logger.info(f"Successfully downloaded Matrix media: {len(image_data)} bytes, type: {content_type}")
+                logger.debug(f"Successfully downloaded Matrix media: {len(image_data)} bytes, type: {content_type}")
 
                 # Now upload to arweave
                 if hasattr(context, 'arweave_service') and context.arweave_service:
@@ -63,7 +63,7 @@ async def ensure_publicly_accessible_image_url(image_url: str, context: ActionCo
                         content_type
                     )
                     if arweave_url:
-                        logger.info(f"Successfully uploaded Matrix media to Arweave: {arweave_url}")
+                        logger.debug(f"Successfully uploaded Matrix media to Arweave: {arweave_url}")
                         return arweave_url, True
                     else:
                        logger.error("Failed to upload Matrix media to Arweave")
@@ -135,7 +135,7 @@ class DescribeImageTool(ToolInterface):
     async def execute(
         self, params: Dict[str, Any], context: ActionContext
     ) -> Dict[str, Any]:
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
+        logger.debug(f"Executing tool '{self.name}' with params: {params}")
 
         image_url = params.get("image_url")
         prompt_text = params.get("prompt_text", "Describe this image in detail.")
@@ -170,7 +170,7 @@ class DescribeImageTool(ToolInterface):
                 
                 return {"status": "failure", "error": error_msg, "timestamp": time.time(), "processed": True}
             
-            logger.info(f"Using public image URL: {public_image_url}")
+            logger.debug(f"Using public image URL: {public_image_url}")
         except Exception as e:
             error_msg = f"Failed to access image: {e}"
             logger.error(error_msg)
@@ -247,7 +247,7 @@ class DescribeImageTool(ToolInterface):
                     "timestamp": time.time(),
                 }
 
-            logger.info(f"DescribeImageTool: Successfully described image {image_url}")
+            logger.debug(f"DescribeImageTool: Successfully described image {image_url}")
             
             result = {
                 "status": "success",

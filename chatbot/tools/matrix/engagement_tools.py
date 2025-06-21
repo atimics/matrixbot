@@ -37,7 +37,7 @@ class ReactToMatrixMessageTool(ToolInterface):
         """
         Execute the Matrix reaction action using the service layer.
         """
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
+        logger.debug(f"Executing tool '{self.name}' with params: {params}")
 
         # Get Matrix service from service registry
         messaging_service = context.get_messaging_service("matrix")

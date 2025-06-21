@@ -62,7 +62,7 @@ class SendFarcasterPostTool(ToolInterface):
         """
         Execute the Farcaster post action using service-oriented approach.
         """
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
+        logger.debug(f"Executing tool '{self.name}' with params: {params}")
 
         # Enhanced service availability check with diagnostics
         social_service = context.get_social_service("farcaster")
@@ -115,14 +115,14 @@ class SendFarcasterPostTool(ToolInterface):
             if attach_image.startswith("media_"):
                 # It's a media_id, treat it as such
                 media_id = attach_image
-                logger.info(f"Using attach_image as media_id: {media_id}")
+                logger.debug(f"Using attach_image as media_id: {media_id}")
             else:
                 # It's a description, generate new image
                 from ..message_enhancement import generate_image_from_description
                 generated_image_info = await generate_image_from_description(attach_image, context)
                 if generated_image_info:
                     embed_url = generated_image_info["image_url"]
-                    logger.info(f"Generated new image from description: '{attach_image}' -> {embed_url}")
+                    logger.debug(f"Generated new image from description: '{attach_image}' -> {embed_url}")
                 else:
                     logger.warning(f"Failed to generate image from description: {attach_image}")
 
@@ -132,7 +132,7 @@ class SendFarcasterPostTool(ToolInterface):
             media_url = context.world_state_manager.get_media_url_by_id(media_id)
             if media_url:
                 embed_url = media_url
-                logger.info(f"Using media_id {media_id} resolved to URL: {media_url}")
+                logger.debug(f"Using media_id {media_id} resolved to URL: {media_url}")
             else:
                 logger.warning(f"Media ID {media_id} not found in world state")
 
@@ -167,7 +167,7 @@ class SendFarcasterPostTool(ToolInterface):
                         media_age = time.time() - last_media.get('timestamp', 0)
                         if media_age <= 300:  # 5 minutes
                             embed_url = recent_media_url
-                            logger.info(f"Auto-attaching recently generated media to Farcaster post: {embed_url}")
+                            logger.debug(f"Auto-attaching recently generated media to Farcaster post: {embed_url}")
 
         # Create post using service
         try:
@@ -185,7 +185,7 @@ class SendFarcasterPostTool(ToolInterface):
                 if embed_url:
                     success_msg += f" (with media: {embed_url})"
                 
-                logger.info(success_msg)
+                logger.debug(success_msg)
                 
                 # Record this action in world state if successful
                 if context.world_state_manager:
@@ -309,7 +309,7 @@ class SendFarcasterReplyTool(ToolInterface):
         """
         Execute the Farcaster reply action using service-oriented approach.
         """
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
+        logger.debug(f"Executing tool '{self.name}' with params: {params}")
 
         # Get Farcaster service from service registry
         social_service = context.get_social_service("farcaster")
@@ -354,13 +354,13 @@ class SendFarcasterReplyTool(ToolInterface):
         try:
             # Use service's reply method
             result = await social_service.reply_to_post(content, reply_to_hash)
-            logger.info(f"Farcaster service reply_to_post returned: {result}")
+            logger.debug(f"Farcaster service reply_to_post returned: {result}")
 
             # Enhanced success response formatting for better AI understanding
             if result.get("status") == "success":
                 reply_hash = result.get("reply_hash", "unknown")
                 success_msg = f"✅ Successfully replied to Farcaster cast {reply_to_hash}! Reply hash: {reply_hash}"
-                logger.info(success_msg)
+                logger.debug(success_msg)
                 
                 # Record this action in world state for duplicate prevention
                 if context.world_state_manager:
@@ -458,7 +458,7 @@ class QuoteFarcasterPostTool(ToolInterface):
         """
         Execute the Farcaster quote cast action using service-oriented approach.
         """
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
+        logger.debug(f"Executing tool '{self.name}' with params: {params}")
 
         # Get Farcaster service from service registry
         social_service = context.get_social_service("farcaster")
@@ -502,7 +502,7 @@ class QuoteFarcasterPostTool(ToolInterface):
                 embed_urls=[],
                 parent_url=quoted_cast_hash  # This acts as a quote reference
             )
-            logger.info(f"Farcaster service create_post (quote) returned: {result}")
+            logger.debug(f"Farcaster service create_post (quote) returned: {result}")
 
             # Record this action in world state
             if context.world_state_manager:
@@ -532,7 +532,7 @@ class QuoteFarcasterPostTool(ToolInterface):
             if result.get("status") == "success":
                 cast_hash = result.get("cast_hash", "unknown")
                 success_msg = f"Successfully posted quote cast (hash: {cast_hash}) quoting {quoted_cast_hash}"
-                logger.info(success_msg)
+                logger.debug(success_msg)
 
                 return {
                     "status": "success",
@@ -604,7 +604,7 @@ class SendFarcasterDMTool(ToolInterface):
     async def execute(
         self, params: Dict[str, Any], context: ActionContext
     ) -> Dict[str, Any]:
-        logger.info(f"Executing deprecated tool '{self.name}' with params: {params}")
+        logger.debug(f"Executing deprecated tool '{self.name}' with params: {params}")
         
         # Get Farcaster service from service registry for consistency 
         social_service = context.get_social_service("farcaster")

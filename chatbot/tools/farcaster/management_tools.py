@@ -42,7 +42,7 @@ class DeleteFarcasterPostTool(ToolInterface):
         """
         Execute the Farcaster delete cast action using service-oriented approach.
         """
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
+        logger.debug(f"Executing tool '{self.name}' with params: {params}")
 
         # Get Farcaster service from service registry
         social_service = context.get_social_service("farcaster")
@@ -62,7 +62,7 @@ class DeleteFarcasterPostTool(ToolInterface):
         try:
             # Use the service's delete_post method
             result = await social_service.delete_post(cast_hash)
-            logger.info(f"Farcaster service delete_post returned: {result}")
+            logger.debug(f"Farcaster service delete_post returned: {result}")
 
             # Record this action in world state
             if context.world_state_manager:
@@ -81,7 +81,7 @@ class DeleteFarcasterPostTool(ToolInterface):
 
             if result.get("success"):
                 success_msg = f"Successfully deleted Farcaster cast: {cast_hash}"
-                logger.info(success_msg)
+                logger.debug(success_msg)
                 return {
                     "status": "success",
                     "message": success_msg,

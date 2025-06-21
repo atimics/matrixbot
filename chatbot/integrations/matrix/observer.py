@@ -108,7 +108,7 @@ class MatrixObserver(Integration, BaseObserver):
         self.encryption_handler: Optional[MatrixEncryptionHandler] = None
 
         self._set_status(ObserverStatus.DISCONNECTED)
-        logger.info(f"MatrixObserver: Initialized modular observer for {self.user_id}@{self.homeserver}")
+        logger.debug(f"MatrixObserver: Initialized modular observer for {self.user_id}@{self.homeserver}")
 
     @property
     def enabled(self) -> bool:
@@ -122,21 +122,21 @@ class MatrixObserver(Integration, BaseObserver):
 
     def set_processing_hub(self, processing_hub):
         """Set the processing hub for trigger generation."""
-        logger.info(f"MatrixObserver: set_processing_hub called with processing_hub={processing_hub is not None}")
+        logger.debug(f"MatrixObserver: set_processing_hub called with processing_hub={processing_hub is not None}")
         self.processing_hub = processing_hub
         
         # Also update the event handler if it exists
         if hasattr(self, 'event_handler') and self.event_handler:
             self.event_handler.processing_hub = processing_hub
-            logger.info(f"MatrixObserver: Updated event handler with processing hub (event_handler exists)")
+            logger.debug(f"MatrixObserver: Updated event handler with processing hub (event_handler exists)")
         else:
             logger.warning(f"MatrixObserver: Event handler not available yet (hasattr={hasattr(self, 'event_handler')}, exists={getattr(self, 'event_handler', None) is not None})")
             
-        logger.info(f"MatrixObserver: Processing hub connected: {processing_hub is not None}")
+        logger.debug(f"MatrixObserver: Processing hub connected: {processing_hub is not None}")
 
     async def start(self) -> bool:
         """Start the Matrix observer by connecting and beginning to observe."""
-        logger.info("MatrixObserver: Starting Matrix observer...")
+        logger.debug("MatrixObserver: Starting Matrix observer...")
         
         # Connect to Matrix
         success = await self.connect()
@@ -145,7 +145,7 @@ class MatrixObserver(Integration, BaseObserver):
             # Make sure the processing hub is properly set on the event handler after connect
             if self.processing_hub and hasattr(self, 'event_handler') and self.event_handler:
                 self.event_handler.processing_hub = self.processing_hub
-                logger.info("MatrixObserver: Processing hub propagated to event handler after connection")
+                logger.debug("MatrixObserver: Processing hub propagated to event handler after connection")
             else:
                 logger.warning(f"MatrixObserver: Cannot propagate processing hub - hub_exists={self.processing_hub is not None}, handler_exists={hasattr(self, 'event_handler') and self.event_handler is not None}")
                 
@@ -193,7 +193,7 @@ class MatrixObserver(Integration, BaseObserver):
         # After all components are initialized, make sure processing hub is set
         if self.processing_hub and self.event_handler:
             self.event_handler.processing_hub = self.processing_hub
-            logger.info("MatrixObserver: Processing hub set on event handler during component initialization")
+            logger.debug("MatrixObserver: Processing hub set on event handler during component initialization")
 
         logger.info("MatrixObserver: All components initialized")
 
@@ -205,7 +205,7 @@ class MatrixObserver(Integration, BaseObserver):
 
         try:
             self._set_status(ObserverStatus.CONNECTING)
-            logger.info("MatrixObserver: Starting Matrix client connection...")
+            logger.debug("MatrixObserver: Starting Matrix client connection...")
 
             # Create Matrix client
             self.client = AsyncClient(self.homeserver, self.user_id, store_path=str(self.store_path))
@@ -284,7 +284,7 @@ class MatrixObserver(Integration, BaseObserver):
                 
                 # Explicitly load the encryption store. This is the critical step.
                 self.client.load_store()
-                logger.info("MatrixObserver: Successfully loaded encryption store from session.")
+                logger.debug("MatrixObserver: Successfully loaded encryption store from session.")
             except Exception as e:
                 logger.error(f"MatrixObserver: Failed to load encryption store: {e}. Proceeding with re-login.")
                 self.auth_handler.clear_token()
@@ -294,7 +294,7 @@ class MatrixObserver(Integration, BaseObserver):
             
             # Verify token is still valid
             if await self.auth_handler.verify_token_with_backoff(self.client):
-                logger.info("MatrixObserver: Using existing valid token")
+                logger.debug("MatrixObserver: Using existing valid token")
                 return True
             else:
                 logger.warning("MatrixObserver: Existing token invalid, re-authenticating")
@@ -310,7 +310,7 @@ class MatrixObserver(Integration, BaseObserver):
 
         # Start sync in background
         self.sync_task = asyncio.create_task(self._sync_forever())
-        logger.info("MatrixObserver: Sync task started")
+        logger.debug("MatrixObserver: Sync task started")
 
     async def _sync_forever(self):
         """Main sync loop."""
@@ -430,13 +430,13 @@ class MatrixObserver(Integration, BaseObserver):
                 )
                 self.world_state.add_channel(channel)
                 
-            logger.info(f"MatrixObserver: Added channel {channel_name} ({channel_id}) to monitoring")
+            logger.debug(f"MatrixObserver: Added channel {channel_name} ({channel_id}) to monitoring")
             return True
         
         # Otherwise try to fetch from client (async version)
         if hasattr(self, 'client') and self.client:
             try:
-                logger.info(f"MatrixObserver: Adding channel {channel_id} (force_fetch={force_fetch})")
+                logger.debug(f"MatrixObserver: Adding channel {channel_id} (force_fetch={force_fetch})")
                 
                 # Get the room object from the client
                 if not hasattr(self.client, 'rooms'):
@@ -456,7 +456,7 @@ class MatrixObserver(Integration, BaseObserver):
                     if room_details:
                         # Use room manager's register_room method which includes message fetching
                         self.room_manager.register_room(channel_id, room_details, room)
-                        logger.info(f"MatrixObserver: Successfully added channel {channel_id}")
+                        logger.debug(f"MatrixObserver: Successfully added channel {channel_id}")
                         return True
                     else:
                         logger.warning(f"MatrixObserver: Failed to get details for channel {channel_id}")
@@ -487,7 +487,7 @@ class MatrixObserver(Integration, BaseObserver):
                 self.client = None
 
             self._set_status(ObserverStatus.DISCONNECTED)
-            logger.info("MatrixObserver: Disconnected successfully")
+            logger.debug("MatrixObserver: Disconnected successfully")
 
         except Exception as e:
             logger.error(f"MatrixObserver: Error during disconnect: {e}")
@@ -524,7 +524,7 @@ class MatrixObserver(Integration, BaseObserver):
 
         temp_client = None
         try:
-            logger.info(f"MatrixObserver: Testing connection to {self.homeserver} for user {self.user_id}")
+            logger.debug(f"MatrixObserver: Testing connection to {self.homeserver} for user {self.user_id}")
             
             # Create a temporary client for the test
             temp_client = AsyncClient(self.homeserver, self.user_id)
@@ -538,7 +538,7 @@ class MatrixObserver(Integration, BaseObserver):
             access_token = await temp_auth_handler.login_with_retry(temp_client)
 
             if access_token:
-                logger.info(f"MatrixObserver: Connection test successful for {self.user_id}")
+                logger.debug(f"MatrixObserver: Connection test successful for {self.user_id}")
                 return {
                     "success": True, 
                     "message": f"Successfully connected to {self.homeserver} as {self.user_id}"

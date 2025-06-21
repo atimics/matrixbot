@@ -103,7 +103,7 @@ class WebSearchTool(ToolInterface):
                     result = response.json()
                     search_result = result["choices"][0]["message"]["content"]
                     
-                    logger.info(f"Web search completed for query: {query}")
+                    logger.debug(f"Web search completed for query: {query}")
                     
                     return {
                         "status": "success",

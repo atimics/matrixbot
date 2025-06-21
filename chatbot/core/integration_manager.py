@@ -54,7 +54,7 @@ class IntegrationManager:
             
         await self._create_database_schema()
         await self._register_integration_types()
-        logger.info("IntegrationManager initialized")
+        logger.debug("IntegrationManager initialized")
     
     async def _get_db_connection(self):
         """Get a database connection, reusing persistent connection for in-memory databases"""
@@ -148,7 +148,7 @@ class IntegrationManager:
                 try:
                     await db.execute("ALTER TABLE credentials ADD COLUMN status TEXT DEFAULT 'active'")
                     await db.execute("ALTER TABLE credentials ADD COLUMN updated_at REAL")
-                    logger.info("Added status and updated_at columns to credentials table")
+                    logger.debug("Added status and updated_at columns to credentials table")
                 except Exception:
                     # Columns already exist, which is fine
                     pass
@@ -170,7 +170,7 @@ class IntegrationManager:
         except ImportError as e:
             logger.warning(f"Failed to import FarcasterObserver: {e}")
             
-        logger.info(f"Registered integration types: {list(self.integration_types.keys())}")
+        logger.debug(f"Registered integration types: {list(self.integration_types.keys())}")
         
     def get_available_integration_types(self) -> List[str]:
         """Get list of available integration types."""
@@ -235,7 +235,7 @@ class IntegrationManager:
         
         await self._execute_db_operation(db_operation)
             
-        logger.info(f"Added integration {display_name} ({integration_type}) with ID {integration_id}")
+        logger.debug(f"Added integration {display_name} ({integration_type}) with ID {integration_id}")
         return integration_id
         
     async def connect_integration(self, integration_id: str, world_state_manager=None) -> bool:
@@ -250,7 +250,7 @@ class IntegrationManager:
             bool: True if connection was successful
         """
         if integration_id in self.active_integrations:
-            logger.info(f"Integration {integration_id} is already connected")
+            logger.debug(f"Integration {integration_id} is already connected")
             return True
             
         # Load integration from database
@@ -300,7 +300,7 @@ class IntegrationManager:
         try:
             await integration.connect()
             self.active_integrations[integration_id] = integration
-            logger.info(f"Successfully connected integration {integration_id}")
+            logger.debug(f"Successfully connected integration {integration_id}")
             return True
         except Exception as e:
             logger.error(f"Error connecting integration {integration_id}: {e}")
@@ -312,7 +312,7 @@ class IntegrationManager:
             integration = self.active_integrations[integration_id]
             await integration.disconnect()
             del self.active_integrations[integration_id]
-            logger.info(f"Disconnected integration {integration_id}")
+            logger.debug(f"Disconnected integration {integration_id}")
             
     async def connect_all_active(self) -> Dict[str, bool]:
         """
@@ -336,7 +336,7 @@ class IntegrationManager:
             success = await self.connect_integration(integration_id, self.world_state_manager)
             results[integration_id] = success
             
-        logger.info(f"Connected {sum(results.values())}/{len(results)} active integrations")
+        logger.debug(f"Connected {sum(results.values())}/{len(results)} active integrations")
         return results
         
     async def disconnect_all(self) -> None:
@@ -349,14 +349,14 @@ class IntegrationManager:
         """Start services for all active integrations"""
         # All integrations are already connected via connect_all_active()
         # The connect() method handles starting any necessary background services
-        logger.info(f"All services ready for {len(self.active_integrations)} active integrations")
+        logger.debug(f"All services ready for {len(self.active_integrations)} active integrations")
                 
     async def stop_all_services(self) -> None:
         """Stop services for all active integrations"""
         # Services are stopped when integrations are disconnected
         # This method exists for API compatibility but delegates to disconnect_all()
         await self.disconnect_all()
-        logger.info("All services stopped via disconnection")
+        logger.debug("All services stopped via disconnection")
             
     async def get_integration_status(self, integration_id: str) -> Optional[Dict[str, Any]]:
         """Get detailed status for a specific integration"""
@@ -482,7 +482,7 @@ class IntegrationManager:
                 credentials[cred_key] = decrypted_value
             except Exception as e:
                 logger.warning(f"Failed to decrypt credential '{cred_key}' for integration '{integration_id}': {e}")
-                logger.info(f"Marking credential '{cred_key}' as stale due to decryption failure")
+                logger.debug(f"Marking credential '{cred_key}' as stale due to decryption failure")
                 stale_credential_ids.append(credential_id)
         
         # Mark failed credentials as stale
@@ -511,7 +511,7 @@ class IntegrationManager:
             
             await db.commit()
         
-        logger.info(f"Updated {len(credentials)} credentials for integration {integration_id}")
+        logger.debug(f"Updated {len(credentials)} credentials for integration {integration_id}")
         
         # If the integration is currently active, update its credentials
         await self.update_active_integration_credentials(integration_id, credentials)
@@ -523,7 +523,7 @@ class IntegrationManager:
             if hasattr(integration, 'set_credentials'):
                 try:
                     await integration.set_credentials(credentials)
-                    logger.info(f"Updated credentials for active integration {integration_id}")
+                    logger.debug(f"Updated credentials for active integration {integration_id}")
                 except Exception as e:
                     logger.error(f"Failed to update credentials for active integration {integration_id}: {e}")
             else:
@@ -544,7 +544,7 @@ class IntegrationManager:
                 try:
                     self.cipher.decrypt(encrypted_value).decode()
                 except Exception:
-                    logger.info(f"Marking invalid credential '{cred_key}' for cleanup (integration: {integration_id})")
+                    logger.debug(f"Marking invalid credential '{cred_key}' for cleanup (integration: {integration_id})")
                     invalid_rowids.append(rowid)
             
             # Remove invalid credentials
@@ -554,7 +554,7 @@ class IntegrationManager:
                     DELETE FROM credentials WHERE rowid IN ({placeholders})
                 """, invalid_rowids)
                 await db.commit()
-                logger.info(f"Cleaned up {len(invalid_rowids)} invalid credentials for integration '{integration_id}'")
+                logger.debug(f"Cleaned up {len(invalid_rowids)} invalid credentials for integration '{integration_id}'")
         
         await self._execute_db_operation(db_operation)
         
@@ -573,7 +573,7 @@ class IntegrationManager:
             await db.commit()
             
         await self._execute_db_operation(db_operation)
-        logger.info(f"Marked {len(credential_ids)} credentials as stale")
+        logger.debug(f"Marked {len(credential_ids)} credentials as stale")
     
     async def delete_stale_credentials(self, integration_id: str) -> int:
         """Delete all stale credentials for an integration"""
@@ -586,7 +586,7 @@ class IntegrationManager:
             return cursor.rowcount
             
         deleted_count = await self._execute_db_operation(db_operation)
-        logger.info(f"Deleted {deleted_count} stale credentials for integration {integration_id}")
+        logger.debug(f"Deleted {deleted_count} stale credentials for integration {integration_id}")
         return deleted_count
     
     async def list_stale_credentials(self, integration_id: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -633,7 +633,7 @@ class IntegrationManager:
         Returns:
             bool: True if removal was successful, False otherwise.
         """
-        logger.info(f"Removing integration {integration_id}...")
+        logger.debug(f"Removing integration {integration_id}...")
         
         # First, ensure the integration is disconnected
         await self.disconnect_integration(integration_id)
@@ -647,7 +647,7 @@ class IntegrationManager:
             removed = await self._execute_db_operation(db_operation)
             
             if removed:
-                logger.info(f"Successfully removed integration {integration_id} from the database.")
+                logger.debug(f"Successfully removed integration {integration_id} from the database.")
             else:
                 logger.warning(f"Attempted to remove integration {integration_id}, but it was not found in the database.")
             

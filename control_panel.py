@@ -84,7 +84,7 @@ async def startup_event():
         processing_config=ProcessingConfig(enable_node_based_processing=True)
     )
     orchestrator = MainOrchestrator(config)
-    logger.info("Control panel started")
+    logger.debug("Control panel started")
 
 @app.on_event("shutdown")
 async def shutdown_event():

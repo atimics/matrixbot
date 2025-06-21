@@ -198,7 +198,7 @@ async def handle_mint_action(
         user_fid = untrusted_data.get('fid')
         button_index = untrusted_data.get('buttonIndex', 1)
         
-        logger.info(f"Frame action for {frame_id} from user {user_fid}, button {button_index}")
+        logger.debug(f"Frame action for {frame_id} from user {user_fid}, button {button_index}")
         
         # Get frame metadata
         world_state = orchestrator.world_state_manager.get_state()

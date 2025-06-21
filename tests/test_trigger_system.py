@@ -28,14 +28,14 @@ class MockNodeProcessor:
     
     async def process_cycle(self, cycle_id: str, primary_channel_id: str = None, context: dict = None):
         """Mock process cycle method."""
-        logger.info(f"Mock processing cycle {cycle_id} for channel {primary_channel_id}")
-        logger.info(f"Context: {context}")
+        logger.debug(f"Mock processing cycle {cycle_id} for channel {primary_channel_id}")
+        logger.debug(f"Context: {context}")
         return {"actions_executed": 1}
 
 
 async def test_trigger_system():
     """Test the trigger-based processing system."""
-    logger.info("=== Testing Trigger-Based Processing System ===")
+    logger.debug("=== Testing Trigger-Based Processing System ===")
     
     # Initialize components
     world_state = WorldStateManager()
@@ -47,10 +47,10 @@ async def test_trigger_system():
     hub = ProcessingHub(world_state, payload_builder, rate_limiter, config)
     hub.set_node_processor(MockNodeProcessor())
     
-    logger.info("✓ ProcessingHub initialized with trigger system")
+    logger.debug("✓ ProcessingHub initialized with trigger system")
     
     # Test 1: Add various triggers
-    logger.info("\n--- Test 1: Adding triggers ---")
+    logger.debug("\n--- Test 1: Adding triggers ---")
     
     # High priority mention
     mention_trigger = Trigger(
@@ -81,10 +81,10 @@ async def test_trigger_system():
     # Trigger for backward compatibility
     hub.trigger_state_change()
     
-    logger.info(f"✓ Added 4 triggers to queue")
+    logger.debug(f"✓ Added 4 triggers to queue")
     
     # Test 2: Test deduplication
-    logger.info("\n--- Test 2: Testing trigger deduplication ---")
+    logger.debug("\n--- Test 2: Testing trigger deduplication ---")
     
     # Add duplicate mention trigger (should deduplicate)
     duplicate_mention = Trigger(
@@ -95,10 +95,10 @@ async def test_trigger_system():
     )
     hub.add_trigger(duplicate_mention)
     
-    logger.info("✓ Added duplicate trigger (should be deduplicated)")
+    logger.debug("✓ Added duplicate trigger (should be deduplicated)")
     
     # Test 3: Start processing and verify behavior
-    logger.info("\n--- Test 3: Starting processing loop ---")
+    logger.debug("\n--- Test 3: Starting processing loop ---")
     
     # Start the processing hub
     hub.running = True
@@ -109,17 +109,17 @@ async def test_trigger_system():
         processing_task = asyncio.create_task(hub._main_event_loop())
         await asyncio.wait_for(processing_task, timeout=5.0)
     except asyncio.TimeoutError:
-        logger.info("✓ Processing loop ran for 5 seconds (timeout expected)")
+        logger.debug("✓ Processing loop ran for 5 seconds (timeout expected)")
         hub.running = False
     
     # Test 4: Verify status
-    logger.info("\n--- Test 4: Checking processing status ---")
+    logger.debug("\n--- Test 4: Checking processing status ---")
     
     status = hub.get_processing_status()
-    logger.info(f"✓ Processing status: {status}")
+    logger.debug(f"✓ Processing status: {status}")
     
-    logger.info("\n=== Trigger System Test Complete ===")
-    logger.info("✓ All tests passed! The trigger-based system is working correctly.")
+    logger.debug("\n=== Trigger System Test Complete ===")
+    logger.debug("✓ All tests passed! The trigger-based system is working correctly.")
 
 
 if __name__ == "__main__":

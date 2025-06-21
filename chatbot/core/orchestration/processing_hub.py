@@ -131,13 +131,13 @@ class ProcessingHub:
             logger.warning("Processing hub already running")
             return None
 
-        logger.info("Starting processing hub...")
+        logger.debug("Starting processing hub...")
         self.running = True
         
         # Start the scheduled processing loop as a background task
-        logger.info("Creating background task for scheduled processing loop...")
+        logger.debug("Creating background task for scheduled processing loop...")
         task = asyncio.create_task(self._scheduled_processing_loop())
-        logger.info(f"Background task created successfully: {task}")
+        logger.debug(f"Background task created successfully: {task}")
         return task
 
     def stop_processing_loop(self):
@@ -167,12 +167,12 @@ class ProcessingHub:
             trigger.data["force_reevaluation"] = True
             trigger.data["override_last_action"] = True
             
-            logger.info(f"High-priority trigger added: {trigger.type} (forcing re-evaluation, delay: {delay}s)")
+            logger.debug(f"High-priority trigger added: {trigger.type} (forcing re-evaluation, delay: {delay}s)")
         
         # If a processing cycle is currently active, don't interrupt it
         # Just add the trigger and let it be processed in the next cycle
         if self._processing_lock.locked():
-            logger.info(f"Trigger added: {trigger.type} (Priority: {trigger.priority}, "
+            logger.debug(f"Trigger added: {trigger.type} (Priority: {trigger.priority}, "
                        f"Delay: {delay}s, Queued due to active processing cycle)")
             return
         
@@ -192,7 +192,7 @@ class ProcessingHub:
             # Only extend if it doesn't make high-priority triggers wait too long
             max_wait_time = current_time + (delay * 1.5)  # 1.5x normal delay at most
             if new_desired_time <= max_wait_time:
-                logger.info(f"Trigger added: {trigger.type} (Priority: {trigger.priority}, "
+                logger.debug(f"Trigger added: {trigger.type} (Priority: {trigger.priority}, "
                            f"Extended batching window for {len(self.pending_triggers)} triggers)")
                 self._schedule_processing(new_desired_time, f"batched_{trigger.type}")
                 self.last_trigger_time = current_time
@@ -208,7 +208,7 @@ class ProcessingHub:
             self._schedule_processing(desired_time, trigger.type)
         
         self.last_trigger_time = current_time
-        logger.info(f"Trigger added: {trigger.type} (Priority: {trigger.priority}, "
+        logger.debug(f"Trigger added: {trigger.type} (Priority: {trigger.priority}, "
                    f"Delay: {delay}s, Scheduled for: {should_schedule})")
 
     def _schedule_processing(self, scheduled_time: float, trigger_type: str):
@@ -220,7 +220,7 @@ class ProcessingHub:
         self.next_scheduled_time = scheduled_time
         delay = max(0, scheduled_time - time.time())
         
-        logger.info(f"Scheduling processing in {delay:.2f}s due to {trigger_type} trigger")
+        logger.debug(f"Scheduling processing in {delay:.2f}s due to {trigger_type} trigger")
         self.scheduled_task = asyncio.create_task(self._delayed_process_triggers(delay))
 
     async def _delayed_process_triggers(self, delay: float):
@@ -256,7 +256,7 @@ class ProcessingHub:
     async def _scheduled_processing_loop(self) -> None:
         """Main processing loop that runs scheduled processing cycles."""
         try:
-            logger.info("Starting scheduled processing loop...")
+            logger.debug("Starting scheduled processing loop...")
             
             while self.running:
                 try:
@@ -273,19 +273,19 @@ class ProcessingHub:
                         logger.debug(f"Periodic cleanup notice: {cleanup_error}")
                     
                 except asyncio.CancelledError:
-                    logger.info("Scheduled processing loop cancelled.")
+                    logger.debug("Scheduled processing loop cancelled.")
                     break
                 except Exception as e:
                     logger.error(f"Error in scheduled processing loop: {e}", exc_info=True)
                     await asyncio.sleep(5)  # Cooldown on error
                     
         except asyncio.CancelledError:
-            logger.info("Scheduled processing loop cancelled.")
+            logger.debug("Scheduled processing loop cancelled.")
         except Exception as e:
             logger.error(f"Fatal error in scheduled processing loop: {e}", exc_info=True)
         finally:
             self.running = False
-            logger.info("Processing hub scheduled loop stopped")
+            logger.debug("Processing hub scheduled loop stopped")
 
     async def _process_triggers(self, triggers: Set[Trigger]):
         """Deduplicates and processes a batch of triggers."""
@@ -295,7 +295,7 @@ class ProcessingHub:
         # Sort by priority to determine the primary reason for this cycle
         highest_priority_trigger = max(triggers, key=lambda t: t.priority)
         trigger_types = [t.type for t in triggers]
-        logger.info(f"Processing {len(triggers)} triggers: {trigger_types}. Highest priority: {highest_priority_trigger.type}")
+        logger.debug(f"Processing {len(triggers)} triggers: {trigger_types}. Highest priority: {highest_priority_trigger.type}")
 
         # Prevent re-processing if a cycle is already locked
         if self._processing_lock.locked():
@@ -326,12 +326,12 @@ class ProcessingHub:
                 if self.config.enable_node_based_processing:
                     await self._process_with_node_system(triggers)
                 else:
-                    logger.info("Node-based processing disabled, skipping trigger processing")
+                    logger.debug("Node-based processing disabled, skipping trigger processing")
                     
                 # After processing completes, check if there are any remaining triggers
                 # that were added during the processing cycle
                 if self.pending_triggers:
-                    logger.info(f"Found {len(self.pending_triggers)} pending triggers after cycle completion, combining them")
+                    logger.debug(f"Found {len(self.pending_triggers)} pending triggers after cycle completion, combining them")
                     # Combine all pending triggers into a single processing cycle
                     # Use the shortest delay from all pending triggers to be responsive
                     min_delay = min(
@@ -362,7 +362,7 @@ class ProcessingHub:
                 })
             
             # Execute node-based processing
-            logger.info(f"Executing node-based processing for {len(trigger_data)} triggers")
+            logger.debug(f"Executing node-based processing for {len(trigger_data)} triggers")
             await self.node_processor.process_triggers(trigger_data)
             
             # Update processing statistics
@@ -419,4 +419,4 @@ class ProcessingHub:
         """Log current rate limiting status."""
         current_time = time.time()
         status = self.rate_limiter.get_rate_limit_status(current_time)
-        logger.info(f"Rate limit status: {status['cycles_per_hour']}/{status['max_cycles_per_hour']} cycles/hour")
+        logger.debug(f"Rate limit status: {status['cycles_per_hour']}/{status['max_cycles_per_hour']} cycles/hour")

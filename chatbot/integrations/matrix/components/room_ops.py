@@ -38,7 +38,7 @@ class MatrixRoomOperations:
             if not self.client:
                 return {"success": False, "error": "Matrix client not available"}
             
-            logger.info(f"MatrixRoomOps: Attempting to join room: {room_identifier}")
+            logger.debug(f"MatrixRoomOps: Attempting to join room: {room_identifier}")
             
             response = await self.client.join(room_identifier)
             
@@ -81,7 +81,7 @@ class MatrixRoomOperations:
             if not self.client:
                 return {"success": False, "error": "Matrix client not available"}
             
-            logger.info(f"MatrixRoomOps: Attempting to leave room: {room_id}")
+            logger.debug(f"MatrixRoomOps: Attempting to leave room: {room_id}")
             
             response = await self.client.room_leave(room_id, reason)
             
@@ -117,7 +117,7 @@ class MatrixRoomOperations:
             if not self.client:
                 return {"success": False, "error": "Matrix client not available"}
             
-            logger.info(f"MatrixRoomOps: Accepting invite for room: {room_id}")
+            logger.debug(f"MatrixRoomOps: Accepting invite for room: {room_id}")
             
             # Join the room (which accepts the invite)
             response = await self.client.join(room_id)
@@ -192,7 +192,7 @@ class MatrixRoomOperations:
                         }
                         invites.append(invite_info)
             
-            logger.info(f"MatrixRoomOps: Found {len(invites)} pending invites")
+            logger.debug(f"MatrixRoomOps: Found {len(invites)} pending invites")
             return {
                 "success": True,
                 "invites": invites,

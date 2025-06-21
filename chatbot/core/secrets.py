@@ -376,11 +376,11 @@ class SecretManager:
                 success = await to_provider.set_secret(key, value)
                 if success:
                     migrated += 1
-                    logger.info(f"Migrated secret: {key}")
+                    logger.debug(f"Migrated secret: {key}")
                 else:
                     logger.error(f"Failed to migrate secret: {key}")
         
-        logger.info(f"Migrated {migrated}/{len(secret_keys)} secrets")
+        logger.debug(f"Migrated {migrated}/{len(secret_keys)} secrets")
         return migrated
     
     def create_fernet_key(self) -> str:
@@ -430,7 +430,7 @@ async def init_secret_manager(config: Optional[SecretConfig] = None):
     if not status["accessible"]:
         logger.warning(f"Secret manager not accessible: {status['errors']}")
     else:
-        logger.info(f"Secret manager initialized with {status['secret_count']} secrets")
+        logger.debug(f"Secret manager initialized with {status['secret_count']} secrets")
 
 
 # Convenience functions

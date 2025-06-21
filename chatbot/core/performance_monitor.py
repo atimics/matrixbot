@@ -74,7 +74,7 @@ class PerformanceMonitor:
         
         self.is_monitoring = True
         self.monitor_task = asyncio.create_task(self._monitoring_loop())
-        logger.info("Performance monitor started")
+        logger.debug("Performance monitor started")
     
     async def stop_monitoring(self):
         """Stop the performance monitoring service."""
@@ -85,7 +85,7 @@ class PerformanceMonitor:
                 await self.monitor_task
             except asyncio.CancelledError:
                 pass
-        logger.info("Performance monitor stopped")
+        logger.debug("Performance monitor stopped")
     
     def start_operation(self, operation_id: str, component: str, operation: str) -> str:
         """Start tracking an operation."""
@@ -265,7 +265,7 @@ class PerformanceMonitor:
         with open(filepath, 'w') as f:
             json.dump(report, f, indent=2)
         
-        logger.info(f"Performance report exported to {filepath}")
+        logger.debug(f"Performance report exported to {filepath}")
     
     async def _monitoring_loop(self):
         """Main monitoring loop for system metrics."""

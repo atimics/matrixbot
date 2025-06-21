@@ -562,7 +562,7 @@ async def robust_operation() -> Optional[Dict[str, Any]]:
     try:
         # Attempt the operation
         result = await risky_operation()
-        logger.info("Operation completed successfully")
+        logger.debug("Operation completed successfully")
         return result
         
     except PlatformError as e:

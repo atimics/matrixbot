@@ -115,7 +115,7 @@ class FarcasterWebhookHandler:
         event_type = payload.get('type')
         data = payload.get('data', {})
         
-        logger.info(f"Processing Farcaster webhook event: {event_type}")
+        logger.debug(f"Processing Farcaster webhook event: {event_type}")
         
         try:
             if event_type == 'cast.created':
@@ -129,7 +129,7 @@ class FarcasterWebhookHandler:
             elif event_type == 'cast.reply':
                 await self._handle_cast_reply(data)
             else:
-                logger.info(f"Unhandled webhook event type: {event_type}")
+                logger.debug(f"Unhandled webhook event type: {event_type}")
                 
         except Exception as e:
             logger.error(f"Error processing webhook event {event_type}: {e}")
@@ -142,7 +142,7 @@ class FarcasterWebhookHandler:
         # Update world state with new cast
         if cast.get('hash'):
             # Add to timeline or update user activity
-            logger.info(f"New cast from {author.get('username', 'unknown')}: {cast.get('text', '')[:100]}")
+            logger.debug(f"New cast from {author.get('username', 'unknown')}: {cast.get('text', '')[:100]}")
             
             # Trigger world state update
             # Note: This should integrate with your existing world state update mechanism
@@ -153,7 +153,7 @@ class FarcasterWebhookHandler:
         cast = data.get('cast', {})
         author = cast.get('author', {})
         
-        logger.info(f"Bot mentioned by {author.get('username', 'unknown')} in cast {cast.get('hash')}")
+        logger.debug(f"Bot mentioned by {author.get('username', 'unknown')} in cast {cast.get('hash')}")
         
         # This is high priority - the bot should respond to mentions quickly
         # Mark this for immediate processing in next cycle
@@ -171,21 +171,21 @@ class FarcasterWebhookHandler:
         reaction = data.get('reaction', {})
         cast = data.get('cast', {})
         
-        logger.info(f"Reaction on cast {cast.get('hash')}: {reaction.get('reaction_type')}")
+        logger.debug(f"Reaction on cast {cast.get('hash')}: {reaction.get('reaction_type')}")
 
     async def _handle_follow_created(self, data: Dict[str, Any]):
         """Handle new follow event"""
         follower = data.get('follower', {})
         following = data.get('following', {})
         
-        logger.info(f"{follower.get('username')} followed {following.get('username')}")
+        logger.debug(f"{follower.get('username')} followed {following.get('username')}")
 
     async def _handle_cast_reply(self, data: Dict[str, Any]):
         """Handle reply to cast event"""
         reply_cast = data.get('cast', {})
         parent_cast = data.get('parent_cast', {})
         
-        logger.info(f"Reply to cast {parent_cast.get('hash')} from {reply_cast.get('author', {}).get('username')}")
+        logger.debug(f"Reply to cast {parent_cast.get('hash')} from {reply_cast.get('author', {}).get('username')}")
 
 
 # Convenience function for FastAPI integration

@@ -67,7 +67,7 @@ class UserEligibilityService:
             
         self._running = True
         self._task = asyncio.create_task(self._eligibility_check_loop())
-        logger.info("UserEligibilityService started")
+        logger.debug("UserEligibilityService started")
         
     async def stop(self):
         """Stop the eligibility checking service."""
@@ -83,7 +83,7 @@ class UserEligibilityService:
                 pass
             self._task = None
             
-        logger.info("UserEligibilityService stopped")
+        logger.debug("UserEligibilityService stopped")
         
     async def _eligibility_check_loop(self):
         """Main loop for checking user eligibility."""
@@ -103,7 +103,7 @@ class UserEligibilityService:
             world_state = self.world_state_manager.get_state()
             farcaster_users = world_state.farcaster_users
             
-            logger.info(f"Checking eligibility for {len(farcaster_users)} Farcaster users")
+            logger.debug(f"Checking eligibility for {len(farcaster_users)} Farcaster users")
             
             # Process users in batches to avoid overwhelming APIs
             batch_size = 10
@@ -172,7 +172,7 @@ class UserEligibilityService:
             user_details.last_eligibility_check = current_time
             
             if is_eligible:
-                logger.info(f"User {fid} is eligible (Token: {token_balance}, NFTs: {nft_count})")
+                logger.debug(f"User {fid} is eligible (Token: {token_balance}, NFTs: {nft_count})")
             else:
                 logger.debug(f"User {fid} not eligible (Token: {token_balance}, NFTs: {nft_count})")
                 
