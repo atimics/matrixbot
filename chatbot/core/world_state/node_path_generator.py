@@ -100,7 +100,7 @@ class NodePathGenerator:
         yield "tool"
         if hasattr(world_state_data, 'tool_cache') and world_state_data.tool_cache:
             for tool_name in world_state_data.tool_cache.keys():
-                yield f"tools/{tool_name}"
+                yield f"tool.cache.{tool_name}"
 
     def _generate_search_cache_paths(self, world_state_data: WorldStateData):
         """Generate paths for search cache."""
