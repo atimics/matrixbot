@@ -58,6 +58,7 @@ class MatrixService(MessagingServiceInterface, MediaServiceInterface):
             # Format content for Matrix
             formatted_content = format_for_matrix(content)
             
+            # Translate channel_id to room_id for Matrix observer
             result = await self._observer.send_message(channel_id, formatted_content)
             
             if result.get("success"):
@@ -96,6 +97,7 @@ class MatrixService(MessagingServiceInterface, MediaServiceInterface):
             # Format content for Matrix
             formatted_content = format_for_matrix(content)
             
+            # Translate channel_id to room_id for Matrix observer
             result = await self._observer.send_reply(channel_id, formatted_content, reply_to_id)
             
             if result.get("success"):
@@ -132,6 +134,7 @@ class MatrixService(MessagingServiceInterface, MediaServiceInterface):
                     "timestamp": time.time()
                 }
             
+            # Translate channel_id to room_id for Matrix observer
             result = await self._observer.react_to_message(channel_id, event_id, reaction)
             
             if result.get("success"):
@@ -158,7 +161,7 @@ class MatrixService(MessagingServiceInterface, MediaServiceInterface):
     
     # === MediaServiceInterface Implementation ===
     
-    async def send_image(self, channel_id: str, image_url: str, caption: str = None, **kwargs) -> Dict[str, Any]:
+    async def send_image(self, channel_id: str, image_url: str, caption: Optional[str] = None, **kwargs) -> Dict[str, Any]:
         """Send an image to a Matrix room"""
         try:
             if not await self.is_available():
@@ -198,7 +201,7 @@ class MatrixService(MessagingServiceInterface, MediaServiceInterface):
                 "timestamp": time.time()
             }
     
-    async def send_video(self, channel_id: str, video_url: str, caption: str = None, **kwargs) -> Dict[str, Any]:
+    async def send_video(self, channel_id: str, video_url: str, caption: Optional[str] = None, **kwargs) -> Dict[str, Any]:
         """Send a video to a Matrix room"""
         try:
             if not await self.is_available():
@@ -268,7 +271,7 @@ class MatrixService(MessagingServiceInterface, MediaServiceInterface):
                 "timestamp": time.time()
             }
 
-    async def leave_room(self, room_id: str, reason: str = None) -> Dict[str, Any]:
+    async def leave_room(self, room_id: str, reason: Optional[str] = None) -> Dict[str, Any]:
         """
         Leave a Matrix room.
         
