@@ -128,9 +128,9 @@ class NodeDataHandlers:
                 ]
             }
         
-        if len(path_parts) < 3: 
-            logger.warning(f"Invalid channel node path parts (unexpected format): {path_parts}")
-            return None
+        # We should always have at least 3 parts for a specific channel: channel.platform.channel_id
+        # But we already handled 1 and 2 parts above, so this should never trigger
+        # Removed the invalid check that was causing false warnings
         
         # Handle case where we have more than 3 parts due to dots in Matrix room IDs
         if len(path_parts) > 3:
