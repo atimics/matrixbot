@@ -343,7 +343,7 @@ class ProactiveConversationEngine:
         current_time = time.time()
         
         # Get recently described images to avoid reprocessing
-        media_context = world_state_data.get_media_context()
+        media_context = world_state_data.get_recent_media_actions()
         recently_described = set(media_context.get("images_recently_described", []))
         
         # Analyze recent messages across all platforms for image content
