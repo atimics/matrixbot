@@ -155,14 +155,7 @@ class NodeDataHandlers:
                 return {"memories": [asdict(mem) for mem in memories[-5:]]}
         
         if user:
-            # Use to_ai_summary_dict if available, otherwise create basic dict
-            if hasattr(user, 'to_ai_summary_dict') and callable(getattr(user, 'to_ai_summary_dict')):
-                try:
-                    return user.to_ai_summary_dict()
-                except Exception as e:
-                    logger.warning(f"Error calling to_ai_summary_dict for user {user_id}: {e}")
-            
-            # Fallback to basic dict representation
+            # Create basic dict representation (to_ai_summary_dict may not be available)
             return {
                 "id": user_id,
                 "type": user_type,
