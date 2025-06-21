@@ -68,7 +68,7 @@ class SendFarcasterPostTool(ToolInterface):
         social_service = context.get_social_service("farcaster")
         if not social_service:
             # Detailed diagnostic logging
-            available_services = list(context.service_registry.keys()) if hasattr(context, 'service_registry') else []
+            available_services = list(context.service_registry.list_available_services().keys()) if hasattr(context, 'service_registry') and context.service_registry else []
             logger.error(f"Farcaster service not found in registry. Available services: {available_services}")
             return {
                 "status": "failure", 

@@ -7,6 +7,8 @@ import time
 from typing import Any, Dict
 
 from .base import ActionContext, ToolInterface
+from ..core.world_state import Message
+from ..core.world_state import Message
 
 logger = logging.getLogger(__name__)
 
@@ -54,3 +56,41 @@ class WaitTool(ToolInterface):
             "timestamp": time.time(),
             "duration": 0,
         }
+
+
+class LogInternalMonologueTool(ToolInterface):
+    """
+    Tool for logging the AI's internal monologue.
+    """
+
+    @property
+    def name(self) -> str:
+        return "log_internal_monologue"
+
+    @property
+    def description(self) -> str:
+        return "Log the AI's internal thoughts for debugging or analysis."
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "description": "The internal thought message to log",
+                }
+            },
+            "required": ["message"],
+        }
+
+    async def execute(
+        self, params: Dict[str, Any], context: ActionContext
+    ) -> Dict[str, Any]:
+        """
+        Execute the log internal monologue action by logging the provided message.
+        """
+        message = params["message"]
+        logger.info(f"Internal Monologue: {message}")
+
+        return {"status": "success", "message": "Monologue logged."}
