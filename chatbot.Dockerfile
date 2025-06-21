@@ -50,4 +50,4 @@ USER appuser
 EXPOSE 8000
 
 # Command to run the application with the management UI
-CMD ["poetry", "run", "python", "-m", "chatbot.main_with_ui"]
+CMD ["poetry", "run", "python", "-m", "chatbot.main", "--with-ui"]

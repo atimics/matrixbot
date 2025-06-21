@@ -89,4 +89,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 EXPOSE 8000
 
 # Set default command to run chatbot with UI
-CMD ["python", "-m", "chatbot.main_with_ui"]
+CMD ["python", "-m", "chatbot.main", "--with-ui"]
