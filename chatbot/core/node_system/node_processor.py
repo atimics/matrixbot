@@ -75,7 +75,8 @@ class NodeProcessor:
         context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        Process using Kanban-style continuous execution.
+        LEGACY METHOD: Maintained for backward compatibility.
+        New implementations should use ooda_loop() for the structured decision-making process.
         
         This method:
         1. Checks for high-priority interrupts (mentions, DMs)
@@ -91,68 +92,110 @@ class NodeProcessor:
         Returns:
             Dict containing cycle results and metrics
         """
+        # For now, delegate to the new OODA loop implementation
+        return await self.ooda_loop(cycle_id, primary_channel_id, context)
+
+    async def ooda_loop(
+        self,
+        cycle_id: str,
+        primary_channel_id: Optional[str] = None,
+        context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Execute the Observe, Orient, Decide, Act (OODA) loop for structured AI decision-making.
+        
+        This method implements a formal two-stage AI process:
+        1. OBSERVE: System gathers current world state
+        2. ORIENT (AI Stage 1): AI decides what information needs deeper inspection
+        3. DECIDE (AI Stage 2): AI chooses external actions based on expanded information
+        4. ACT: System executes the chosen actions
+        5. FEEDBACK: Results inform the next cycle
+        
+        Args:
+            cycle_id: Unique identifier for this processing cycle
+            primary_channel_id: The primary channel to focus on (optional)
+            context: Additional context for processing (trigger_type, etc.)
+            
+        Returns:
+            Dict containing cycle results and metrics
+        """
         context = context or {}
         cycle_start_time = time.time()
-        actions_executed_count = 0
-        planning_cycles = 0
+        
+        logger.info(f"[OODA/{cycle_id}] Starting OODA Loop. Trigger: {context.get('trigger_type', 'unknown')}")
 
-        logger.debug(f"Starting Kanban-style processing cycle {cycle_id}")
-
-        # Ensure primary_channel_id is in context for priority interrupt handling
+        # Ensure primary_channel_id is in context
         if primary_channel_id:
             context["primary_channel_id"] = primary_channel_id
+            context["cycle_id"] = cycle_id
 
         # Update ActionContext with current channel information
         if self.action_context and primary_channel_id:
             self.action_context.update_current_channel(primary_channel_id)
-            logger.debug(f"Updated ActionContext with primary channel: {primary_channel_id}")
+            logger.debug(f"[OODA/{cycle_id}] Updated ActionContext with primary channel: {primary_channel_id}")
 
         try:
-            # CRITICAL FIX: Always ensure core channels are expanded for context
-            await self._ensure_core_channels_expanded(primary_channel_id, context)
+            # OBSERVE: Gather current world state (handled by system)
+            logger.debug(f"[OODA/{cycle_id}] OBSERVE: Gathering world state")
             
-            # Also expand active channels for additional context
-            await self._auto_expand_active_channels()
-
-            # Main Kanban execution loop with extended timeout for continuous processing
-            execution_timeout = self._max_execution_timeout  # Extended timeout for continuous processing
-            while (time.time() - cycle_start_time) < execution_timeout and not self._shutdown_requested:
+            # ORIENT (AI Stage 1): AI decides what information to expand
+            logger.info(f"[OODA/{cycle_id}] ORIENT: Building orientation payload")
+            orientation_payload = await self._build_orientation_payload(context)
+            
+            if not orientation_payload:
+                logger.warning(f"[OODA/{cycle_id}] Failed to build orientation payload")
+                return await self._finalize_ooda_cycle(cycle_id, cycle_start_time, 0, 0)
+            
+            logger.info(f"[OODA/{cycle_id}] ORIENT: Getting AI's node expansion decisions")
+            node_actions = await self._get_orientation_decision(orientation_payload, cycle_id)
+            
+            if node_actions:
+                logger.info(f"[OODA/{cycle_id}] ORIENT: Executing {len(node_actions)} node expansions")
+                await self._execute_node_actions(node_actions, cycle_id)
+            else:
+                logger.debug(f"[OODA/{cycle_id}] ORIENT: AI requested no node expansions")
+            
+            # DECIDE (AI Stage 2): AI chooses external actions based on expanded information
+            logger.info(f"[OODA/{cycle_id}] DECIDE: Building decision payload with expanded nodes")
+            decision_payload = await self._build_decision_payload(context)
+            
+            if not decision_payload:
+                logger.warning(f"[OODA/{cycle_id}] Failed to build decision payload")
+                return await self._finalize_ooda_cycle(cycle_id, cycle_start_time, len(node_actions) if node_actions else 0, 0)
+            
+            logger.info(f"[OODA/{cycle_id}] DECIDE: Getting AI's external action decisions")
+            external_actions = await self._get_decision(decision_payload, cycle_id)
+            
+            actions_executed_count = 0
+            if external_actions:
+                logger.info(f"[OODA/{cycle_id}] DECIDE: AI chose {len(external_actions)} external actions")
                 
-                # 1. Handle high-priority interrupts first
-                await self._handle_priority_interrupts(context, cycle_id)
+                # ACT: Execute the chosen actions
+                logger.info(f"[OODA/{cycle_id}] ACT: Executing external actions")
+                execution_results = await self._execute_external_actions(external_actions, cycle_id)
+                actions_executed_count = len(execution_results) if execution_results else 0
                 
-                # 2. Planning phase: Add new actions to backlog if needed
-                if self._should_plan_new_actions():
-                    planning_cycles += 1
-                    await self._planning_phase(cycle_id, primary_channel_id, context)
-                    self._last_planning_time = time.time()
-                
-                # 3. Execution phase: Execute actions from backlog
-                executed_this_iteration = await self._execution_phase(cycle_id, context)
-                actions_executed_count += executed_this_iteration
-                
-                # 4. If no actions executed and backlog is empty, break
-                if executed_this_iteration == 0 and self._is_backlog_empty():
-                    logger.debug(f"No actions in backlog and none executed, ending cycle {cycle_id}")
-                    break
-                
-                # 5. Brief pause to prevent tight loops
-                if executed_this_iteration == 0:
-                    await asyncio.sleep(0.1)
-
-            # Finalize cycle
-            return await self._finalize_cycle(
-                cycle_id, cycle_start_time, actions_executed_count, planning_cycles
-            )
+                # FEEDBACK: Set last action result for next cycle
+                if execution_results:
+                    self.payload_builder.set_last_action_result(execution_results[-1])
+                    logger.debug(f"[OODA/{cycle_id}] FEEDBACK: Set last action result for next cycle")
+            else:
+                logger.debug(f"[OODA/{cycle_id}] DECIDE: AI chose no external actions")
+            
+            logger.info(f"[OODA/{cycle_id}] OODA Loop completed successfully")
+            return await self._finalize_ooda_cycle(cycle_id, cycle_start_time, 
+                                                 len(node_actions) if node_actions else 0, 
+                                                 actions_executed_count)
 
         except Exception as e:
-            logger.error(f"Error in Kanban processing cycle {cycle_id}: {e}", exc_info=True)
+            logger.error(f"[OODA/{cycle_id}] Error in OODA loop: {e}", exc_info=True)
             return {
                 "cycle_id": cycle_id,
                 "success": False,
                 "error": str(e),
-                "actions_executed": actions_executed_count,
-                "planning_cycles": planning_cycles
+                "node_actions_executed": 0,
+                "external_actions_executed": 0,
+                "ooda_loop_duration": time.time() - cycle_start_time
             }
     
     async def _finalize_cycle(self, cycle_id: str, cycle_start_time: float, 
@@ -179,511 +222,314 @@ class NodeProcessor:
             "backlog_status": backlog_status
         }
     
-    async def _handle_priority_interrupts(self, context: Dict[str, Any], cycle_id: str):
-        """Handle high-priority interrupts like mentions and DMs"""
-        trigger_type = context.get("trigger_type", "")
-        primary_channel_id = context.get("primary_channel_id")
-        
-        if trigger_type in ["mention", "dm", "direct_reply"]:
-            # Escalate priority of any queued communication actions
-            await self._escalate_communication_actions()
-            
-            # If this is a critical trigger, add immediate response actions
-            if trigger_type == "mention":
-                logger.debug(f"🔔 MENTION TRIGGER: AI being instructed to respond to mention in channel {primary_channel_id}")
-                # Note: Core channel expansion is handled by _ensure_core_channels_expanded()
-                logger.debug(f"High-priority mention detected in cycle {cycle_id}, escalating response")
-    
-    async def _escalate_communication_actions(self):
-        """Escalate priority of pending communication actions"""
-        # Move any communication actions to high priority
-        for priority_queue in self.action_backlog.queued_actions.values():
-            for action in list(priority_queue):
-                if action.action_type in ["send_matrix_reply", "send_farcaster_reply"]:
-                    priority_queue.remove(action)
-                    action.priority = ActionPriority.CRITICAL
-                    self.action_backlog.queued_actions[ActionPriority.CRITICAL].appendleft(action)
-                    logger.debug(f"Escalated {action.action_id} to CRITICAL priority")
-    
-    def _should_plan_new_actions(self) -> bool:
-        """Determine if we should run AI planning to add new actions to backlog"""
-        # Plan if backlog is low (increased threshold for more aggressive planning)
-        total_queued = sum(len(queue) for queue in self.action_backlog.queued_actions.values())
-        if total_queued < self._min_backlog_threshold:  # Increased from 3 to 5
-            return True
-            
-        # Plan more frequently if enough time has passed since last planning
-        if time.time() - self._last_planning_time > self._planning_interval:  # Reduced from 5s to 2s
-            return True
-            
-        return False
-    
-    async def _planning_phase(self, cycle_id: str, primary_channel_id: Optional[str], 
-                             context: Dict[str, Any]):
-        """AI planning phase - analyze world state and add actions to backlog"""
-        try:
-            # Build planning payload
-            planning_context = {
-                **context,
-                "phase": "planning",
-                "backlog_status": self.action_backlog.get_status_summary(),
-                "cycle_id": cycle_id
-            }
-            
-            payload = await self._build_planning_payload(primary_channel_id, planning_context)
-            if not payload:
-                logger.warning("Failed to build planning payload")
-                return
-            
-            # Get AI decisions for new actions
-            ai_actions = await self._get_planned_actions(payload, cycle_id)
-            if ai_actions:
-                # Add actions to backlog
-                action_ids = self.action_backlog.add_actions_batch(
-                    ai_actions, 
-                    cycle_context=planning_context
-                )
-                logger.debug(f"Planning phase added {len(action_ids)} actions to backlog")
-            else:
-                logger.debug("Planning phase: AI suggested no new actions")
-                
-        except Exception as e:
-            logger.error(f"Error in planning phase: {e}", exc_info=True)
-    
-    async def _execution_phase(self, cycle_id: str, context: Dict[str, Any]) -> int:
-        """Execution phase - execute actions from backlog under rate limits"""
-        actions_executed = 0
-        
-        try:
-            # Execute actions while respecting rate limits and WIP constraints
-            # Removed arbitrary max_iterations limit for more continuous execution
-            iteration = 0
-            
-            while iteration < 50:  # Increased from 10 to 50 for more continuous execution
-                iteration += 1
-                
-                # Get next executable action
-                next_action = self.action_backlog.get_next_executable_action()
-                if not next_action:
-                    break  # No executable actions available
-                
-                # Start the action (acquire service resources)
-                if not self.action_backlog.start_action(next_action):
-                    logger.warning(f"Failed to start action {next_action.action_id}")
-                    continue
-                
-                # Execute the action
-                logger.debug(f"Executing backlog action: {next_action.action_type} (priority: {next_action.priority.name})")
-                execution_result = await self._execute_backlog_action(next_action, cycle_id)
-                
-                # Handle the action result
-                result_status = execution_result.get("status")
-                if result_status == "rate_limited":
-                    # For rate limited actions, put them back in the queue with a delay
-                    retry_after = execution_result.get("retry_after", 30)
-                    logger.debug(f"Action {next_action.action_id} rate limited, will retry after {retry_after} seconds")
-                    
-                    # Mark the action as queued again for retry, but don't increment attempts
-                    # since this is a temporary condition
-                    self.action_backlog.schedule_delayed_retry(next_action.action_id, retry_after)
-                else:
-                    # Complete the action normally
-                    success = result_status == "success"
-                    error = execution_result.get("error") if not success else None
-                    
-                    if not success and context is not None:
-                        failure_info = {
-                            "tool_name": next_action.action_type,
-                            "parameters": next_action.parameters,
-                            "error": error or "Unknown failure",
-                        }
-                        if "last_action_failures" not in context:
-                            context["last_action_failures"] = []
-                        context["last_action_failures"].append(failure_info)
-                        logger.warning(f"Action failed, recording failure for AI context: {failure_info}")
+    async def _finalize_ooda_cycle(self, cycle_id: str, cycle_start_time: float,
+                                 node_actions_executed: int, external_actions_executed: int) -> Dict[str, Any]:
+        """Helper method to finalize an OODA processing cycle."""
+        await self._update_node_summaries()
+        self._log_node_system_events()
 
-                    self.action_backlog.complete_action(next_action.action_id, success, error)
-                
-                actions_executed += 1
-                
-                # Brief pause between actions
-                await asyncio.sleep(0.05)
-                
-            return actions_executed
+        cycle_duration = time.time() - cycle_start_time
+        
+        logger.info(
+            f"[OODA/{cycle_id}] Completed in {cycle_duration:.2f}s - "
+            f"{node_actions_executed} node actions, {external_actions_executed} external actions"
+        )
+        
+        return {
+            "cycle_id": cycle_id,
+            "success": True,
+            "node_actions_executed": node_actions_executed,
+            "external_actions_executed": external_actions_executed,
+            "ooda_loop_duration": cycle_duration,
+            "ooda_phases": {
+                "observe": "system",
+                "orient": "ai_stage_1",
+                "decide": "ai_stage_2", 
+                "act": "system"
+            }
+        }
+
+    async def _build_orientation_payload(self, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Build payload for the ORIENT phase (AI Stage 1).
+        
+        This payload contains only collapsed node summaries and system status.
+        The AI will use this to decide which nodes need expansion.
+        
+        Args:
+            context: Processing context containing cycle information
             
-        except Exception as e:
-            logger.error(f"Error in execution phase: {e}", exc_info=True)
-            return actions_executed
-    
-    def _is_backlog_empty(self) -> bool:
-        """Check if the action backlog is empty"""
-        total_queued = sum(len(queue) for queue in self.action_backlog.queued_actions.values())
-        total_in_progress = len(self.action_backlog.in_progress)
-        return total_queued == 0 and total_in_progress == 0
-    
-    async def _build_current_payload(self, primary_channel_id: Optional[str], context: Dict[str, Any]) -> Dict[str, Any]:
-        """Build a single, unified payload for the current state of the world."""
+        Returns:
+            Orientation payload dictionary or None if building fails
+        """
         try:
+            # Get current world state (synchronous call)
             world_state_data = self.world_state.get_world_state_data()
+            if not world_state_data:
+                logger.warning("Failed to get world state data for orientation payload")
+                return None
             
+            primary_channel_id = context.get("primary_channel_id") or ""
+            
+            # Build node-based payload with phase='orient'
             payload = self.payload_builder.build_node_based_payload(
                 world_state_data=world_state_data,
                 node_manager=self.node_manager,
-                primary_channel_id=primary_channel_id or ""
+                primary_channel_id=primary_channel_id,
+                config={"phase": "orient"}
             )
             
-            # Store reference to world_state_data for AI engine template substitution
-            payload["_world_state_data_ref"] = world_state_data
+            # Add OODA-specific context
+            payload["ooda_phase"] = "orient"
+            payload["cycle_context"] = {
+                "cycle_id": context.get("cycle_id"),
+                "trigger_type": context.get("trigger_type"),
+                "primary_channel_id": primary_channel_id
+            }
+            
+            logger.debug(f"Built orientation payload with {len(payload.get('collapsed_node_summaries', {}))} collapsed nodes")
+            return payload
+            
+        except Exception as e:
+            logger.error(f"Error building orientation payload: {e}", exc_info=True)
+            return None
 
-            # Add all available tools to the payload
-            payload["tools"] = []
-            if self.tool_registry:
-                enabled_tools = self.tool_registry.get_enabled_tools()
-                for tool in enabled_tools:
-                    payload["tools"].append({
-                        "type": "function",
-                        "function": {
-                            "name": tool.name,
-                            "description": tool.description,
-                            "parameters": self._convert_parameters_schema(tool.parameters_schema)
-                        }
+    async def _get_orientation_decision(self, payload: Dict[str, Any], cycle_id: str) -> Optional[List[Dict[str, Any]]]:
+        """
+        Get AI's orientation decision - which nodes to expand.
+        
+        Args:
+            payload: Orientation payload with collapsed summaries
+            cycle_id: Current cycle ID for logging
+            
+        Returns:
+            List of node action dictionaries or None if AI call fails
+        """
+        try:
+            logger.debug(f"[OODA/{cycle_id}] Calling AI for orientation decision")
+            
+            # Add orientation-specific context to payload
+            orientation_payload = {
+                **payload,
+                "ai_instruction": {
+                    "phase": "orientation",
+                    "goal": "Select nodes to expand for detailed analysis",
+                    "available_tools": ["expand_node", "pin_node", "collapse_node"],
+                    "forbidden_tools": ["send_message", "send_farcaster_cast", "search_web"]
+                }
+            }
+            
+            # Call AI with orientation payload
+            ai_response = await self.ai_engine.decide_actions(orientation_payload)
+            
+            if not ai_response or not ai_response.get("selected_actions"):
+                logger.debug(f"[OODA/{cycle_id}] AI provided no orientation actions")
+                return None
+            
+            # Filter for node-related actions only
+            node_actions = []
+            for action in ai_response["selected_actions"]:
+                action_type = action.get("action_type", "")
+                if action_type in ["expand_node", "pin_node", "collapse_node"]:
+                    node_actions.append(action)
+                else:
+                    logger.warning(f"[OODA/{cycle_id}] ORIENT: Ignoring non-node action {action_type}")
+            
+            logger.debug(f"[OODA/{cycle_id}] AI orientation decision: {len(node_actions)} node actions")
+            return node_actions
+            
+        except Exception as e:
+            logger.error(f"[OODA/{cycle_id}] Error getting orientation decision: {e}", exc_info=True)
+            return None
+
+    async def _execute_node_actions(self, node_actions: List[Dict[str, Any]], cycle_id: str) -> None:
+        """
+        Execute node expansion/collapse actions using NodeInteractionTools.
+        
+        Args:
+            node_actions: List of node action dictionaries from AI
+            cycle_id: Current cycle ID for logging
+        """
+        try:
+            for action in node_actions:
+                action_type = action.get("action_type")
+                arguments = action.get("arguments", {})
+                node_path = arguments.get("node_path")
+                
+                if not action_type:
+                    logger.warning(f"[OODA/{cycle_id}] Node action missing action_type: {action}")
+                    continue
+                    
+                if not node_path:
+                    logger.warning(f"[OODA/{cycle_id}] Node action missing node_path: {action}")
+                    continue
+                
+                logger.debug(f"[OODA/{cycle_id}] Executing {action_type} on {node_path}")
+                
+                # Execute through the interaction tools
+                result = self.interaction_tools.execute_tool(action_type, arguments)
+                
+                if result.get("success"):
+                    logger.debug(f"[OODA/{cycle_id}] {action_type} on {node_path} succeeded")
+                else:
+                    logger.warning(f"[OODA/{cycle_id}] {action_type} on {node_path} failed: {result.get('message')}")
+                    
+        except Exception as e:
+            logger.error(f"[OODA/{cycle_id}] Error executing node actions: {e}", exc_info=True)
+
+    async def _build_decision_payload(self, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Build payload for the DECIDE phase (AI Stage 2).
+        
+        This payload contains the full content of expanded nodes.
+        The AI will use this to choose external actions.
+        
+        Args:
+            context: Processing context containing cycle information
+            
+        Returns:
+            Decision payload dictionary or None if building fails
+        """
+        try:
+            # Get current world state (after node expansions) - synchronous call
+            world_state_data = self.world_state.get_world_state_data()
+            if not world_state_data:
+                logger.warning("Failed to get world state data for decision payload")
+                return None
+            
+            primary_channel_id = context.get("primary_channel_id") or ""
+            
+            # Build node-based payload with phase='decide'
+            payload = self.payload_builder.build_node_based_payload(
+                world_state_data=world_state_data,
+                node_manager=self.node_manager,
+                primary_channel_id=primary_channel_id,
+                config={"phase": "decide"}
+            )
+            
+            # Add OODA-specific context
+            payload["ooda_phase"] = "decide"
+            payload["cycle_context"] = {
+                "cycle_id": context.get("cycle_id"),
+                "trigger_type": context.get("trigger_type"),
+                "primary_channel_id": primary_channel_id
+            }
+            
+            expanded_count = len(payload.get("expanded_nodes", {}))
+            logger.debug(f"Built decision payload with {expanded_count} expanded nodes")
+            return payload
+            
+        except Exception as e:
+            logger.error(f"Error building decision payload: {e}", exc_info=True)
+            return None
+
+    async def _get_decision(self, payload: Dict[str, Any], cycle_id: str) -> Optional[List[Dict[str, Any]]]:
+        """
+        Get AI's external action decision.
+        
+        Args:
+            payload: Decision payload with expanded node content
+            cycle_id: Current cycle ID for logging
+            
+        Returns:
+            List of external action dictionaries or None if AI call fails
+        """
+        try:
+            logger.debug(f"[OODA/{cycle_id}] Calling AI for external action decision")
+            
+            # Add decision-specific context to payload
+            decision_payload = {
+                **payload,
+                "ai_instruction": {
+                    "phase": "decision",
+                    "goal": "Choose external actions based on expanded node content",
+                    "available_tools": "all_tools_except_node_management",
+                    "forbidden_tools": ["expand_node", "pin_node", "collapse_node"]
+                }
+            }
+            
+            # Call AI with decision payload
+            ai_response = await self.ai_engine.decide_actions(decision_payload)
+            
+            if not ai_response or not ai_response.get("selected_actions"):
+                logger.debug(f"[OODA/{cycle_id}] AI provided no external actions")
+                return None
+            
+            # Filter for external actions only (exclude node actions)
+            external_actions = []
+            for action in ai_response["selected_actions"]:
+                action_type = action.get("action_type", "")
+                if action_type not in ["expand_node", "pin_node", "collapse_node"]:
+                    external_actions.append(action)
+                else:
+                    logger.warning(f"[OODA/{cycle_id}] DECIDE: Ignoring node action {action_type} in decision phase")
+            
+            logger.debug(f"[OODA/{cycle_id}] AI decision: {len(external_actions)} external actions")
+            return external_actions
+            
+        except Exception as e:
+            logger.error(f"[OODA/{cycle_id}] Error getting decision: {e}", exc_info=True)
+            return None
+
+    async def _execute_external_actions(self, actions: List[Dict[str, Any]], cycle_id: str) -> Optional[List[Dict[str, Any]]]:
+        """
+        Execute external actions (send_message, search_web, etc.) via ActionExecutor.
+        
+        Args:
+            actions: List of external action dictionaries from AI
+            cycle_id: Current cycle ID for logging
+            
+        Returns:
+            List of execution results for feedback loop
+        """
+        try:
+            execution_results = []
+            
+            for action in actions:
+                action_type = action.get("action_type")
+                logger.debug(f"[OODA/{cycle_id}] Executing external action: {action_type}")
+                
+                if self.action_executor:
+                    # Execute through the action executor
+                    result = await self.action_executor.execute_action(action)
+                    execution_results.append(result)
+                    logger.debug(f"[OODA/{cycle_id}] Action {action_type} result: {result.get('success', False)}")
+                else:
+                    logger.warning(f"[OODA/{cycle_id}] No action executor available for {action_type}")
+                    execution_results.append({
+                        "action_type": action_type,
+                        "success": False,
+                        "error": "No action executor available"
                     })
             
-            # Add node interaction tools
-            node_interaction_tools = self.interaction_tools.get_tool_definitions()
-            payload["tools"].extend(node_interaction_tools.values())
+            return execution_results
             
-            # Add processing context with enhanced self-state awareness
-            payload["processing_context"] = {
-                "mode": "iterative_action",
-                "primary_channel": primary_channel_id,
-                "cycle_context": context,
-                "node_stats": self.node_manager.get_expansion_status_summary(),
-                "instruction": "Based on the current world state, select one or more actions to take in sequence. You can choose multiple non-conflicting actions that logically follow each other (e.g., generate_image followed by send_farcaster_post). Choose 'wait' if no action is needed."
-            }
-            
-            # Add self-state awareness to prevent repetitive actions
-            if "cycle_actions" in context:
-                payload["self_state"] = {
-                    "current_cycle_actions": context["cycle_actions"],
-                    "actions_executed_this_cycle": context.get("actions_executed_this_cycle", 0),
-                    "cycle_id": context.get("cycle_id"),
-                    "guidance": self._generate_self_state_guidance(context["cycle_actions"])
-                }
-            
-            # Log summary of the complete payload being sent to AI (for debugging)
-            payload_summary = {
-                "primary_channel": primary_channel_id,
-                "payload_keys": list(payload.keys()) if payload else [],
-                "tools_count": len(payload.get("tools", [])),
-                "processing_mode": payload.get("processing_context", {}).get("mode"),
-                "has_self_state": "self_state" in payload,
-                "payload_size_kb": len(str(payload)) / 1024 if payload else 0
-            }
-            logger.debug(f"Built AI Payload Summary: {payload_summary}")
-            
-            return payload
         except Exception as e:
-            logger.error(f"Error building current payload: {e}", exc_info=True)
-            return {}
+            logger.error(f"[OODA/{cycle_id}] Error executing external actions: {e}", exc_info=True)
+            return None
 
-    async def _get_next_actions(self, payload_data: Dict[str, Any], cycle_id: str, step: int):
-        """Get the next action(s) from the AI."""
-        try:
-            # Log a summary of the AI payload being sent (for debugging)
-            payload_summary = {
-                "cycle_id": cycle_id,
-                "step": step,
-                "payload_keys": list(payload_data.keys()) if payload_data else [],
-                "tools_count": len(payload_data.get("tools", [])),
-                "processing_mode": payload_data.get("processing_context", {}).get("mode"),
-                "primary_channel": payload_data.get("processing_context", {}).get("primary_channel"),
-                "payload_size_kb": len(str(payload_data)) / 1024 if payload_data else 0
-            }
-            logger.debug(f"AI Payload Summary: {payload_summary}")
-            
-            decision_result = await self.ai_engine.decide_actions(
-                world_state=payload_data
-            )
-            # Log the AI's reasoning for this step
-            if decision_result.get('reasoning'):
-                logger.debug(f"AI Reasoning for step {step}: {decision_result['reasoning']}")
-            
-            actions = decision_result.get('selected_actions', [])
-            
-            # Handle cases where the AI generates a direct message (inner monologue)
-            if not actions and decision_result.get('message'):
-                logger.warning("AI generated a direct message instead of a tool call. Converting to internal monologue.")
-                actions.append({
-                    "action_type": "log_internal_monologue",
-                    "parameters": {"thought": decision_result['message']},
-                    "reasoning": "AI generated a direct thought instead of an external action."
-                })
-            
-            return actions
-        except Exception as e:
-            logger.error(f"Error in AI action selection for cycle {cycle_id}, step {step}: {e}", exc_info=True)
-            return []
-
-    async def _execute_action(self, action, cycle_id: str) -> Dict[str, Any]:
-        """Executes a single action and updates the world state."""
-        tool_name = action["action_type"]
-        tool_args = action["parameters"]
-
-        # --- BEGIN TOOL DISAMBIGUATION ---
-        # If the AI uses a generic tool name, attempt to map it to a specific one.
-        original_tool_name = tool_name
-        platform = None # Initialize platform to None
-        
-        # Handle common misspellings or variations first
-        if tool_name == "matrix_send_message":
-            tool_name = "send_matrix_message"
-            logger.warning(f"Corrected tool name from 'matrix_send_message' to 'send_matrix_message'")
-            action["action_type"] = tool_name
-        elif tool_name == "matrix_send_reply":
-            tool_name = "send_matrix_reply"
-            logger.warning(f"Corrected tool name from 'matrix_send_reply' to 'send_matrix_reply'")
-            action["action_type"] = tool_name
-        elif tool_name in ["send_message", "send_reply", "react_to_message"]:
-            # Determine platform from channel/channel_id/room_id
-            channel_id = tool_args.get("channel") or tool_args.get("channel_id") or tool_args.get("room_id")
-            
-            # --- NEW LOGIC ---
-            if not channel_id and tool_args.get("room"):
-                room_name_to_find = tool_args.get("room")
-                logger.debug(f"Attempting to resolve room name '{room_name_to_find}' to a channel_id.")
-                world_state_data = self.world_state.get_world_state_data()
-                
-                resolved = False
-                if hasattr(world_state_data, 'channels') and isinstance(world_state_data.channels, dict):
-                    for platform_name, platform_channels in world_state_data.channels.items():
-                        if isinstance(platform_channels, dict):
-                            for cid, cdata in platform_channels.items():
-                                if hasattr(cdata, 'name') and cdata.name == room_name_to_find:
-                                    channel_id = cid
-                                    logger.warning(f"Disambiguation: Resolved room name '{room_name_to_find}' to channel_id '{channel_id}' for platform '{platform_name}'")
-                                    resolved = True
-                                    break
-                        if resolved:
-                            break
-            # --- END OF NEW LOGIC ---
-            
-            # Debug logging for tool disambiguation
-            logger.debug(f"Tool disambiguation: tool_name='{tool_name}', channel_id='{channel_id}', tool_args keys: {list(tool_args.keys())}")
-            
-            if isinstance(channel_id, str) and channel_id.startswith("!"):
-                platform = "matrix"
-                if tool_name == "send_message":
-                    tool_name = "send_matrix_message"
-                    # Remap parameters to match the specific tool's schema using channel_id
-                    tool_args = {
-                        "channel_id": channel_id,
-                        "message": str(tool_args.get("content") or tool_args.get("message", "")),
-                        "attach_image": tool_args.get("attach_image")
-                    }
-                elif tool_name == "send_reply":
-                    tool_name = "send_matrix_reply"
-                    # Remap parameters to match the specific tool's schema using channel_id
-                    tool_args = {
-                        "channel_id": channel_id,
-                        "reply_to_id": tool_args.get("event_id") or tool_args.get("reply_to_id"),
-                        "message": str(tool_args.get("content") or tool_args.get("message", "")),
-                        "attach_image": tool_args.get("attach_image")
-                    }
-                elif tool_name == "react_to_message":
-                    tool_name = "react_to_matrix_message"
-                    tool_args = {
-                        "channel_id": channel_id,
-                        "event_id": tool_args.get("event_id"),
-                        "reaction": tool_args.get("reaction") or tool_args.get("emoji")
-                    }
-            elif channel_id and isinstance(channel_id, str):
-                # For now, if channel_id exists but doesn't start with "!", assume it's still Matrix
-                # This handles edge cases where room IDs might be malformed
-                logger.warning(f"Channel ID '{channel_id}' doesn't start with '!' but assuming Matrix platform")
-                platform = "matrix"
-                if tool_name == "send_message":
-                    tool_name = "send_matrix_message"
-                    tool_args = {
-                        "channel_id": channel_id,
-                        "message": str(tool_args.get("content") or tool_args.get("message", "")),
-                        "attach_image": tool_args.get("attach_image")
-                    }
-                elif tool_name == "send_reply":
-                    tool_name = "send_matrix_reply"
-                    tool_args = {
-                        "channel_id": channel_id,
-                        "reply_to_id": tool_args.get("event_id") or tool_args.get("reply_to_id"),
-                        "message": str(tool_args.get("content") or tool_args.get("message", "")),
-                        "attach_image": tool_args.get("attach_image")
-                    }
-                elif tool_name == "react_to_message":
-                    tool_name = "react_to_matrix_message"
-                    tool_args = {
-                        "channel_id": channel_id,
-                        "event_id": tool_args.get("event_id"),
-                        "reaction": tool_args.get("reaction") or tool_args.get("emoji")
-                    }
-            else:
-                # Provide detailed error with guidance for the AI
-                error_details = {
-                    "error": f"Cannot disambiguate tool '{tool_name}': no valid channel_id found",
-                    "provided_args": tool_args,
-                    "required": "A valid 'channel_id', 'room_id', or 'channel' parameter starting with '!' for Matrix rooms",
-                    "example": "channel_id: '!example:matrix.org'"
-                }
-                logger.error(f"Tool disambiguation failed: {error_details}")
-                return {"status": "failure", "error": error_details["error"], "details": error_details}
-            
-            if tool_name != original_tool_name:
-                logger.warning(
-                    f"AI used generic tool '{original_tool_name}'. Disambiguated to "
-                    f"'{tool_name}' for platform '{platform}' based on channel_id '{channel_id}'."
-                )
-                # Update action details for execution
-                action["action_type"] = tool_name
-                action["parameters"] = tool_args
-
-        # --- END TOOL DISAMBIGUATION ---
-        
-        # Log AI reasoning for selecting this action
-        logger.debug(f"AI reasoning: {action.get('reasoning', 'No reasoning provided')}")
-        
-        # *** VERBOSE LOGGING FOR BUG DIAGNOSIS ***
-        logger.debug(f"Executing action '{tool_name}' with args: {tool_args}")
-
-        try:
-            # Dispatch to the correct tool executor
-            if tool_name in ["select_nodes_to_expand", "expand_node", "collapse_node", "pin_node", "unpin_node", "get_expansion_status"]:
-                result = await self._execute_node_tool(tool_name, tool_args)
-                logger.debug(f"Node tool '{tool_name}' result: {result}")
-                # Node tools return success/fail, let's normalize to status
-                return {"status": "success" if result.get("success") else "failure", "result": result}
-            elif tool_name == "refresh_summary":
-                refresh_result = await self._execute_summary_refresh(tool_args)
-                status = "success" if refresh_result.get("success") else "failure"
-                error_msg = refresh_result.get("error") if status == "failure" else None
-                return {"status": status, "result": refresh_result, "error": error_msg}
-            else:
-                # Check for tool existence before calling the executor
-                if self.tool_registry and not self.tool_registry.get_tool(tool_name):
-                    error_msg = f"Tool '{tool_name}' not found in registry"
-                    logger.warning(error_msg)
-                    return {"status": "failure", "error": error_msg}
-                
-                result = await self._execute_platform_tool(tool_name, tool_args, cycle_id)
-                
-                # The result from the tool itself is in result['tool_result'].
-                # That's what contains the 'status' field ('success', 'failure', 'error', 'rate_limited').
-                # We need to propagate this status up to the process_cycle loop.
-                tool_result = result.get("tool_result", {})
-                
-                # Determine the overall status. Default to success if not specified.
-                status = tool_result.get("status", "success")
-                
-                # Handle rate limiting specially
-                if status == "rate_limited":
-                    retry_after = tool_result.get("retry_after", 30)
-                    next_attempt_time = tool_result.get("next_attempt_time", time.time() + retry_after)
-                    logger.debug(f"Action rate limited, will retry after {retry_after} seconds")
-                    return {
-                        "status": "rate_limited", 
-                        "result": result,
-                        "retry_after": retry_after,
-                        "next_attempt_time": next_attempt_time
-                    }
-                
-                # If the outer tool execution failed, that should take precedence.
-                if not result.get("success", True):
-                    status = "failure"
-                
-                # Extract error message for failed actions
-                error_msg = None
-                if status == "failure":
-                    error_msg = result.get("error") or tool_result.get("error") or "Unknown error"
-                    
-                return {"status": status, "result": result, "error": error_msg}
-        except Exception as e:
-            logger.error(f"Error executing action '{tool_name}': {e}", exc_info=True)
-            return {"status": "failure", "error": str(e)}
+    # === Legacy Kanban Methods (Deprecated - Use OODA loop instead) ===
     
-    # Old methods removed - now using two-step approach with:
-    # _build_node_selection_payload, _ai_select_nodes_to_expand
-    # _build_action_selection_payload, _ai_select_actions
+    def _is_backlog_empty(self) -> bool:
+        """DEPRECATED: Legacy method for Kanban-style processing."""
+        # For now, always return True to disable legacy Kanban processing
+        return True
     
-    async def _execute_node_tool(
-        self, 
-        tool_name: str, 
-        tool_args: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Execute a node interaction tool."""
-        try:
-            # The tool 'select_nodes_to_expand' is now handled here.
-            # It's essentially multiple 'expand_node' calls.
-            if tool_name == "select_nodes_to_expand":
-                node_paths = tool_args.get("node_paths", [])
-                logger.debug(f"AI selected {len(node_paths)} nodes for expansion: {node_paths}")
-                for node_path in node_paths:
-                    success, auto_collapsed, message = self.node_manager.expand_node(node_path)
-                    logger.debug(f"Expansion of '{node_path}': {message}")
-                return {"success": True, "message": f"Expanded {len(node_paths)} nodes."}
-
-            node_path = tool_args.get("node_path", "")
-            
-            # Some tools don't require a node_path
-            if tool_name not in ["get_expansion_status"] and not node_path:
-                return {"success": False, "error": "Missing node_path"}
-            
-            # *** INPUT SANITIZATION FOR NODE PATH MISMATCH BUG ***
-            # Attempt to correct incomplete node paths (skip for tools that don't need paths)
-            if tool_name not in ["get_expansion_status"]:
-                original_node_path = node_path
-                if node_path not in self.node_manager.node_metadata:
-                    corrected_path = self._find_full_path(node_path)
-                    if corrected_path:
-                        logger.warning(f"Corrected ambiguous node_path '{node_path}' to '{corrected_path}'")
-                        node_path = corrected_path
-                        tool_args["node_path"] = corrected_path  # Update args for consistency
-                    else:
-                        # If no correction is found, fail gracefully
-                        all_known_paths = self.node_manager.get_all_node_paths()
-                        return {
-                            "success": False, 
-                            "error": f"Node path '{original_node_path}' not found or is ambiguous. Available paths: {all_known_paths[:5]}..."  # Limit output
-                        }
-            # *** END OF INPUT SANITIZATION ***
-            
-            if tool_name == "expand_node":
-                success, auto_collapsed, message = self.node_manager.expand_node(node_path)
-                return {
-                    "success": success,
-                    "message": message,
-                    "auto_collapsed": auto_collapsed
-                }
-            
-            elif tool_name == "collapse_node":
-                success, message = self.node_manager.collapse_node(node_path)
-                return {"success": success, "message": message}
-            
-            elif tool_name == "pin_node":
-                success, message = self.node_manager.pin_node(node_path)
-                return {"success": success, "message": message}
-            
-            elif tool_name == "unpin_node":
-                success, message = self.node_manager.unpin_node(node_path)
-                return {"success": success, "message": message}
-            
-            elif tool_name == "get_expansion_status":
-                # This tool doesn't need a node_path, get status from interaction_tools
-                status = self.interaction_tools.execute_tool(tool_name, {})
-                return status
-            
-            else:
-                return {"success": False, "error": f"Unknown node tool: {tool_name}"}
-                
-        except Exception as e:
-            logger.error(f"Error executing node tool {tool_name}: {e}")
-            return {"success": False, "error": str(e)}
+    async def _planning_phase(self, cycle_id: str, primary_channel_id: Optional[str], 
+                             context: Dict[str, Any]) -> None:
+        """DEPRECATED: Legacy planning phase - replaced by OODA Orient/Decide phases."""
+        logger.warning(f"[{cycle_id}] Legacy planning phase called - should use OODA loop instead")
+        # No-op - OODA loop handles planning
+        pass
+    
+    async def _execute_action(self, action_dict: Dict[str, Any], cycle_id: str) -> Dict[str, Any]:
+        """DEPRECATED: Legacy action execution - replaced by OODA Act phase."""
+        logger.warning(f"[{cycle_id}] Legacy action execution called - should use OODA loop instead")
+        return {
+            "status": "skipped",
+            "message": "Legacy action execution bypassed - use OODA loop",
+            "action_type": action_dict.get("action_type", "unknown")
+        }
     
     def _generate_self_state_guidance(self, cycle_actions: List[Dict[str, Any]]) -> str:
         """
@@ -700,7 +546,7 @@ class NodeProcessor:
         expand_attempts = [action for action in cycle_actions if action["action_type"] == "expand_node"]
         if len(expand_attempts) > 1:
             last_expand = expand_attempts[-1]
-            return f"WARNING: You attempted to expand node '{last_expand['parameters'].get('node_path')}' in step {last_expand['step']}. If it didn't work, the node path may be incorrect or the node is already expanded. Consider a different action."
+            return f"WARNING: You attempted to expand node '{last_expand['parameters'].get('node_path')}' in step {last_expand['action_step']}. If it didn't work, the node path may be incorrect or the node is already expanded. Consider a different action."
         
         # Check for repeated actions of the same type
         if len(set(action_types)) < len(action_types):

@@ -145,6 +145,7 @@ class PayloadBuilder:
             Dictionary with node-based structure for AI consumption.
         """
         cfg = config or {}
+        phase = cfg.get("phase", "decide")  # Support OODA phases
         
         # Generate all possible node paths
         all_node_paths = self.node_path_generator.get_node_paths_from_world_state(world_state_data)
@@ -153,7 +154,7 @@ class PayloadBuilder:
         expanded_nodes = {}
         collapsed_node_summaries = {}
         
-        logger.debug(f"Processing {len(all_node_paths)} node paths for payload construction")
+        logger.debug(f"Processing {len(all_node_paths)} node paths for payload construction (phase: {phase})")
 
         for node_path in all_node_paths:
             metadata = node_manager.get_node_metadata(node_path)
@@ -176,8 +177,20 @@ class PayloadBuilder:
 
             if metadata.is_expanded:
                 if node_data:
-                    expanded_nodes[node_path] = node_data
-                    logger.debug(f"EXPANDED node {node_path}: {type(node_data)} with keys {list(node_data.keys()) if isinstance(node_data, dict) else 'not dict'}")
+                    # For ORIENT phase, don't include expanded nodes in the payload
+                    # The AI should only see summaries to decide what to expand
+                    if phase == "orient":
+                        # Convert expanded nodes back to summaries for orientation phase
+                        collapsed_node_summaries[node_path] = {
+                            "summary": metadata.ai_summary or f"Summary for {node_path} not yet generated.",
+                            "node_path_for_tools": node_path,
+                            "status": "currently_expanded"
+                        }
+                        logger.debug(f"ORIENT phase: Converting expanded node {node_path} to summary")
+                    else:
+                        # DECIDE phase: Include full expanded content
+                        expanded_nodes[node_path] = node_data
+                        logger.debug(f"EXPANDED node {node_path}: {type(node_data)} with keys {list(node_data.keys()) if isinstance(node_data, dict) else 'not dict'}")
             else:
                 if node_data:
                     # Check if this is a channel with messages
@@ -191,7 +204,11 @@ class PayloadBuilder:
                     }
                     logger.debug(f"COLLAPSED node {node_path}: converted to summary only")
 
-        logger.debug(f"Final payload structure: {len(expanded_nodes)} expanded, {len(collapsed_node_summaries)} collapsed")
+        # Log phase-specific payload structure
+        if phase == "orient":
+            logger.debug(f"ORIENT payload: {len(collapsed_node_summaries)} collapsed nodes (no expanded nodes)")
+        else:
+            logger.debug(f"DECIDE payload: {len(expanded_nodes)} expanded, {len(collapsed_node_summaries)} collapsed")
         
         # Count total messages in payload
         total_messages_in_payload = 0
@@ -245,7 +262,7 @@ class PayloadBuilder:
             else:
                 logger.error("FAILSAFE FAILED: No channels with messages found to expand!")
 
-        # Build final payload
+        # Build final payload structure based on phase
         payload = {
             "current_processing_channel_id": primary_channel_id,
             "system_status": {
@@ -254,18 +271,25 @@ class PayloadBuilder:
             },
             "immediate_action_context": self._build_immediate_action_context(),
             "available_channels": self._build_available_channels_summary(world_state_data, node_manager),
-            "expanded_nodes": expanded_nodes,
             "collapsed_node_summaries": collapsed_node_summaries,
             "expansion_status": node_manager.get_expansion_status_summary(),
             "system_events": node_manager.get_system_events(),
         }
+
+        # Add expanded_nodes only for DECIDE phase
+        if phase != "orient":
+            payload["expanded_nodes"] = expanded_nodes
+        else:
+            # For ORIENT phase, explicitly exclude expanded_nodes to force AI to use summaries
+            logger.debug(f"ORIENT phase: Excluding {len(expanded_nodes)} expanded nodes from payload")
 
         # Add payload statistics
         payload_size_bytes = len(json.dumps(payload, default=str).encode("utf-8"))
         payload["payload_stats"] = {
             "size_bytes": payload_size_bytes,
             "size_kb": round(payload_size_bytes / 1024, 2),
-            "expanded_nodes_count": len(expanded_nodes),
+            "phase": phase,
+            "expanded_nodes_count": len(expanded_nodes) if phase != "orient" else 0,
             "collapsed_nodes_count": len(collapsed_node_summaries),
             "total_nodes": len(all_node_paths),
             "bot_identity": {

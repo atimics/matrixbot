@@ -650,21 +650,27 @@ CRITICAL FORMATTING RULES:
         """
         Primary decision-making interface for the application orchestrator.
         Takes the world state and returns a plan of action.
+        
+        Supports OODA loop phases via ai_instruction context.
         """
         try:
             system_prompt = self._build_system_prompt(world_state)
-            user_prompt = "Analyze the current state and decide on the next actions based on my instructions."
+            user_prompt = self._build_user_prompt(world_state)
             
             response = await self.generate_structured_response(
                 system_prompt, user_prompt, AIResponse
             )
+            
+            # Type assertion to help with type checking
+            if not isinstance(response, AIResponse):
+                raise ValueError(f"Expected AIResponse, got {type(response)}")
             
             return {
                 "reasoning": response.reasoning,
                 "selected_actions": [
                     {
                         "action_type": call.name,
-                        "parameters": call.parameters,
+                        "arguments": call.parameters,
                         "reasoning": call.reasoning or response.reasoning,
                     }
                     for call in response.tool_calls
@@ -678,6 +684,34 @@ CRITICAL FORMATTING RULES:
                 "selected_actions": [],
                 "message": "I encountered an internal error. Please try again later.",
             }
+
+    def _build_user_prompt(self, context: Dict[str, Any]) -> str:
+        """Build phase-specific user prompt based on context."""
+        
+        # Check for OODA phase-specific instructions
+        ai_instruction = context.get("ai_instruction", {})
+        phase = ai_instruction.get("phase")
+        
+        if phase == "orientation":
+            return (
+                "ORIENTATION PHASE:\n"
+                "Your goal is to determine what information needs deeper inspection.\n"
+                "Review the collapsed_node_summaries and system_events.\n"
+                "Use ONLY the expand_node, pin_node, or collapse_node tools to request more detailed information.\n"
+                "DO NOT use any other tools in this phase - your only job is to decide what information you need to see.\n"
+                "Focus on nodes that seem most relevant to the current situation or trigger."
+            )
+        elif phase == "decision":
+            return (
+                "DECISION PHASE:\n"
+                "You have expanded the relevant nodes and can see their detailed content in expanded_nodes.\n"
+                "Based on this full context, decide on the best external actions to take.\n"
+                "You can use any available tools EXCEPT node management tools (expand_node, pin_node, collapse_node).\n"
+                "Choose actions like sending messages, searching, or other external operations."
+            )
+        else:
+            # Default behavior for non-OODA processing
+            return "Analyze the current state and decide on the next actions based on my instructions."
 
     def _build_system_prompt(self, context: Dict[str, Any]) -> str:
         """Constructs the main system prompt from the world state context."""
