@@ -51,10 +51,10 @@ class NodePathGenerator:
         """Generate paths for channels."""
         yield "channels"
         if hasattr(world_state_data, 'channels') and world_state_data.channels:
-            for channel_id in world_state_data.channels.keys():
-                yield f"channels/{channel_id}"
-                yield f"channels/{channel_id}/members"
-                yield f"channels/{channel_id}/recent_messages"
+            for platform, platform_channels in world_state_data.channels.items():
+                yield f"channels.{platform}"
+                for channel_id in platform_channels.keys():
+                    yield f"channels.{platform}.{channel_id}"
 
     def _generate_farcaster_feed_paths(self, world_state_data: WorldStateData):
         """Generate paths for Farcaster feed data."""
@@ -133,35 +133,21 @@ class NodePathGenerator:
         Parse a node path into its constituent parts.
         
         Args:
-            node_path: Node path like "channels/general/recent_messages"
+            node_path: Node path like "channels.matrix.!room:server.com"
             
         Returns:
-            List of path parts: ["channels", "general", "recent_messages"]
+            List of path parts: ["channels", "matrix", "!room:server.com"]
         """
         if not node_path:
             return []
         
-        # Handle root paths
-        if "/" not in node_path:
-            return [node_path]
-        
-        # Split path and filter empty parts
-        parts = [part.strip() for part in node_path.split("/") if part.strip()]
+        # Split by '.' for the new hierarchical path structure
+        parts = [part.strip() for part in node_path.split(".") if part.strip()]
         
         # Validate path structure
         if not parts:
             self.logger.warning(f"Invalid node path: {node_path}")
             return []
         
-        # Decode any URL-encoded parts if needed
-        decoded_parts = []
-        for part in parts:
-            try:
-                # Basic URL decoding for common cases
-                decoded_part = part.replace("%20", " ").replace("%2F", "/")
-                decoded_parts.append(decoded_part)
-            except Exception as e:
-                self.logger.warning(f"Error decoding path part '{part}': {e}")
-                decoded_parts.append(part)
-        
-        return decoded_parts
+        # No need for decoding with this format
+        return parts

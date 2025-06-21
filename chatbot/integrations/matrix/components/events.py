@@ -57,13 +57,13 @@ class MatrixEventHandler:
         # Extract comprehensive room details
         room_details = self.room_manager.extract_room_details(room)
 
-        # Auto-register room if not known
+        # Ensure a full room object is registered in the world state
         existing_channel = self.world_state.get_channel(room.room_id, "matrix")
-        if not existing_channel:
-            logger.info(f"MatrixEventHandler: Auto-registering room {room.room_id}")
+        if not existing_channel or not existing_channel.name or not existing_channel.member_count:
+            logger.info(f"MatrixEventHandler: Registering or updating full details for room {room.room_id}")
             self.room_manager.register_room(room.room_id, room_details, room)
         else:
-            # Update existing room details
+            # Update existing room details to ensure they're current
             self.room_manager.update_room_details(room.room_id, room_details)
 
         logger.debug(

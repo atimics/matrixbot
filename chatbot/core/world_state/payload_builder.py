@@ -27,7 +27,7 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from chatbot.config import settings
 from .structures import Channel, WorldStateData
 from .node_path_generator import NodePathGenerator
-from .node_data_handler import NodeDataHandler
+from .node_data_handlers import NodeDataHandlers
 from .payload_optimizer import PayloadOptimizer
 from .bot_activity_context import BotActivityContextBuilder
 
@@ -63,7 +63,7 @@ class PayloadBuilder:
         
         # Initialize specialized handlers
         self.node_path_generator = NodePathGenerator()
-        self.node_data_handler = NodeDataHandler()
+        self.node_data_handlers = NodeDataHandlers()
         self.payload_optimizer = PayloadOptimizer()
         self.bot_activity_builder = BotActivityContextBuilder()
         
