@@ -39,6 +39,10 @@ def setup_logging() -> None:
             logging.FileHandler("chatbot.log"),
         ],
     )
+    
+    # Reduce noise from nio (Matrix Python SDK) - set all nio loggers to WARNING
+    # This covers nio.rooms, nio.events, nio.client, nio.crypto, etc.
+    logging.getLogger('nio').setLevel(logging.WARNING)
 
 
 class ChatbotApp:

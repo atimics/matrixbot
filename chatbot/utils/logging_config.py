@@ -137,6 +137,10 @@ def setup_logging(
     logging.getLogger('urllib3').setLevel(logging.WARNING)
     logging.getLogger('matrix').setLevel(logging.INFO)
     
+    # Reduce noise from nio (Matrix Python SDK) - set all nio loggers to WARNING
+    # This covers nio.rooms, nio.events, nio.client, nio.crypto, etc.
+    logging.getLogger('nio').setLevel(logging.WARNING)
+    
     # Enable request logging if specified
     if enable_request_logging:
         logging.getLogger('chatbot.api_server').setLevel(logging.INFO)
