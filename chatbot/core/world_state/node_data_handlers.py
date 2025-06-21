@@ -50,10 +50,19 @@ class NodeDataHandlers:
             return None
         
         # Parse the node path - handle both '/' and '.' separators
+        # For channels, be careful not to split Matrix room IDs on dots
         if '/' in node_path:
             path_parts = [part.strip() for part in node_path.split("/") if part.strip()]
         else:
-            path_parts = [part.strip() for part in node_path.split(".") if part.strip()]
+            # For dot-separated paths, be more careful with channel paths
+            initial_parts = [part.strip() for part in node_path.split(".") if part.strip()]
+            
+            # Special handling for channel paths that might have Matrix room IDs with dots
+            if len(initial_parts) > 3 and initial_parts[0] == "channels":
+                # Rejoin everything after the channel type as the channel ID
+                path_parts = initial_parts[:2] + ['.'.join(initial_parts[2:])]
+            else:
+                path_parts = initial_parts
         
         if not path_parts:
             return None
@@ -74,10 +83,17 @@ class NodeDataHandlers:
 
     def get_channel_node_data(self, world_state_data: 'WorldStateData', path_parts: List[str], expanded: bool = False) -> Optional[Dict]:
         """Get channel node data."""
-        if len(path_parts) != 3: 
-            logger.warning(f"Invalid channel node path parts: {path_parts}")
+        if len(path_parts) < 3: 
+            logger.warning(f"Invalid channel node path parts (too few): {path_parts}")
             return None
-        _, channel_type, channel_id = path_parts
+        
+        # Handle case where we have more than 3 parts due to dots in Matrix room IDs
+        if len(path_parts) > 3:
+            # Rejoin everything after the channel type as the channel ID
+            channel_type = path_parts[1]
+            channel_id = '.'.join(path_parts[2:])
+        else:
+            _, channel_type, channel_id = path_parts
         
         logger.info(f"Getting channel node data: type={channel_type}, id={channel_id}, expanded={expanded}")
         

@@ -39,8 +39,20 @@ class WebSearchTool(ToolInterface):
     @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
-            "query": "string (the search query or question to research online)",
-            "focus": "string (optional: 'news', 'technical', 'general' - guides search focus)"
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The search query or question to research online"
+                },
+                "focus": {
+                    "type": "string",
+                    "description": "Guides the search focus for more targeted results",
+                    "enum": ["news", "technical", "general"],
+                    "default": "general"
+                }
+            },
+            "required": ["query"]
         }
 
     async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:

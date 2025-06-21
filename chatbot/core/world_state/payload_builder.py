@@ -13,7 +13,7 @@ The PayloadBuilder now focuses on:
 
 Specialized modules handle:
 - Node path generation (NodePathGenerator)
-- Node data retrieval (NodeDataHandler)
+- Node data retrieval (NodeDataHandlers)
 - Bot activity context (BotActivityContext)
 - Payload optimization (PayloadOptimizer)
 """
