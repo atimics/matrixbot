@@ -79,7 +79,7 @@ class FarcasterService(SocialServiceInterface):
                         id=cast_hash,
                         channel_id="farcaster_feed",  # Generic channel for Farcaster posts
                         channel_type="farcaster",
-                        sender=settings.FARCASTER_BOT_FID or "unknown",
+                        sender=settings.farcaster.bot_fid or "unknown",
                         content=content,
                         timestamp=time.time(),
                         reply_to=parent_url
@@ -90,7 +90,7 @@ class FarcasterService(SocialServiceInterface):
                 if self._context_manager:
                     assistant_message = {
                         "cast_hash": cast_hash,
-                        "sender": settings.FARCASTER_BOT_FID or "unknown",
+                        "sender": settings.farcaster.bot_fid or "unknown",
                         "content": content,
                         "timestamp": time.time(),
                         "type": "assistant"
@@ -202,7 +202,7 @@ class FarcasterService(SocialServiceInterface):
                         id=reply_hash,
                         channel_id="farcaster_feed",
                         channel_type="farcaster",
-                        sender=settings.FARCASTER_BOT_FID or "unknown",
+                        sender=settings.farcaster.bot_fid or "unknown",
                         content=content,
                         timestamp=time.time(),
                         reply_to=parent_cast_hash

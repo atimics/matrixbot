@@ -1400,9 +1400,9 @@ class FarcasterObserver(Integration, BaseObserver):
         """Check if we recently posted similar content"""
         try:
             from ...config import settings
-            hours_back = settings.FARCASTER_DUPLICATE_CHECK_HOURS
+            hours_back = settings.farcaster.duplicate_check_hours
             
-            recent_posts = await self.get_recent_own_posts(limit=settings.FARCASTER_RECENT_POSTS_LIMIT)
+            recent_posts = await self.get_recent_own_posts(limit=settings.farcaster.recent_posts_limit)
             
             # Check posts from the configured time period
             current_time = int(time.time())

@@ -39,7 +39,7 @@ async def main() -> None:
     
     # Load configuration with node-based processing
     config = OrchestratorConfig(
-        db_path=unified_settings.database.path,
+        db_path=unified_settings.chatbot_db_path,
         processing_config=ProcessingConfig(
             enable_node_based_processing=True,  # Advanced node-based mode
             observation_interval=unified_settings.observation_interval,
