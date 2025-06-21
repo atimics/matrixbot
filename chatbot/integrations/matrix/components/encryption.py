@@ -2,26 +2,174 @@
 Matrix Encryption Handler
 
 Handles Matrix end-to-end encryption, Megolm decryption errors, and key management.
+Enhanced with persistent retry queue and broadcast key requests.
 """
 
 import asyncio
 import logging
-from typing import Any, Dict, Optional, Set
+import json
+import time
+from typing import Any, Dict, Optional, Set, List
+from dataclasses import dataclass, asdict
 
 from nio import AsyncClient, MatrixRoom
 
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class UndecryptableEvent:
+    """Represents an event that couldn't be decrypted."""
+    event_id: str
+    room_id: str
+    sender: str
+    timestamp: float
+    retry_count: int = 0
+    last_retry_time: float = 0
+    error_type: str = "megolm_session_missing"
+
+
 class MatrixEncryptionHandler:
-    """Handles Matrix encryption and decryption error recovery."""
+    """
+    Handles Matrix encryption and decryption error recovery.
     
-    def __init__(self, client: AsyncClient, user_id: str):
+    Enhanced features:
+    - Persistent retry queue for undecryptable events
+    - Broadcast key requests to all room members
+    - Improved key recovery strategies
+    """
+    
+    def __init__(self, client: AsyncClient, user_id: str, storage_path: Optional[str] = None):
         self.client = client
         self.user_id = user_id
         self.failed_decryption_events: Set[str] = set()
         self.key_request_retries: Dict[str, int] = {}
-        self.max_key_retries = 3
+        self.max_key_retries = 5  # Increased from 3
+        self.storage_path = storage_path or "data/undecryptable_events.json"
+        
+        # Persistent retry queue
+        self.undecryptable_events: Dict[str, UndecryptableEvent] = {}
+        self._load_persistent_queue()
+        
+        # Background task for periodic retry
+        self._retry_task: Optional[asyncio.Task] = None
+        self._start_retry_background_task()
+    
+    def _load_persistent_queue(self):
+        """Load undecryptable events from persistent storage."""
+        try:
+            with open(self.storage_path, 'r') as f:
+                data = json.load(f)
+                for event_key, event_data in data.items():
+                    self.undecryptable_events[event_key] = UndecryptableEvent(**event_data)
+            logger.info(f"MatrixEncryption: Loaded {len(self.undecryptable_events)} persistent undecryptable events")
+        except FileNotFoundError:
+            logger.debug("MatrixEncryption: No persistent queue file found, starting fresh")
+        except Exception as e:
+            logger.error(f"MatrixEncryption: Error loading persistent queue: {e}")
+    
+    def _save_persistent_queue(self):
+        """Save undecryptable events to persistent storage."""
+        try:
+            import os
+            os.makedirs(os.path.dirname(self.storage_path), exist_ok=True)
+            
+            data = {key: asdict(event) for key, event in self.undecryptable_events.items()}
+            with open(self.storage_path, 'w') as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            logger.error(f"MatrixEncryption: Error saving persistent queue: {e}")
+    
+    def _start_retry_background_task(self):
+        """Start background task for periodic retry of undecryptable events."""
+        if self._retry_task is None or self._retry_task.done():
+            self._retry_task = asyncio.create_task(self._periodic_retry_loop())
+    
+    async def _periodic_retry_loop(self):
+        """Periodically retry decryption of undecryptable events."""
+        while True:
+            try:
+                await asyncio.sleep(300)  # Check every 5 minutes
+                await self._retry_undecryptable_events()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"MatrixEncryption: Error in periodic retry loop: {e}")
+                await asyncio.sleep(60)  # Wait a minute before retrying
+    
+    async def _retry_undecryptable_events(self):
+        """Retry decryption for events in the persistent queue."""
+        current_time = time.time()
+        events_to_retry = []
+        
+        for event_key, event in self.undecryptable_events.items():
+            # Retry events that haven't been retried recently and haven't exceeded max retries
+            time_since_last_retry = current_time - event.last_retry_time
+            if (event.retry_count < self.max_key_retries and 
+                time_since_last_retry > 300):  # Wait at least 5 minutes between retries
+                events_to_retry.append(event)
+        
+        if events_to_retry:
+            logger.info(f"MatrixEncryption: Retrying {len(events_to_retry)} undecryptable events")
+            
+            for event in events_to_retry:
+                await self._retry_event_decryption(event)
+                
+            self._save_persistent_queue()
+    
+    async def _retry_event_decryption(self, event: UndecryptableEvent):
+        """Retry decryption for a specific event."""
+        try:
+            event.retry_count += 1
+            event.last_retry_time = time.time()
+            
+            # Broadcast key request to all room members
+            await self._broadcast_key_request(event.room_id, event.sender)
+            
+            logger.debug(f"MatrixEncryption: Retry #{event.retry_count} for event {event.event_id}")
+            
+            # If we've exceeded max retries, remove from queue
+            if event.retry_count >= self.max_key_retries:
+                event_key = f"{event.room_id}:{event.event_id}"
+                if event_key in self.undecryptable_events:
+                    del self.undecryptable_events[event_key]
+                    logger.info(f"MatrixEncryption: Removed event {event.event_id} after {event.retry_count} retries")
+                    
+        except Exception as e:
+            logger.error(f"MatrixEncryption: Error retrying event {event.event_id}: {e}")
+    
+    async def _broadcast_key_request(self, room_id: str, original_sender: str):
+        """Broadcast key request to all verified devices of all room members."""
+        try:
+            if not self.client or not hasattr(self.client, 'rooms'):
+                return
+            
+            if room_id not in self.client.rooms:
+                return
+            
+            room = self.client.rooms[room_id]
+            
+            # Request keys from all room members, not just the original sender
+            for user_id in room.users:
+                if user_id == self.user_id:
+                    continue  # Skip ourselves
+                
+                try:
+                    # Request room key from this specific user
+                    if hasattr(self.client, 'request_room_key'):
+                        await self.client.request_room_key(room_id=room_id)
+                    
+                    # Also try to query their device keys
+                    if hasattr(self.client, 'keys_query'):
+                        await self.client.keys_query([user_id])
+                        
+                except Exception as e:
+                    logger.debug(f"MatrixEncryption: Failed to request keys from {user_id}: {e}")
+            
+            logger.debug(f"MatrixEncryption: Broadcast key request completed for room {room_id}")
+            
+        except Exception as e:
+            logger.error(f"MatrixEncryption: Error broadcasting key request: {e}")
     
     async def handle_decryption_failure(
         self, 
@@ -30,7 +178,10 @@ class MatrixEncryptionHandler:
         sender: str,
         error_type: str = "megolm_session_missing"
     ) -> Dict[str, Any]:
-        """Handle decryption failures and attempt recovery."""
+        """
+        Handle decryption failures and attempt recovery.
+        Enhanced with persistent queue and broadcast key requests.
+        """
         try:
             room_id = room.room_id
             
@@ -47,8 +198,19 @@ class MatrixEncryptionHandler:
             
             self.failed_decryption_events.add(failure_key)
             
-            # Immediate key request for critical events
-            await self._immediate_key_request(room_id, sender)
+            # Add to persistent retry queue
+            undecryptable_event = UndecryptableEvent(
+                event_id=event_id,
+                room_id=room_id,
+                sender=sender,
+                timestamp=time.time(),
+                error_type=error_type
+            )
+            self.undecryptable_events[failure_key] = undecryptable_event
+            self._save_persistent_queue()
+            
+            # Immediate broadcast key request to all room members
+            await self._broadcast_key_request(room_id, sender)
             
             # Attempt recovery strategies
             recovery_result = await self._attempt_key_recovery(room, event_id, sender, error_type)
@@ -60,7 +222,8 @@ class MatrixEncryptionHandler:
                 "sender": sender,
                 "error_type": error_type,
                 "recovery_attempted": True,
-                "recovery_result": recovery_result
+                "recovery_result": recovery_result,
+                "added_to_retry_queue": True
             }
             
         except Exception as e:
