@@ -399,28 +399,11 @@ class NodeProcessor:
             
             actions = decision_result.get('selected_actions', [])
             
-            # Robustness Fix: Handle cases where the AI generates a direct message
+            # Handle cases where the AI generates a direct message (inner monologue)
             if not actions and decision_result.get('message'):
-                logger.warning("AI generated a direct message instead of a tool call. Converting to a reply action.")
-                primary_channel_id = payload_data.get("processing_context", {}).get("primary_channel")
-                if primary_channel_id:
-                    # Determine platform based on channel ID format or context
-                    if "@" in primary_channel_id and ":" in primary_channel_id:
-                        # Matrix room format
-                        action_type = "send_matrix_reply"
-                    else:
-                        # Assume Farcaster for other formats
-                        action_type = "send_farcaster_post"
-                    
-                    actions.append({
-                        "action_type": action_type,
-                        "parameters": {
-                            "channel_id": primary_channel_id,
-                            "message": decision_result['message'],
-                            # Note: reply_to_id might be missing here, but it's better than doing nothing.
-                        },
-                        "reasoning": f"Fallback: Converted direct message to a tool call. Original reasoning: {decision_result.get('reasoning', 'N/A')}"
-                    })
+                logger.info(f"🧠 AI Inner Monologue: {decision_result['message']}")
+                # This is internal AI reasoning/thinking - don't convert to external actions
+                # Just log it and let the cycle continue without executing external actions
             
             return actions
         except Exception as e:
@@ -1288,29 +1271,12 @@ class NodeProcessor:
                 world_state=payload_data
             )
             
-            # Robustness Fix: Handle cases where the AI generates a direct message
+            # Handle cases where the AI generates a direct message (inner monologue)
             selected_actions = decision_result.get('selected_actions', [])
             if not selected_actions and decision_result.get('message'):
-                logger.warning("AI generated a direct message instead of a tool call. Converting to a reply action.")
-                primary_channel_id = payload_data.get("processing_context", {}).get("primary_channel")
-                if primary_channel_id:
-                    # Determine platform based on channel ID format or context
-                    if "@" in primary_channel_id and ":" in primary_channel_id:
-                        # Matrix room format
-                        action_type = "send_matrix_reply"
-                    else:
-                        # Assume Farcaster for other formats
-                        action_type = "send_farcaster_post"
-                    
-                    selected_actions.append({
-                        "action_type": action_type,
-                        "parameters": {
-                            "channel_id": primary_channel_id,
-                            "message": decision_result['message'],
-                            # Note: reply_to_id might be missing here, but it's better than doing nothing.
-                        },
-                        "reasoning": f"Fallback: Converted direct message to a tool call. Original reasoning: {decision_result.get('reasoning', 'N/A')}"
-                    })
+                logger.info(f"🧠 AI Inner Monologue: {decision_result['message']}")
+                # This is internal AI reasoning/thinking - don't convert to external actions
+                # Just log it and let the cycle continue without executing external actions
             
             # Convert dict result to format expected by execution methods
             ai_response = {
@@ -1654,28 +1620,11 @@ class NodeProcessor:
             # Extract actions from the result
             planned_actions = decision_result.get('selected_actions', [])
 
-            # Robustness Fix: Handle cases where the AI generates a direct message
+            # Handle cases where the AI generates a direct message (inner monologue)
             if not planned_actions and decision_result.get('message'):
-                logger.warning("AI generated a direct message instead of a tool call. Converting to a reply action.")
-                primary_channel_id = payload.get("processing_context", {}).get("primary_channel")
-                if primary_channel_id:
-                    # Determine platform based on channel ID format or context
-                    if "@" in primary_channel_id and ":" in primary_channel_id:
-                        # Matrix room format
-                        action_type = "send_matrix_reply"
-                    else:
-                        # Assume Farcaster for other formats
-                        action_type = "send_farcaster_post"
-                    
-                    planned_actions.append({
-                        "action_type": action_type,
-                        "parameters": {
-                            "channel_id": primary_channel_id,
-                            "message": decision_result['message'],
-                            # Note: reply_to_id might be missing here, but it's better than doing nothing.
-                        },
-                        "reasoning": f"Fallback: Converted direct message to a tool call. Original reasoning: {decision_result.get('reasoning', 'N/A')}"
-                    })
+                logger.info(f"🧠 AI Inner Monologue: {decision_result['message']}")
+                # This is internal AI reasoning/thinking - don't convert to external actions
+                # Just log it and let the cycle continue without executing external actions
             
             # Filter out 'wait' actions since we're building a backlog
             actionable_plans = [
