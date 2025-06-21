@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from ...config import settings, UnifiedSettings, get_settings
+from ...config import AppConfig, get_settings, settings
 from ...core.context import ContextManager
 from ...core.secrets import SecretManager
 from ...core.integration_manager import IntegrationManager

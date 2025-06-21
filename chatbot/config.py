@@ -250,8 +250,6 @@ def create_settings() -> AppConfig:
 
 settings = create_settings()
 
-# For backward compatibility with code expecting UnifiedSettings
-UnifiedSettings = AppConfig
 
 # For backward compatibility with code expecting get_settings() function
 def get_settings() -> AppConfig:
