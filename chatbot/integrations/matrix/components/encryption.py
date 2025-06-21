@@ -134,7 +134,7 @@ class MatrixEncryptionHandler:
                     
                     # Also try to query their device keys
                     if hasattr(self.client, 'keys_query'):
-                        await self.client.keys_query({user_id: []})
+                        await self.client.keys_query(query_filter={user_id: []})
                         
                 except Exception as e:
                     logger.debug(f"MatrixEncryption: Failed to request keys from {user_id}: {e}")
@@ -279,8 +279,8 @@ class MatrixEncryptionHandler:
         if hasattr(self.client, 'keys_query'):
             try:
                 # Query keys for the sender to potentially start key exchange
-                # Pass the dictionary as a positional argument
-                await self.client.keys_query({sender: []})
+                # Pass the dictionary as a keyword argument
+                await self.client.keys_query(query_filter={sender: []})
                 recovery_attempts.append({"strategy": "keys_query", "success": True})
             except Exception as e:
                 logger.warning(f"MatrixEncryption: Keys query failed: {e}")
