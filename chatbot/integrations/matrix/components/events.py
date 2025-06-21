@@ -53,6 +53,12 @@ class MatrixEventHandler:
     
     async def handle_message(self, room: MatrixRoom, event, client=None):
         """Handle incoming Matrix messages with enhanced batching and context tracking."""
+        # --- FIX: Early exit to prevent processing the bot's own messages ---
+        if event.sender == self.user_id:
+            logger.debug(f"MatrixEventHandler: Ignoring own message from {event.sender} in room {room.room_id}")
+            return
+        # --- END OF FIX ---
+        
         # Include all messages, including our own, for full conversation context
         logger.debug(f"MatrixEventHandler: Processing message from sender='{event.sender}' (user_id='{self.user_id}')")
 
