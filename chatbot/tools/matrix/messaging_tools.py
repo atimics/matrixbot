@@ -173,17 +173,17 @@ class SendMatrixMessageTool(ToolInterface):
 
     @property
     def description(self) -> str:
-        return ("Send a new message to a Matrix channel. Use this when you want to start a new conversation or make an announcement. "
+        return ("Send a new message to a Matrix channel. Use \'room_id\' for the channel and \'message\' for the content. Use this when you want to start a new conversation or make an announcement. "
                 "Use the 'attach_image' parameter to include an image - either provide a description to generate a new image, or reference an existing media_id from your library. "
                 "Recently generated media (within 5 minutes) will be automatically attached if no explicit attach_image is provided.")
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
-            "channel_id": "string (Matrix room ID) - The room where the message should be sent",
-            "content": "string - The message content to send (supports markdown formatting)",
+            "room_id": "string (Matrix room ID) - The room where the message should be sent",
+            "message": "string - The message content to send (supports markdown formatting)",
             "format_as_markdown": "boolean (optional, default: true) - Whether to format the content as markdown",
-            "attach_image": "string (optional) - Either a media_id from your library (e.g., 'media_img_1234567890') or a description to generate a new image (e.g., 'sunset over mountains')",
+            "attach_image": "string (optional) - Either a media_id from your library (e.g., \'media_img_1234567890\') or a description to generate a new image (e.g., \'sunset over mountains\')",
             "image_url": "string (optional) - Direct URL of an image to attach. If not provided, recently generated media will be auto-attached",
         }
 
@@ -202,18 +202,18 @@ class SendMatrixMessageTool(ToolInterface):
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
-        # Extract and validate parameters
-        room_id = params.get("channel_id")
-        content = params.get("content")
+        # Extract and validate parameters, supporting both new and legacy names
+        room_id = params.get("room_id") or params.get("channel_id")
+        content = params.get("message") or params.get("content")
         format_as_markdown = params.get("format_as_markdown", True)
         attach_image = params.get("attach_image")  # New: either media_id or description
         image_url = params.get("image_url")
 
         missing_params = []
         if not room_id:
-            missing_params.append("channel_id")
+            missing_params.append("room_id (or channel_id)")
         if not content:
-            missing_params.append("content")
+            missing_params.append("message (or content)")
 
         if missing_params:
             error_msg = f"Missing required parameters for Matrix message: {', '.join(missing_params)}"
