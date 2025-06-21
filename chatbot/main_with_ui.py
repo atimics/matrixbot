@@ -47,7 +47,7 @@ class ChatbotWithUI:
     async def setup_orchestrator(self):
         """Set up the main orchestrator with configuration."""
         config = OrchestratorConfig(
-            db_path=settings.CHATBOT_DB_PATH,
+            db_path=settings.chatbot_db_path,
             processing_config=ProcessingConfig(
                 enable_node_based_processing=True,  # Start with traditional mode
                 observation_interval=settings.OBSERVATION_INTERVAL,

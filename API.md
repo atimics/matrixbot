@@ -561,7 +561,7 @@ class AppConfig(BaseSettings):
 from chatbot.config import settings
 
 # Access configuration values
-db_path = settings.CHATBOT_DB_PATH
+db_path = settings.chatbot_db_path
 ai_model = settings.AI_MODEL
 matrix_homeserver = settings.MATRIX_HOMESERVER
 

@@ -43,7 +43,7 @@ class OrchestratorConfig:
     """Configuration for the main orchestrator."""
 
     # Database and storage
-    db_path: str = field(default_factory=lambda: settings.CHATBOT_DB_PATH)
+    db_path: str = field(default_factory=lambda: settings.chatbot_db_path)
     
     # Processing configuration
     processing_config: ProcessingConfig = field(default_factory=ProcessingConfig)
@@ -79,7 +79,7 @@ class MainOrchestrator:
         
         # Initialize modern database manager
         from ..persistence import DatabaseManager
-        self.database_manager = DatabaseManager(self.unified_settings.CHATBOT_DB_PATH)
+        self.database_manager = DatabaseManager(self.unified_settings.chatbot_db_path)
         
         # Initialize HistoryRecorder for backward compatibility
         self.history_recorder = HistoryRecorder(self.config.db_path)
