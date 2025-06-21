@@ -32,7 +32,7 @@ from ..config import settings
 # Centralized constants for easier updates and maintenance.
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_MODEL = "openai/gpt-4o-mini"
-MULTIMODAL_MODEL = "openai/gpt-4o"
+MULTIMODAL_MODEL = "openai/gpt-4"
 
 logger = logging.getLogger(__name__)
 
@@ -368,7 +368,7 @@ CRITICAL FORMATTING RULES:
 
     def _build_system_prompt(self, context: Dict[str, Any]) -> str:
         """Constructs the main system prompt from the world state context."""
-        
+
         # Identity and Core Directives
         prompt_parts = [
             """You are RatiChat, an advanced AI assistant integrated into a multi-platform chat system (Matrix, Farcaster).
@@ -389,18 +389,55 @@ CORE DIRECTIVES:
 
         if (trigger_type := context.get("trigger_type")):
              prompt_parts.append(f"TRIGGER: This cycle was triggered by '{trigger_type}'. Direct mentions require an immediate response.")
-        
-        # Recent Messages
-        if (messages := context.get("recent_messages")):
-            message_summary = ["\nRECENT MESSAGES:"]
-            for msg in messages[-10:]: # limit to last 10 for brevity
+
+        # --- ENHANCED MESSAGE EXTRACTION ---
+        all_messages = []
+
+        # 1. Look in expanded_nodes (primary source)
+        if (expanded_nodes := context.get("expanded_nodes")):
+            for node_path, node_data in expanded_nodes.items():
+                if isinstance(node_data, dict) and "recent_messages" in node_data and node_data["recent_messages"]:
+                    channel_name = node_data.get('name', node_path)
+                    all_messages.append({"role": "system", "content": f"--- Messages from {channel_name} ---"})
+                    for msg in node_data["recent_messages"]:
+                        sender = msg.get("sender", "unknown")
+                        content = msg.get("content", "")
+                        role = "assistant" if sender == "@ratichat:chat.ratimics.com" else "user"
+                        
+                        if role == "user" and ("@ratichat" in content.lower() or "[ratichat]" in content.lower()):
+                            content += " [DIRECT MENTION - RESPONSE REQUIRED]"
+
+                        all_messages.append({
+                            "role": role,
+                            "content": f"{sender}: {content}"
+                        })
+
+        # 2. Fallback to top-level recent_messages (for backward compatibility)
+        if not all_messages and (legacy_messages := context.get("recent_messages")):
+            for msg in legacy_messages:
                 author = msg.get("author", "unknown")
-                content = msg.get("content", "").strip()
-                if "@ratichat" in content.lower() or "[ratichat]" in content.lower():
-                     content += " [DIRECT MENTION - RESPONSE REQUIRED]"
-                message_summary.append(f"- {author}: {content[:250]}") # Truncate long messages
-            prompt_parts.append("\n".join(message_summary))
-            
+                content = msg.get("content", "")
+                role = "assistant" if author == "@ratichat:chat.ratimics.com" else "user"
+
+                if role == "user" and ("@ratichat" in content.lower() or "[ratichat]" in content.lower()):
+                    content += " [DIRECT MENTION - RESPONSE REQUIRED]"
+
+                all_messages.append({
+                    "role": role,
+                    "content": f"{author}: {content}"
+                })
+
+        # 3. Add extracted messages to the prompt
+        if all_messages:
+            prompt_parts.append("\nRECENT MESSAGES:")
+            # Limit to last 20 messages overall for context size
+            for msg in all_messages[-20:]:
+                if msg["role"] == "system":
+                     prompt_parts.append(msg["content"])
+                else:
+                     # We've already formatted the content with the sender
+                     prompt_parts.append(f"- {msg['content']}")
+
         # Available Tools
         if self.tool_schemas:
             prompt_parts.append(f"AVAILABLE TOOLS: {', '.join(self.tool_schemas.keys())}")
