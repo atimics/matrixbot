@@ -397,7 +397,7 @@ class MainOrchestrator:
             logger.debug("Observers initialized")
             
             # Connect processing hub to observers for trigger generation
-            self._connect_processing_hub_to_observers()
+            await self._connect_processing_hub_to_observers()
             logger.debug("Processing hub connected to observers")
             
             # Start the proactive conversation engine
@@ -614,12 +614,12 @@ class MainOrchestrator:
                 
                 room_id = settings.matrix.room_id
                 self.matrix_observer.add_channel(room_id, "Robot Laboratory")
-                await self.matrix_observer.start()
+                # The start() call is removed. It will be called after hub injection.
                 
                 # Connect legacy state change callback for backward compatibility
                 self.matrix_observer.on_state_change = self._on_world_state_change
                 
-                logger.debug("Matrix observer initialized and started")
+                logger.debug("Matrix observer initialized.") # Message changed
             except Exception as e:
                 logger.error(f"Failed to initialize Matrix observer: {e}")
                 logger.debug("Continuing without Matrix integration")
@@ -1032,13 +1032,15 @@ class MainOrchestrator:
                 except Exception as e:
                     logger.error(f"Failed to remove Matrix integration: {e}")
         
-    def _connect_processing_hub_to_observers(self):
+    async def _connect_processing_hub_to_observers(self):
         """Connect the processing hub to observers for trigger generation."""
         try:
             # Connect Matrix observer
             if hasattr(self, 'matrix_observer') and self.matrix_observer:
                 self.matrix_observer.set_processing_hub(self.processing_hub)
                 logger.debug("Connected processing hub to Matrix observer via set_processing_hub")
+                await self.matrix_observer.start() # Start the observer AFTER hub is set
+                logger.debug("Matrix observer started.")
             else:
                 logger.debug("No Matrix observer available to connect processing hub")
                 
