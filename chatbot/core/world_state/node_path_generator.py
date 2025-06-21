@@ -80,24 +80,24 @@ class NodePathGenerator:
                 yield f"media_gallery/bot_media/{cast_hash}"
 
     def _generate_user_paths(self, world_state_data: WorldStateData):
-        """Generate paths for users."""
-        yield "users"
+        """Generate paths for users using singular 'user' type."""
+        yield "user"
         
         # Matrix users
         if hasattr(world_state_data, 'matrix_users') and world_state_data.matrix_users:
-            yield "users/matrix_users"
+            yield "user/matrix"
             for user_id in world_state_data.matrix_users.keys():
-                yield f"users/matrix_users/{user_id}"
+                yield f"user/matrix/{user_id}"
         
         # Farcaster users  
         if hasattr(world_state_data, 'farcaster_users') and world_state_data.farcaster_users:
-            yield "users/farcaster_users"
+            yield "user/farcaster"
             for fid in world_state_data.farcaster_users.keys():
-                yield f"users/farcaster_users/{fid}"
+                yield f"user/farcaster/{fid}"
 
     def _generate_tool_cache_paths(self, world_state_data: WorldStateData):
-        """Generate paths for tool cache."""
-        yield "tools"
+        """Generate paths for tool cache using singular 'tool' type."""
+        yield "tool"
         if hasattr(world_state_data, 'tool_cache') and world_state_data.tool_cache:
             for tool_name in world_state_data.tool_cache.keys():
                 yield f"tools/{tool_name}"
