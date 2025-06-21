@@ -133,6 +133,9 @@ class OpenRouterProvider(AIProviderBase):
         """
         Generates a chat completion via OpenRouter with robust retry logic.
         """
+        # Validate model exists, fallback to openrouter/auto if not
+        validated_model = await self._validate_and_get_model()
+        
         headers = {
             "Authorization": f"Bearer {self.config.api_key}",
             "Content-Type": "application/json",
@@ -141,57 +144,76 @@ class OpenRouterProvider(AIProviderBase):
         }
 
         payload = {
-            "model": self.config.model,
+            "model": validated_model,
             "messages": messages,
             "temperature": self.config.temperature,
             "max_tokens": self.config.max_tokens,
         }
 
-        if response_model and self.supports_structured_outputs():
+        # Structured output handling with better capability detection
+        structured_output_attempted = False
+        if response_model and self.config.use_structured_outputs:
             # Ensure we have fresh capability data
             capabilities = await self._check_model_capabilities()
+            logger.debug(f"Model capabilities cache: {capabilities}")
             
-            # Double-check if the current model supports structured outputs
-            if not capabilities.get(self.config.model.lower(), False):
-                logger.debug(f"Model {self.config.model} does not support structured outputs, skipping")
-            else:
-                schema = response_model.model_json_schema()
-                
-                # Fix additionalProperties for all object types in the schema (OpenAI strict mode requirement)
-                def fix_additional_properties(obj):
-                    if isinstance(obj, dict):
-                        if obj.get("type") == "object":
-                            obj["additionalProperties"] = False
-                        # Recursively process nested objects
-                        for key, value in obj.items():
-                            if isinstance(value, dict):
-                                fix_additional_properties(value)
-                            elif isinstance(value, list):
-                                for item in value:
-                                    if isinstance(item, dict):
-                                        fix_additional_properties(item)
-                
-                fix_additional_properties(schema)
-                
-                # Enhanced debug logging to see exactly what we're sending
-                logger.info(f"=== STRUCTURED OUTPUT DEBUG ===")
-                logger.info(f"Model: {self.config.model}")
-                logger.info(f"Response model: {response_model.__name__}")
-                logger.info(f"Fixed schema: {json.dumps(schema, indent=2)}")
-                
-                response_format = {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": response_model.__name__.lower(),
-                        "strict": True,
-                        "schema": schema
+            # Check various possible model ID formats using the validated model
+            model_variations = [
+                validated_model.lower(),
+                validated_model,
+                validated_model.replace("/", "_").lower(),
+            ]
+            
+            model_supports_structured = False
+            for model_var in model_variations:
+                if capabilities.get(model_var, False):
+                    model_supports_structured = True
+                    logger.debug(f"Found structured output support for model variant: {model_var}")
+                    break
+            
+            if model_supports_structured:
+                try:
+                    schema = response_model.model_json_schema()
+                    
+                    # Fix additionalProperties for all object types in the schema
+                    def fix_additional_properties(obj):
+                        if isinstance(obj, dict):
+                            if obj.get("type") == "object":
+                                obj["additionalProperties"] = False
+                            # Recursively process nested objects
+                            for key, value in obj.items():
+                                if isinstance(value, dict):
+                                    fix_additional_properties(value)
+                                elif isinstance(value, list):
+                                    for item in value:
+                                        if isinstance(item, dict):
+                                            fix_additional_properties(item)
+                    
+                    fix_additional_properties(schema)
+                    
+                    response_format = {
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": response_model.__name__.lower(),
+                            "strict": True,
+                            "schema": schema
+                        }
                     }
-                }
-                
-                logger.info(f"Complete response_format payload: {json.dumps(response_format, indent=2)}")
-                logger.info(f"=== END DEBUG ===")
-                
-                payload["response_format"] = response_format
+                    
+                    payload["response_format"] = response_format
+                    structured_output_attempted = True
+                    
+                    logger.info(f"=== STRUCTURED OUTPUT ENABLED ===")
+                    logger.info(f"Model: {validated_model}")
+                    logger.info(f"Response model: {response_model.__name__}")
+                    logger.info(f"Schema properties: {list(schema.get('properties', {}).keys())}")
+                    logger.info(f"=== END STRUCTURED DEBUG ===")
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to setup structured output: {e}")
+                    structured_output_attempted = False
+            else:
+                logger.debug(f"Model {self.config.model} does not support structured outputs. Available models: {list(capabilities.keys())[:10]}...")
 
         if tools:
             payload["tools"] = tools
@@ -200,38 +222,46 @@ class OpenRouterProvider(AIProviderBase):
         last_exception = None
         for attempt in range(self.config.max_retries + 1):
             try:
-                # Enhanced logging for the complete payload
+                # Log payload info (less verbose than before)
                 payload_size = len(str(payload))
-                logger.info(f"=== FULL PAYLOAD DEBUG ===")
-                logger.info(f"Payload size: {payload_size} characters")
-                logger.info(f"Complete payload: {json.dumps(payload, indent=2)}")
-                logger.info(f"=== END PAYLOAD DEBUG ===")
+                logger.debug(f"OpenRouter request: size={payload_size} chars, structured_output={structured_output_attempted}")
                 
-                if payload_size > 50000:  # Log if payload is suspiciously large
-                    logger.warning(f"Large payload detected: {payload_size} characters")
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(f"Payload keys: {list(payload.keys())}")
+                    if 'response_format' in payload:
+                        logger.debug(f"Using structured output with schema")
                     
                 response = await self.client.post(settings.openrouter_api_url, headers=headers, json=payload)
                 response.raise_for_status()
-                return response.json()
+                result = response.json()
+                
+                # Log successful response
+                if 'choices' in result and result['choices']:
+                    content_length = len(result['choices'][0].get('message', {}).get('content', ''))
+                    logger.debug(f"OpenRouter response: content_length={content_length}")
+                
+                return result
+                
             except httpx.HTTPStatusError as e:
                 if e.response.status_code == 400:
-                    # Log more details for 400 errors
-                    logger.error(f"400 Bad Request. Payload size: {len(str(payload))} chars")
-                    logger.error(f"Payload keys: {list(payload.keys())}")
-                    if 'messages' in payload:
-                        logger.error(f"Message count: {len(payload['messages'])}")
-                        for i, msg in enumerate(payload['messages']):
-                            logger.error(f"Message {i} length: {len(str(msg))}")
-                    if 'tools' in payload:
-                        logger.error(f"Tools count: {len(payload['tools'])}")
-                    
+                    # Log error details but attempt fallback for structured output
                     try:
                         error_detail = e.response.json()
-                        logger.error(f"OpenRouter error details: {error_detail}")
-                    except:
-                        logger.error(f"Response text: {e.response.text[:500]}")
+                        logger.error(f"OpenRouter 400 error: {error_detail}")
                         
-                last_exception = e
+                        # If structured output failed, try without it
+                        if structured_output_attempted and 'response_format' in payload:
+                            logger.warning("Structured output failed, retrying without response_format")
+                            payload_without_format = payload.copy()
+                            del payload_without_format['response_format']
+                            
+                            response = await self.client.post(settings.openrouter_api_url, headers=headers, json=payload_without_format)
+                            response.raise_for_status()
+                            return response.json()
+                            
+                    except Exception as fallback_error:
+                        logger.error(f"Fallback also failed: {fallback_error}")
+                        
                 last_exception = e
                 if e.response.status_code in [401, 403]:
                     logger.error(f"Critical auth error ({e.response.status_code}): {e.response.text}")
@@ -256,6 +286,35 @@ class OpenRouterProvider(AIProviderBase):
 
         raise ValueError(f"Chat completion failed after {self.config.max_retries} retries.") from last_exception
 
+
+    async def _validate_and_get_model(self) -> str:
+        """
+        Validate that the configured model exists in OpenRouter's model list.
+        If not found, fallback to 'openrouter/auto'.
+        """
+        try:
+            # Get available models from OpenRouter
+            response = await self.client.get("https://openrouter.ai/api/v1/models")
+            response.raise_for_status()
+            
+            models_data = response.json()
+            available_model_ids = {model.get("id", "").lower() for model in models_data.get("data", [])}
+            
+            current_model = self.config.model.lower()
+            
+            # Check if current model exists
+            if current_model in available_model_ids:
+                logger.debug(f"Model '{self.config.model}' validated successfully")
+                return self.config.model
+            else:
+                logger.warning(f"Model '{self.config.model}' not found in OpenRouter model list. Falling back to 'openrouter/auto'")
+                # Update the config to use the fallback
+                self.config.model = "openrouter/auto"
+                return "openrouter/auto"
+                
+        except Exception as e:
+            logger.error(f"Failed to validate model via OpenRouter API: {e}. Using configured model '{self.config.model}' as-is")
+            return self.config.model
 
     async def _check_model_capabilities(self) -> Dict[str, bool]:
         """
