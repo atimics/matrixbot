@@ -33,7 +33,6 @@ from ..world_state.payload_builder import PayloadBuilder
 from .processing_hub import ProcessingHub, ProcessingConfig
 from .rate_limiter import RateLimiter, RateLimitConfig
 from ..proactive import ProactiveConversationEngine
-from ..history_recorder import HistoryRecorder
 
 logger = logging.getLogger(__name__)
 
@@ -80,12 +79,6 @@ class MainOrchestrator:
         # Initialize modern database manager
         from ..persistence import DatabaseManager
         self.database_manager = DatabaseManager()  # Let it use the default configuration from settings
-        
-        # Initialize HistoryRecorder for backward compatibility
-        self.history_recorder = HistoryRecorder(self.config.db_path)
-        
-        # Connect HistoryRecorder to WorldStateManager for memory persistence
-        self.world_state.set_history_recorder(self.history_recorder)
         
         # Integration management
         self.integration_manager = IntegrationManager(
@@ -368,10 +361,6 @@ class MainOrchestrator:
         try:
             # Initialize integration manager
             await self.integration_manager.initialize()
-            
-            # Initialize HistoryRecorder for persistent memory
-            await self.history_recorder.initialize()
-            logger.info("HistoryRecorder initialized for persistent memory")
             
             # Restore persistent state from previous runs
             await self.world_state.restore_persistent_state()
