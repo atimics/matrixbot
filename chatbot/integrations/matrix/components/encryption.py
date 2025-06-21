@@ -167,7 +167,7 @@ class MatrixEncryptionHandler:
     ) -> Dict[str, Any]:
         """
         Handle decryption failures and attempt recovery.
-        Enhanced with persistent queue and broadcast key requests.
+        Enhanced with persistent database queue and broadcast key requests.
         """
         try:
             room_id = room.room_id
@@ -185,16 +185,37 @@ class MatrixEncryptionHandler:
             
             self.failed_decryption_events.add(failure_key)
             
-            # Add to persistent retry queue
-            undecryptable_event = UndecryptableEvent(
-                event_id=event_id,
-                room_id=room_id,
-                sender=sender,
-                timestamp=time.time(),
-                error_type=error_type
-            )
-            self.undecryptable_events[failure_key] = undecryptable_event
-            self._save_persistent_queue()
+            # Add to persistent database retry queue
+            try:
+                if not self.db_manager._initialized:
+                    await self.db_manager.initialize()
+                
+                async with self.db_manager.get_session() as session:
+                    # Check if event already exists in database
+                    existing_query = select(UndecryptableEventRecord).where(
+                        UndecryptableEventRecord.event_id == event_id,
+                        UndecryptableEventRecord.room_id == room_id
+                    )
+                    existing_result = await session.execute(existing_query)
+                    existing_event = existing_result.scalar_one_or_none()
+                    
+                    if not existing_event:
+                        # Create new record
+                        undecryptable_record = UndecryptableEventRecord(
+                            event_id=event_id,
+                            room_id=room_id,
+                            sender=sender,
+                            timestamp=time.time(),
+                            error_type=error_type
+                        )
+                        session.add(undecryptable_record)
+                        await session.commit()
+                        logger.debug(f"MatrixEncryption: Added event {event_id} to persistent retry queue")
+                    else:
+                        logger.debug(f"MatrixEncryption: Event {event_id} already in retry queue")
+                        
+            except Exception as db_error:
+                logger.error(f"MatrixEncryption: Error saving to database: {db_error}")
             
             # Immediate broadcast key request to all room members
             await self._broadcast_key_request(room_id, sender)
