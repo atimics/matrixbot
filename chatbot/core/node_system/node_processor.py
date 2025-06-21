@@ -187,13 +187,13 @@ class NodeProcessor:
             
             # If this is a critical trigger, add immediate response actions
             if trigger_type == "mention":
-                logger.info(f"High-priority mention detected in cycle {cycle_id}, escalating response")
+                logger.info(f"🔔 MENTION TRIGGER: AI being instructed to respond to mention in channel {primary_channel_id}")
                 
                 # CRITICAL FIX: Auto-expand the primary channel so AI can see messages
                 if primary_channel_id:
                     # Determine the correct node path for the channel
                     if primary_channel_id.startswith('!'):
-                        # Matrix channel - determine platform type and use correct node path
+                        # Matrix channel - use correct node path format
                         matrix_node_path = f"channels/matrix/{primary_channel_id}"
                         self.node_manager.expand_node(matrix_node_path)
                         logger.info(f"🔧 AUTO-EXPANDED Matrix channel {primary_channel_id} for mention visibility")
@@ -203,11 +203,14 @@ class NodeProcessor:
                         self.node_manager.expand_node(farcaster_node_path)
                         logger.info(f"🔧 AUTO-EXPANDED Farcaster channel {primary_channel_id} for mention visibility")
                     else:
-                        # Try both formats to be safe
+                        # Fallback - try both possible formats
+                        logger.warning(f"Unknown channel format {primary_channel_id}, trying fallback expansion")
                         for platform in ['matrix', 'farcaster']:
                             node_path = f"channels/{platform}/{primary_channel_id}"
                             self.node_manager.expand_node(node_path)
                         logger.info(f"🔧 AUTO-EXPANDED channel {primary_channel_id} (tried both platforms) for mention visibility")
+                
+                logger.info(f"High-priority mention detected in cycle {cycle_id}, escalating response")
     
     async def _escalate_communication_actions(self):
         """Escalate priority of pending communication actions"""
