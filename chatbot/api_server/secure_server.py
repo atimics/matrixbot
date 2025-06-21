@@ -319,14 +319,6 @@ class SecureAPIServer:
             }
         
         logger.info("API routes configured with global authentication protection for all /api/* endpoints")
-                return {
-                    "tools": tools,
-                    "count": len(tools),
-                    "timestamp": datetime.now().isoformat()
-                }
-            except Exception as e:
-                logger.error(f"Error getting tools: {e}")
-                raise HTTPException(status_code=500, detail="Failed to retrieve tools")
         
         @self.app.get("/api/integrations")
         async def get_integrations(api_key: str = Depends(self.api_key_auth.verify_api_key)):

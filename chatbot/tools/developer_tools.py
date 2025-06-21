@@ -156,20 +156,6 @@ def validate_sandbox_path(func):
         
         return await func(self, params, context)
     return wrapper
-        return await func(self, params, context)
-    return wrapper
-
-def require_admin_access(func):
-    """Decorator to require admin access for dangerous operations."""
-    async def wrapper(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
-        if not _security.validate_admin_access(context):
-            return {
-                "status": "error",
-                "message": "Admin access required. Configure DEVELOPER_TOOLS_ADMIN_KEY.",
-                "security_notice": "This operation can modify code and requires elevated permissions."
-            }
-        return await func(self, params, context)
-    return wrapper
 
 # ==============================================================================
 # GitHub-Centric ACE Tools (Phase 2 - New Architecture)
@@ -386,10 +372,22 @@ class CommentOnGitHubIssueTool(ToolInterface):
         issue_number = params.get("issue_number")
         comment_body = params.get("comment_body")
         
-        if not all([repo_full_name, issue_number, comment_body]):
+        # Validate required parameters
+        if not repo_full_name or not issue_number or not comment_body:
             return {
                 "status": "failure", 
                 "message": "repo_full_name, issue_number, and comment_body are all required"
+            }
+        
+        # Convert types safely
+        try:
+            repo_full_name = str(repo_full_name)
+            issue_number = int(issue_number)
+            comment_body = str(comment_body)
+        except (ValueError, TypeError) as e:
+            return {
+                "status": "failure",
+                "message": f"Invalid parameter types: {e}"
             }
         
         # Add AI signature to comments for transparency
@@ -536,6 +534,9 @@ class AnalyzeChannelForIssuesTool(ToolInterface):
         repo_full_name = params.get("repo_full_name")
         create_issues = params.get("create_issues", False)
         focus = params.get("focus", "all")
+        
+        if not context.world_state_manager:
+            return {"status": "failure", "message": "World state manager not available"}
         
         messages = context.world_state_manager.state.get_recent_messages(channel_id, message_limit)
         if not messages:
@@ -739,7 +740,7 @@ class SetupDevelopmentWorkspaceTool(ToolInterface):
         if not target_repo_url or not task_id:
             return {"status": "failure", "message": "target_repo_url and task_id are required"}
 
-        if not settings.GITHUB_TOKEN or not settings.GITHUB_USERNAME:
+        if not settings.github.token or not settings.github.username:
             return {
                 "status": "failure",
                 "message": "GITHUB_TOKEN and GITHUB_USERNAME must be configured.",
@@ -777,7 +778,7 @@ class SetupDevelopmentWorkspaceTool(ToolInterface):
                 return {"status": "failure", "message": f"Failed to clone/pull repository {main_repo_full_name}"}
 
             # 3. Add fork as a remote with authentication
-            fork_auth_url = fork_clone_url.replace('https://', f'https://{settings.GITHUB_USERNAME}:{settings.GITHUB_TOKEN}@')
+            fork_auth_url = fork_clone_url.replace('https://', f'https://{settings.github.username}:{settings.github.token}@')
             await lg.add_remote("fork", fork_auth_url)
 
             # 4. Create and checkout a feature branch
@@ -1386,6 +1387,10 @@ class AnalyzeAndProposeChangeTool(ToolInterface):  # Phase 2 - GitHub-Centric
         """Create a development task in the world state."""
         from ..core.world_state.structures import DevelopmentTask
         
+        if not context.world_state_manager:
+            logger.warning("World state manager not available for development task creation")
+            return None
+        
         ws_data = await context.world_state_manager.get_state()
         
         task = DevelopmentTask(
@@ -1394,11 +1399,11 @@ class AnalyzeAndProposeChangeTool(ToolInterface):  # Phase 2 - GitHub-Centric
             description=f"AI-generated proposals for {focus} improvements",
             target_repository=target_repo_url,
             status="proposal_ready",
-            initial_proposal={
+            initial_proposal=json.dumps({
                 "focus": focus,
                 "proposals": proposals,
                 "generated_at": asyncio.get_event_loop().time()
-            }
+            }, indent=2)
         )
         
         ws_data.development_tasks[task_id] = task
@@ -1524,7 +1529,7 @@ class ImplementCodeChangesTool(ToolInterface):  # Phase 2
         self, context: ActionContext, task_id: str, proposal_ids: List[str]
     ) -> List[Dict[str, Any]]:
         """Get changes from development task proposals."""
-        if not hasattr(context, 'world_state_manager'):
+        if not hasattr(context, 'world_state_manager') or not context.world_state_manager:
             return []
         
         ws_data = await context.world_state_manager.get_state()
@@ -1602,6 +1607,10 @@ class ImplementCodeChangesTool(ToolInterface):  # Phase 2
         self, context: ActionContext, task_id: str, status: str, changes: List[Dict[str, Any]]
     ):
         """Update the development task status in world state."""
+        if not context.world_state_manager:
+            logger.warning("World state manager not available for task status update")
+            return
+        
         ws_data = context.world_state_manager.world_state
         if task_id in ws_data.development_tasks:
             task = ws_data.development_tasks[task_id]
@@ -1652,7 +1661,10 @@ class CreatePullRequestTool(ToolInterface):  # Phase 3
         if not target_repo_url or not pr_title:
             return {"status": "failure", "message": "target_repo_url and pr_title are required"}
         
-        try:           
+        try:
+            if not context.world_state_manager:
+                return {"status": "failure", "message": "World state manager not available"}
+            
             ws_data = context.world_state_manager.get_state_data()
             repo_context = ws_data.target_repositories.get(target_repo_url)
             if not repo_context or not repo_context.setup_complete:
@@ -1677,6 +1689,10 @@ class CreatePullRequestTool(ToolInterface):  # Phase 3
                 base_branch=target_branch,
                 is_draft=draft,
             )
+            
+            if not pr_data:
+                return {"status": "failure", "message": "Failed to create pull request"}
+            
             pr_url = pr_data.get("html_url")
             
             # Update world state with PR information
