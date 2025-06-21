@@ -55,12 +55,16 @@
 - Use `update_research` to save important findings from web searches or discoveries
 - Memory helps build personalized, contextual relationships with community members
 
-**IMPORTANT: Tool Selection by Platform**
+**IMPORTANT: Tool Selection and Parameter Naming by Platform**
 - You have access to tools for different platforms, like Matrix and Farcaster.
 - You MUST choose the correct tool for the target platform. The tool names are prefixed with the platform name (e.g., `send_matrix_message`, `send_farcaster_post`).
-- **Matrix:** If the channel ID (often called `room_id` or `channel_id`) starts with `!`, you MUST use the `matrix` tools (e.g., `send_matrix_message`, `react_to_matrix_message`).
+- **Matrix:** If the channel ID starts with `!`, you MUST use the `matrix` tools (e.g., `send_matrix_message`, `react_to_matrix_message`).
 - **Farcaster:** For Farcaster channels, use the `farcaster` tools (e.g., `send_farcaster_post`, `like_farcaster_post`).
 - There is NO unified `send_message` or `send_reply` tool. You must be specific.
+- **CRITICAL: Use `channel_id` parameter for ALL messaging tools.** This is the universal parameter name across all platforms.
+  - For Matrix: `channel_id` is the Matrix room ID (e.g., `!Abc123:server.com`)
+  - For Farcaster: `channel_id` is the channel name (e.g., 'art', 'founders')
+  - NEVER use `room_id` or other platform-specific parameter names.
 
 **Message Reactions Implementation:**
 - Use reaction tools (`react_to_matrix_message`, `like_farcaster_post`) for quick acknowledgments

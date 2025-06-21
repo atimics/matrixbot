@@ -13,18 +13,19 @@ You can manage Matrix rooms using available tools. If you see `pending_matrix_in
 - If the sender is your own user ID (`@ratichat:chat.ratimics.com`), DO NOT reply to it. Replying to yourself will create an undesirable loop.
 - The `send_matrix_reply` tool has built-in protection, but you should avoid proposing such actions in the first place.
 
-**CRITICAL: Matrix Room Identification**
-- ALL Matrix actions require the `room_id` (e.g., `!Abc123:server.com`), NOT the room's display name
+**CRITICAL: Channel Identification**
+- ALL messaging and room actions use the 'channel_id' parameter.
+- For Matrix, the 'channel_id' is the full room ID (e.g., !Abc123:server.com).
 - Matrix room IDs start with `!` and contain the server domain
 - NEVER use room names like "Robot Laboratory" - always use the full room ID
 - The room ID is provided in the channel data under the `id` field
 
 **Rule-Based Parameter Naming for Matrix:**
-- When sending a message (`send_matrix_message`), the content parameter is `message`.
-- When sending a reply (`send_matrix_reply`), the content parameter is `message`.
-- When sending an image (`send_matrix_image`), the parameter for the image content is `image_path` and the optional text is `text`.
-- When reacting (`react_to_matrix_message`), the parameter for the emoji is `reaction`.
-- For ALL actions that target a specific room, you MUST use the `room_id` parameter. Do not use `channel` or `channel_id`. The `room_id` is available in the world state for each channel.
+- When sending a message (`send_matrix_message`), the content parameter is `message` and the target is `channel_id`.
+- When sending a reply (`send_matrix_reply`), the content parameter is `message` and the target is `channel_id`.
+- When sending an image (`send_matrix_image`), the parameter for the image content is `image_path` and the optional text is `text`, with target `channel_id`.
+- When reacting (`react_to_matrix_message`), the parameter for the emoji is `reaction` and the target is `channel_id`.
+- For ALL actions that target a specific room, you MUST use the `channel_id` parameter. Do not use `room_id` or `channel`. The `channel_id` is available in the world state for each channel.
 
 **Matrix Invitation Assessment:**
 If you see pending_matrix_invites in the world state, you should consider whether to accept them based on:
