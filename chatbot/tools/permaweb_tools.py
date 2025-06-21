@@ -86,8 +86,8 @@ class StorePermanentMemoryTool(ToolInterface):
 
         # Check if Arweave uploader is configured
         if (
-            not settings.ARWEAVE_UPLOADER_API_ENDPOINT
-            or not settings.ARWEAVE_UPLOADER_API_KEY
+            not settings.storage.arweave_uploader_api_endpoint
+            or not settings.storage.arweave_uploader_api_key
         ):
             return {
                 "status": "error",
@@ -96,9 +96,9 @@ class StorePermanentMemoryTool(ToolInterface):
 
         try:
             arweave_client = ArweaveUploaderClient(
-                api_endpoint=settings.ARWEAVE_UPLOADER_API_ENDPOINT,
-                api_key=settings.ARWEAVE_UPLOADER_API_KEY,
-                gateway_url=settings.ARWEAVE_GATEWAY_URL,
+                api_endpoint=settings.storage.arweave_uploader_api_endpoint,
+                api_key=settings.storage.arweave_uploader_api_key,
+                gateway_url=settings.storage.arweave_gateway_url,
             )
 
             # Prepare data for upload

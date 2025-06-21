@@ -126,6 +126,10 @@ class StorageConfig(BaseSettings):
     # Arweave configuration
     arweave_internal_uploader_service_url: str = "http://arweave-uploader:8001"
     arweave_gateway_url: str = "https://arweave.net"
+    
+    # External Arweave uploader configuration
+    arweave_uploader_api_endpoint: Optional[str] = None
+    arweave_uploader_api_key: Optional[str] = None
 
 
 class SecurityConfig(BaseSettings):

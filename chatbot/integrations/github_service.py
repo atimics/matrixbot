@@ -26,9 +26,9 @@ class GitHubService:
         Args:
             main_repo: Repository full name (e.g., "owner/repo")
         """
-        self.token = settings.GITHUB_TOKEN
+        self.token = settings.github_token
         self.main_repo = main_repo
-        self.fork_owner = settings.GITHUB_USERNAME
+        self.fork_owner = settings.github_username
         self._client = httpx.AsyncClient(
             base_url="https://api.github.com/",
             headers={"Authorization": f"token {self.token}"} if self.token else {},
