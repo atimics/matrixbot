@@ -156,15 +156,20 @@ class NodeDataHandlers:
         
         if user:
             # Use to_ai_summary_dict if available, otherwise create basic dict
-            if hasattr(user, 'to_ai_summary_dict'):
-                return user.to_ai_summary_dict()
-            else:
-                return {
-                    "id": user_id,
-                    "type": user_type,
-                    "username": getattr(user, 'username', None),
-                    "display_name": getattr(user, 'display_name', None)
-                }
+            if hasattr(user, 'to_ai_summary_dict') and callable(getattr(user, 'to_ai_summary_dict')):
+                try:
+                    return user.to_ai_summary_dict()
+                except Exception as e:
+                    logger.warning(f"Error calling to_ai_summary_dict for user {user_id}: {e}")
+            
+            # Fallback to basic dict representation
+            return {
+                "id": user_id,
+                "type": user_type,
+                "username": getattr(user, 'username', None),
+                "display_name": getattr(user, 'display_name', None),
+                "fid": getattr(user, 'fid', None) if user_type == 'farcaster' else None
+            }
         
         # Fallback for users not in the main dict
         for channel in self._iter_all_channels(world_state_data.channels):
