@@ -36,6 +36,9 @@ class MatrixEncryptionHandler:
         self.key_request_retries: Dict[str, int] = {}
         self.max_key_retries = 5  # Increased from 3
         
+        # Track pending key requests to avoid duplicates
+        self.pending_key_requests: Set[str] = set()  # Track session_id + room_id
+        
         # Database manager for persistent storage
         self.db_manager = db_manager or DatabaseManager()
         
@@ -256,14 +259,31 @@ class MatrixEncryptionHandler:
         
         # Strategy 1: Request keys from other room members
         if self.client and hasattr(self.client, 'request_room_key'):
-            try:
-                logger.debug(f"MatrixEncryption: Requesting room key for event {event_id}")
-                # Pass the full event object, not just the ID
-                await self.client.request_room_key(event)
-                recovery_attempts.append({"strategy": "room_key_request", "success": True})
-            except Exception as e:
-                logger.warning(f"MatrixEncryption: Room key request failed: {e}")
-                recovery_attempts.append({"strategy": "room_key_request", "success": False, "error": str(e)})
+            # Create a unique key for tracking pending requests
+            request_key = f"{room_id}:{getattr(event, 'session_id', event_id)}"
+            
+            if request_key not in self.pending_key_requests:
+                try:
+                    logger.debug(f"MatrixEncryption: Requesting room key for event {event_id}")
+                    self.pending_key_requests.add(request_key)
+                    # Pass the full event object, not just the ID
+                    await self.client.request_room_key(event)
+                    recovery_attempts.append({"strategy": "room_key_request", "success": True})
+                except Exception as e:
+                    error_msg = str(e)
+                    # Handle expected duplicate request errors more gracefully
+                    if "already sent out" in error_msg.lower() or "key sharing request" in error_msg.lower():
+                        logger.debug(f"MatrixEncryption: Key request already pending for session: {error_msg}")
+                        recovery_attempts.append({"strategy": "room_key_request", "success": False, "error": "already_pending"})
+                    else:
+                        logger.warning(f"MatrixEncryption: Room key request failed: {e}")
+                        recovery_attempts.append({"strategy": "room_key_request", "success": False, "error": str(e)})
+                finally:
+                    # Remove from pending set after a delay to avoid immediate re-requests
+                    asyncio.create_task(self._remove_pending_request_after_delay(request_key, 30))
+            else:
+                logger.debug(f"MatrixEncryption: Key request already pending for session {request_key}")
+                recovery_attempts.append({"strategy": "room_key_request", "success": False, "error": "already_pending"})
         
         # Strategy 2: Share keys with room if we're able to
         if hasattr(self.client, 'share_group_session'):

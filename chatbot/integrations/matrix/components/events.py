@@ -145,7 +145,7 @@ class MatrixEventHandler:
         logger.debug(f"MatrixEventHandler: processing_hub check - hub={self.processing_hub is not None}, type={type(self.processing_hub)}")
         
         if not self.processing_hub:
-            logger.warning(f"MatrixEventHandler: No processing hub available for trigger generation")
+            logger.debug(f"MatrixEventHandler: No processing hub available for trigger generation (likely during initialization)")
             return
         
         # Skip generating triggers for the bot's own messages
