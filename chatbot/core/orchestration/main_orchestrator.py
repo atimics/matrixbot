@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ...config import AppConfig, get_settings, settings
-from ...core.context import ContextManager
 from ...core.secrets import SecretManager
 from ...core.integration_manager import IntegrationManager
 from ...integrations.arweave_uploader_client import ArweaveUploaderClient
@@ -78,7 +77,6 @@ class MainOrchestrator:
         self.world_state = WorldStateManager()
         self.payload_builder = PayloadBuilder()
         self.rate_limiter = RateLimiter(self.config.rate_limit_config)
-        self.context_manager = ContextManager(self.world_state, self.database_manager)
         
         # Integration management
         self.integration_manager = IntegrationManager(
@@ -100,7 +98,7 @@ class MainOrchestrator:
         # Proactive conversation engine (Initiative C)
         self.proactive_engine = ProactiveConversationEngine(
             world_state_manager=self.world_state,
-            context_manager=self.context_manager
+            context_manager=None  # Will be updated when modern context management is implemented
         )
         
         # Connect proactive engine to world state manager for easy access
