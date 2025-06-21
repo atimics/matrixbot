@@ -675,8 +675,10 @@ class NodeProcessor:
             # Get world state data
             world_state_data = self.world_state.get_world_state_data()
             
-            # Find all node paths that exist in world state
-            all_node_paths = self.payload_builder._get_node_paths_from_world_state(world_state_data)
+            # Use NodePathGenerator to get all node paths
+            from ..world_state.node_path_generator import NodePathGenerator
+            path_generator = NodePathGenerator()
+            all_node_paths = path_generator.get_node_paths_from_world_state(world_state_data)
             
             # Get nodes that need summary updates
             nodes_needing_summary = self.node_manager.get_nodes_needing_summary(all_node_paths)
@@ -684,7 +686,10 @@ class NodeProcessor:
             # Update summaries for these nodes
             for node_path in nodes_needing_summary[:5]:  # Limit to 5 per cycle to avoid overload
                 try:
-                    node_data = self.payload_builder._get_node_data_by_path(world_state_data, node_path)
+                    # Use NodeDataHandler to get node data
+                    from ..world_state.node_data_handler import NodeDataHandler
+                    data_handler = NodeDataHandler()
+                    node_data = data_handler.get_node_data_by_path(world_state_data, node_path)
                     if node_data:
                         summary = await self.summary_service.generate_node_summary(node_path, node_data)
                         self.node_manager.update_node_summary(node_path, summary)
