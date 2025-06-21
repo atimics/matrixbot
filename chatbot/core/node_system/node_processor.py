@@ -583,7 +583,7 @@ class NodeProcessor:
         # Strategy 2: Check if it's a Matrix room ID (starts with !)
         if partial_path.startswith('!'):
             for path in all_known_paths:
-                if f"channels.matrix.{partial_path}" == path:
+                if f"channel.matrix.{partial_path}" == path:
                     return path
         
         # Strategy 3: Check if it's a channel name by looking at world state
@@ -594,7 +594,7 @@ class NodeProcessor:
                     for channel_id, channel in platform_channels.items():
                         if channel.name == partial_path:
                             # Found a channel with this name, construct the full path
-                            full_path = f"channels.{platform}.{channel_id}"
+                            full_path = f"channel.{platform}.{channel_id}"
                             if full_path in all_known_paths:
                                 return full_path
         except Exception as e:
@@ -603,7 +603,7 @@ class NodeProcessor:
         # Strategy 4: Check if it's a Farcaster channel ID or name
         if partial_path.startswith('farcaster:'):
             for path in all_known_paths:
-                if f"channels.{partial_path}" == path:
+                if f"channel.{partial_path}" == path:
                     return path
         
         logger.warning(f"Could not find full path for '{partial_path}'. Available paths: {all_known_paths}")
@@ -800,16 +800,16 @@ class NodeProcessor:
             if primary_channel_id:
                 if primary_channel_id.startswith('!'):
                     # Matrix channel - use correct dot notation
-                    primary_node_path = f"channels.matrix.{primary_channel_id}"
+                    primary_node_path = f"channel.matrix.{primary_channel_id}"
                     channels_to_expand.append(("primary_matrix", primary_node_path))
                 elif primary_channel_id.startswith('farcaster:'):
                     # Farcaster channel - use correct dot notation
-                    primary_node_path = f"channels.farcaster.{primary_channel_id}"
+                    primary_node_path = f"channel.farcaster.{primary_channel_id}"
                     channels_to_expand.append(("primary_farcaster", primary_node_path))
                 else:
                     # Unknown format - try both with correct paths
-                    channels_to_expand.append(("primary_matrix_fallback", f"channels.matrix.{primary_channel_id}"))
-                    channels_to_expand.append(("primary_farcaster_fallback", f"channels.farcaster.{primary_channel_id}"))
+                    channels_to_expand.append(("primary_matrix_fallback", f"channel.matrix.{primary_channel_id}"))
+                    channels_to_expand.append(("primary_farcaster_fallback", f"channel.farcaster.{primary_channel_id}"))
             
             # 2. Always expand Farcaster home timeline for social context
             channels_to_expand.append(("farcaster_home", "farcaster.feeds.home"))
@@ -840,7 +840,7 @@ class NodeProcessor:
                                 most_recent_matrix = room_id
                 
                 if most_recent_matrix and most_recent_matrix != primary_channel_id:
-                    channels_to_expand.append(("recent_matrix", f"channels.matrix.{most_recent_matrix}"))
+                    channels_to_expand.append(("recent_matrix", f"channel.matrix.{most_recent_matrix}"))
                     
             except Exception as e:
                 logger.debug(f"Error finding recent Matrix channel: {e}")

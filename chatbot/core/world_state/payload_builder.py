@@ -209,7 +209,7 @@ class PayloadBuilder:
             # Find channels with messages and force expand them
             channels_with_messages = []
             for node_path in all_node_paths:
-                if node_path.startswith("channels."):
+                if node_path.startswith("channel."):
                     # Get channel data to check for messages
                     node_data = self.node_data_handlers.get_node_data_by_path(
                         world_state_data, node_path, expanded=True  # Force expanded to see messages
