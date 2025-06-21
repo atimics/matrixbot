@@ -64,8 +64,10 @@ class CreateTransactionFrameTool(ToolInterface):
                     "timestamp": time.time()
                 }
 
-            if not context.farcaster_observer or not context.farcaster_observer.api_client:
-                logger.warning("Farcaster API client not available, creating placeholder frame")
+            # Get Farcaster service for API access
+            farcaster_service = context.get_social_service("farcaster")
+            if not farcaster_service or not await farcaster_service.is_available():
+                logger.warning("Farcaster service not available, creating placeholder frame")
                 frame_url = f"https://frames.neynar.com/transaction?to={to_address}&amount={amount}&token={token_contract}"
                 return {
                     "status": "success",
@@ -79,14 +81,19 @@ class CreateTransactionFrameTool(ToolInterface):
                         "title": title,
                         "description": description,
                         "button_text": button_text,
-                        "note": "Using placeholder URL - API client not available"
+                        "note": "Using placeholder URL - Farcaster service not available"
                     },
                     "timestamp": time.time()
                 }
 
-            # Use Neynar's create-transaction-pay-frame API endpoint
+            # Use Neynar's create-transaction-pay-frame API endpoint via service
             try:
-                response = await context.farcaster_observer.api_client._make_request(
+                # Access the underlying API client through the service
+                api_client = getattr(farcaster_service._observer, 'api_client', None)
+                if not api_client:
+                    raise Exception("API client not available in Farcaster service")
+                    
+                response = await api_client._make_request(
                     "POST",
                     "/farcaster/frame/transaction-pay",
                     json_data={
@@ -379,20 +386,27 @@ class SearchFramesTool(ToolInterface):
                     "timestamp": time.time()
                 }
 
-            if not context.farcaster_observer or not context.farcaster_observer.api_client:
-                logger.warning("Farcaster API client not available for frame search")
+            # Get Farcaster service for API access
+            farcaster_service = context.get_social_service("farcaster")
+            if not farcaster_service or not await farcaster_service.is_available():
+                logger.warning("Farcaster service not available for frame search")
                 return {
                     "status": "success",
-                    "message": "Frame search completed (no API client available)",
+                    "message": "Frame search completed (no service available)",
                     "frames": [],
                     "query": query,
-                    "note": "API client not available - no frames retrieved",
+                    "note": "Farcaster service not available - no frames retrieved",
                     "timestamp": time.time()
                 }
 
             try:
+                # Access the underlying API client through the service
+                api_client = getattr(farcaster_service._observer, 'api_client', None)
+                if not api_client:
+                    raise Exception("API client not available in Farcaster service")
+                    
                 # Use Neynar's search frames API
-                response = await context.farcaster_observer.api_client._make_request(
+                response = await api_client._make_request(
                     "GET",
                     "/farcaster/frame/search",
                     params={
@@ -463,19 +477,26 @@ class GetFrameCatalogTool(ToolInterface):
         try:
             limit = params.get("limit", 20)
 
-            if not context.farcaster_observer or not context.farcaster_observer.api_client:
-                logger.warning("Farcaster API client not available for frame catalog")
+            # Get Farcaster service for API access
+            farcaster_service = context.get_social_service("farcaster")
+            if not farcaster_service or not await farcaster_service.is_available():
+                logger.warning("Farcaster service not available for frame catalog")
                 return {
                     "status": "success",
-                    "message": "Frame catalog retrieved (no API client available)",
+                    "message": "Frame catalog retrieved (no service available)",
                     "frames": [],
-                    "note": "API client not available - no catalog retrieved",
+                    "note": "Farcaster service not available - no catalog retrieved",
                     "timestamp": time.time()
                 }
 
             try:
+                # Access the underlying API client through the service
+                api_client = getattr(farcaster_service._observer, 'api_client', None)
+                if not api_client:
+                    raise Exception("API client not available in Farcaster service")
+                    
                 # Use Neynar's frame catalog API
-                response = await context.farcaster_observer.api_client._make_request(
+                response = await api_client._make_request(
                     "GET",
                     "/farcaster/frame/catalog",
                     params={"limit": limit}
