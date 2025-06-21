@@ -229,7 +229,7 @@ class AppConfig(BaseSettings):
     ai: AIConfig = AIConfig()
     media: MediaConfig = MediaConfig()
     storage: StorageConfig = StorageConfig()
-    security_config: SecurityConfig = SecurityConfig()  # Renamed to avoid conflict
+    security: SecurityConfig = SecurityConfig()
     ecosystem: EcosystemConfig = EcosystemConfig()
     node_system: NodeSystemConfig = NodeSystemConfig()
 
