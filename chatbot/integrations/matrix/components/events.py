@@ -323,7 +323,7 @@ class MatrixEventHandler:
             self.processing_hub.add_trigger(trigger)
             logger.debug(f"MatrixEventHandler: Successfully added batch trigger to processing hub")
         else:
-            logger.warning(f"MatrixEventHandler: No processing hub available for batch trigger generation")
+            logger.debug(f"MatrixEventHandler: No processing hub available for batch trigger generation (likely during initialization)")
     
     async def _update_activity_tracking(self, room: MatrixRoom, message: Message) -> None:
         """Update activity tracking for enhanced collapsed channel summaries."""

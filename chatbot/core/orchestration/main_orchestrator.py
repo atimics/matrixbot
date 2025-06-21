@@ -622,7 +622,6 @@ class MainOrchestrator:
             except Exception as e:
                 logger.error(f"Failed to initialize Matrix observer: {e}")
                 logger.debug("Continuing without Matrix integration")
-                logger.debug("Continuing without Matrix integration")
 
         # Initialize Farcaster observer if credentials available
         if settings.farcaster.neynar_api_key:
