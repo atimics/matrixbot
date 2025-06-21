@@ -135,8 +135,11 @@ class NodeProcessor:
             logger.debug(f"[OODA/{cycle_id}] Updated ActionContext with primary channel: {primary_channel_id}")
 
         try:
-            # OBSERVE: Gather current world state (handled by system)
+            # OBSERVE: Gather current world state and ensure core channels are available
             logger.debug(f"[OODA/{cycle_id}] OBSERVE: Gathering world state")
+            
+            # Ensure core channels are expanded so AI has context to work with
+            await self._ensure_core_channels_expanded(primary_channel_id, context)
             
             # ORIENT (AI Stage 1): AI decides what information to expand
             logger.info(f"[OODA/{cycle_id}] ORIENT: Building orientation payload")
@@ -146,6 +149,30 @@ class NodeProcessor:
                 logger.warning(f"[OODA/{cycle_id}] Failed to build orientation payload")
                 return await self._finalize_ooda_cycle(cycle_id, cycle_start_time, 0, 0)
             
+            # Check if we have any meaningful data for the AI
+            collapsed_summaries = orientation_payload.get("collapsed_node_summaries", {})
+            if not collapsed_summaries or all(not summary for summary in collapsed_summaries.values()):
+                logger.warning(f"[OODA/{cycle_id}] No meaningful node summaries - expanding basic nodes proactively")
+                # Emergency expansion of basic nodes
+                basic_nodes = [
+                    "farcaster.feeds.home",
+                    "farcaster.feeds.notifications", 
+                    "farcaster.feeds.mentions"
+                ]
+                for node_path in basic_nodes:
+                    try:
+                        success, _, _ = self.node_manager.expand_node(node_path)
+                        if success:
+                            logger.debug(f"Emergency expanded: {node_path}")
+                    except Exception as e:
+                        logger.debug(f"Failed to emergency expand {node_path}: {e}")
+                
+                # Rebuild payload after emergency expansion
+                orientation_payload = await self._build_orientation_payload(context)
+                if not orientation_payload:
+                    logger.error(f"[OODA/{cycle_id}] Still no orientation payload after emergency expansion")
+                    return await self._finalize_ooda_cycle(cycle_id, cycle_start_time, 0, 0)
+            
             logger.info(f"[OODA/{cycle_id}] ORIENT: Getting AI's node expansion decisions")
             node_actions = await self._get_orientation_decision(orientation_payload, cycle_id)
             
@@ -153,7 +180,9 @@ class NodeProcessor:
                 logger.info(f"[OODA/{cycle_id}] ORIENT: Executing {len(node_actions)} node expansions")
                 await self._execute_node_actions(node_actions, cycle_id)
             else:
-                logger.debug(f"[OODA/{cycle_id}] ORIENT: AI requested no node expansions")
+                logger.debug(f"[OODA/{cycle_id}] ORIENT: AI requested no node expansions - using fallback expansion")
+                # Fallback: expand some basic nodes to ensure AI has context
+                await self._auto_expand_active_channels()
             
             # DECIDE (AI Stage 2): AI chooses external actions based on expanded information
             logger.info(f"[OODA/{cycle_id}] DECIDE: Building decision payload with expanded nodes")
@@ -308,16 +337,60 @@ class NodeProcessor:
         try:
             logger.debug(f"[OODA/{cycle_id}] Calling AI for orientation decision")
             
-            # Add orientation-specific context to payload
+            # Add orientation-specific instruction message
             orientation_payload = {
                 **payload,
-                "ai_instruction": {
-                    "phase": "orientation",
-                    "goal": "Select nodes to expand for detailed analysis",
+                "instruction": {
+                    "phase": "ORIENTATION",
+                    "task": "Review the collapsed_node_summaries and system_events to determine what information needs deeper inspection. Use ONLY the expand_node, pin_node, or collapse_node tools to select nodes for expansion.",
                     "available_tools": ["expand_node", "pin_node", "collapse_node"],
                     "forbidden_tools": ["send_message", "send_farcaster_cast", "search_web"]
                 }
             }
+            
+            # Add node management tools to the payload
+            if "tools" not in orientation_payload:
+                orientation_payload["tools"] = []
+            
+            # Add node management tools
+            node_tools = self.interaction_tools.get_tool_definitions()
+            orientation_payload["tools"].extend(node_tools.values())
+            
+            # Ensure the AI instruction is in the expected message format
+            if "messages" not in orientation_payload:
+                orientation_payload["messages"] = []
+            
+            # Add user message with orientation instruction
+            orientation_message = (
+                "ORIENTATION PHASE:\n"
+                "Your goal is to determine what information needs deeper inspection.\n"
+                "Review the collapsed_node_summaries and system_events.\n"
+                "Use ONLY the expand_node, pin_node, or collapse_node tools to select nodes that need expansion for detailed analysis.\n"
+                f"Available data: {len(orientation_payload.get('collapsed_node_summaries', {}))} collapsed nodes, "
+                f"{len(orientation_payload.get('system_events', []))} system events"
+            )
+            
+            orientation_payload["messages"].append({
+                "role": "user",
+                "content": orientation_message
+            })
+            
+            # Debug: Log what data is actually in the payload
+            debug_info = {
+                "collapsed_node_summaries": len(orientation_payload.get("collapsed_node_summaries", {})),
+                "system_events": len(orientation_payload.get("system_events", [])),
+                "tools": len(orientation_payload.get("tools", [])),
+                "payload_keys": list(orientation_payload.keys())
+            }
+            logger.debug(f"[OODA/{cycle_id}] ORIENT Debug - Payload contents: {debug_info}")
+            
+            # Log a sample of collapsed summaries for debugging
+            collapsed_summaries = orientation_payload.get("collapsed_node_summaries", {})
+            if collapsed_summaries:
+                sample_keys = list(collapsed_summaries.keys())[:3]
+                logger.debug(f"[OODA/{cycle_id}] ORIENT Sample summaries: {sample_keys}")
+            else:
+                logger.warning(f"[OODA/{cycle_id}] ORIENT WARNING: No collapsed_node_summaries in payload!")
             
             # Call AI with orientation payload
             ai_response = await self.ai_engine.decide_actions(orientation_payload)
@@ -437,16 +510,50 @@ class NodeProcessor:
         try:
             logger.debug(f"[OODA/{cycle_id}] Calling AI for external action decision")
             
-            # Add decision-specific context to payload
+            # Add decision-specific instruction message
             decision_payload = {
                 **payload,
-                "ai_instruction": {
-                    "phase": "decision",
-                    "goal": "Choose external actions based on expanded node content",
-                    "available_tools": "all_tools_except_node_management",
+                "instruction": {
+                    "phase": "DECISION",
+                    "task": "Choose external actions based on expanded node content. You can use any available tools except node management tools.",
                     "forbidden_tools": ["expand_node", "pin_node", "collapse_node"]
                 }
             }
+            
+            # Ensure the AI instruction is in the expected message format
+            if "messages" not in decision_payload:
+                decision_payload["messages"] = []
+            
+            # Add user message with decision instruction
+            decision_message = (
+                "DECISION PHASE:\n"
+                "You have expanded the relevant nodes and can see their detailed content in expanded_nodes.\n"
+                "Based on this full context, decide on the best external actions to take.\n"
+                "You can use any available communication and interaction tools.\n"
+                f"Available data: {len(decision_payload.get('expanded_nodes', {}))} expanded nodes"
+            )
+            
+            decision_payload["messages"].append({
+                "role": "user", 
+                "content": decision_message
+            })
+            
+            # Debug: Log what data is actually in the payload
+            debug_info = {
+                "expanded_nodes": len(decision_payload.get("expanded_nodes", {})),
+                "collapsed_node_summaries": len(decision_payload.get("collapsed_node_summaries", {})),
+                "tools": len(decision_payload.get("tools", [])),
+                "payload_keys": list(decision_payload.keys())
+            }
+            logger.debug(f"[OODA/{cycle_id}] DECIDE Debug - Payload contents: {debug_info}")
+            
+            # Log a sample of expanded nodes for debugging
+            expanded_nodes = decision_payload.get("expanded_nodes", {})
+            if expanded_nodes:
+                sample_keys = list(expanded_nodes.keys())[:3]
+                logger.debug(f"[OODA/{cycle_id}] DECIDE Sample expanded nodes: {sample_keys}")
+            else:
+                logger.warning(f"[OODA/{cycle_id}] DECIDE WARNING: No expanded_nodes in payload!")
             
             # Call AI with decision payload
             ai_response = await self.ai_engine.decide_actions(decision_payload)
