@@ -628,15 +628,13 @@ class MainOrchestrator:
         if settings.farcaster.neynar_api_key:
             try:
                 self.farcaster_observer = FarcasterObserver(
-                    settings.farcaster.neynar_api_key,
-                    settings.farcaster.bot_signer_uuid,
-                    settings.farcaster.bot_fid,
+                    api_key=settings.farcaster.neynar_api_key,
+                    signer_uuid=settings.farcaster.bot_signer_uuid,
+                    bot_fid=settings.farcaster.bot_fid,
                     world_state_manager=self.world_state,
+                    processing_hub=self.processing_hub,
                 )
                 await self.farcaster_observer.start()
-                
-                # Connect processing hub for trigger generation
-                self.farcaster_observer.processing_hub = self.processing_hub
                 
                 # Connect legacy state change callback for backward compatibility
                 self.farcaster_observer.on_state_change = self._on_world_state_change
