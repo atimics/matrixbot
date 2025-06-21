@@ -31,17 +31,24 @@ async def ensure_publicly_accessible_image_url(image_url: str, context: ActionCo
         is_accessible = await _verify_image_accessibility(image_url)
         return image_url, is_accessible
 
-    # It's a Matrix URL. Download it using the nio client.
-    if hasattr(context, 'matrix_observer') and context.matrix_observer and context.matrix_observer.client:
+    # It's a Matrix URL. Download it using the Matrix service.
+    matrix_service = context.get_messaging_service("matrix")
+    if matrix_service and await matrix_service.is_available():
         try:
             # Extract MXC URI from the URL
             server_name = matrix_match.group(2)
             media_id = matrix_match.group(3)
             mxc_uri = f"mxc://{server_name}/{media_id}"
-            logger.info(f"Downloading Matrix media via nio client: {mxc_uri}")
+            logger.info(f"Downloading Matrix media via service: {mxc_uri}")
+            
+            # Access the underlying client through the service
+            matrix_client = getattr(matrix_service._observer, 'client', None) if hasattr(matrix_service, '_observer') else None
+            if not matrix_client:
+                logger.warning("Matrix client not available in service")
+                return image_url, False
             
             # Use nio client's built-in download method which handles authentication
-            download_response = await context.matrix_observer.client.download(mxc_uri)
+            download_response = await matrix_client.download(mxc_uri)
             
             if hasattr(download_response, "body") and download_response.body:
                 image_data = download_response.body
