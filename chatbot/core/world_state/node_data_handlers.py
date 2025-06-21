@@ -32,6 +32,7 @@ class NodeDataHandlers:
             "thread": self.get_thread_node_data,
             "system": self.get_system_node_data,
             "media_gallery": self.get_media_gallery_node_data,
+            "search": self.get_search_node_data,
         }
     
     def get_node_data_by_path(self, world_state_data: 'WorldStateData', node_path: str, expanded: bool = False) -> Optional[Dict]:
@@ -496,3 +497,31 @@ class NodeDataHandlers:
                     yield ch
             elif hasattr(platform_channels, 'recent_messages'):
                 yield platform_channels
+
+    def get_search_node_data(self, world_state_data: 'WorldStateData', path_parts: List[str], expanded: bool = False) -> Optional[Dict]:
+        """Get search node data."""
+        if len(path_parts) < 2:
+            logger.warning(f"Invalid search node path parts (too few): {path_parts}")
+            return None
+        
+        # Parse search query from path
+        search_query = path_parts[1] if len(path_parts) > 1 else ""
+        
+        # Decode URL-encoded query if needed
+        import urllib.parse
+        try:
+            decoded_query = urllib.parse.unquote(search_query)
+        except Exception:
+            decoded_query = search_query
+        
+        logger.debug(f"Processing search node: query='{decoded_query}', expanded={expanded}")
+        
+        return {
+            "query": decoded_query,
+            "search_type": "semantic" if len(decoded_query.split()) > 1 else "keyword",
+            "context": f"Search for: '{decoded_query}'",
+            "expanded": expanded,
+            "note": "Search context node - provides search query information for AI context"
+        }
+
+
