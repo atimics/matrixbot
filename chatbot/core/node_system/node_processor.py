@@ -1288,16 +1288,40 @@ class NodeProcessor:
                 world_state=payload_data
             )
             
+            # Robustness Fix: Handle cases where the AI generates a direct message
+            selected_actions = decision_result.get('selected_actions', [])
+            if not selected_actions and decision_result.get('message'):
+                logger.warning("AI generated a direct message instead of a tool call. Converting to a reply action.")
+                primary_channel_id = payload_data.get("processing_context", {}).get("primary_channel")
+                if primary_channel_id:
+                    # Determine platform based on channel ID format or context
+                    if "@" in primary_channel_id and ":" in primary_channel_id:
+                        # Matrix room format
+                        action_type = "send_matrix_reply"
+                    else:
+                        # Assume Farcaster for other formats
+                        action_type = "send_farcaster_post"
+                    
+                    selected_actions.append({
+                        "action_type": action_type,
+                        "parameters": {
+                            "channel_id": primary_channel_id,
+                            "message": decision_result['message'],
+                            # Note: reply_to_id might be missing here, but it's better than doing nothing.
+                        },
+                        "reasoning": f"Fallback: Converted direct message to a tool call. Original reasoning: {decision_result.get('reasoning', 'N/A')}"
+                    })
+            
             # Convert dict result to format expected by execution methods
             ai_response = {
                 "reasoning": decision_result.get('reasoning', ''),
                 "observations": decision_result.get('reasoning', ''),  # Map reasoning to observations for compatibility
-                "selected_actions": decision_result.get('selected_actions', []),
+                "selected_actions": selected_actions,
                 "tool_calls": []  # Convert action dict objects to tool_calls format
             }
             
             # Convert action dict objects to tool_calls format for execution
-            for action_plan in decision_result.get('selected_actions', []):
+            for action_plan in selected_actions:
                 tool_call = {
                     "function": {
                         "name": action_plan.get('action_type', ''),
