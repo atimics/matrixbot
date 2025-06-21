@@ -24,12 +24,12 @@ class NodeDataHandlers:
         self.logger = logging.getLogger(__name__)
         # Map node types to their handler methods for backward compatibility
         self._handlers = {
-            "channels": self.get_channel_node_data,
-            "users": self.get_user_node_data,
-            "tools": self.get_tool_node_data,
+            "channel": self.get_channel_node_data,
+            "user": self.get_user_node_data,
+            "tool": self.get_tool_node_data,
             "memory_bank": self.get_memory_bank_node_data,
             "farcaster": self.get_farcaster_node_data,
-            "threads": self.get_thread_node_data,
+            "thread": self.get_thread_node_data,
             "system": self.get_system_node_data,
             "media_gallery": self.get_media_gallery_node_data,
         }
@@ -58,7 +58,7 @@ class NodeDataHandlers:
             initial_parts = [part.strip() for part in node_path.split(".") if part.strip()]
             
             # Special handling for channel paths that might have Matrix room IDs with dots
-            if len(initial_parts) > 3 and initial_parts[0] == "channels":
+            if len(initial_parts) > 3 and initial_parts[0] == "channel":
                 # Rejoin everything after the channel type as the channel ID
                 path_parts = initial_parts[:2] + ['.'.join(initial_parts[2:])]
             else:
