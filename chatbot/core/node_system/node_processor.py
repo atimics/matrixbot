@@ -862,6 +862,11 @@ class NodeProcessor:
             
             if expanded_count > 0:
                 logger.info(f"🎯 CORE CHANNELS: Ensured {expanded_count} essential channels are expanded for AI context")
+                
+                # DEBUG: Verify the expansion state immediately after expansion
+                for channel_type, node_path in channels_to_expand:
+                    metadata = self.node_manager.get_node_metadata(node_path)
+                    logger.info(f"🔍 VERIFY EXPANSION: {node_path} -> is_expanded={metadata.is_expanded}, is_pinned={metadata.is_pinned}")
             else:
                 logger.info("🎯 CORE CHANNELS: All essential channels were already expanded")
                 
