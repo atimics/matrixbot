@@ -13,6 +13,8 @@ from typing import Any, Dict, List, Optional, Union
 import httpx
 from nio import AsyncClient, RoomSendError, RoomSendResponse
 
+from ....utils.markdown_utils import format_for_matrix
+
 logger = logging.getLogger(__name__)
 
 
@@ -24,44 +26,38 @@ class MatrixMessageOperations:
         self.user_id = user_id
     
     async def send_message(self, room_id: str, content: Union[str, Dict[str, Any]]) -> Dict[str, Any]:
-        """Send a plain text message to a room."""
-        # Initialize variables early to avoid scope issues
-        body_content = ""
-        msg_type = "m.text"
+        """Send a plain text or formatted message to a room."""
+        if not self.client:
+            return {"success": False, "error": "Matrix client not available"}
+        
+        # Standardize content processing
+        if isinstance(content, dict):
+            # Handle cases where pre-formatted content is passed
+            plain_content = content.get('plain', content.get('html', str(content)))
+        else:
+            plain_content = str(content)
+        
+        # Always convert markdown to the required format
+        formatted_parts = format_for_matrix(plain_content)
+        
+        message_content = {
+            "msgtype": "m.text",
+            "body": formatted_parts["plain"],
+            "format": "org.matrix.custom.html",
+            "formatted_body": formatted_parts["html"]
+        }
+        
+        logger.debug(f"MatrixMessageOps: Sending formatted message to {room_id}")
         
         try:
-            if not self.client:
-                return {"success": False, "error": "Matrix client not available"}
-            
-            # Extract HTML content from the content object
-            if isinstance(content, dict) and 'html' in content:
-                body_content = content['html']
-                msg_type = "m.html"
-                logger.debug(f"MatrixMessageOps: Extracted HTML content: {body_content}")
-            elif isinstance(content, dict) and 'plain' in content:
-                body_content = content['plain']
-                msg_type = "m.text"
-                logger.debug(f"MatrixMessageOps: Extracted plain content: {body_content}")
-            elif isinstance(content, str):
-                body_content = content
-                msg_type = "m.text"
-                logger.debug(f"MatrixMessageOps: Using string content: {body_content}")
-            else:
-                body_content = str(content)
-                msg_type = "m.text"
-                logger.debug(f"MatrixMessageOps: Stringified content: {body_content}")
-            
             response = await self.client.room_send(
                 room_id=room_id,
                 message_type="m.room.message",
-                content={
-                    "msgtype": msg_type,
-                    "body": body_content
-                }
+                content=message_content
             )
             
             if isinstance(response, RoomSendResponse):
-                logger.debug(f"MatrixMessageOps: Message sent to {room_id}: {str(body_content)[:100]}...")
+                logger.debug(f"MatrixMessageOps: Message sent to {room_id}: {formatted_parts['plain'][:100]}...")
                 return {
                     "success": True,
                     "event_id": response.event_id,
@@ -84,10 +80,7 @@ class MatrixMessageOperations:
                         retry_response = await self.client.room_send(
                             room_id=room_id,
                             message_type="m.room.message",
-                            content={
-                                "msgtype": msg_type,
-                                "body": body_content
-                            }
+                            content=message_content
                         )
                         
                         if isinstance(retry_response, RoomSendResponse):
@@ -119,14 +112,11 @@ class MatrixMessageOperations:
                     if hasattr(join_response, 'room_id'):
                         logger.info(f"MatrixMessageOps: Successfully joined room {room_id}, retrying message send...")
                         
-                        # Retry sending the message
+                        # Retry sending the message with the same content
                         retry_response = await self.client.room_send(
                             room_id=room_id,
                             message_type="m.room.message",
-                            content={
-                                "msgtype": msg_type,
-                                "body": body_content
-                            }
+                            content=message_content
                         )
                         
                         if isinstance(retry_response, RoomSendResponse):
@@ -156,28 +146,41 @@ class MatrixMessageOperations:
         original_content: Optional[str] = None
     ) -> Dict[str, Any]:
         """Send a reply to a specific message."""
-        # Initialize variables early to avoid scope issues
-        body_content = ""
-        msg_type = "m.text"
+        if not self.client:
+            return {"success": False, "error": "Matrix client not available"}
+        
+        # Standardize content processing for replies
+        if isinstance(content, dict):
+            plain_content = content.get('plain', content.get('html', str(content)))
+        else:
+            plain_content = str(content)
+        
+        formatted_parts = format_for_matrix(plain_content)
+        
+        # Construct reply content with fallback body
+        fallback_body = f"> <{original_sender or 'unknown'}> {original_content or 'message'}\n\n{formatted_parts['plain']}"
+        
+        # Construct formatted body with HTML reply fallback
+        formatted_fallback = (
+            f"<mx-reply><blockquote><a href=\"https://matrix.to/#/{room_id}/{reply_to_event_id}\">In reply to</a> "
+            f"<a href=\"https://matrix.to/#/{original_sender or 'unknown'}\">{original_sender or 'unknown'}</a>"
+            f"<br>{original_content or 'message'}</blockquote></mx-reply>"
+            f"{formatted_parts['html']}"
+        )
+        
+        reply_content = {
+            "msgtype": "m.text",
+            "body": fallback_body,
+            "format": "org.matrix.custom.html",
+            "formatted_body": formatted_fallback,
+            "m.relates_to": {
+                "m.in_reply_to": {
+                    "event_id": reply_to_event_id
+                }
+            }
+        }
         
         try:
-            if not self.client:
-                return {"success": False, "error": "Matrix client not available"}
-            
-            # Extract HTML content from the content object
-            if isinstance(content, dict) and 'html' in content:
-                body_content = content['html']
-                msg_type = "m.html"
-                logger.debug(f"MatrixMessageOps: Reply - Extracted HTML content: {body_content}")
-            elif isinstance(content, dict) and 'plain' in content:
-                body_content = content['plain']
-                msg_type = "m.text"
-                logger.debug(f"MatrixMessageOps: Reply - Extracted plain content: {body_content}")
-            elif isinstance(content, str):
-                body_content = content
-                msg_type = "m.text"
-                logger.debug(f"MatrixMessageOps: Reply - Using string content: {body_content}")
-            else:
                 body_content = str(content)
                 msg_type = "m.text"
                 logger.debug(f"MatrixMessageOps: Reply - Stringified content: {body_content}")
