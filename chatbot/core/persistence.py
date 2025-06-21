@@ -179,8 +179,15 @@ class UndecryptableEventRecord(SQLModel, table=True):
 class DatabaseManager:
     """Centralized database manager with migrations and type safety."""
     
-    def __init__(self, database_url: str = "sqlite+aiosqlite:///data/chatbot.db"):
-        self.database_url = database_url
+    def __init__(self, database_url: Optional[str] = None):
+        if database_url is None:
+            # Import settings here to avoid circular imports
+            from ..config import settings
+            # Ensure the path is absolute and properly formatted for SQLite async
+            db_path = Path(settings.chatbot_db_path).resolve()
+            self.database_url = f"sqlite+aiosqlite:///{db_path}"
+        else:
+            self.database_url = database_url
         self.engine = None
         self.session_factory = None
         self._initialized = False
