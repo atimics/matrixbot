@@ -112,7 +112,7 @@ class SendMatrixReplyTool(ToolInterface):
                         media_service = context.get_media_service("matrix")
                         if media_service:
                             image_result = await media_service.send_image(
-                                room_id=room_id,
+                                channel_id=room_id,
                                 image_url=image_url
                             )
                             if image_result.get("status") == "success":
@@ -141,7 +141,7 @@ class SendMatrixReplyTool(ToolInterface):
                     media_service = context.get_media_service("matrix")
                     if media_service:
                         image_result = await media_service.send_image(
-                            room_id=room_id,
+                            channel_id=room_id,
                             image_url=image_url
                         )
                         if image_result.get("status") == "success":
@@ -259,8 +259,8 @@ class SendMatrixMessageTool(ToolInterface):
         try:
             # Send message using the service layer
             result = await matrix_service.send_message(
-                room_id=room_id,
-                message=content
+                channel_id=room_id,
+                content=content
             )
 
             if result.get("status") == "success":
@@ -270,7 +270,7 @@ class SendMatrixMessageTool(ToolInterface):
                     media_service = context.get_media_service("matrix")
                     if media_service:
                         image_result = await media_service.send_image(
-                            room_id=room_id,
+                            channel_id=room_id,
                             image_url=image_url
                         )
                         if image_result.get("status") == "success":
