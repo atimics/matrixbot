@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, Type
 from contextlib import asynccontextmanager
+from cryptography.fernet import Fernet
 
 import aiosqlite
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -172,6 +173,54 @@ class UndecryptableEventRecord(SQLModel, table=True):
                 {"fields": ["retry_count"]},
                 {"fields": ["last_retry_time"]},
                 {"fields": ["event_id", "room_id"], "unique": True},  # Composite unique constraint
+            ]
+        }
+
+
+class IntegrationRecord(SQLModel, table=True):
+    """SQLModel for integration configuration storage."""
+    
+    __tablename__ = "integrations"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    integration_id: str = Field(unique=True, description="Unique integration identifier")
+    user_id: Optional[str] = Field(default=None, description="Associated user ID")
+    integration_type: str = Field(description="Type of integration (matrix, farcaster, etc.)")
+    display_name: str = Field(description="Human-readable name")
+    is_active: bool = Field(default=True, description="Whether integration is active")
+    config_data: str = Field(description="JSON-serialized configuration")
+    created_at: float = Field(description="Creation timestamp")
+    updated_at: float = Field(description="Last update timestamp")
+    status: str = Field(default="configured", description="Integration status")
+    
+    class Config:
+        schema_extra = {
+            "indexes": [
+                {"fields": ["integration_type"]},
+                {"fields": ["is_active"]},
+                {"fields": ["user_id"]},
+                {"fields": ["status"]},
+            ]
+        }
+
+
+class CredentialRecord(SQLModel, table=True):
+    """SQLModel for encrypted credential storage."""
+    
+    __tablename__ = "credentials"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    integration_id: str = Field(description="Associated integration ID")
+    credential_key: str = Field(description="Credential identifier")
+    encrypted_value: str = Field(description="Encrypted credential value")
+    created_at: float = Field(description="Creation timestamp")
+    updated_at: float = Field(description="Last update timestamp")
+    
+    class Config:
+        schema_extra = {
+            "indexes": [
+                {"fields": ["integration_id", "credential_key"], "unique": True},
+                {"fields": ["integration_id"]},
             ]
         }
 
@@ -624,4 +673,161 @@ def create_database_manager(database_url: Optional[str] = None) -> DatabaseManag
 
 
 # Backward compatibility adapter
+class BackwardCompatibilityAdapter:
+    """Adapter for backward compatibility with existing code."""
+    
+    def __init__(self, db_manager: DatabaseManager):
+        self.db_manager = db_manager
+    
+    def get_user_memories(self, user_id: str, platform: str):
+        """Get user memories (backward compatibility)."""
+        return asyncio.run(self.db_manager.get_user_memories(user_id, platform))
+    
+    def store_memory(self, user_id: str, platform: str, memory_type: str, content: str, importance: float = 0.5):
+        """Store a user memory (backward compatibility)."""
+        return asyncio.run(self.db_manager.store_memory(user_id, platform, memory_type, content, importance))
+    
+    def get_recent_messages(self, channel_id: str, platform: str, limit: int = 50, before_timestamp: Optional[float] = None):
+        """Get recent messages for a channel (backward compatibility)."""
+        return asyncio.run(self.db_manager.get_recent_messages(channel_id, platform, limit, before_timestamp))
+    
+    def record_state_change(self, change_type: str, data: Dict[str, Any], channel_id: Optional[str] = None, platform: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None):
+        """Record a state change (backward compatibility)."""
+        return asyncio.run(self.db_manager.record_state_change(change_type, data, channel_id, platform, metadata))
+    
+    def record_message(self, message_id: str, channel_id: str, platform: str, sender: str, content: str, timestamp: Optional[float] = None, parent_id: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None):
+        """Record a message (backward compatibility)."""
+        return asyncio.run(self.db_manager.record_message(message_id, channel_id, platform, sender, content, timestamp, parent_id, metadata))
+    
+    def record_action(self, action_id: str, action_type: str, parameters: Dict[str, Any], result: Optional[Dict[str, Any]] = None, success: bool = False, channel_id: Optional[str] = None, platform: Optional[str] = None, duration_ms: Optional[int] = None):
+        """Record an action execution (backward compatibility)."""
+        return asyncio.run(self.db_manager.record_action(action_id, action_type, parameters, result, success, channel_id, platform, duration_ms))
+    
+    def export_for_training(self, start_timestamp: Optional[float] = None, end_timestamp: Optional[float] = None, output_file: Optional[str] = None):
+        """Export data for training purposes (backward compatibility)."""
+        return asyncio.run(self.db_manager.export_for_training(start_timestamp, end_timestamp, output_file))
+    
+    def cleanup_old_records(self, days_to_keep: int = 30):
+        """Clean up old records (backward compatibility)."""
+        return asyncio.run(self.db_manager.cleanup_old_records(days_to_keep))
+
+
+class ConsolidatedIntegrationManager:
+    """Consolidated integration manager using SQLModel for type safety."""
+    
+    def __init__(self, db_manager: DatabaseManager, encryption_key: Optional[bytes] = None):
+        self.db_manager = db_manager
+        
+        # Initialize encryption for credentials
+        if encryption_key:
+            self.cipher = Fernet(encryption_key)
+        else:
+            # Generate a key for development - in production, this should come from a secure vault
+            self.cipher = Fernet(Fernet.generate_key())
+            logger.warning("Using generated encryption key - not suitable for production!")
+    
+    async def store_integration(
+        self,
+        integration_id: str,
+        integration_type: str,
+        display_name: str,
+        config_data: Dict[str, Any],
+        user_id: Optional[str] = None,
+        is_active: bool = True
+    ) -> int:
+        """Store an integration configuration."""
+        
+        record = IntegrationRecord(
+            integration_id=integration_id,
+            user_id=user_id,
+            integration_type=integration_type,
+            display_name=display_name,
+            is_active=is_active,
+            config_data=json.dumps(config_data),
+            created_at=time.time(),
+            updated_at=time.time()
+        )
+        
+        async with self.db_manager.get_session() as session:
+            session.add(record)
+            await session.commit()
+            await session.refresh(record)
+            return record.id
+    
+    async def store_credential(
+        self,
+        integration_id: str,
+        credential_key: str,
+        credential_value: str
+    ) -> int:
+        """Store an encrypted credential."""
+        
+        encrypted_value = self.cipher.encrypt(credential_value.encode()).decode()
+        
+        record = CredentialRecord(
+            integration_id=integration_id,
+            credential_key=credential_key,
+            encrypted_value=encrypted_value,
+            created_at=time.time(),
+            updated_at=time.time()
+        )
+        
+        async with self.db_manager.get_session() as session:
+            session.add(record)
+            await session.commit()
+            await session.refresh(record)
+            return record.id
+    
+    async def get_integration(self, integration_id: str) -> Optional[IntegrationRecord]:
+        """Get an integration by ID."""
+        
+        async with self.db_manager.get_session() as session:
+            query = select(IntegrationRecord).where(
+                IntegrationRecord.integration_id == integration_id
+            )
+            result = await session.execute(query)
+            return result.scalar_one_or_none()
+    
+    async def get_integrations_by_type(self, integration_type: str) -> List[IntegrationRecord]:
+        """Get all integrations of a specific type."""
+        
+        async with self.db_manager.get_session() as session:
+            query = select(IntegrationRecord).where(
+                IntegrationRecord.integration_type == integration_type,
+                IntegrationRecord.is_active == True
+            )
+            result = await session.execute(query)
+            return result.scalars().all()
+    
+    async def get_credential(self, integration_id: str, credential_key: str) -> Optional[str]:
+        """Get a decrypted credential."""
+        
+        async with self.db_manager.get_session() as session:
+            query = select(CredentialRecord).where(
+                CredentialRecord.integration_id == integration_id,
+                CredentialRecord.credential_key == credential_key
+            )
+            result = await session.execute(query)
+            record = result.scalar_one_or_none()
+            
+            if record:
+                return self.cipher.decrypt(record.encrypted_value.encode()).decode()
+            return None
+    
+    async def update_integration_status(self, integration_id: str, status: str) -> bool:
+        """Update integration status."""
+        
+        async with self.db_manager.get_session() as session:
+            query = select(IntegrationRecord).where(
+                IntegrationRecord.integration_id == integration_id
+            )
+            result = await session.execute(query)
+            record = result.scalar_one_or_none()
+            
+            if record:
+                record.status = status
+                record.updated_at = time.time()
+                await session.commit()
+                return True
+            return False
 
