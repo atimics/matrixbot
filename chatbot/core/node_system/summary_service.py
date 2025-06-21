@@ -23,7 +23,7 @@ class NodeSummaryService:
     
     def __init__(self, api_key: str, model: Optional[str] = None):
         self.api_key = api_key
-        self.summary_model = model or settings.AI_SUMMARY_MODEL
+        self.summary_model = model or settings.ai.summary_model
         self.base_url = "https://openrouter.ai/api/v1/chat/completions"
     
     async def generate_node_summary(

@@ -70,11 +70,11 @@ class WebSearchTool(ToolInterface):
                     "https://openrouter.ai/api/v1/chat/completions",
                     headers={
                         "Authorization": f"Bearer {settings.openrouter_api_key}",
-                        "HTTP-Referer": settings.YOUR_SITE_URL or "https://github.com/your-repo",
-                        "X-Title": settings.YOUR_SITE_NAME or "Chatbot Web Search",
+                        "HTTP-Referer": settings.your_site_url or "https://github.com/your-repo",
+                        "X-Title": settings.your_site_name or "Chatbot Web Search",
                     },
                     json={
-                        "model": settings.WEB_SEARCH_MODEL,
+                        "model": settings.ai.web_search_model,
                         "messages": [
                             {
                                 "role": "user",
@@ -100,7 +100,7 @@ class WebSearchTool(ToolInterface):
                         "query": query,
                         "focus": focus,
                         "result": search_result,
-                        "model_used": settings.WEB_SEARCH_MODEL,
+                        "model_used": settings.ai.web_search_model,
                     }
                 else:
                     logger.error(f"OpenRouter API error: {response.status_code} - {response.text}")

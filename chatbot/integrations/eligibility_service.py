@@ -42,10 +42,10 @@ class UserEligibilityService:
         self.world_state_manager = world_state_manager
         
         # Configuration
-        self.min_token_balance = settings.AIRDROP_MIN_ECOSYSTEM_TOKEN_BALANCE_SOL
-        self.min_nft_count = settings.AIRDROP_MIN_ECOSYSTEM_NFT_COUNT_BASE
-        self.check_interval = settings.AIRDROP_ELIGIBILITY_CHECK_INTERVAL_HOURS * 3600
-        self.token_contract = settings.ECOSYSTEM_TOKEN_CONTRACT_ADDRESS
+        self.min_token_balance = settings.airdrop_min_ecosystem_token_balance_sol
+        self.min_nft_count = settings.airdrop_min_ecosystem_nft_count_base
+        self.check_interval = settings.airdrop_eligibility_check_interval_hours * 3600
+        self.token_contract = settings.ecosystem.token_contract_address
         
         # Service state
         self._running = False

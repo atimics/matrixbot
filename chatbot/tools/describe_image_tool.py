@@ -194,9 +194,9 @@ class DescribeImageTool(ToolInterface):
         headers = {
             "Authorization": f"Bearer {settings.openrouter_api_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": settings.YOUR_SITE_URL
+            "HTTP-Referer": settings.your_site_url
             or "https://github.com/ratimics/chatbot",  # From config
-            "X-Title": settings.YOUR_SITE_NAME or "Ratimics Chatbot",  # From config
+            "X-Title": settings.your_site_name or "Ratimics Chatbot",  # From config
         }
 
         try:

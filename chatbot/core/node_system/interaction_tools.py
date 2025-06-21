@@ -26,7 +26,7 @@ class NodeInteractionTools:
                     "name": "expand_node",
                     "description": (
                         f"Expands a collapsed node in the world state to view its full details. "
-                        f"Maximum {settings.MAX_EXPANDED_NODES} nodes can be expanded simultaneously. "
+                        f"Maximum {settings.node_system.max_expanded_nodes} nodes can be expanded simultaneously. "
                         f"If the limit is reached, the oldest unpinned expanded node will be "
                         f"automatically collapsed to make room. "
                         f"CRITICAL: You MUST use the full, exact node_path from the "

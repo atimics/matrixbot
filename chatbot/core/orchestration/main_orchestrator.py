@@ -50,7 +50,7 @@ class OrchestratorConfig:
     rate_limit_config: RateLimitConfig = field(default_factory=RateLimitConfig)
     
     # AI Model settings
-    ai_model: str = field(default_factory=lambda: settings.ai_model)
+    ai_model: str = field(default_factory=lambda: settings.ai.model)
 
 
 class MainOrchestrator:
@@ -130,20 +130,20 @@ class MainOrchestrator:
         
         config = AIEngineConfig(
             api_key=api_key,
-            model=self.unified_settings.ai_model,
+            model=self.unified_settings.ai.model,
             temperature=0.7,  # Default temperature since not in AppConfig
             max_tokens=4000,  # Default max_tokens since not in AppConfig
             timeout=30.0  # Default timeout since not in AppConfig
         )
         self.ai_engine = AIEngine(config)
-        logger.info(f"MainOrchestrator: Using unified AIEngine with model {self.unified_settings.ai_model}")
+        logger.info(f"MainOrchestrator: Using unified AIEngine with model {self.unified_settings.ai.model}")
         
         # Initialize Arweave client for internal uploader service
         self.arweave_client = None
-        if settings.ARWEAVE_INTERNAL_UPLOADER_SERVICE_URL:
+        if settings.storage.arweave_internal_uploader_service_url:
             self.arweave_client = ArweaveUploaderClient(
-                uploader_service_url=settings.ARWEAVE_INTERNAL_UPLOADER_SERVICE_URL,
-                gateway_url=settings.ARWEAVE_GATEWAY_URL,
+                uploader_service_url=settings.storage.arweave_internal_uploader_service_url,
+                gateway_url=settings.storage.arweave_gateway_url,
             )
             logger.info("Arweave client initialized for internal uploader service.")
         
@@ -485,7 +485,7 @@ class MainOrchestrator:
             if settings.openrouter_api_key:
                 self.node_summary_service = NodeSummaryService(
                     api_key=settings.openrouter_api_key,
-                    model=settings.AI_SUMMARY_MODEL
+                    model=settings.ai.summary_model
                 )
             else:
                 logger.warning("No API key available for node summary service")
@@ -528,9 +528,9 @@ class MainOrchestrator:
         critical_pins = []
         
         # Add Matrix room if available
-        if hasattr(self, 'matrix_observer') and self.matrix_observer and settings.MATRIX_ROOM_ID:
-            critical_pins.append(f"channels.matrix.{settings.MATRIX_ROOM_ID}")
-            logger.debug(f"Added Matrix room to critical pins: channels.matrix.{settings.MATRIX_ROOM_ID}")
+        if hasattr(self, 'matrix_observer') and self.matrix_observer and settings.matrix.room_id:
+            critical_pins.append(f"channels.matrix.{settings.matrix.room_id}")
+            logger.debug(f"Added Matrix room to critical pins: channels.matrix.{settings.matrix.room_id}")
         
         # Add Farcaster feeds if available  
         if hasattr(self, 'farcaster_observer') and self.farcaster_observer:
@@ -577,9 +577,9 @@ class MainOrchestrator:
         """Initialize NFT and blockchain services if credentials are available."""
         try:
             # Initialize Base NFT service
-            if (settings.BASE_RPC_URL and 
-                settings.NFT_DEV_WALLET_PRIVATE_KEY and 
-                settings.NFT_COLLECTION_ADDRESS_BASE):
+            if (settings.base_rpc_url and 
+                settings.nft_dev_wallet_private_key and 
+                settings.nft_collection_address_base):
                 
                 self.base_nft_service = BaseNFTService()
                 
@@ -588,7 +588,7 @@ class MainOrchestrator:
                     logger.info("Base NFT service initialized successfully")
                     
                     # Initialize eligibility service if we have Farcaster observer
-                    if (settings.ECOSYSTEM_TOKEN_CONTRACT_ADDRESS and 
+                    if (settings.ecosystem.token_contract_address and 
                         hasattr(self, 'farcaster_observer') and 
                         self.farcaster_observer and 
                         hasattr(self.farcaster_observer, 'neynar_api_client')):
@@ -625,7 +625,7 @@ class MainOrchestrator:
             try:
                 self.matrix_observer = MatrixObserver(self.world_state, self.arweave_client)
                 
-                room_id = settings.MATRIX_ROOM_ID
+                room_id = settings.matrix.room_id
                 self.matrix_observer.add_channel(room_id, "Robot Laboratory")
                 await self.matrix_observer.start()
                 
@@ -702,9 +702,9 @@ class MainOrchestrator:
         critical_pins = []
         
         # Add Matrix room if available
-        if self.matrix_observer and settings.MATRIX_ROOM_ID:
-            critical_pins.append(f"channels.matrix.{settings.MATRIX_ROOM_ID}")
-            logger.info(f"Added Matrix room to critical pins: channels.matrix.{settings.MATRIX_ROOM_ID}")
+        if self.matrix_observer and settings.matrix.room_id:
+            critical_pins.append(f"channels.matrix.{settings.matrix.room_id}")
+            logger.info(f"Added Matrix room to critical pins: channels.matrix.{settings.matrix.room_id}")
         
         # Add Farcaster feeds if available
         if self.farcaster_observer:
@@ -996,8 +996,8 @@ class MainOrchestrator:
                         integration_type='matrix',
                         display_name='Matrix Bot',
                         config={
-                            'room_id': settings.MATRIX_ROOM_ID,
-                            'device_name': settings.DEVICE_NAME
+                            'room_id': settings.matrix.room_id,
+                            'device_name': settings.matrix.device_name
                         },
                         credentials={
                             'homeserver': settings.matrix.homeserver,

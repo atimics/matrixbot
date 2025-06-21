@@ -53,7 +53,7 @@ class ChatbotWithUI:
                 observation_interval=settings.observation_interval,
                 max_cycles_per_hour=settings.max_cycles_per_hour,
             ),
-            ai_model=settings.ai_model,
+            ai_model=settings.ai.model,
         )
         
         self.orchestrator = MainOrchestrator(config)

@@ -102,11 +102,11 @@ class FarcasterObserver(Integration, BaseObserver):
                 api_key=self.api_key,
                 signer_uuid=self.signer_uuid,
                 bot_fid=self.bot_fid,
-                base_url=settings.NEYNAR_API_BASE_URL,
-                max_retries=settings.FARCASTER_API_MAX_RETRIES,
-                base_delay=settings.FARCASTER_API_BASE_DELAY,
-                max_delay=settings.FARCASTER_API_MAX_DELAY,
-                timeout=settings.FARCASTER_API_TIMEOUT,
+                base_url="https://api.neynar.com",  # Default Neynar API URL
+                max_retries=settings.farcaster.api_max_retries,
+                base_delay=settings.farcaster.api_base_delay,
+                max_delay=settings.farcaster.api_max_delay,
+                timeout=settings.farcaster.api_timeout,
             )
             self.neynar_api_client = self.api_client  # Legacy compatibility
             
@@ -186,7 +186,7 @@ class FarcasterObserver(Integration, BaseObserver):
                 
             # Initialize and start ecosystem token service if configured
             from ...config import settings
-            if settings.ECOSYSTEM_TOKEN_CONTRACT_ADDRESS and self.api_client and self.world_state_manager:
+            if settings.ecosystem.token_contract_address and self.api_client and self.world_state_manager:
                 from ...integrations.ecosystem_token_service import EcosystemTokenService
                 self.ecosystem_token_service = EcosystemTokenService(self.api_client, self.world_state_manager)
                 await self.ecosystem_token_service.start()
@@ -1346,7 +1346,7 @@ class FarcasterObserver(Integration, BaseObserver):
         """Check if enough time has passed since last post"""
         try:
             from ...config import settings
-            min_interval_seconds = settings.FARCASTER_MIN_POST_INTERVAL_MINUTES * 60
+            min_interval_seconds = settings.farcaster.min_post_interval_minutes * 60
             
             recent_posts = await self.get_recent_own_posts(limit=1)
             if not recent_posts:

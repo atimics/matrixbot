@@ -36,11 +36,11 @@ class EcosystemTokenService:
     def __init__(self, neynar_api_client: NeynarAPIClient, world_state_manager: WorldStateManager):
         self.neynar_api_client = neynar_api_client
         self.world_state_manager = world_state_manager
-        self.token_contract = settings.ECOSYSTEM_TOKEN_CONTRACT_ADDRESS
-        self.token_network = settings.ECOSYSTEM_TOKEN_NETWORK
-        self.num_top_holders = settings.NUM_TOP_HOLDERS_TO_TRACK
-        self.cast_history_length = settings.HOLDER_CAST_HISTORY_LENGTH
-        self.update_interval = settings.TOP_HOLDERS_UPDATE_INTERVAL_MINUTES * 60
+        self.token_contract = settings.ecosystem.token_contract_address
+        self.token_network = settings.ecosystem.token_network
+        self.num_top_holders = settings.ecosystem.num_top_holders_to_track
+        self.cast_history_length = settings.ecosystem.holder_cast_history_length
+        self.update_interval = settings.ecosystem.top_holders_update_interval_minutes * 60
         self._running = False
         self._task: Optional[asyncio.Task] = None
         
