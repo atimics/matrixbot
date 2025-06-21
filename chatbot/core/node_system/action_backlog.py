@@ -54,6 +54,7 @@ class QueuedAction:
     max_attempts: int = 3
     last_attempt_at: Optional[float] = None
     retry_after: Optional[float] = None  # Time when action can be retried after rate limiting
+    error: Optional[str] = None  # Error message if action failed
     
     # Dependencies and sequencing
     depends_on: List[str] = field(default_factory=list)
@@ -251,6 +252,7 @@ class ActionBacklog:
             logger.debug(f"Completed action {action_id}")
         else:
             action.status = ActionStatus.FAILED
+            action.error = error  # Store the error message
             
             # Retry logic
             if action.attempts < action.max_attempts:

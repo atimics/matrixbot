@@ -410,9 +410,22 @@ class NodeProcessor:
         # If the AI uses a generic tool name, attempt to map it to a specific one.
         original_tool_name = tool_name
         platform = None # Initialize platform to None
-        if tool_name in ["send_message", "send_reply", "react_to_message"]:
+        
+        # Handle common misspellings or variations first
+        if tool_name == "matrix_send_message":
+            tool_name = "send_matrix_message"
+            logger.warning(f"Corrected tool name from 'matrix_send_message' to 'send_matrix_message'")
+            action["action_type"] = tool_name
+        elif tool_name == "matrix_send_reply":
+            tool_name = "send_matrix_reply"
+            logger.warning(f"Corrected tool name from 'matrix_send_reply' to 'send_matrix_reply'")
+            action["action_type"] = tool_name
+        elif tool_name in ["send_message", "send_reply", "react_to_message"]:
             # Determine platform from channel/channel_id/room_id
             channel_id = tool_args.get("channel") or tool_args.get("channel_id") or tool_args.get("room_id")
+            
+            # Debug logging for tool disambiguation
+            logger.debug(f"Tool disambiguation: tool_name='{tool_name}', channel_id='{channel_id}', tool_args keys: {list(tool_args.keys())}")
             
             if isinstance(channel_id, str) and channel_id.startswith("!"):
                 platform = "matrix"
@@ -440,12 +453,48 @@ class NodeProcessor:
                         "event_id": tool_args.get("event_id"),
                         "reaction": tool_args.get("reaction") or tool_args.get("emoji")
                     }
-            # TODO: Add disambiguation for other platforms like Farcaster if needed
+            elif channel_id and isinstance(channel_id, str):
+                # For now, if channel_id exists but doesn't start with "!", assume it's still Matrix
+                # This handles edge cases where room IDs might be malformed
+                logger.warning(f"Channel ID '{channel_id}' doesn't start with '!' but assuming Matrix platform")
+                platform = "matrix"
+                if tool_name == "send_message":
+                    tool_name = "send_matrix_message"
+                    tool_args = {
+                        "channel_id": channel_id,
+                        "message": str(tool_args.get("content") or tool_args.get("message", "")),
+                        "attach_image": tool_args.get("attach_image")
+                    }
+                elif tool_name == "send_reply":
+                    tool_name = "send_matrix_reply"
+                    tool_args = {
+                        "channel_id": channel_id,
+                        "reply_to_id": tool_args.get("event_id") or tool_args.get("reply_to_id"),
+                        "message": str(tool_args.get("content") or tool_args.get("message", "")),
+                        "attach_image": tool_args.get("attach_image")
+                    }
+                elif tool_name == "react_to_message":
+                    tool_name = "react_to_matrix_message"
+                    tool_args = {
+                        "channel_id": channel_id,
+                        "event_id": tool_args.get("event_id"),
+                        "reaction": tool_args.get("reaction") or tool_args.get("emoji")
+                    }
+            else:
+                # Provide detailed error with guidance for the AI
+                error_details = {
+                    "error": f"Cannot disambiguate tool '{tool_name}': no valid channel_id found",
+                    "provided_args": tool_args,
+                    "required": "A valid 'channel_id', 'room_id', or 'channel' parameter starting with '!' for Matrix rooms",
+                    "example": "channel_id: '!example:matrix.org'"
+                }
+                logger.error(f"Tool disambiguation failed: {error_details}")
+                return {"status": "failure", "error": error_details["error"], "details": error_details}
             
             if tool_name != original_tool_name:
                 logger.warning(
                     f"AI used generic tool '{original_tool_name}'. Disambiguated to "
-                    f"'{tool_name}' for platform '{platform}' based on channel_id."
+                    f"'{tool_name}' for platform '{platform}' based on channel_id '{channel_id}'."
                 )
                 # Update action details for execution
                 action["action_type"] = tool_name
@@ -1109,13 +1158,22 @@ class NodeProcessor:
             
             # Add processing context
             if payload:
+                # Get recent action failures for AI learning
+                recent_failures = self._get_recent_action_failures()
+                
                 payload["processing_context"] = {
                     "mode": "action_selection",
                     "primary_channel": primary_channel_id,
                     "cycle_context": context,
                     "node_stats": self.node_manager.get_expansion_status_summary(),
-                    "instruction": "Now take appropriate actions based on the expanded node content. Prioritize platform communication tools over node management."
+                    "recent_failures": recent_failures,
+                    "instruction": "Now take appropriate actions based on the expanded node content. Prioritize platform communication tools over node management. Learn from recent failures to avoid repeating mistakes."
                 }
+                
+                if recent_failures:
+                    failure_summary = f"Recent action failures ({len(recent_failures)}): "
+                    failure_summary += ", ".join([f"{f['action_type']}: {f['error']}" for f in recent_failures[:3]])
+                    payload["processing_context"]["failure_summary"] = failure_summary
             
             return payload
             
@@ -1591,3 +1649,27 @@ class NodeProcessor:
                 logger.debug(f"Adaptive planning triggered after {actions_executed_count} actions with low backlog")
                 await self._planning_phase(cycle_id, primary_channel_id, context)
                 self._last_planning_time = time.time()
+
+    def _get_recent_action_failures(self, limit: int = 5) -> List[Dict[str, Any]]:
+        """Get recent action failures to provide feedback to AI."""
+        if not hasattr(self, 'action_backlog') or not self.action_backlog:
+            return []
+        
+        recent_failures = []
+        current_time = time.time()
+        
+        # Get failures from the last 10 minutes
+        for action_id, action in self.action_backlog.failed.items():
+            if current_time - action.created_at < 600:  # 10 minutes
+                failure_info = {
+                    "action_type": action.action_type,
+                    "parameters": action.parameters,
+                    "error": action.error or "Unknown error",
+                    "attempts": action.attempts,
+                    "timestamp": action.created_at
+                }
+                recent_failures.append(failure_info)
+        
+        # Sort by timestamp (most recent first) and limit
+        recent_failures.sort(key=lambda x: x["timestamp"], reverse=True)
+        return recent_failures[:limit]

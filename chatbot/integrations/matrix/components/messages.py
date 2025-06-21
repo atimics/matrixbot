@@ -25,6 +25,10 @@ class MatrixMessageOperations:
     
     async def send_message(self, room_id: str, content: Union[str, Dict[str, Any]]) -> Dict[str, Any]:
         """Send a plain text message to a room."""
+        # Initialize variables early to avoid scope issues
+        body_content = ""
+        msg_type = "m.text"
+        
         try:
             if not self.client:
                 return {"success": False, "error": "Matrix client not available"}
@@ -66,11 +70,81 @@ class MatrixMessageOperations:
             else:
                 error_msg = f"Failed to send message: {response}"
                 logger.error(f"MatrixMessageOps: {error_msg}")
+                
+                # Check if the error is due to not being in the room
+                if hasattr(response, 'message') and 'No such room' in str(response.message):
+                    logger.info(f"MatrixMessageOps: Not in room {room_id}, attempting to join...")
+                    
+                    # Attempt to join the room
+                    join_response = await self.client.join(room_id)
+                    if hasattr(join_response, 'room_id'):
+                        logger.info(f"MatrixMessageOps: Successfully joined room {room_id}, retrying message send...")
+                        
+                        # Retry sending the message
+                        retry_response = await self.client.room_send(
+                            room_id=room_id,
+                            message_type="m.room.message",
+                            content={
+                                "msgtype": msg_type,
+                                "body": body_content
+                            }
+                        )
+                        
+                        if isinstance(retry_response, RoomSendResponse):
+                            logger.info(f"MatrixMessageOps: Message sent after joining room {room_id}")
+                            return {
+                                "success": True,
+                                "event_id": retry_response.event_id,
+                                "room_id": room_id,
+                                "joined_room": True
+                            }
+                        else:
+                            return {"success": False, "error": f"Failed to send message after joining room: {retry_response}"}
+                    else:
+                        return {"success": False, "error": f"Failed to join room {room_id}: {join_response}"}
+                
                 return {"success": False, "error": error_msg}
                 
         except Exception as e:
             error_msg = f"Error sending message to {room_id}: {e}"
             logger.error(f"MatrixMessageOps: {error_msg}")
+            
+            # Check if the error is due to not being in the room
+            if 'No such room' in str(e):
+                logger.info(f"MatrixMessageOps: Not in room {room_id} (exception), attempting to join...")
+                
+                try:
+                    # Attempt to join the room
+                    join_response = await self.client.join(room_id)
+                    if hasattr(join_response, 'room_id'):
+                        logger.info(f"MatrixMessageOps: Successfully joined room {room_id}, retrying message send...")
+                        
+                        # Retry sending the message
+                        retry_response = await self.client.room_send(
+                            room_id=room_id,
+                            message_type="m.room.message",
+                            content={
+                                "msgtype": msg_type,
+                                "body": body_content
+                            }
+                        )
+                        
+                        if isinstance(retry_response, RoomSendResponse):
+                            logger.info(f"MatrixMessageOps: Message sent after joining room {room_id}")
+                            return {
+                                "success": True,
+                                "event_id": retry_response.event_id,
+                                "room_id": room_id,
+                                "joined_room": True
+                            }
+                        else:
+                            return {"success": False, "error": f"Failed to send message after joining room: {retry_response}"}
+                    else:
+                        return {"success": False, "error": f"Failed to join room {room_id}: {join_response}"}
+                except Exception as join_error:
+                    logger.error(f"MatrixMessageOps: Error joining room {room_id}: {join_error}")
+                    return {"success": False, "error": f"Failed to join room and send message: {join_error}"}
+            
             return {"success": False, "error": error_msg}
     
     async def send_reply(
@@ -82,6 +156,10 @@ class MatrixMessageOperations:
         original_content: Optional[str] = None
     ) -> Dict[str, Any]:
         """Send a reply to a specific message."""
+        # Initialize variables early to avoid scope issues
+        body_content = ""
+        msg_type = "m.text"
+        
         try:
             if not self.client:
                 return {"success": False, "error": "Matrix client not available"}
@@ -134,11 +212,89 @@ class MatrixMessageOperations:
             else:
                 error_msg = f"Failed to send reply: {response}"
                 logger.error(f"MatrixMessageOps: {error_msg}")
+                
+                # Check if the error is due to not being in the room
+                if hasattr(response, 'message') and 'No such room' in str(response.message):
+                    logger.info(f"MatrixMessageOps: Not in room {room_id}, attempting to join...")
+                    
+                    # Attempt to join the room
+                    join_response = await self.client.join(room_id)
+                    if hasattr(join_response, 'room_id'):
+                        logger.info(f"MatrixMessageOps: Successfully joined room {room_id}, retrying reply send...")
+                        
+                        # Retry sending the reply
+                        retry_response = await self.client.room_send(
+                            room_id=room_id,
+                            message_type="m.room.message",
+                            content=reply_content
+                        )
+                        
+                        if isinstance(retry_response, RoomSendResponse):
+                            logger.info(f"MatrixMessageOps: Reply sent after joining room {room_id}")
+                            return {
+                                "success": True,
+                                "event_id": retry_response.event_id,
+                                "room_id": room_id,
+                                "reply_to": reply_to_event_id,
+                                "joined_room": True
+                            }
+                        else:
+                            return {"success": False, "error": f"Failed to send reply after joining room: {retry_response}"}
+                    else:
+                        return {"success": False, "error": f"Failed to join room {room_id}: {join_response}"}
+                
                 return {"success": False, "error": error_msg}
                 
         except Exception as e:
             error_msg = f"Error sending reply to {room_id}: {e}"
             logger.error(f"MatrixMessageOps: {error_msg}")
+            
+            # Check if the error is due to not being in the room
+            if 'No such room' in str(e):
+                logger.info(f"MatrixMessageOps: Not in room {room_id} (exception), attempting to join...")
+                
+                try:
+                    # Attempt to join the room
+                    join_response = await self.client.join(room_id)
+                    if hasattr(join_response, 'room_id'):
+                        logger.info(f"MatrixMessageOps: Successfully joined room {room_id}, retrying reply send...")
+                        
+                        # Reconstruct reply content for retry
+                        fallback_body = f"> <{original_sender or 'unknown'}> {original_content or 'message'}\n\n{body_content}"
+                        reply_content = {
+                            "msgtype": msg_type,
+                            "body": fallback_body,
+                            "m.relates_to": {
+                                "m.in_reply_to": {
+                                    "event_id": reply_to_event_id
+                                }
+                            }
+                        }
+                        
+                        # Retry sending the reply
+                        retry_response = await self.client.room_send(
+                            room_id=room_id,
+                            message_type="m.room.message",
+                            content=reply_content
+                        )
+                        
+                        if isinstance(retry_response, RoomSendResponse):
+                            logger.info(f"MatrixMessageOps: Reply sent after joining room {room_id}")
+                            return {
+                                "success": True,
+                                "event_id": retry_response.event_id,
+                                "room_id": room_id,
+                                "reply_to": reply_to_event_id,
+                                "joined_room": True
+                            }
+                        else:
+                            return {"success": False, "error": f"Failed to send reply after joining room: {retry_response}"}
+                    else:
+                        return {"success": False, "error": f"Failed to join room {room_id}: {join_response}"}
+                except Exception as join_error:
+                    logger.error(f"MatrixMessageOps: Error joining room {room_id}: {join_error}")
+                    return {"success": False, "error": f"Failed to join room and send reply: {join_error}"}
+            
             return {"success": False, "error": error_msg}
     
     async def send_formatted_message(
