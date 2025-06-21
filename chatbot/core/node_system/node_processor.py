@@ -351,6 +351,9 @@ class NodeProcessor:
                     "guidance": self._generate_self_state_guidance(context["cycle_actions"])
                 }
             
+            # Log the complete payload being sent to AI (for debugging)
+            logger.debug(f"Built AI payload for channel {primary_channel_id}: {payload}")
+            
             return payload
         except Exception as e:
             logger.error(f"Error building current payload: {e}", exc_info=True)
@@ -359,6 +362,9 @@ class NodeProcessor:
     async def _get_next_actions(self, payload_data: Dict[str, Any], cycle_id: str, step: int):
         """Get the next action(s) from the AI."""
         try:
+            # Log the AI payload being sent (for debugging)
+            logger.debug(f"AI Payload for cycle {cycle_id}, step {step}: {payload_data}")
+            
             decision_result = await self.ai_engine.decide_actions(
                 world_state=payload_data
             )
@@ -587,7 +593,11 @@ class NodeProcessor:
             
             # Get current node data
             world_state_data = self.world_state.get_world_state_data()
-            node_data = self.payload_builder._get_node_data_by_path(world_state_data, node_path)
+            
+            # Use NodeDataHandlers to get node data
+            from ..world_state.node_data_handlers import NodeDataHandlers
+            data_handler = NodeDataHandlers()
+            node_data = data_handler.get_node_data_by_path(world_state_data, node_path)
             
             if node_data:
                 # Generate new summary
@@ -946,8 +956,7 @@ class NodeProcessor:
             return {}
 
     async def _ai_select_nodes_to_expand(
-        self, 
-        payload_data: Dict[str, Any], 
+        self,        payload_data: Dict[str, Any], 
         cycle_id: str
     ) -> Dict[str, Any]:
         """First AI decision - select which nodes to expand."""
@@ -955,7 +964,10 @@ class NodeProcessor:
             if not payload_data:
                 logger.warning(f"Empty payload for node selection in cycle {cycle_id}")
                 return {"node_paths": [], "reasoning": "No payload data"}
-            
+
+            # Log the AI payload being sent for node selection (for debugging)
+            logger.debug(f"AI Node Selection Payload for cycle {cycle_id}: {payload_data}")
+
             # Send to AI engine for node selection
             decision_result = await self.ai_engine.decide_actions(
                 world_state=payload_data
@@ -990,6 +1002,9 @@ class NodeProcessor:
                 logger.warning(f"Empty payload for action selection in cycle {cycle_id}")
                 return {}
             
+            # Log the AI payload being sent for action selection (for debugging)
+            logger.debug(f"AI Action Selection Payload for cycle {cycle_id}: {payload_data}")
+
             # Send to AI engine for action selection
             decision_result = await self.ai_engine.decide_actions(
                 world_state=payload_data
@@ -1284,13 +1299,24 @@ class NodeProcessor:
             payload["tools"].extend(node_interaction_tools.values())
             
             # Add planning-specific context
+            primary_trigger_type = context.get("primary_trigger_type")
+            base_instruction = "Analyze the current world state and backlog status. Plan 3-8 high-value actions to add to the execution backlog based on current opportunities and context."
+            
+            # Customize instruction based on trigger type
+            if primary_trigger_type == "mention":
+                instruction = f"{base_instruction} **IMPORTANT: You have been mentioned in a channel. This requires immediate attention and response. Check the recent messages in the primary channel ({primary_channel_id}) for the mention and respond appropriately.** Also consider other proactive engagement opportunities, but prioritize responding to the mention first."
+            else:
+                instruction = f"{base_instruction} Focus on responding to recent activity, mentions, or important updates, but also consider proactive engagement opportunities. Prioritize diverse actions across different channels and services when meaningful. Consider the current backlog to avoid redundant actions, but don't limit yourself unnecessarily - if there are genuine opportunities for valuable engagement, plan multiple complementary actions."
+            
             payload["processing_context"] = {
                 "mode": "kanban_planning",
                 "primary_channel": primary_channel_id,
                 "backlog_status": context.get("backlog_status", {}),
                 "cycle_id": context.get("cycle_id"),
                 "phase": "planning",
-                "instruction": "Analyze the current world state and backlog status. Plan 3-8 high-value actions to add to the execution backlog based on current opportunities and context. Focus on responding to recent activity, mentions, or important updates, but also consider proactive engagement opportunities. Prioritize diverse actions across different channels and services when meaningful. Consider the current backlog to avoid redundant actions, but don't limit yourself unnecessarily - if there are genuine opportunities for valuable engagement, plan multiple complementary actions."
+                "primary_trigger_type": primary_trigger_type,
+                "triggers": context.get("triggers", []),
+                "instruction": instruction
             }
             
             return payload
@@ -1302,6 +1328,9 @@ class NodeProcessor:
     async def _get_planned_actions(self, payload: Dict[str, Any], cycle_id: str) -> List[Dict[str, Any]]:
         """Get planned actions from AI for the backlog"""
         try:
+            # Log the AI payload being sent for planning (for debugging)
+            logger.debug(f"AI Planning Payload for cycle {cycle_id}: {payload}")
+            
             # Use AI engine to get planning decisions
             decision_result = await self.ai_engine.decide_actions(
                 world_state=payload

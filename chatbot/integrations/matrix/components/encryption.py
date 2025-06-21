@@ -80,7 +80,7 @@ class MatrixEncryptionHandler:
                 events_to_retry = result.scalars().all()
                 
                 if events_to_retry:
-                    logger.info(f"MatrixEncryption: Retrying {len(events_to_retry)} undecryptable events")
+                    logger.debug(f"MatrixEncryption: Retrying {len(events_to_retry)} undecryptable events")
                     
                     for event_record in events_to_retry:
                         await self._retry_event_decryption(session, event_record)
@@ -104,7 +104,7 @@ class MatrixEncryptionHandler:
             # If we've exceeded max retries, remove from queue
             if event_record.retry_count >= event_record.max_retries:
                 await session.delete(event_record)
-                logger.info(f"MatrixEncryption: Removed event {event_record.event_id} after {event_record.retry_count} retries")
+                logger.debug(f"MatrixEncryption: Removed event {event_record.event_id} after {event_record.retry_count} retries")
             else:
                 session.add(event_record)  # Update the record
                     
@@ -232,7 +232,7 @@ class MatrixEncryptionHandler:
             
             # Request keys from the sender immediately
             if hasattr(self.client, 'request_room_key'):
-                logger.info(f"MatrixEncryption: Immediate key request for {room_id} from {sender}")
+                logger.debug(f"MatrixEncryption: Immediate key request for {room_id} from {sender}")
                 await self.client.request_room_key(room_id=room_id)
             
             # Also try to start a key sharing session
@@ -256,7 +256,7 @@ class MatrixEncryptionHandler:
         # Strategy 1: Request keys from other room members
         if self.client and hasattr(self.client, 'request_room_key'):
             try:
-                logger.info(f"MatrixEncryption: Requesting room key for event {event_id}")
+                logger.debug(f"MatrixEncryption: Requesting room key for event {event_id}")
                 await self.client.request_room_key(event_id, room_id)
                 recovery_attempts.append({"strategy": "room_key_request", "success": True})
             except Exception as e:
@@ -266,7 +266,7 @@ class MatrixEncryptionHandler:
         # Strategy 2: Share keys with room if we're able to
         if hasattr(self.client, 'share_group_session'):
             try:
-                logger.info(f"MatrixEncryption: Attempting to share group session for room {room_id}")
+                logger.debug(f"MatrixEncryption: Attempting to share group session for room {room_id}")
                 await self.client.share_group_session(room_id, ignore_unverified_devices=True)
                 recovery_attempts.append({"strategy": "group_session_share", "success": True})
             except Exception as e:
@@ -320,7 +320,7 @@ class MatrixEncryptionHandler:
         try:
             await asyncio.sleep(delay)
             
-            logger.info(f"MatrixEncryption: Retrying decryption for event {event_id}")
+            logger.debug(f"MatrixEncryption: Retrying decryption for event {event_id}")
             
             # Attempt to decrypt the event again
             # Note: This would require access to the original encrypted event
@@ -328,7 +328,7 @@ class MatrixEncryptionHandler:
             # and attempt decryption again
             
             # For now, just log that we attempted the retry
-            logger.info(f"MatrixEncryption: Retry attempted for event {event_id}")
+            logger.debug(f"MatrixEncryption: Retry attempted for event {event_id}")
             
         except Exception as e:
             logger.error(f"MatrixEncryption: Error during delayed retry for {event_id}: {e}")
@@ -441,7 +441,7 @@ class MatrixEncryptionHandler:
                 if key in self.failed_decryption_events:
                     self.failed_decryption_events.remove(key)
             
-            logger.info(f"MatrixEncryption: Cleaned up {len(expired_keys)} expired retry attempts")
+            logger.debug(f"MatrixEncryption: Cleaned up {len(expired_keys)} expired retry attempts")
             
         except Exception as e:
             logger.error(f"MatrixEncryption: Error cleaning up old failures: {e}")
