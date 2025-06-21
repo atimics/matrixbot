@@ -29,7 +29,7 @@ from ...integrations.eligibility_service import UserEligibilityService
 from ...tools.registry import ToolRegistry
 from ..world_state.manager import WorldStateManager
 from ..world_state.payload_builder import PayloadBuilder
-from .processing_hub import ProcessingHub, ProcessingConfig, Trigger
+from .processing_hub import ProcessingHub, ProcessingConfig
 from .rate_limiter import RateLimiter, RateLimitConfig
 from ..proactive import ProactiveConversationEngine
 
@@ -731,12 +731,12 @@ class MainOrchestrator:
 
     def trigger_state_change(self):
         """Trigger immediate processing when world state changes."""
-        self.processing_hub.add_trigger(Trigger(type="manual_trigger", priority=10, data={"source": "manual"}))
+        self.processing_hub.mark_state_as_stale("manual_trigger", {"source": "manual"})
     
     def _on_world_state_change(self):
         """Handle world state changes for both processing and proactive conversations."""
         # Trigger normal processing
-        self.processing_hub.add_trigger(Trigger(type="world_state_update", priority=1, data={"source": "observer"}))
+        self.processing_hub.mark_state_as_stale("world_state_update", {"source": "observer"})
         
         # Trigger proactive conversation opportunity detection
         if self.proactive_engine:

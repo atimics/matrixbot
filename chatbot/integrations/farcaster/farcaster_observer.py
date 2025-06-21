@@ -1211,6 +1211,27 @@ class FarcasterObserver(Integration, BaseObserver):
                                     'farcaster_discovery',
                                     {'data_type': data_type, 'message_count': len(messages)}
                                 )
+                            elif data_type == "home":
+                                # Lower priority for general home feed
+                                self.processing_hub.mark_state_as_stale(
+                                    'farcaster_feed',
+                                    {'data_type': data_type, 'message_count': len(messages)}
+                                )
+                            if not messages:
+                                continue
+                                
+                            if data_type == "notifications":
+                                # High priority for notifications and mentions
+                                self.processing_hub.mark_state_as_stale(
+                                    'farcaster_notification',
+                                    {'data_type': data_type, 'message_count': len(messages)}
+                                )
+                            elif data_type in ["trending", "for_you"]:
+                                # Medium priority for trending/discovery content
+                                self.processing_hub.mark_state_as_stale(
+                                    'farcaster_discovery',
+                                    {'data_type': data_type, 'message_count': len(messages)}
+                                )
                             elif data_type == "home_feed":
                                 # Lower priority for general home feed
                                 self.processing_hub.mark_state_as_stale(
@@ -1309,7 +1330,7 @@ class FarcasterObserver(Integration, BaseObserver):
                 return []
             
             # Get recent casts by our own FID
-            data = await self.api_client.get_casts_by_fid(fid=self.bot_fid, limit=limit)
+            data = await self.api_client.get_casts_by_fid(fid=int(self.bot_fid), limit=limit)
             casts = data.get("casts", [])
             
             # Convert to simplified format for rate limiting checks
