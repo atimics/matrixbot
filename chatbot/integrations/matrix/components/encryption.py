@@ -303,8 +303,14 @@ class MatrixEncryptionHandler:
                 await self.client.keys_query()
                 recovery_attempts.append({"strategy": "keys_query", "success": True})
             except Exception as e:
-                logger.warning(f"MatrixEncryption: Keys query failed: {e}")
-                recovery_attempts.append({"strategy": "keys_query", "success": False, "error": str(e)})
+                error_msg = str(e)
+                # Handle expected "No key query required" message more gracefully
+                if "no key query required" in error_msg.lower():
+                    logger.debug(f"MatrixEncryption: Keys query not needed: {e}")
+                    recovery_attempts.append({"strategy": "keys_query", "success": False, "error": "not_required"})
+                else:
+                    logger.warning(f"MatrixEncryption: Keys query failed: {e}")
+                    recovery_attempts.append({"strategy": "keys_query", "success": False, "error": str(e)})
         
         # Strategy 4: Schedule retry after delay
         retry_key = f"{room_id}:{event_id}"
