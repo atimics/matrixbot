@@ -86,8 +86,50 @@ class NodeDataHandlers:
 
     def get_channel_node_data(self, world_state_data: 'WorldStateData', path_parts: List[str], expanded: bool = False) -> Optional[Dict]:
         """Get channel node data."""
+        
+        # Handle hierarchical navigation nodes
+        if len(path_parts) == 1:
+            # Root channels node - provide overview of all channels
+            all_channels = {}
+            total_messages = 0
+            for platform, platform_channels in world_state_data.channels.items():
+                all_channels[platform] = len(platform_channels)
+                for channel in platform_channels.values():
+                    total_messages += len(channel.recent_messages)
+            
+            return {
+                "type": "channels_overview",
+                "platforms": list(world_state_data.channels.keys()),
+                "channel_counts": all_channels,
+                "total_channels": sum(all_channels.values()),
+                "total_messages": total_messages
+            }
+        
+        if len(path_parts) == 2:
+            # Platform-level node - provide overview of channels in platform
+            platform = path_parts[1]
+            if platform not in world_state_data.channels:
+                logger.warning(f"Platform '{platform}' not found in channels")
+                return None
+            
+            platform_channels = world_state_data.channels[platform]
+            return {
+                "type": "platform_overview", 
+                "platform": platform,
+                "channel_count": len(platform_channels),
+                "channels": [
+                    {
+                        "id": ch_id,
+                        "name": channel.name,
+                        "message_count": len(channel.recent_messages),
+                        "last_activity": channel.recent_messages[-1].timestamp if channel.recent_messages else channel.last_checked
+                    }
+                    for ch_id, channel in platform_channels.items()
+                ]
+            }
+        
         if len(path_parts) < 3: 
-            logger.warning(f"Invalid channel node path parts (too few): {path_parts}")
+            logger.warning(f"Invalid channel node path parts (unexpected format): {path_parts}")
             return None
         
         # Handle case where we have more than 3 parts due to dots in Matrix room IDs
