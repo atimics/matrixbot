@@ -799,24 +799,24 @@ class NodeProcessor:
             # 1. Always expand the primary channel if specified
             if primary_channel_id:
                 if primary_channel_id.startswith('!'):
-                    # Matrix channel
-                    primary_node_path = f"channels/matrix/{primary_channel_id}"
+                    # Matrix channel - use correct dot notation
+                    primary_node_path = f"channels.matrix.{primary_channel_id}"
                     channels_to_expand.append(("primary_matrix", primary_node_path))
                 elif primary_channel_id.startswith('farcaster:'):
-                    # Farcaster channel
-                    primary_node_path = f"channels/farcaster/{primary_channel_id}"
+                    # Farcaster channel - use correct dot notation
+                    primary_node_path = f"channels.farcaster.{primary_channel_id}"
                     channels_to_expand.append(("primary_farcaster", primary_node_path))
                 else:
-                    # Unknown format - try both
-                    channels_to_expand.append(("primary_matrix_fallback", f"channels/matrix/{primary_channel_id}"))
-                    channels_to_expand.append(("primary_farcaster_fallback", f"channels/farcaster/{primary_channel_id}"))
+                    # Unknown format - try both with correct paths
+                    channels_to_expand.append(("primary_matrix_fallback", f"channels.matrix.{primary_channel_id}"))
+                    channels_to_expand.append(("primary_farcaster_fallback", f"channels.farcaster.{primary_channel_id}"))
             
             # 2. Always expand Farcaster home timeline for social context
-            channels_to_expand.append(("farcaster_home", "farcaster/feeds/home"))
+            channels_to_expand.append(("farcaster_home", "farcaster.feeds.home"))
             
             # 3. Always expand notifications/mentions feeds
-            channels_to_expand.append(("farcaster_notifications", "farcaster/feeds/notifications"))
-            channels_to_expand.append(("farcaster_mentions", "farcaster/feeds/mentions"))
+            channels_to_expand.append(("farcaster_notifications", "farcaster.feeds.notifications"))
+            channels_to_expand.append(("farcaster_mentions", "farcaster.feeds.mentions"))
             
             # 4. Get the most recently active Matrix channel as fallback
             try:
@@ -840,7 +840,7 @@ class NodeProcessor:
                                 most_recent_matrix = room_id
                 
                 if most_recent_matrix and most_recent_matrix != primary_channel_id:
-                    channels_to_expand.append(("recent_matrix", f"channels/matrix/{most_recent_matrix}"))
+                    channels_to_expand.append(("recent_matrix", f"channels.matrix.{most_recent_matrix}"))
                     
             except Exception as e:
                 logger.debug(f"Error finding recent Matrix channel: {e}")
