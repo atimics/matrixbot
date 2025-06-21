@@ -611,12 +611,14 @@ class MainOrchestrator:
                 
                 room_id = settings.matrix.room_id
                 self.matrix_observer.add_channel(room_id, "Robot Laboratory")
-                # The start() call is removed. It will be called after hub injection.
+                
+                # Start the Matrix observer now that processing hub is connected
+                await self.matrix_observer.start()
                 
                 # Connect legacy state change callback for backward compatibility
                 self.matrix_observer.on_state_change = self._on_world_state_change
                 
-                logger.debug("Matrix observer initialized.") # Message changed
+                logger.debug("Matrix observer initialized and started.")
             except Exception as e:
                 logger.error(f"Failed to initialize Matrix observer: {e}")
                 logger.debug("Continuing without Matrix integration")
