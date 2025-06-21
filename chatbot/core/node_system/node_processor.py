@@ -686,9 +686,9 @@ class NodeProcessor:
             # Update summaries for these nodes
             for node_path in nodes_needing_summary[:5]:  # Limit to 5 per cycle to avoid overload
                 try:
-                    # Use NodeDataHandler to get node data
-                    from ..world_state.node_data_handler import NodeDataHandler
-                    data_handler = NodeDataHandler()
+                    # Use NodeDataHandlers to get node data
+                    from ..world_state.node_data_handlers import NodeDataHandlers
+                    data_handler = NodeDataHandlers()
                     node_data = data_handler.get_node_data_by_path(world_state_data, node_path)
                     if node_data:
                         summary = await self.summary_service.generate_node_summary(node_path, node_data)

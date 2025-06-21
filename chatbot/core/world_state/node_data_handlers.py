@@ -22,7 +22,56 @@ class NodeDataHandlers:
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
+        # Map node types to their handler methods for backward compatibility
+        self._handlers = {
+            "channels": self.get_channel_node_data,
+            "users": self.get_user_node_data,
+            "tools": self.get_tool_node_data,
+            "memory_bank": self.get_memory_bank_node_data,
+            "farcaster": self.get_farcaster_node_data,
+            "threads": self.get_thread_node_data,
+            "system": self.get_system_node_data,
+            "media_gallery": self.get_media_gallery_node_data,
+        }
     
+    def get_node_data_by_path(self, world_state_data: 'WorldStateData', node_path: str, expanded: bool = False) -> Optional[Dict]:
+        """
+        Get data for a specific node path (backward compatibility method).
+        
+        Args:
+            world_state_data: The world state data to query
+            node_path: The node path (e.g., "channels/general", "users/farcaster/123")
+            expanded: Whether to return expanded/detailed data
+            
+        Returns:
+            Dictionary containing node data or None if not found
+        """
+        if not node_path:
+            return None
+        
+        # Parse the node path - handle both '/' and '.' separators
+        if '/' in node_path:
+            path_parts = [part.strip() for part in node_path.split("/") if part.strip()]
+        else:
+            path_parts = [part.strip() for part in node_path.split(".") if part.strip()]
+        
+        if not path_parts:
+            return None
+        
+        # Route to the appropriate handler
+        node_type = path_parts[0]
+        handler = self._handlers.get(node_type)
+        
+        if handler:
+            try:
+                return handler(world_state_data, path_parts, expanded=expanded)
+            except Exception as e:
+                self.logger.error(f"Error getting data for node path {node_path}: {e}")
+                return None
+        else:
+            self.logger.warning(f"No handler found for node type: {node_type}")
+            return None
+
     def get_channel_node_data(self, world_state_data: 'WorldStateData', path_parts: List[str], expanded: bool = False) -> Optional[Dict]:
         """Get channel node data."""
         if len(path_parts) != 3: 

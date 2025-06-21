@@ -156,20 +156,30 @@ class PayloadBuilder:
         for node_path in all_node_paths:
             metadata = node_manager.get_node_metadata(node_path)
             
+            # Use the corrected path parsing and data retrieval logic
+            path_parts = self.node_path_generator.parse_node_path(node_path)
+            if not path_parts:
+                continue
+
+            # Route to the appropriate handler in NodeDataHandlers
+            handler_method_name = f"get_{path_parts[0]}_node_data"
+            handler_method = getattr(self.node_data_handlers, handler_method_name, None)
+
+            node_data = None
+            if handler_method:
+                node_data = handler_method(world_state_data, path_parts, expanded=metadata.is_expanded)
+            else:
+                self.logger.warning(f"No data handler found for node type: {path_parts[0]}")
+
             if metadata.is_expanded:
-                # Get expanded data for this node
-                node_data = self.node_data_handler.get_node_data_by_path(
-                    world_state_data, node_path, expanded=True
-                )
                 if node_data:
                     expanded_nodes[node_path] = node_data
             else:
-                # Get summary data for collapsed node
-                node_data = self.node_data_handler.get_node_data_by_path(
-                    world_state_data, node_path, expanded=False
-                )
                 if node_data:
-                    collapsed_node_summaries[node_path] = node_data
+                    collapsed_node_summaries[node_path] = {
+                        "summary": node_manager.get_node_metadata(node_path).ai_summary or f"Summary for {node_path} not yet generated.",
+                        "node_path_for_tools": node_path
+                    }
 
         # Build final payload
         payload = {
