@@ -66,7 +66,7 @@ class ReactToMatrixMessageTool(ToolInterface):
 
         try:
             # Use the service layer
-            result = await messaging_service.react_to_message(room_id, event_id, emoji)
+            result = await messaging_service.react_to_message(channel_id, event_id, emoji)
             
             # Log action in world state regardless of success/failure
             if context.world_state_manager:
