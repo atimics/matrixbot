@@ -737,7 +737,7 @@ class ProactiveConversationEngine:
         """Handle world state changes by detecting new opportunities."""
         try:
             # Get current world state data
-            world_state_data = await self.world_state_manager.get_world_state_data()
+            world_state_data = self.world_state_manager.get_world_state_data()
             
             # Detect new opportunities
             opportunities = self.analyze_world_state_for_opportunities(world_state_data)

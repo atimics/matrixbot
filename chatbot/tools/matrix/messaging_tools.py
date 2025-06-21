@@ -97,11 +97,11 @@ class SendMatrixReplyTool(ToolInterface):
                             logger.info(f"Auto-attaching recently generated media to Matrix reply: {image_url}")
 
         try:
-            # If reply_to_id is missing but we have channel_id and content, fall back to regular message
+            # If reply_to_id is missing but we have room_id and content, fall back to regular message
             if not reply_to_event_id:
                 logger.info(f"reply_to_id missing, falling back to regular message in {room_id}")
                 result = await matrix_service.send_message(
-                    channel_id=room_id,
+                    room_id=room_id,
                     content=content
                 )
                 
@@ -129,9 +129,9 @@ class SendMatrixReplyTool(ToolInterface):
             
             # Send reply using the service layer
             result = await matrix_service.send_reply(
-                channel_id=room_id,
+                room_id=room_id,
                 content=content,
-                reply_to_id=reply_to_event_id
+                reply_to_event_id=reply_to_event_id
             )
             
             if result.get("status") == "success":
@@ -259,7 +259,7 @@ class SendMatrixMessageTool(ToolInterface):
         try:
             # Send message using the service layer
             result = await matrix_service.send_message(
-                channel_id=room_id,
+                room_id=room_id,
                 content=content
             )
 
