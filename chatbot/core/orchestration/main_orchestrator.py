@@ -28,6 +28,7 @@ from ...integrations.base_nft_service import BaseNFTService
 from ...integrations.eligibility_service import UserEligibilityService
 from ...tools.registry import ToolRegistry
 from ..world_state.manager import WorldStateManager
+from .action_executor import ActionExecutor
 from ..world_state.payload_builder import PayloadBuilder
 from .processing_hub import ProcessingHub, ProcessingConfig
 from .rate_limiter import RateLimiter, RateLimitConfig
@@ -476,6 +477,10 @@ class MainOrchestrator:
             # Create node interaction tools
             self.node_interaction_tools = NodeInteractionTools(self.node_manager)
             
+            # Create action executor for centralized tool execution
+            self.action_executor = ActionExecutor(self.tool_registry, history_recorder=None)
+            logger.debug("ActionExecutor initialized successfully")
+            
             # Create node processor
             if (self.world_state and self.payload_builder and self.ai_engine and 
                 self.node_manager and self.node_summary_service and self.node_interaction_tools):
@@ -488,7 +493,8 @@ class MainOrchestrator:
                     summary_service=self.node_summary_service,
                     interaction_tools=self.node_interaction_tools,
                     tool_registry=self.tool_registry,
-                    action_context=self.action_context
+                    action_context=self.action_context,
+                    action_executor=self.action_executor
                 )
                 
                 # Set the node processor in the processing hub

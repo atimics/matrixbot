@@ -594,13 +594,56 @@ class NodeProcessor:
             
             for action in actions:
                 action_type = action.get("action_type")
+                action_parameters = action.get("parameters", {})
+                
+                if not action_type:
+                    logger.warning(f"[OODA/{cycle_id}] Skipping action with missing action_type")
+                    continue
+                
+                # === TOOL DISAMBIGUATION ===
+                # Handle generic tool names that need to be mapped to specific platform tools
+                original_action_type = action_type
+                
+                if action_type in ["reply", "send_reply"]:
+                    # The AI wants to reply but didn't specify the platform
+                    # Default to Matrix since that's where the message came from
+                    action_type = "send_matrix_message"
+                    logger.info(f"[OODA/{cycle_id}] Disambiguated '{original_action_type}' -> '{action_type}' (Matrix platform)")
+                    
+                    # Map generic parameters to Matrix-specific parameters
+                    if "message" in action_parameters:
+                        action_parameters["content"] = action_parameters.pop("message")
+                    if "room" in action_parameters:
+                        # Need to map room name to room ID - for now use the primary channel from context
+                        # TODO: Look up room ID from room name in WorldState
+                        action_parameters.pop("room")  # Remove generic room parameter
+                    if "channel" in action_parameters:
+                        action_parameters.pop("channel")  # Remove generic channel parameter
+                        
+                elif action_type in ["send_message", "send_reply_message"]:
+                    # Check if we can determine platform from parameters or context
+                    channel_id = action_parameters.get("channel_id", action_parameters.get("room_id", ""))
+                    if channel_id.startswith("!"):
+                        action_type = "send_matrix_message"
+                        logger.info(f"[OODA/{cycle_id}] Disambiguated '{original_action_type}' -> '{action_type}' (Matrix channel detected)")
+                    elif channel_id.startswith("farcaster:"):
+                        action_type = "send_farcaster_cast"
+                        logger.info(f"[OODA/{cycle_id}] Disambiguated '{original_action_type}' -> '{action_type}' (Farcaster channel detected)")
+                    else:
+                        # Default to Matrix
+                        action_type = "send_matrix_message"
+                        logger.warning(f"[OODA/{cycle_id}] Could not determine platform for '{original_action_type}', defaulting to Matrix")
+                
                 logger.debug(f"[OODA/{cycle_id}] Executing external action: {action_type}")
                 
-                if self.action_executor:
-                    # Execute through the action executor
-                    result = await self.action_executor.execute_action(action)
+                if self.action_executor and self.action_context:
+                    # Create ActionPlan and execute through the action executor
+                    from ..orchestration.action_executor import ActionPlan
+                    action_plan = ActionPlan(action_type, action_parameters)
+                    
+                    result = await self.action_executor.execute_action(action_plan, self.action_context)
                     execution_results.append(result)
-                    logger.debug(f"[OODA/{cycle_id}] Action {action_type} result: {result.get('success', False)}")
+                    logger.debug(f"[OODA/{cycle_id}] Action {action_type} result: {result.get('status', 'unknown')}")
                 else:
                     logger.warning(f"[OODA/{cycle_id}] No action executor available for {action_type}")
                     execution_results.append({
