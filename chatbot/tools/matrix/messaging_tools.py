@@ -101,8 +101,8 @@ class SendMatrixReplyTool(ToolInterface):
             if not reply_to_event_id:
                 logger.info(f"reply_to_id missing, falling back to regular message in {room_id}")
                 result = await matrix_service.send_message(
-                    channel_id=room_id,
-                    content=content
+                    room_id=room_id,
+                    message=content
                 )
                 
                 if result.get("status") == "success":
@@ -112,7 +112,7 @@ class SendMatrixReplyTool(ToolInterface):
                         media_service = context.get_media_service("matrix")
                         if media_service:
                             image_result = await media_service.send_image(
-                                channel_id=room_id,
+                                room_id=room_id,
                                 image_url=image_url
                             )
                             if image_result.get("status") == "success":
@@ -129,8 +129,8 @@ class SendMatrixReplyTool(ToolInterface):
             
             # Send reply using the service layer
             result = await matrix_service.send_reply(
-                channel_id=room_id,
-                content=content,
+                room_id=room_id,
+                message=content,
                 reply_to_id=reply_to_event_id
             )
             
@@ -141,7 +141,7 @@ class SendMatrixReplyTool(ToolInterface):
                     media_service = context.get_media_service("matrix")
                     if media_service:
                         image_result = await media_service.send_image(
-                            channel_id=room_id,
+                            room_id=room_id,
                             image_url=image_url
                         )
                         if image_result.get("status") == "success":
@@ -173,7 +173,7 @@ class SendMatrixMessageTool(ToolInterface):
 
     @property
     def description(self) -> str:
-        return ("Send a new message to a Matrix channel. Use \'room_id\' for the channel and \'message\' for the content. Use this when you want to start a new conversation or make an announcement. "
+        return ("Send a new message to a Matrix channel. Use 'room_id' for the channel and 'message' for the content. Use this when you want to start a new conversation or make an announcement. "
                 "Use the 'attach_image' parameter to include an image - either provide a description to generate a new image, or reference an existing media_id from your library. "
                 "Recently generated media (within 5 minutes) will be automatically attached if no explicit attach_image is provided.")
 
@@ -183,7 +183,7 @@ class SendMatrixMessageTool(ToolInterface):
             "room_id": "string (Matrix room ID) - The room where the message should be sent",
             "message": "string - The message content to send (supports markdown formatting)",
             "format_as_markdown": "boolean (optional, default: true) - Whether to format the content as markdown",
-            "attach_image": "string (optional) - Either a media_id from your library (e.g., \'media_img_1234567890\') or a description to generate a new image (e.g., \'sunset over mountains\')",
+            "attach_image": "string (optional) - Either a media_id from your library (e.g., 'media_img_1234567890') or a description to generate a new image (e.g., 'sunset over mountains')",
             "image_url": "string (optional) - Direct URL of an image to attach. If not provided, recently generated media will be auto-attached",
         }
 
@@ -259,8 +259,8 @@ class SendMatrixMessageTool(ToolInterface):
         try:
             # Send message using the service layer
             result = await matrix_service.send_message(
-                channel_id=room_id,
-                content=content
+                room_id=room_id,
+                message=content
             )
 
             if result.get("status") == "success":
@@ -270,7 +270,7 @@ class SendMatrixMessageTool(ToolInterface):
                     media_service = context.get_media_service("matrix")
                     if media_service:
                         image_result = await media_service.send_image(
-                            channel_id=room_id,
+                            room_id=room_id,
                             image_url=image_url
                         )
                         if image_result.get("status") == "success":

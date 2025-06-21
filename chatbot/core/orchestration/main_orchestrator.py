@@ -362,10 +362,6 @@ class MainOrchestrator:
             # Initialize integration manager
             await self.integration_manager.initialize()
             
-            # Restore persistent state from previous runs
-            await self.world_state.restore_persistent_state()
-            logger.info("Persistent state restored from previous runs")
-            
             # Register integrations from environment variables
             await self._register_integrations_from_env()
             
