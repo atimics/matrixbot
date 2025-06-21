@@ -418,25 +418,25 @@ class NodeProcessor:
                 platform = "matrix"
                 if tool_name == "send_message":
                     tool_name = "send_matrix_message"
-                    # Remap parameters to match the specific tool's schema
+                    # Remap parameters to match the specific tool's schema using channel_id
                     tool_args = {
-                        "room_id": channel_id,
+                        "channel_id": channel_id,
                         "message": tool_args.get("content") or tool_args.get("message", ""),
                         "attach_image": tool_args.get("attach_image")
                     }
                 elif tool_name == "send_reply":
                     tool_name = "send_matrix_reply"
-                    # Remap parameters to match the specific tool's schema
+                    # Remap parameters to match the specific tool's schema using channel_id
                     tool_args = {
-                        "room_id": channel_id,
-                        "event_id": tool_args.get("event_id"),
+                        "channel_id": channel_id,
+                        "reply_to_id": tool_args.get("event_id") or tool_args.get("reply_to_id"),
                         "message": tool_args.get("content") or tool_args.get("message", ""),
                         "attach_image": tool_args.get("attach_image")
                     }
                 elif tool_name == "react_to_message":
                     tool_name = "react_to_matrix_message"
                     tool_args = {
-                        "room_id": channel_id,
+                        "channel_id": channel_id,
                         "event_id": tool_args.get("event_id"),
                         "reaction": tool_args.get("reaction") or tool_args.get("emoji")
                     }
