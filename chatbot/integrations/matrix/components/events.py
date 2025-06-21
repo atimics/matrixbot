@@ -252,8 +252,14 @@ class MatrixEventHandler:
         if self.processing_hub:
             from ....core.orchestration.processing_hub import Trigger
             
+            # Skip generating triggers for the bot's own messages
+            if combined_message.sender == self.user_id:
+                logger.debug(f"MatrixEventHandler: Skipping batch trigger generation for bot's own messages")
+                return
+            
             # Check for bot mention in any of the batched messages
             bot_mentioned = any(self.user_id.lower() in msg.content.lower() for msg in messages)
+            logger.info(f"MatrixEventHandler: Batch trigger generation - user_id: {self.user_id}, bot_mentioned: {bot_mentioned}, batch_size: {len(messages)}")
             
             if bot_mentioned:
                 trigger = Trigger(
@@ -267,6 +273,7 @@ class MatrixEventHandler:
                         "batch_size": len(messages)
                     }
                 )
+                logger.info(f"MatrixEventHandler: Generated batch mention trigger for {room.room_id} - sender: {combined_message.sender}")
             else:
                 trigger = Trigger(
                     type="new_message",
@@ -278,8 +285,12 @@ class MatrixEventHandler:
                         "batch_size": len(messages)
                     }
                 )
+                logger.info(f"MatrixEventHandler: Generated batch new_message trigger for {room.room_id} - sender: {combined_message.sender}")
             
             self.processing_hub.add_trigger(trigger)
+            logger.info(f"MatrixEventHandler: Successfully added batch trigger to processing hub")
+        else:
+            logger.warning(f"MatrixEventHandler: No processing hub available for batch trigger generation")
     
     async def _update_activity_tracking(self, room: MatrixRoom, message: Message) -> None:
         """Update activity tracking for enhanced collapsed channel summaries."""

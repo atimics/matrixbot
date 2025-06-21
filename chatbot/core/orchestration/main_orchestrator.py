@@ -409,6 +409,10 @@ class MainOrchestrator:
             # Initialize NFT and blockchain services
             await self._initialize_nft_services()
             
+            # Initialize observers (Matrix, Farcaster, etc.)
+            await self._initialize_observers()
+            logger.info("Observers initialized")
+            
             # Connect processing hub to observers for trigger generation
             self._connect_processing_hub_to_observers()
             logger.info("Processing hub connected to observers")
@@ -621,9 +625,6 @@ class MainOrchestrator:
             try:
                 self.matrix_observer = MatrixObserver(self.world_state, self.arweave_client)
                 
-                # Connect processing hub BEFORE starting the observer
-                self.matrix_observer.set_processing_hub(self.processing_hub)
-                
                 room_id = settings.MATRIX_ROOM_ID
                 self.matrix_observer.add_channel(room_id, "Robot Laboratory")
                 await self.matrix_observer.start()
@@ -634,6 +635,7 @@ class MainOrchestrator:
                 logger.info("Matrix observer initialized and started")
             except Exception as e:
                 logger.error(f"Failed to initialize Matrix observer: {e}")
+                logger.info("Continuing without Matrix integration")
                 logger.info("Continuing without Matrix integration")
 
         # Initialize Farcaster observer if credentials available
@@ -1050,8 +1052,8 @@ class MainOrchestrator:
         try:
             # Connect Matrix observer
             if hasattr(self, 'matrix_observer') and self.matrix_observer:
-                self.matrix_observer.processing_hub = self.processing_hub
-                logger.info("Connected processing hub to Matrix observer")
+                self.matrix_observer.set_processing_hub(self.processing_hub)
+                logger.info("Connected processing hub to Matrix observer via set_processing_hub")
             else:
                 logger.debug("No Matrix observer available to connect processing hub")
                 

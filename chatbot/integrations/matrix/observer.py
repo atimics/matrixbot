@@ -50,8 +50,9 @@ class MatrixObserver(Integration, BaseObserver):
         world_state_manager: WorldStateManager = None,
         arweave_client=None
     ):
-        # Support legacy positional usage
-        if not isinstance(integration_id, str) and world_state_manager is None:
+        # Support legacy positional usage: MatrixObserver(world_state, arweave_client)
+        if not isinstance(integration_id, str):
+            # Legacy call: first param is world_state, second is arweave_client
             ws_manager = integration_id
             arw_client = display_name
             integration_id = "matrix"
@@ -111,14 +112,34 @@ class MatrixObserver(Integration, BaseObserver):
 
     def set_processing_hub(self, processing_hub):
         """Set the processing hub for trigger generation."""
+        logger.info(f"MatrixObserver: set_processing_hub called with processing_hub={processing_hub is not None}")
         self.processing_hub = processing_hub
         
         # Also update the event handler if it exists
         if hasattr(self, 'event_handler') and self.event_handler:
             self.event_handler.processing_hub = processing_hub
-            logger.debug(f"MatrixObserver: Updated event handler with processing hub")
+            logger.info(f"MatrixObserver: Updated event handler with processing hub (event_handler exists)")
+        else:
+            logger.warning(f"MatrixObserver: Event handler not available yet (hasattr={hasattr(self, 'event_handler')}, exists={getattr(self, 'event_handler', None) is not None})")
             
-        logger.debug(f"MatrixObserver: Processing hub connected: {processing_hub is not None}")
+        logger.info(f"MatrixObserver: Processing hub connected: {processing_hub is not None}")
+
+    async def start(self) -> bool:
+        """Start the Matrix observer by connecting and beginning to observe."""
+        logger.info("MatrixObserver: Starting Matrix observer...")
+        
+        # Connect to Matrix
+        success = await self.connect()
+        
+        if success:
+            # Make sure the processing hub is properly set on the event handler after connect
+            if self.processing_hub and hasattr(self, 'event_handler') and self.event_handler:
+                self.event_handler.processing_hub = self.processing_hub
+                logger.info("MatrixObserver: Processing hub propagated to event handler after connection")
+            else:
+                logger.warning(f"MatrixObserver: Cannot propagate processing hub - hub_exists={self.processing_hub is not None}, handler_exists={hasattr(self, 'event_handler') and self.event_handler is not None}")
+                
+        return success
 
     def _initialize_components(self):
         """Initialize all components with the Matrix client."""
@@ -157,6 +178,11 @@ class MatrixObserver(Integration, BaseObserver):
             )
 
         self.encryption_handler = MatrixEncryptionHandler(self.client, self.user_id)
+
+        # After all components are initialized, make sure processing hub is set
+        if self.processing_hub and self.event_handler:
+            self.event_handler.processing_hub = self.processing_hub
+            logger.info("MatrixObserver: Processing hub set on event handler during component initialization")
 
         logger.info("MatrixObserver: All components initialized")
 
@@ -336,26 +362,69 @@ class MatrixObserver(Integration, BaseObserver):
             return await self.room_ops.leave_room(room_id, reason)
         return {"success": False, "error": "Room operations not initialized"}
 
-    def add_channel(self, channel_id: str, channel_name: str):
-        """Add a channel to monitor for backward compatibility."""
+    def add_channel(self, channel_id: str, channel_name: Optional[str] = None, force_fetch: bool = False):
+        """Add a channel to monitor - unified method."""
         if not self.enabled:
             logger.warning("Matrix observer is disabled - cannot add channel")
-            return
+            return False
             
+        # Add to monitoring list
         if channel_id not in self.channels_to_monitor:
             self.channels_to_monitor.append(channel_id)
         
-        if self.world_state:
-            # Use the world state manager to add the channel
-            from ...core.world_state.data_structures import Channel
-            channel = Channel(
-                id=channel_id,
-                name=channel_name,
-                type="matrix"
-            )
-            self.world_state.add_channel(channel)
-            
-        logger.info(f"MatrixObserver: Added channel {channel_name} ({channel_id}) to monitoring")
+        # If we have a simple channel name (legacy usage), just register with world state
+        if channel_name and not force_fetch:
+            if self.world_state:
+                # Use the world state manager to add the channel
+                from ...core.world_state.data_structures import Channel
+                channel = Channel(
+                    id=channel_id,
+                    name=channel_name,
+                    type="matrix"
+                )
+                self.world_state.add_channel(channel)
+                
+            logger.info(f"MatrixObserver: Added channel {channel_name} ({channel_id}) to monitoring")
+            return True
+        
+        # Otherwise try to fetch from client (async version)
+        if hasattr(self, 'client') and self.client:
+            try:
+                logger.info(f"MatrixObserver: Adding channel {channel_id} (force_fetch={force_fetch})")
+                
+                # Get the room object from the client
+                if not hasattr(self.client, 'rooms'):
+                    logger.error(f"MatrixObserver: Client not available for room {channel_id}")
+                    return False
+                
+                if channel_id not in self.client.rooms:
+                    logger.warning(f"MatrixObserver: Room {channel_id} not found in client rooms")
+                    return False
+                
+                room = self.client.rooms[channel_id]
+                
+                # Use the room manager to extract details and register the room
+                if self.room_manager:
+                    room_details = self.room_manager.extract_room_details(room)
+                    
+                    if room_details:
+                        # Use room manager's register_room method which includes message fetching
+                        self.room_manager.register_room(channel_id, room_details, room)
+                        logger.info(f"MatrixObserver: Successfully added channel {channel_id}")
+                        return True
+                    else:
+                        logger.warning(f"MatrixObserver: Failed to get details for channel {channel_id}")
+                        return False
+                else:
+                    logger.error(f"MatrixObserver: Room manager not initialized")
+                    return False
+                    
+            except Exception as e:
+                logger.error(f"MatrixObserver: Error adding channel {channel_id}: {e}")
+                return False
+        
+        logger.warning(f"MatrixObserver: Client not available for channel {channel_id}")
+        return False
 
     async def disconnect(self) -> None:
         """Disconnect from Matrix."""
@@ -444,42 +513,6 @@ class MatrixObserver(Integration, BaseObserver):
                     await temp_client.close()
                 except Exception as e:
                     logger.warning(f"MatrixObserver: Error closing test client: {e}")
-
-    async def add_channel(self, room_id: str, force_fetch: bool = False):
-        """Add a channel to be monitored - compatibility method"""
-        try:
-            logger.info(f"MatrixObserver: Adding channel {room_id} (force_fetch={force_fetch})")
-            
-            # Get the room object from the client
-            if not self.client or not hasattr(self.client, 'rooms'):
-                logger.error(f"MatrixObserver: Client not available for room {room_id}")
-                return False
-            
-            if room_id not in self.client.rooms:
-                logger.warning(f"MatrixObserver: Room {room_id} not found in client rooms")
-                return False
-            
-            room = self.client.rooms[room_id]
-            
-            # Use the room manager to extract details and register the room
-            if self.room_manager:
-                room_details = self.room_manager.extract_room_details(room)
-                
-                if room_details:
-                    # Use room manager's register_room method which includes message fetching
-                    self.room_manager.register_room(room_id, room_details, room)
-                    logger.info(f"MatrixObserver: Successfully added channel {room_id}")
-                    return True
-                else:
-                    logger.warning(f"MatrixObserver: Failed to get details for channel {room_id}")
-                    return False
-            else:
-                logger.error(f"MatrixObserver: Room manager not initialized")
-                return False
-                
-        except Exception as e:
-            logger.error(f"MatrixObserver: Error adding channel {room_id}: {e}")
-            return False
 
     async def _register_room_with_world_state(self, room_id: str, room_details: Dict[str, Any]):
         """Register a room with the world state manager."""
