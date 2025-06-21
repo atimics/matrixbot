@@ -44,7 +44,7 @@ async def _auto_post_to_gallery(
     results = {"gallery_success": True, "user_channel_success": True}
     
     # Post to gallery channel
-    if settings.matrix_media_gallery_room_id:
+    if settings.matrix.media_gallery_room_id:
         try:
             gallery_caption = (
                 f"🎨 **New {media_type.capitalize()} Generated**\n\n"
@@ -55,7 +55,7 @@ async def _auto_post_to_gallery(
 
             if media_type == "image":
                 tool = SendMatrixImageTool()
-                params = {"channel_id": settings.matrix_media_gallery_room_id, "image_url": media_url, "caption": gallery_caption}
+                params = {"channel_id": settings.matrix.media_gallery_room_id, "image_url": media_url, "caption": gallery_caption}
             elif media_type == "video":
                 tool = SendMatrixVideoLinkTool()
                 params = {
@@ -184,9 +184,9 @@ class GenerateImageTool(ToolInterface):
                         logger.warning(f"Google Gemini image generation failed: {e}")
 
             # Fallback to Replicate if Gemini failed or was not used
-            if not image_data and settings.REPLICATE_API_TOKEN:
+            if not image_data and settings.media.replicate_api_token:
                 try:
-                    replicate_client = ReplicateClient(api_token=settings.REPLICATE_API_TOKEN)
+                    replicate_client = ReplicateClient(api_token=settings.media.replicate_api_token)
                     replicate_image_url = await replicate_client.generate_image(prompt, aspect_ratio=aspect_ratio)
                     if replicate_image_url:
                         async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:

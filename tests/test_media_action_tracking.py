@@ -94,7 +94,7 @@ class TestMediaActionTracking:
         # Simulate settings required by GenerateImageTool
         with patch("chatbot.tools.media_generation_tools.settings") as mock_settings:
             mock_settings.media.google_api_key = "fake_google_key"
-            mock_settings.REPLICATE_API_TOKEN = None # To ensure Google path is tested first
+            mock_settings.media.replicate_api_token = None # To ensure Google path is tested first
             # These are needed for arweave_service to be considered configured by the tool
             mock_settings.ARWEAVE_UPLOADER_API_ENDPOINT = "http://mock-arweave-uploader.com"
             mock_settings.ARWEAVE_UPLOADER_API_KEY = "mock_arweave_key"
