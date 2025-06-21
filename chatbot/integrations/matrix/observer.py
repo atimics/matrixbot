@@ -10,7 +10,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Callable
 
 from nio import (
     AsyncClient,
@@ -77,6 +77,9 @@ class MatrixObserver(Integration, BaseObserver):
         self.sync_task: Optional[asyncio.Task] = None
         self.channels_to_monitor = []
         self.processing_hub = None
+        
+        # State change callback for orchestrator notifications (matches FarcasterObserver pattern)
+        self.on_state_change: Optional[Callable] = None
         
         # E2EE initialization lock to prevent race conditions
         self._e2ee_ready = asyncio.Event()
@@ -168,7 +171,8 @@ class MatrixObserver(Integration, BaseObserver):
                 self.user_id,
                 self.arweave_client,
                 self.processing_hub,
-                self.channels_to_monitor
+                self.channels_to_monitor,
+                observer=self  # Pass observer reference for state change callbacks
             )
         else:
             logger.warning("MatrixObserver: No world state manager provided")

@@ -28,7 +28,8 @@ class MatrixEventHandler:
         user_id: str,
         arweave_client=None,
         processing_hub=None,
-        channels_to_monitor: list = None
+        channels_to_monitor: list = None,
+        observer=None  # Reference to parent observer for state change callbacks
     ):
         self.world_state = world_state
         self.room_manager = room_manager
@@ -36,6 +37,7 @@ class MatrixEventHandler:
         self.arweave_client = arweave_client
         self.processing_hub = processing_hub
         self.channels_to_monitor = channels_to_monitor or []
+        self.observer = observer  # Store observer reference for state change callbacks
         
         # Debug logging for processing hub initialization
         logger.info(f"MatrixEventHandler.__init__: processing_hub={processing_hub is not None}, type={type(processing_hub)}")
@@ -100,6 +102,14 @@ class MatrixEventHandler:
         if not should_batch:
             # Add to world state immediately
             self.world_state.add_message(room.room_id, message)
+            
+            # Notify observer of world state change (triggers processing)
+            if self.observer and hasattr(self.observer, 'on_state_change') and self.observer.on_state_change:
+                try:
+                    self.observer.on_state_change()
+                    logger.debug(f"MatrixEventHandler: Triggered world state change callback for message from {message.sender}")
+                except Exception as e:
+                    logger.error(f"MatrixEventHandler: Error calling state change callback: {e}")
             
             # Update activity tracking for collapsed channel summaries
             await self._update_activity_tracking(room, message)
@@ -247,6 +257,14 @@ class MatrixEventHandler:
         
         # Add combined message to world state
         self.world_state.add_message(room.room_id, combined_message)
+        
+        # Notify observer of world state change (triggers processing)
+        if self.observer and hasattr(self.observer, 'on_state_change') and self.observer.on_state_change:
+            try:
+                self.observer.on_state_change()
+                logger.debug(f"MatrixEventHandler: Triggered world state change callback for batched messages from {combined_message.sender}")
+            except Exception as e:
+                logger.error(f"MatrixEventHandler: Error calling state change callback for batch: {e}")
         
         # Update activity tracking
         await self._update_activity_tracking(room, combined_message)
