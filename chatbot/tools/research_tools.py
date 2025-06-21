@@ -41,14 +41,53 @@ class UpdateResearchTool(ToolInterface):
     @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
-            "topic": "string (the main topic or subject, will be normalized)",
-            "summary": "string (concise summary of what you learned about this topic)",
-            "key_facts": "list of strings (important facts or data points)",
-            "sources": "list of strings (URLs, documents, or sources where info came from)",
-            "confidence_level": "integer 1-10 (confidence in information accuracy, default 5)",
-            "tags": "list of strings (optional: tags for categorization)",
-            "related_topics": "list of strings (optional: related topic keys)",
-            "verification_notes": "string (optional: notes about verification or concerns)"
+            "type": "object",
+            "properties": {
+                "topic": {
+                    "type": "string",
+                    "description": "The main topic or subject, will be normalized"
+                },
+                "summary": {
+                    "type": "string",
+                    "description": "Concise summary of what you learned about this topic"
+                },
+                "key_facts": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Important facts or data points",
+                    "default": []
+                },
+                "sources": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "URLs, documents, or sources where info came from",
+                    "default": []
+                },
+                "confidence_level": {
+                    "type": "integer",
+                    "description": "Confidence in information accuracy (1-10)",
+                    "minimum": 1,
+                    "maximum": 10,
+                    "default": 5
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Tags for categorization",
+                    "default": []
+                },
+                "related_topics": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Related topic keys",
+                    "default": []
+                },
+                "verification_notes": {
+                    "type": "string",
+                    "description": "Notes about verification or concerns"
+                }
+            },
+            "required": ["topic", "summary"]
         }
 
     async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
@@ -179,11 +218,38 @@ class QueryResearchTool(ToolInterface):
     @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
-            "topic": "string (optional: specific topic to look up)",
-            "search_terms": "list of strings (optional: search for entries containing these terms)",
-            "tags": "list of strings (optional: find entries with these tags)",
-            "min_confidence": "integer 1-10 (optional: minimum confidence level filter)",
-            "max_results": "integer (optional: limit number of results, default 10)"
+            "type": "object",
+            "properties": {
+                "topic": {
+                    "type": "string",
+                    "description": "Specific topic to look up"
+                },
+                "search_terms": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Search for entries containing these terms",
+                    "default": []
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Find entries with these tags",
+                    "default": []
+                },
+                "min_confidence": {
+                    "type": "integer",
+                    "description": "Minimum confidence level filter (1-10)",
+                    "minimum": 1,
+                    "maximum": 10
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Limit number of results",
+                    "default": 10,
+                    "minimum": 1
+                }
+            },
+            "required": []
         }
 
     async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
