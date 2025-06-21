@@ -22,14 +22,14 @@ class SendMatrixReplyTool(ToolInterface):
 
     @property
     def description(self) -> str:
-        return ("Reply to a specific message in a Matrix channel. If reply_to_id is not provided, will send as a regular message to the channel. "
+        return ("Reply to a specific message in a Matrix channel. Use \'room_id\' for the channel and \'message\' for the content. If reply_to_id is not provided, will send as a regular message to the channel. "
                 "Recently generated media (within 5 minutes) will be automatically attached as a separate image message if no explicit image_url is provided.")
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
-            "channel_id": "string (Matrix room ID) - The room where the reply should be sent",
-            "content": "string - The message content to send as a reply (supports markdown formatting)",
+            "room_id": "string (Matrix room ID) - The room where the reply should be sent",
+            "message": "string - The message content to send as a reply (supports markdown formatting)",
             "reply_to_id": "string (optional) - The event ID of the message to reply to. If not provided, sends as regular message",
             "format_as_markdown": "boolean (optional, default: true) - Whether to format the content as markdown",
             "image_url": "string (optional) - URL of an image to attach. If not provided, recently generated media will be auto-attached",
@@ -50,18 +50,18 @@ class SendMatrixReplyTool(ToolInterface):
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
-        # Extract and validate parameters
-        room_id = params.get("channel_id")
-        content = params.get("content")
+        # Extract and validate parameters, supporting both new and legacy names
+        room_id = params.get("room_id") or params.get("channel_id")
+        content = params.get("message") or params.get("content")
         reply_to_event_id = params.get("reply_to_id")
         format_as_markdown = params.get("format_as_markdown", True)
         image_url = params.get("image_url")
 
         missing_params = []
         if not room_id:
-            missing_params.append("channel_id")
+            missing_params.append("room_id (or channel_id)")
         if not content:
-            missing_params.append("content")
+            missing_params.append("message (or content)")
 
         if missing_params:
             error_msg = f"Missing required parameters for Matrix reply: {', '.join(missing_params)}"
