@@ -248,6 +248,7 @@ class MainOrchestrator:
         # Core tools
         self.tool_registry.register_tool(WaitTool())
         self.tool_registry.register_tool(LogInternalMonologueTool())
+        self.tool_registry.register_tool(RequestProcessingCycleTool())
         self.tool_registry.register_tool(DescribeImageTool())
         
         # Web search and research tools
