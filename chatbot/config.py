@@ -3,6 +3,7 @@ Centralized Configuration Management
 
 This module provides centralized configuration management for the RatiChat application.
 It loads and validates configuration from environment variables and .env files.
+Enhanced with nested configuration sections for better organization.
 """
 
 import os
@@ -12,92 +13,250 @@ from typing import Optional, List
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+class MatrixConfig(BaseSettings):
+    """Matrix-specific configuration."""
+    
+    model_config = SettingsConfigDict(env_prefix="MATRIX_")
+    
+    homeserver: Optional[str] = None
+    user_id: Optional[str] = None
+    password: Optional[str] = None
+    room_id: str = "#robot-laboratory:chat.ratimics.com"
+    device_id: Optional[str] = None
+    media_gallery_room_id: Optional[str] = None
+    device_name: str = "ratichat_bot"
+    
+    # Auto-posting configuration
+    auto_attach_media: bool = False
+    gallery_auto_post: bool = True
+
+
+class FarcasterConfig(BaseSettings):
+    """Farcaster-specific configuration."""
+    
+    model_config = SettingsConfigDict(env_prefix="FARCASTER_")
+    
+    neynar_api_key: Optional[str] = None
+    bot_fid: Optional[str] = None
+    bot_signer_uuid: Optional[str] = None
+    bot_username: Optional[str] = None
+    
+    # Auto-posting configuration
+    auto_attach_media: bool = True
+    min_post_interval_minutes: int = 1
+    duplicate_check_hours: int = 1
+    recent_posts_limit: int = 10
+    
+    # API configuration
+    api_timeout: float = 30.0
+    api_max_retries: int = 3
+    api_base_delay: float = 1.0
+    api_max_delay: float = 60.0
+
+
+class AIConfig(BaseSettings):
+    """AI and language model configuration."""
+    
+    model_config = SettingsConfigDict(env_prefix="AI_")
+    
+    model: str = "openai/gpt-4o-mini"
+    multimodal_model: str = "openai/gpt-4o"
+    summary_model: str = "openai/gpt-4o-mini"
+    web_search_model: str = "openai/gpt-4o-mini:online"
+    
+    # Payload optimization
+    conversation_history_length: int = 3
+    action_history_length: int = 15
+    thread_history_length: int = 2
+    other_channels_summary_count: int = 1
+    other_channels_message_snippet_length: int = 50
+    include_detailed_user_info: bool = False
+    context_token_threshold: int = 8000
+    
+    # Debugging and analysis
+    enable_prompt_logging: bool = True
+    log_full_prompts: bool = False
+    log_token_usage: bool = True
+    log_prompt_preview_length: int = 200
+    dump_payloads_to_file: bool = False
+    payload_dump_directory: str = "data/payload_dumps"
+    payload_dump_max_files: int = 50
+    optimization_level: str = "balanced"
+
+
+class MediaConfig(BaseSettings):
+    """Media generation and storage configuration."""
+    
+    model_config = SettingsConfigDict(env_prefix="MEDIA_")
+    
+    # Replicate configuration
+    replicate_api_token: Optional[str] = None
+    replicate_image_model: str = "stability-ai/sdxl"
+    replicate_lora_weights_url: Optional[str] = None
+    replicate_lora_scale: Optional[float] = 0.75
+    
+    # Google AI configuration
+    google_api_key: Optional[str] = None
+    google_gemini_image_model: str = "gemini-1.5-flash-latest"
+    google_veo_video_model: str = "models/veo-experimental-v1"
+    
+    # Cooldowns and limits
+    image_generation_cooldown_seconds: int = 120
+    video_generation_cooldown_seconds: int = 600
+    max_image_generations_per_hour: int = 15
+    max_video_generations_per_hour: int = 5
+    
+    # Archival
+    popular_archival_threshold_likes: int = 5
+    popular_archival_interval_minutes: int = 30
+
+
+class StorageConfig(BaseSettings):
+    """Storage configuration for different services."""
+    
+    model_config = SettingsConfigDict(env_prefix="STORAGE_")
+    
+    # S3 configuration
+    s3_api_key: Optional[str] = None
+    s3_api_endpoint: Optional[str] = None
+    s3_cloudfront_domain: Optional[str] = None
+    s3_upload_timeout: float = 120.0
+    use_s3_for_media: bool = True
+    
+    # Arweave configuration
+    arweave_internal_uploader_service_url: str = "http://arweave-uploader:8001"
+    arweave_gateway_url: str = "https://arweave.net"
+
+
+class SecurityConfig(BaseSettings):
+    """Security configuration."""
+    
+    model_config = SettingsConfigDict(env_prefix="SECURITY_")
+    
+    api_key: Optional[str] = None
+    allowed_origins: List[str] = ["http://localhost:3000"]
+    trusted_hosts: List[str] = ["localhost", "127.0.0.1"]
+    rate_limit_requests_per_minute: int = 60
+    rate_limit_burst_size: int = 100
+    enable_api_key_auth: bool = True
+
+
+class EcosystemConfig(BaseSettings):
+    """Ecosystem token and community configuration."""
+    
+    model_config = SettingsConfigDict(env_prefix="ECOSYSTEM_")
+    
+    token_contract_address: Optional[str] = "Ci6Y1UX8bY4jxn6YiogJmdCxFEu2jmZhCcG65PStpump"
+    token_network: str = "solana"
+    num_top_holders_to_track: int = 10
+    top_holders_update_interval_minutes: int = 60
+    holder_cast_history_length: int = 5
+
+
+class NodeSystemConfig(BaseSettings):
+    """Node-based processing system configuration."""
+    
+    model_config = SettingsConfigDict(env_prefix="NODE_")
+    
+    max_expanded_nodes: int = 8
+    default_pinned_nodes: List[str] = [
+        "channels.matrix.primary",
+        "system.notifications", 
+        "system.rate_limits"
+    ]
+    enable_two_phase_ai_process: bool = False
+    max_exploration_rounds: int = 3
+
+
 class AppConfig(BaseSettings):
-    """Centralized application configuration loaded from environment variables."""
+    """
+    Centralized application configuration with nested sections.
+    This provides better organization and maintainability.
+    """
 
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
 
-    # Chatbot Core
-    CHATBOT_DB_PATH: str = "data/chatbot.db"
-    OBSERVATION_INTERVAL: float = 2.0
-    MAX_CYCLES_PER_HOUR: int = 300
-    MAX_ACTIONS_PER_HOUR: int = 600
-    AI_MODEL: str = "openai/gpt-4o-mini"
-    AI_MULTIMODAL_MODEL: str = "openai/gpt-4o"  # Model for image/video analysis
-    OPENROUTER_API_KEY: Optional[str] = None  # Made optional for demo mode
-    LOG_LEVEL: str = "INFO"
+    # Core application settings
+    chatbot_db_path: str = "data/chatbot.db"
+    observation_interval: float = 2.0
+    max_cycles_per_hour: int = 300
+    max_actions_per_hour: int = 600
+    log_level: str = "INFO"
     
-    # Web Search and Research
-    WEB_SEARCH_MODEL: str = "openai/gpt-4o-mini:online"  # OpenRouter online model for web search
-
-    # Matrix (Optional since we removed Synapse dependency)
-    MATRIX_HOMESERVER: Optional[str] = None
-    MATRIX_USER_ID: Optional[str] = None
-    MATRIX_PASSWORD: Optional[str] = None
-    MATRIX_ROOM_ID: str = (
-        "#robot-laboratory:chat.ratimics.com"  # Default initial room to monitor
-    )
-    MATRIX_DEVICE_ID: Optional[str] = None
-    MATRIX_MEDIA_GALLERY_ROOM_ID: Optional[str] = None  # Dedicated channel for auto-posting generated media
-    DEVICE_NAME: str = "ratichat_bot"
-
-    # Matrix Auto-Posting Configuration
-    MATRIX_AUTO_ATTACH_MEDIA: bool = False  # Auto-attach recent media to Matrix messages (disabled by default)
-    MATRIX_GALLERY_AUTO_POST: bool = True   # Auto-post generated media to gallery room (enabled by default)
-
-    # Farcaster (Optional)
-    NEYNAR_API_KEY: Optional[str] = None
-    FARCASTER_BOT_FID: Optional[str] = None
-    FARCASTER_BOT_SIGNER_UUID: Optional[str] = None
-    FARCASTER_BOT_USERNAME: Optional[str] = None  # Bot's username for filtering
+    # OpenRouter API configuration
+    openrouter_api_key: Optional[str] = None
+    your_site_url: Optional[str] = None
+    your_site_name: Optional[str] = None
     
-    # Farcaster Auto-Posting Configuration  
-    FARCASTER_AUTO_ATTACH_MEDIA: bool = True  # Auto-attach recent media to Farcaster posts (enabled by default)
+    # Primary LLM provider
+    primary_llm_provider: str = "openrouter"
     
-    # Farcaster Rate Limiting and Context
-    FARCASTER_MIN_POST_INTERVAL_MINUTES: int = 1  # Minimum minutes between posts
-    FARCASTER_DUPLICATE_CHECK_HOURS: int = 1  # Hours to look back for duplicate content
-    FARCASTER_RECENT_POSTS_LIMIT: int = 10  # Number of recent posts to fetch for context
+    # Ollama configuration (optional)
+    ollama_api_url: Optional[str] = "http://localhost:11434"
+    ollama_default_chat_model: Optional[str] = "llama3"
+    ollama_default_summary_model: Optional[str] = "llama3"
     
-    # Farcaster Network Configuration
-    NEYNAR_API_BASE_URL: Optional[str] = None  # Override default Neynar API base URL
-    FARCASTER_API_TIMEOUT: float = 30.0  # API request timeout in seconds
-    FARCASTER_API_MAX_RETRIES: int = 3  # Maximum retry attempts for failed requests
-    FARCASTER_API_BASE_DELAY: float = 1.0  # Base delay for exponential backoff (seconds)
-    FARCASTER_API_MAX_DELAY: float = 60.0  # Maximum delay between retries (seconds)
+    # Tool cooldowns
+    store_memory_cooldown_seconds: int = 60
+    max_memories_stored_per_hour: int = 30
+    
+    # NFT & Airdrop configuration
+    nft_dev_wallet_private_key: Optional[str] = None
+    base_rpc_url: Optional[str] = None
+    nft_collection_name: str = "AI Collective"
+    nft_collection_symbol: str = "AIC"
+    nft_collection_address_base: Optional[str] = None
+    nft_metadata_upload_service: str = "arweave"
+    
+    # Frame server configuration
+    frames_base_url: Optional[str] = None
+    frames_webhook_secret: Optional[str] = None
+    
+    # Airdrop eligibility
+    airdrop_min_ecosystem_token_balance_sol: float = 1000.0
+    airdrop_min_ecosystem_nft_count_base: int = 1
+    airdrop_eligibility_check_interval_hours: int = 6
+    
+    # GitHub integration
+    github_token: Optional[str] = None
+    github_username: Optional[str] = None
 
-    # Ecosystem Token Tracking
-    ECOSYSTEM_TOKEN_CONTRACT_ADDRESS: Optional[str] = "Ci6Y1UX8bY4jxn6YiogJmdCxFEu2jmZhCcG65PStpump"  # Contract address of the token
-    ECOSYSTEM_TOKEN_NETWORK: str = "solana"  # Network of the token (ethereum, optimism, base, arbitrum, solana)
-    NUM_TOP_HOLDERS_TO_TRACK: int = 10  # Number of top holders to monitor
-    TOP_HOLDERS_UPDATE_INTERVAL_MINUTES: int = 60  # How often to refresh the top holders list
-    HOLDER_CAST_HISTORY_LENGTH: int = 5  # Number of recent casts to store per holder
-
-    # OpenRouter specific from original .env.example (these might be for other services or documentation)
-    YOUR_SITE_URL: Optional[str] = None
-    YOUR_SITE_NAME: Optional[str] = None
-
-    # Ollama (Optional - from .env.example)
-    PRIMARY_LLM_PROVIDER: str = "openrouter"
-    OLLAMA_API_URL: Optional[str] = "http://localhost:11434"
-    OLLAMA_DEFAULT_CHAT_MODEL: Optional[str] = "llama3"
-    OLLAMA_DEFAULT_SUMMARY_MODEL: Optional[str] = "llama3"
-    # AI payload truncation settings - aggressively optimized to prevent 402/413 errors
-    AI_CONVERSATION_HISTORY_LENGTH: int = 3  # Max messages per channel for AI payload (reduced from 7)
-    AI_ACTION_HISTORY_LENGTH: int = 15  # Max actions in history for AI payload (increased from 2 to prevent action loops)
-    AI_THREAD_HISTORY_LENGTH: int = 2  # Max thread messages for AI payload (reduced from 3)
-    AI_OTHER_CHANNELS_SUMMARY_COUNT: int = (
-        1  # How many other active channels to summarize (reduced from 2)
-    )
-    AI_OTHER_CHANNELS_MESSAGE_SNIPPET_LENGTH: int = (
-        50  # Length of snippet for other channels (reduced from 75)
-    )
-    AI_INCLUDE_DETAILED_USER_INFO: bool = (
-        False  # Include full user metadata or summarize - False reduces payload size significantly
-    )
-    AI_CONTEXT_TOKEN_THRESHOLD: int = 8000  # Switch to node-based payload when estimated tokens exceed this (reduced from 12000)
+    # Nested configuration sections
+    matrix: MatrixConfig = MatrixConfig()
+    farcaster: FarcasterConfig = FarcasterConfig()
+    ai: AIConfig = AIConfig()
+    media: MediaConfig = MediaConfig()
+    storage: StorageConfig = StorageConfig()
+    security_config: SecurityConfig = SecurityConfig()  # Renamed to avoid conflict
+    ecosystem: EcosystemConfig = EcosystemConfig()
+    node_system: NodeSystemConfig = NodeSystemConfig()
+    
+    # Backward compatibility properties
+    @property
+    def MATRIX_HOMESERVER(self) -> Optional[str]:
+        return self.matrix.homeserver
+    
+    @property
+    def MATRIX_USER_ID(self) -> Optional[str]:
+        return self.matrix.user_id
+    
+    @property
+    def MATRIX_PASSWORD(self) -> Optional[str]:
+        return self.matrix.password
+    
+    @property
+    def NEYNAR_API_KEY(self) -> Optional[str]:
+        return self.farcaster.neynar_api_key
+    
+    @property
+    def AI_MODEL(self) -> str:
+        return self.ai.model
+    
+    @property
+    def OPENROUTER_API_KEY(self) -> Optional[str]:
+        return self.openrouter_api_key
     
     # AI Debugging and Analysis Configuration
     AI_ENABLE_PROMPT_LOGGING: bool = True  # Enable detailed prompt logging for analysis
