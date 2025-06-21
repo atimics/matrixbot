@@ -396,7 +396,33 @@ class NodeProcessor:
             # Log the AI's reasoning for this step
             if decision_result.get('reasoning'):
                 logger.debug(f"AI Reasoning for step {step}: {decision_result['reasoning']}")
-            return decision_result.get('selected_actions', [])
+            
+            actions = decision_result.get('selected_actions', [])
+            
+            # Robustness Fix: Handle cases where the AI generates a direct message
+            if not actions and decision_result.get('message'):
+                logger.warning("AI generated a direct message instead of a tool call. Converting to a reply action.")
+                primary_channel_id = payload_data.get("processing_context", {}).get("primary_channel")
+                if primary_channel_id:
+                    # Determine platform based on channel ID format or context
+                    if "@" in primary_channel_id and ":" in primary_channel_id:
+                        # Matrix room format
+                        action_type = "send_matrix_reply"
+                    else:
+                        # Assume Farcaster for other formats
+                        action_type = "send_farcaster_post"
+                    
+                    actions.append({
+                        "action_type": action_type,
+                        "parameters": {
+                            "channel_id": primary_channel_id,
+                            "message": decision_result['message'],
+                            # Note: reply_to_id might be missing here, but it's better than doing nothing.
+                        },
+                        "reasoning": f"Fallback: Converted direct message to a tool call. Original reasoning: {decision_result.get('reasoning', 'N/A')}"
+                    })
+            
+            return actions
         except Exception as e:
             logger.error(f"Error in AI action selection for cycle {cycle_id}, step {step}: {e}", exc_info=True)
             return []
@@ -1603,6 +1629,29 @@ class NodeProcessor:
             
             # Extract actions from the result
             planned_actions = decision_result.get('selected_actions', [])
+
+            # Robustness Fix: Handle cases where the AI generates a direct message
+            if not planned_actions and decision_result.get('message'):
+                logger.warning("AI generated a direct message instead of a tool call. Converting to a reply action.")
+                primary_channel_id = payload.get("processing_context", {}).get("primary_channel")
+                if primary_channel_id:
+                    # Determine platform based on channel ID format or context
+                    if "@" in primary_channel_id and ":" in primary_channel_id:
+                        # Matrix room format
+                        action_type = "send_matrix_reply"
+                    else:
+                        # Assume Farcaster for other formats
+                        action_type = "send_farcaster_post"
+                    
+                    planned_actions.append({
+                        "action_type": action_type,
+                        "parameters": {
+                            "channel_id": primary_channel_id,
+                            "message": decision_result['message'],
+                            # Note: reply_to_id might be missing here, but it's better than doing nothing.
+                        },
+                        "reasoning": f"Fallback: Converted direct message to a tool call. Original reasoning: {decision_result.get('reasoning', 'N/A')}"
+                    })
             
             # Filter out 'wait' actions since we're building a backlog
             actionable_plans = [

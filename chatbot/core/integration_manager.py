@@ -25,9 +25,10 @@ logger = logging.getLogger(__name__)
 class IntegrationManager:
     """Manages all service integrations for the chatbot"""
     
-    def __init__(self, db_path: str, encryption_key: Optional[bytes] = None, world_state_manager=None):
+    def __init__(self, db_path: str, encryption_key: Optional[bytes] = None, world_state_manager=None, processing_hub=None):
         self.db_path = db_path
         self.world_state_manager = world_state_manager
+        self.processing_hub = processing_hub
         self.active_integrations: Dict[str, Integration] = {}
         self.integration_types: Dict[str, Type[Integration]] = {}
         
@@ -272,7 +273,8 @@ class IntegrationManager:
                 integration_id=integration_id,
                 display_name=integration_data['display_name'],
                 config=config,
-                world_state_manager=world_state_manager
+                world_state_manager=world_state_manager,
+                processing_hub=self.processing_hub
             )
         elif integration_data['integration_type'] == 'farcaster':
             integration = integration_class(
@@ -282,7 +284,8 @@ class IntegrationManager:
                 api_key=credentials.get('api_key'),
                 signer_uuid=credentials.get('signer_uuid'),
                 bot_fid=credentials.get('bot_fid'),
-                world_state_manager=world_state_manager
+                world_state_manager=world_state_manager,
+                processing_hub=self.processing_hub
             )
         else:
             # Generic constructor for future integrations
@@ -656,3 +659,13 @@ class IntegrationManager:
         except Exception as e:
             logger.error(f"Error removing integration {integration_id} from database: {e}", exc_info=True)
             return False
+    
+    def set_processing_hub(self, processing_hub):
+        """Set the processing hub for all integrations after initialization."""
+        self.processing_hub = processing_hub
+        # Update any already active integrations
+        for integration in self.active_integrations.values():
+            if hasattr(integration, 'set_processing_hub'):
+                integration.set_processing_hub(processing_hub)
+            elif hasattr(integration, 'processing_hub'):
+                integration.processing_hub = processing_hub
