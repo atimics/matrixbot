@@ -161,15 +161,12 @@ class PayloadBuilder:
             if not path_parts:
                 continue
 
-            # Route to the appropriate handler in NodeDataHandlers
-            handler_method_name = f"get_{path_parts[0]}_node_data"
-            handler_method = getattr(self.node_data_handlers, handler_method_name, None)
-
-            node_data = None
-            if handler_method:
-                node_data = handler_method(world_state_data, path_parts, expanded=metadata.is_expanded)
-            else:
-                self.logger.warning(f"No data handler found for node type: {path_parts[0]}")
+            # Use the NodeDataHandlers interface to get node data
+            node_data = self.node_data_handlers.get_node_data_by_path(
+                world_state_data, 
+                node_path, 
+                expanded=metadata.is_expanded
+            )
 
             if metadata.is_expanded:
                 if node_data:
