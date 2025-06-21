@@ -9,18 +9,24 @@ while permanently storing all valid state change blocks for later use as trainin
 import asyncio
 import json
 import logging
+import re
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+from sqlmodel import select, desc
+
 from .world_state import WorldStateManager
-from .history_recorder import HistoryRecorder, StateChangeBlock
+from .persistence import (
+    DatabaseManager,
+    ConsolidatedHistoryRecorder,
+    StateChangeRecord,
+)
+from .history_recorder import StateChangeBlock
+
 
 logger = logging.getLogger(__name__)
-
-
-# Remove duplicate StateChangeBlock definition - now imported from history_recorder
 
 
 @dataclass
@@ -37,13 +43,12 @@ class ConversationContext:
 class ContextManager:
     """Manages conversation context with evolving world state and permanent state storage"""
 
-    def __init__(self, world_state_manager: WorldStateManager, db_path: str):
+    def __init__(self, world_state_manager: WorldStateManager, db_manager: DatabaseManager):
         self.world_state = world_state_manager
-        self.db_path = db_path
         self.contexts: Dict[str, ConversationContext] = {}
         
-        # Use HistoryRecorder for state change persistence
-        self.history_recorder = HistoryRecorder(db_path)
+        # Use ConsolidatedHistoryRecorder for state change persistence
+        self.history_recorder = ConsolidatedHistoryRecorder(db_manager)
         # Track state changes in-memory for easy inspection
         self.state_changes: List[StateChangeBlock] = []
 
@@ -51,7 +56,7 @@ class ContextManager:
         self.storage_path = Path("context_storage")
         self.storage_path.mkdir(parents=True, exist_ok=True)
 
-        logger.info("ContextManager: Initialized with HistoryRecorder for state persistence")
+        logger.info("ContextManager: Initialized with ConsolidatedHistoryRecorder for state persistence")
 
     async def get_context(self, channel_id: str) -> ConversationContext:
         """Get or create conversation context for a channel"""
@@ -207,8 +212,6 @@ Base your decisions on the current world state and user messages."""
                     return parsed
 
             # Try to find JSON within markdown code blocks
-            import re
-
             json_match = re.search(
                 r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL
             )
@@ -267,11 +270,24 @@ Base your decisions on the current world state and user messages."""
         logger.debug(f"ContextManager: Added world state update: {update_type}")
 
     async def _store_state_change(self, state_change: StateChangeBlock):
-        """Permanently store a state change block using HistoryRecorder"""
+        """Permanently store a state change block using ConsolidatedHistoryRecorder"""
         # Record in-memory state changes list
         self.state_changes.append(state_change)
-        # Persist state change using HistoryRecorder
-        await self.history_recorder.record_state_change(state_change)
+        # Persist state change using ConsolidatedHistoryRecorder
+        data_to_store = {
+            "source": state_change.source,
+            "observations": state_change.observations,
+            "potential_actions": state_change.potential_actions,
+            "selected_actions": state_change.selected_actions,
+            "reasoning": state_change.reasoning,
+            "raw_content": state_change.raw_content,
+        }
+
+        await self.history_recorder.record_state_change(
+            change_type=state_change.change_type,
+            data=data_to_store,
+            channel_id=state_change.channel_id,
+        )
 
     async def get_conversation_messages(
         self, channel_id: str, include_system: bool = True
@@ -311,23 +327,58 @@ Base your decisions on the current world state and user messages."""
         change_type: Optional[str] = None,
         since_timestamp: Optional[float] = None,
         limit: int = 100,
-    ) -> List[StateChangeBlock]:
-        """Retrieve stored state changes with filtering using HistoryRecorder"""
-        return await self.history_recorder.get_state_changes(
-            channel_id=channel_id,
-            change_type=change_type,
-            since_timestamp=since_timestamp,
-            limit=limit
-        )
+    ) -> List[Dict[str, Any]]:
+        """Retrieve stored state changes with filtering using ConsolidatedHistoryRecorder"""
+        async with self.history_recorder.db_manager.get_session() as session:
+            query = select(StateChangeRecord).order_by(desc(StateChangeRecord.timestamp))
+            if channel_id:
+                query = query.where(StateChangeRecord.channel_id == channel_id)
+            if change_type:
+                query = query.where(StateChangeRecord.change_type == change_type)
+            if since_timestamp:
+                query = query.where(StateChangeRecord.timestamp > since_timestamp)
+
+            query = query.limit(limit)
+            result = await session.execute(query)
+            records = result.scalars().all()
+
+            state_changes = []
+            for record in records:
+                data = json.loads(record.data)
+                state_changes.append(
+                    {
+                        "timestamp": record.timestamp,
+                        "change_type": record.change_type,
+                        "channel_id": record.channel_id,
+                        "source": data.get("source"),
+                        "observations": data.get("observations"),
+                        "potential_actions": data.get("potential_actions"),
+                        "selected_actions": data.get("selected_actions"),
+                        "reasoning": data.get("reasoning"),
+                        "raw_content": data.get("raw_content"),
+                    }
+                )
+            return state_changes
 
     async def export_state_changes_for_training(
         self, output_path: str, format: str = "jsonl"
     ) -> str:
-        """Export state changes for training or analysis using HistoryRecorder"""
-        return await self.history_recorder.export_state_changes_for_training(
-            output_path=output_path,
-            format=format
+        """Export state changes for training or analysis using ConsolidatedHistoryRecorder"""
+        await self.history_recorder.export_for_training(
+            output_file=output_path
         )
+
+        if format == "jsonl":
+            with open(output_path, "r") as f:
+                data = json.load(f)
+            
+            state_changes = data.get("state_changes", [])
+            with open(output_path, "w") as f:
+                for item in state_changes:
+                    f.write(json.dumps(item) + "\n")
+            return f"Exported {len(state_changes)} state changes to {output_path} in jsonl format."
+        else:
+            return f"Exported data to {output_path} in json format."
 
     async def clear_context(self, channel_id: str):
         """Clear conversation context for a channel (but keep state changes)"""
