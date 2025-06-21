@@ -209,10 +209,32 @@ class CreatePollFrameTool(ToolInterface):
     @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
-            "question": "string (the poll question to ask)",
-            "options": "list of strings (2-4 poll options for users to choose from)",
-            "duration_hours": "integer (optional - how long the poll runs, default: 24 hours)",
-            "allow_multiple_votes": "boolean (optional - whether users can select multiple options, default: false)"
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": "The poll question to ask"
+                },
+                "options": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "2-4 poll options for users to choose from",
+                    "minItems": 2,
+                    "maxItems": 4
+                },
+                "duration_hours": {
+                    "type": "integer",
+                    "description": "How long the poll runs in hours",
+                    "default": 24,
+                    "minimum": 1
+                },
+                "allow_multiple_votes": {
+                    "type": "boolean",
+                    "description": "Whether users can select multiple options",
+                    "default": false
+                }
+            },
+            "required": ["question", "options"]
         }
 
     async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
