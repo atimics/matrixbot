@@ -104,9 +104,9 @@ async def generate_image_from_description(
                     logger.warning(f"Google Gemini image generation failed: {e}")
 
         # Fallback to Replicate if Gemini failed or was not used
-        if not image_data and settings.REPLICATE_API_TOKEN:
+        if not image_data and settings.media.replicate_api_token:
             try:
-                replicate_client = ReplicateClient(api_token=settings.REPLICATE_API_TOKEN)
+                replicate_client = ReplicateClient(api_token=settings.media.replicate_api_token)
                 replicate_image_url = await replicate_client.generate_image(image_description, aspect_ratio=aspect_ratio)
                 if replicate_image_url:
                     async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
