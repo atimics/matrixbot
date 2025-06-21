@@ -141,7 +141,7 @@ class SendMatrixReplyTool(ToolInterface):
                     media_service = context.get_media_service("matrix")
                     if media_service:
                         image_result = await media_service.send_image(
-                            channel_id=room_id,
+                            channel_id=channel_id,
                             image_url=image_url
                         )
                         if image_result.get("status") == "success":
