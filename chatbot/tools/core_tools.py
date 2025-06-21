@@ -60,7 +60,7 @@ class WaitTool(ToolInterface):
 
 class LogInternalMonologueTool(ToolInterface):
     """
-    Tool for logging the AI's internal monologue.
+    A tool for the AI to record its internal thoughts or observations.
     """
 
     @property
@@ -69,28 +69,59 @@ class LogInternalMonologueTool(ToolInterface):
 
     @property
     def description(self) -> str:
-        return "Log the AI's internal thoughts for debugging or analysis."
+        return "Record a thought, observation, or internal monologue note to your private log. Use this when you have something to say but no external action is appropriate."
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
             "type": "object",
             "properties": {
-                "message": {
+                "thought": {
                     "type": "string",
-                    "description": "The internal thought message to log",
+                    "description": "The thought, observation, or reflection to be logged."
                 }
             },
-            "required": ["message"],
+            "required": ["thought"]
         }
 
     async def execute(
         self, params: Dict[str, Any], context: ActionContext
     ) -> Dict[str, Any]:
         """
-        Execute the log internal monologue action by logging the provided message.
+        Executes the action by creating a special message in the world state.
         """
-        message = params["message"]
-        logger.info(f"Internal Monologue: {message}")
+        thought = params.get("thought")
+        if not thought:
+            return {"status": "failure", "error": "Thought content cannot be empty."}
 
-        return {"status": "success", "message": "Monologue logged."}
+        if not context.world_state_manager:
+            logger.warning("WorldStateManager not available. Cannot log internal monologue.")
+            return {"status": "failure", "error": "World state manager not available."}
+            
+        try:
+            # Define a dedicated internal channel ID
+            internal_channel_id = "system:internal_monologue"
+
+            # Create a message object for the monologue
+            monologue_message = Message(
+                id=f"monologue_{int(time.time() * 1000)}",
+                channel_id=internal_channel_id,
+                channel_type="internal",
+                sender="SYSTEM_AI",
+                content=thought,
+                timestamp=time.time()
+            )
+
+            # Add this message to the world state
+            context.world_state_manager.add_message(internal_channel_id, monologue_message)
+
+            logger.debug(f"Logged internal monologue: '{thought[:100]}...'")
+
+            return {
+                "status": "success",
+                "message": "Internal monologue logged successfully.",
+                "timestamp": time.time()
+            }
+        except Exception as e:
+            logger.error(f"Error logging internal monologue: {e}", exc_info=True)
+            return {"status": "failure", "error": str(e)}

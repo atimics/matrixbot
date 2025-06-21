@@ -401,9 +401,12 @@ class NodeProcessor:
             
             # Handle cases where the AI generates a direct message (inner monologue)
             if not actions and decision_result.get('message'):
-                logger.info(f"🧠 AI Inner Monologue: {decision_result['message']}")
-                # This is internal AI reasoning/thinking - don't convert to external actions
-                # Just log it and let the cycle continue without executing external actions
+                logger.warning("AI generated a direct message instead of a tool call. Converting to internal monologue.")
+                actions.append({
+                    "action_type": "log_internal_monologue",
+                    "parameters": {"thought": decision_result['message']},
+                    "reasoning": "AI generated a direct thought instead of an external action."
+                })
             
             return actions
         except Exception as e:
@@ -1622,9 +1625,12 @@ class NodeProcessor:
 
             # Handle cases where the AI generates a direct message (inner monologue)
             if not planned_actions and decision_result.get('message'):
-                logger.info(f"🧠 AI Inner Monologue: {decision_result['message']}")
-                # This is internal AI reasoning/thinking - don't convert to external actions
-                # Just log it and let the cycle continue without executing external actions
+                logger.warning("AI generated a direct message instead of a tool call. Converting to internal monologue.")
+                planned_actions.append({
+                    "action_type": "log_internal_monologue",
+                    "parameters": {"thought": decision_result['message']},
+                    "reasoning": "AI generated a direct thought instead of an external action."
+                })
             
             # Filter out 'wait' actions since we're building a backlog
             actionable_plans = [

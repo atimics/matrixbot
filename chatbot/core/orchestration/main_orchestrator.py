@@ -174,7 +174,7 @@ class MainOrchestrator:
 
     def _register_all_tools(self):
         """Register all available tools with the tool registry."""
-        from ...tools.core_tools import WaitTool
+        from ...tools.core_tools import WaitTool, LogInternalMonologueTool
         from ...tools.describe_image_tool import DescribeImageTool
         from ...tools.farcaster import (
             FollowFarcasterUserTool,
@@ -246,6 +246,7 @@ class MainOrchestrator:
         
         # Core tools
         self.tool_registry.register_tool(WaitTool())
+        self.tool_registry.register_tool(LogInternalMonologueTool())
         self.tool_registry.register_tool(DescribeImageTool())
         
         # Web search and research tools
