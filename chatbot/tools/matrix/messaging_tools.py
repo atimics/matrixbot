@@ -180,7 +180,7 @@ class SendMatrixMessageTool(ToolInterface):
     @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
-            "room_id": "string (Matrix room ID) - The room where the message should be sent",
+            "channel_id": "string (Matrix room ID) - The room where the message should be sent",
             "message": "string - The message content to send (supports markdown formatting)",
             "format_as_markdown": "boolean (optional, default: true) - Whether to format the content as markdown",
             "attach_image": "string (optional) - Either a media_id from your library (e.g., 'media_img_1234567890') or a description to generate a new image (e.g., 'sunset over mountains')",
