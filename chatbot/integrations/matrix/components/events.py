@@ -626,7 +626,7 @@ class MatrixEventHandler:
                         # Download and upload to Arweave if arweave_client is available
                         if self.arweave_client:
                             download_response = await client.download(event.url)
-                            if download_response:
+                            if download_response and hasattr(download_response, 'body') and download_response.body:
                                 # Upload to Arweave
                                 content_type = getattr(download_response, 'content_type', 'image/jpeg')
                                 arweave_url = await self.arweave_client.upload_data(

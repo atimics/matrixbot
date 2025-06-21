@@ -421,7 +421,7 @@ class NodeProcessor:
                     # Remap parameters to match the specific tool's schema using channel_id
                     tool_args = {
                         "channel_id": channel_id,
-                        "message": tool_args.get("content") or tool_args.get("message", ""),
+                        "message": str(tool_args.get("content") or tool_args.get("message", "")),
                         "attach_image": tool_args.get("attach_image")
                     }
                 elif tool_name == "send_reply":
@@ -430,7 +430,7 @@ class NodeProcessor:
                     tool_args = {
                         "channel_id": channel_id,
                         "reply_to_id": tool_args.get("event_id") or tool_args.get("reply_to_id"),
-                        "message": tool_args.get("content") or tool_args.get("message", ""),
+                        "message": str(tool_args.get("content") or tool_args.get("message", "")),
                         "attach_image": tool_args.get("attach_image")
                     }
                 elif tool_name == "react_to_message":
