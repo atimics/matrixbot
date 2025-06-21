@@ -50,18 +50,18 @@ class SendMatrixReplyTool(ToolInterface):
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
-        # Extract and validate parameters, supporting both new and legacy names
-        room_id = params.get("room_id") or params.get("channel_id")
-        content = params.get("message") or params.get("content")
+        # Extract and validate parameters
+        room_id = params.get("room_id")
+        content = params.get("message")
         reply_to_event_id = params.get("reply_to_id")
         format_as_markdown = params.get("format_as_markdown", True)
         image_url = params.get("image_url")
 
         missing_params = []
         if not room_id:
-            missing_params.append("room_id (or channel_id)")
+            missing_params.append("room_id")
         if not content:
-            missing_params.append("message (or content)")
+            missing_params.append("message")
 
         if missing_params:
             error_msg = f"Missing required parameters for Matrix reply: {', '.join(missing_params)}"
@@ -202,18 +202,18 @@ class SendMatrixMessageTool(ToolInterface):
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
-        # Extract and validate parameters, supporting both new and legacy names
-        room_id = params.get("room_id") or params.get("channel_id")
-        content = params.get("message") or params.get("content")
+        # Extract and validate parameters
+        room_id = params.get("room_id")
+        content = params.get("message")
         format_as_markdown = params.get("format_as_markdown", True)
         attach_image = params.get("attach_image")  # New: either media_id or description
         image_url = params.get("image_url")
 
         missing_params = []
         if not room_id:
-            missing_params.append("room_id (or channel_id)")
+            missing_params.append("room_id")
         if not content:
-            missing_params.append("message (or content)")
+            missing_params.append("message")
 
         if missing_params:
             error_msg = f"Missing required parameters for Matrix message: {', '.join(missing_params)}"
