@@ -231,7 +231,7 @@ class CreatePollFrameTool(ToolInterface):
                 "allow_multiple_votes": {
                     "type": "boolean",
                     "description": "Whether users can select multiple options",
-                    "default": false
+                    "default": False
                 }
             },
             "required": ["question", "options"]
@@ -325,10 +325,37 @@ class CreateCustomFrameTool(ToolInterface):
     @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
-            "title": "string (title displayed on the frame)",
-            "image_url": "string (URL of the image to display in the frame)",
-            "buttons": "list of objects (interactive buttons - max 4) - each button should have 'text', 'action' (post/link/mint/tx), and 'target' fields",
-            "input_placeholder": "string (optional - placeholder text for user input field)"
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Title displayed on the frame"
+                },
+                "image_url": {
+                    "type": "string",
+                    "description": "URL of the image to display in the frame"
+                },
+                "buttons": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "text": {"type": "string"},
+                            "action": {"type": "string", "enum": ["post", "link", "mint", "tx"]},
+                            "target": {"type": "string"}
+                        },
+                        "required": ["text", "action", "target"]
+                    },
+                    "description": "Interactive buttons (max 4)",
+                    "maxItems": 4,
+                    "default": []
+                },
+                "input_placeholder": {
+                    "type": "string",
+                    "description": "Placeholder text for user input field"
+                }
+            },
+            "required": ["title", "image_url"]
         }
 
     async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
