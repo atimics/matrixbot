@@ -70,14 +70,14 @@ class NodePathGenerator:
         """Generate paths for media gallery."""
         yield "media_gallery"
         if hasattr(world_state_data, 'generated_media_library') and world_state_data.generated_media_library:
-            yield "media_gallery/generated_media"
+            yield "media_gallery.generated_media"
             for i, media_item in enumerate(world_state_data.generated_media_library):
-                yield f"media_gallery/generated_media/{i}"
+                yield f"media_gallery.generated_media.{i}"
         
         if hasattr(world_state_data, 'bot_media_on_farcaster') and world_state_data.bot_media_on_farcaster:
-            yield "media_gallery/bot_media"
+            yield "media_gallery.bot_media"
             for cast_hash in world_state_data.bot_media_on_farcaster.keys():
-                yield f"media_gallery/bot_media/{cast_hash}"
+                yield f"media_gallery.bot_media.{cast_hash}"
 
     def _generate_user_paths(self, world_state_data: WorldStateData):
         """Generate paths for users using singular 'user' type."""
@@ -114,7 +114,7 @@ class NodePathGenerator:
         yield "memory_bank"
         if hasattr(world_state_data, 'user_memory_bank') and world_state_data.user_memory_bank:
             for user_id in world_state_data.user_memory_bank.keys():
-                yield f"memory_bank/{user_id}"
+                yield f"memory_bank.{user_id}"
 
     def _generate_thread_paths(self, world_state_data: WorldStateData):
         """Generate paths for threads using singular 'thread' type."""
