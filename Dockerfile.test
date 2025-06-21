@@ -26,37 +26,21 @@ FROM base as dependencies
 
 WORKDIR /app
 
-# Copy dependency files
+# Copy dependency files first (for Docker layer caching)
 COPY pyproject.toml poetry.lock ./
 
 # Install dependencies including dev dependencies
 RUN poetry install --with dev && rm -rf $POETRY_CACHE_DIR
 
-# Stage 3: Testing environment
-FROM dependencies as testing
-
-# Set working directory
-WORKDIR /app
-
-# Copy source code and test files
-COPY chatbot/ ./chatbot/
-COPY tests/ ./tests/
-COPY s3-service/ ./s3-service/
-COPY arweave-service/ ./arweave-service/
-COPY arweave_uploader_service/ ./arweave_uploader_service/
-COPY scripts/ ./scripts/
-COPY pytest.ini ./
-COPY pyproject.toml ./
-COPY *.py ./
-
-# Create directories for test outputs and data
+# Create directories for test outputs and data (this won't change often)
 RUN mkdir -p data/test_results/coverage \
     data/test_results/junit \
     data/test_results/reports \
     data/test_results/security \
     data/test_results/quality \
     logs/test \
-    matrix_store
+    matrix_store \
+    data
 
 # Set comprehensive environment variables for testing (using test/placeholder values)
 ENV PYTHONPATH=/app \
@@ -84,10 +68,23 @@ ENV PYTHONPATH=/app \
     ARWEAVE_WALLET_PATH=/app/data/test_wallet.json \
     ARWEAVE_GATEWAY_URL=https://arweave.net
 
-# Create test configuration files
+# Create test configuration files (static files that don't change often)
 RUN echo '{"test": true}' > data/config.json && \
     echo '[]' > data/undecryptable_events.json && \
     echo '{"private_key": "test_key"}' > data/test_wallet.json
+
+# Stage 3: Testing environment
+FROM dependencies AS testing
+
+# Copy source code and test files (this layer will rebuild when code changes)
+COPY chatbot/ ./chatbot/
+COPY tests/ ./tests/
+COPY s3-service/ ./s3-service/
+COPY arweave-service/ ./arweave-service/
+COPY arweave_uploader_service/ ./arweave_uploader_service/
+COPY scripts/ ./scripts/
+COPY pytest.ini ./
+COPY *.py ./
 
 # Create comprehensive test runner script
 COPY <<'EOF' /app/run_comprehensive_tests.sh
@@ -96,9 +93,6 @@ set -e
 
 echo "🚀 Starting Comprehensive Test Suite"
 echo "====================================="
-
-# Activate Poetry environment
-source /app/.venv/bin/activate
 
 # Create test results directory structure
 mkdir -p data/test_results/{coverage,junit,reports,security,quality}
@@ -233,7 +227,6 @@ RUN chmod +x /app/run_comprehensive_tests.sh
 COPY <<'EOF' /app/run_quick_tests.sh
 #!/bin/bash
 set -e
-source /app/.venv/bin/activate
 echo "🚀 Running Quick Test Suite..."
 poetry run pytest tests/ -v --tb=short -x -m "not slow and not network" --disable-warnings
 echo "✅ Quick tests completed!"
@@ -245,7 +238,6 @@ RUN chmod +x /app/run_quick_tests.sh
 COPY <<'EOF' /app/run_test_matrix.sh
 #!/bin/bash
 set -e
-source /app/.venv/bin/activate
 
 echo "🧪 Running Test Matrix..."
 
@@ -291,12 +283,11 @@ RUN chmod +x /app/run_test_matrix.sh
 COPY <<'EOF' /app/health_check.sh
 #!/bin/bash
 set -e
-source /app/.venv/bin/activate
 
 echo "🏥 Running Health Checks..."
 
 # Basic import tests
-python -c "
+poetry run python -c "
 try:
     import chatbot
     import chatbot.config
@@ -308,7 +299,7 @@ except ImportError as e:
 "
 
 # Configuration validation
-python -c "
+poetry run python -c "
 from chatbot.config import AppConfig
 try:
     config = AppConfig()

@@ -47,12 +47,12 @@ build/
 .DS_Store
 Thumbs.db
 
-# Test files
-test_*.py
-*_test.py
-tests/
-coverage.xml
-pytest.ini
+# Test files (excluded for production builds, included for test builds)
+# test_*.py
+# *_test.py
+# tests/
+# coverage.xml
+# pytest.ini
 
 # Docker
 Dockerfile*
