@@ -157,11 +157,27 @@ class OpenRouterProvider(AIProviderBase):
             else:
                 schema = response_model.model_json_schema()
                 
+                # Fix additionalProperties for all object types in the schema (OpenAI strict mode requirement)
+                def fix_additional_properties(obj):
+                    if isinstance(obj, dict):
+                        if obj.get("type") == "object":
+                            obj["additionalProperties"] = False
+                        # Recursively process nested objects
+                        for key, value in obj.items():
+                            if isinstance(value, dict):
+                                fix_additional_properties(value)
+                            elif isinstance(value, list):
+                                for item in value:
+                                    if isinstance(item, dict):
+                                        fix_additional_properties(item)
+                
+                fix_additional_properties(schema)
+                
                 # Enhanced debug logging to see exactly what we're sending
                 logger.info(f"=== STRUCTURED OUTPUT DEBUG ===")
                 logger.info(f"Model: {self.config.model}")
                 logger.info(f"Response model: {response_model.__name__}")
-                logger.info(f"Generated schema: {json.dumps(schema, indent=2)}")
+                logger.info(f"Fixed schema: {json.dumps(schema, indent=2)}")
                 
                 response_format = {
                     "type": "json_schema",
