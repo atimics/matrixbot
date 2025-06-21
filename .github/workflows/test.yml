@@ -1,0 +1,346 @@
+name: Comprehensive Testing
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run tests daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/test
+
+jobs:
+  # Quick feedback job - runs first for fast feedback
+  quick-test:
+    name: Quick Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: latest
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+        
+    - name: Load cached venv
+      id: cached-poetry-dependencies
+      uses: actions/cache@v3
+      with:
+        path: .venv
+        key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+        
+    - name: Install dependencies
+      if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+      run: poetry install --with dev --no-interaction
+      
+    - name: Run quick tests
+      run: |
+        chmod +x ./run_tests.sh
+        ./run_tests.sh -m quick
+
+  # Code quality and security analysis
+  quality-security:
+    name: Code Quality & Security
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: latest
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+        
+    - name: Install dependencies
+      run: poetry install --with dev --no-interaction
+      
+    - name: Run Ruff linting
+      run: poetry run ruff check . --output-format=github
+      
+    - name: Run Ruff formatting check
+      run: poetry run ruff format --check .
+      
+    - name: Run type checking
+      run: poetry run mypy chatbot/ --no-error-summary
+      
+    - name: Run Bandit security scan
+      run: poetry run bandit -r chatbot/ -f json -o bandit-report.json
+      continue-on-error: true
+      
+    - name: Run Safety dependency check
+      run: poetry run safety check --json --output safety-report.json
+      continue-on-error: true
+      
+    - name: Upload security reports
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: security-reports
+        path: |
+          bandit-report.json
+          safety-report.json
+
+  # Comprehensive testing matrix
+  comprehensive-test:
+    name: Comprehensive Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [quick-test]
+    strategy:
+      matrix:
+        test-mode: [comprehensive, matrix]
+        python-version: ['3.10', '3.11', '3.12']
+      fail-fast: false
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: latest
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+        
+    - name: Install dependencies
+      run: poetry install --with dev --no-interaction
+      
+    - name: Create test output directory
+      run: mkdir -p data/test_results/{coverage,junit,reports,security,quality}
+      
+    - name: Run comprehensive tests
+      run: |
+        chmod +x ./run_tests.sh
+        ./run_tests.sh -m ${{ matrix.test-mode }} -c 70
+      
+    - name: Upload test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: test-results-${{ matrix.python-version }}-${{ matrix.test-mode }}
+        path: data/test_results/
+        
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      if: matrix.test-mode == 'comprehensive' && matrix.python-version == '3.11'
+      with:
+        file: ./data/test_results/coverage/coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+
+  # Docker-based testing
+  docker-test:
+    name: Docker Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: [quick-test]
+    strategy:
+      matrix:
+        test-type: [comprehensive, matrix, health]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Build test image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile.test
+        load: true
+        tags: matrixbot-test:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        
+    - name: Create test output directory
+      run: mkdir -p data/test_results
+      
+    - name: Run Docker tests
+      run: |
+        chmod +x ./run_tests.sh
+        ./run_tests.sh -d -m ${{ matrix.test-type }}
+        
+    - name: Upload Docker test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: docker-test-results-${{ matrix.test-type }}
+        path: data/test_results/
+
+  # Service-specific testing
+  service-test:
+    name: Service Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [quick-test]
+    strategy:
+      matrix:
+        service: [s3, arweave]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Build test image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile.test
+        load: true
+        tags: matrixbot-test:latest
+        cache-from: type=gha
+        
+    - name: Run ${{ matrix.service }} service tests
+      run: docker-compose -f docker-compose.test.yml run --rm test-${{ matrix.service }}-service
+      
+    - name: Upload service test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: service-test-results-${{ matrix.service }}
+        path: data/test_results/
+
+  # Performance and load testing
+  performance-test:
+    name: Performance Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [comprehensive-test]
+    if: github.event_name == 'schedule' || contains(github.event.head_commit.message, '[perf-test]')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: latest
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+        
+    - name: Install dependencies
+      run: poetry install --with dev --no-interaction
+      
+    - name: Run performance tests
+      run: |
+        chmod +x ./run_tests.sh
+        ./run_tests.sh -p -s -n -m comprehensive
+        
+    - name: Upload performance results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: performance-test-results
+        path: data/test_results/
+
+  # Generate final test report
+  test-report:
+    name: Generate Test Report
+    runs-on: ubuntu-latest
+    needs: [quality-security, comprehensive-test, docker-test, service-test]
+    if: always()
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Download all test artifacts
+      uses: actions/download-artifact@v3
+      
+    - name: Generate combined test report
+      run: |
+        echo "# MatrixBot Test Results" > test-report.md
+        echo "" >> test-report.md
+        echo "## Test Execution Summary" >> test-report.md
+        echo "- **Date**: $(date)" >> test-report.md
+        echo "- **Commit**: ${{ github.sha }}" >> test-report.md
+        echo "- **Branch**: ${{ github.ref_name }}" >> test-report.md
+        echo "" >> test-report.md
+        
+        # Add job status information
+        echo "## Job Status" >> test-report.md
+        echo "- Quality & Security: ${{ needs.quality-security.result }}" >> test-report.md
+        echo "- Comprehensive Tests: ${{ needs.comprehensive-test.result }}" >> test-report.md
+        echo "- Docker Tests: ${{ needs.docker-test.result }}" >> test-report.md
+        echo "- Service Tests: ${{ needs.service-test.result }}" >> test-report.md
+        echo "" >> test-report.md
+        
+        # List all artifacts
+        echo "## Generated Artifacts" >> test-report.md
+        find . -name "*.xml" -o -name "*.json" -o -name "*.html" | head -20 | while read file; do
+          echo "- $file" >> test-report.md
+        done
+        
+    - name: Upload test report
+      uses: actions/upload-artifact@v3
+      with:
+        name: final-test-report
+        path: test-report.md
+        
+    - name: Comment PR with test results
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const testReport = fs.readFileSync('test-report.md', 'utf8');
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: testReport
+          });
+
+  # Cleanup
+  cleanup:
+    name: Cleanup
+    runs-on: ubuntu-latest
+    needs: [test-report]
+    if: always()
+    
+    steps:
+    - name: Clean up Docker
+      run: |
+        docker system prune -af --volumes || true

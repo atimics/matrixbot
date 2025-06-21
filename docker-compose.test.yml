@@ -1,17 +1,19 @@
 version: '3.8'
 
 services:
-  test-runner:
+  # Comprehensive test runner - full test suite
+  test-comprehensive:
     build:
       context: .
       dockerfile: Dockerfile.test
-    container_name: matrixbot-test
+    container_name: matrixbot-test-comprehensive
     environment:
       PYTHONPATH: /app
       LOG_LEVEL: DEBUG
       CHATBOT_DB_PATH: ":memory:"
       AI_DUMP_PAYLOADS_TO_FILE: "false"
-      NEYNAR_API_KEY: test_key_123
+      # Test environment variables (non-sensitive placeholders)
+      NEYNAR_API_KEY: test_key_placeholder
       FARCASTER_BOT_FID: "123456"
       FARCASTER_BOT_SIGNER_UUID: test-signer-uuid
       FARCASTER_MIN_POST_INTERVAL_MINUTES: "1"
@@ -21,12 +23,120 @@ services:
       FARCASTER_API_MAX_RETRIES: "3"
       FARCASTER_API_BASE_DELAY: "1.0"
       FARCASTER_API_MAX_DELAY: "60.0"
+      MATRIX_USER_ID: "@ratichat:chat.ratimics.com"
+      MATRIX_ACCESS_TOKEN: test_token_placeholder
+      MATRIX_HOMESERVER_URL: "https://chat.ratimics.com"
+      MATRIX_DEVICE_ID: test_device
+      GOOGLE_GENAI_API_KEY: test_gemini_placeholder
+      S3_API_KEY: test_s3_placeholder
+      S3_API_ENDPOINT: "https://test.s3.amazonaws.com"
+      S3_CLOUDFRONT_DOMAIN: "https://test.cloudfront.net"
+      ARWEAVE_WALLET_PATH: "/app/data/test_wallet.json"
+      ARWEAVE_GATEWAY_URL: "https://arweave.net"
+      # Test execution options
+      RUN_SLOW_TESTS: "false"
+      RUN_PARALLEL_TESTS: "false"
     volumes:
       - ./data/test_results:/app/data/test_results
-      - ./tests:/app/tests
-    command: |
-      sh -c "
-        echo 'Starting Farcaster rate limiting tests...' &&
-        pytest -v --tb=short --cov=chatbot.integrations.farcaster --cov-report=term-missing --cov-report=html:/app/data/test_results/coverage tests/test_farcaster_rate_limiting.py &&
-        echo 'Farcaster tests completed successfully!'
-      "
+      - ./tests:/app/tests:ro
+      - ./chatbot:/app/chatbot:ro
+      - ./s3-service:/app/s3-service:ro
+      - ./arweave-service:/app/arweave-service:ro
+    command: /app/run_comprehensive_tests.sh
+
+  # Quick test runner - fast feedback
+  test-quick:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    container_name: matrixbot-test-quick
+    environment:
+      PYTHONPATH: /app
+      LOG_LEVEL: WARNING
+      CHATBOT_DB_PATH: ":memory:"
+      AI_DUMP_PAYLOADS_TO_FILE: "false"
+    volumes:
+      - ./data/test_results:/app/data/test_results
+      - ./tests:/app/tests:ro
+      - ./chatbot:/app/chatbot:ro
+    command: /app/run_quick_tests.sh
+
+  # Test matrix runner - categorized tests
+  test-matrix:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    container_name: matrixbot-test-matrix
+    environment:
+      PYTHONPATH: /app
+      LOG_LEVEL: DEBUG
+      CHATBOT_DB_PATH: ":memory:"
+      AI_DUMP_PAYLOADS_TO_FILE: "false"
+    volumes:
+      - ./data/test_results:/app/data/test_results
+      - ./tests:/app/tests:ro
+      - ./chatbot:/app/chatbot:ro
+    command: /app/run_test_matrix.sh
+
+  # Health check runner
+  test-health:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    container_name: matrixbot-test-health
+    environment:
+      PYTHONPATH: /app
+      LOG_LEVEL: INFO
+    volumes:
+      - ./chatbot:/app/chatbot:ro
+    command: /app/health_check.sh
+
+  # Parallel tests with network access (optional)
+  test-parallel-with-network:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    container_name: matrixbot-test-parallel
+    environment:
+      PYTHONPATH: /app
+      LOG_LEVEL: DEBUG
+      CHATBOT_DB_PATH: ":memory:"
+      AI_DUMP_PAYLOADS_TO_FILE: "false"
+      RUN_SLOW_TESTS: "true"
+      RUN_PARALLEL_TESTS: "true"
+    volumes:
+      - ./data/test_results:/app/data/test_results
+      - ./tests:/app/tests:ro
+      - ./chatbot:/app/chatbot:ro
+    command: /app/run_comprehensive_tests.sh
+    profiles:
+      - extended  # Only run with --profile extended
+
+  # Service-specific test runners
+  test-s3-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    container_name: matrixbot-test-s3
+    working_dir: /app/s3-service
+    environment:
+      PYTHONPATH: /app
+      S3_API_KEY: test_s3_placeholder
+    volumes:
+      - ./data/test_results:/app/data/test_results
+      - ./s3-service:/app/s3-service:ro
+    command: poetry run pytest . -v --tb=short --cov=. --junit-xml=../data/test_results/junit/s3_only.xml
+
+  test-arweave-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    container_name: matrixbot-test-arweave
+    working_dir: /app/arweave-service
+    environment:
+      PYTHONPATH: /app
+      ARWEAVE_WALLET_PATH: "/app/data/test_wallet.json"
+    volumes:
+      - ./data/test_results:/app/data/test_results
+      - ./arweave-service:/app/arweave-service:ro
+    command: poetry run pytest . -v --tb=short --cov=. --junit-xml=../data/test_results/junit/arweave_only.xml
