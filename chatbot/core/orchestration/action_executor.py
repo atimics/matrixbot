@@ -9,9 +9,15 @@ import time
 import traceback
 import hashlib
 from collections import defaultdict, deque
+from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
 
-from ..history_recorder import HistoryRecorder
+# Try to import HistoryRecorder, but make it optional since it doesn't exist yet
+try:
+    from ..history_recorder import HistoryRecorder
+except ImportError:
+    HistoryRecorder = None
+
 from ...tools.base import ActionContext
 from ...tools.registry import ToolRegistry
 
@@ -169,7 +175,7 @@ class ActionExecutor:
     - Circuit breaker pattern for failure prevention
     """
     
-    def __init__(self, tool_registry: ToolRegistry, history_recorder: Optional[HistoryRecorder] = None):
+    def __init__(self, tool_registry: ToolRegistry, history_recorder = None):
         self.tool_registry = tool_registry
         self.history_recorder = history_recorder
         self._execution_count = 0
