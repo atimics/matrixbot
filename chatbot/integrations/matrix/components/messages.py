@@ -34,6 +34,10 @@ class MatrixMessageOperations:
                 body_content = content['html']
                 msg_type = "m.html"
                 logger.debug(f"MatrixMessageOps: Extracted HTML content: {body_content}")
+            elif isinstance(content, dict) and 'plain' in content:
+                body_content = content['plain']
+                msg_type = "m.text"
+                logger.debug(f"MatrixMessageOps: Extracted plain content: {body_content}")
             elif isinstance(content, str):
                 body_content = content
                 msg_type = "m.text"
