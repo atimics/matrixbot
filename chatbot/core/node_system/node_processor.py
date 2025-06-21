@@ -1174,6 +1174,18 @@ class NodeProcessor:
                     failure_summary = f"Recent action failures ({len(recent_failures)}): "
                     failure_summary += ", ".join([f"{f['action_type']}: {f['error']}" for f in recent_failures[:3]])
                     payload["processing_context"]["failure_summary"] = failure_summary
+                
+                # Check payload size and truncate if needed
+                payload_size = len(str(payload))
+                if payload_size > 100000:  # 100KB limit
+                    logger.warning(f"Payload too large ({payload_size} chars), truncating")
+                    # Remove less critical context to reduce size
+                    if "recent_failures" in payload["processing_context"]:
+                        payload["processing_context"]["recent_failures"] = recent_failures[:2]  # Keep only 2 failures
+                    # Further truncation if still too large
+                    payload_size = len(str(payload))
+                    if payload_size > 100000:
+                        payload["processing_context"]["node_stats"] = {"truncated": True}
             
             return payload
             

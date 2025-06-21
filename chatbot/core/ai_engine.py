@@ -142,9 +142,14 @@ class OpenRouterProvider(AIProviderBase):
         }
 
         if response_model and self.supports_structured_outputs():
+            schema = response_model.model_json_schema()
             payload["response_format"] = {
-                "type": "json_object",
-                "schema": response_model.model_json_schema(),
+                "type": "json_schema",
+                "json_schema": {
+                    "name": response_model.__name__.lower(),
+                    "strict": True,
+                    "schema": schema
+                }
             }
 
         if tools:
@@ -207,9 +212,21 @@ class OpenRouterProvider(AIProviderBase):
 
 
     def supports_structured_outputs(self) -> bool:
-        """OpenRouter supports structured outputs for many modern models."""
-        # This can be made more specific if needed, but 'true' is a safe default for now.
-        return True
+        """
+        OpenRouter supports structured outputs for select models.
+        Check if the current model supports structured outputs.
+        """
+        # List of models known to support structured outputs on OpenRouter
+        supported_models = [
+            "openai/gpt-4o",
+            "openai/gpt-4o-mini", 
+            "openai/gpt-4-turbo",
+            "openai/gpt-4",
+            "fireworks/",  # All Fireworks models
+        ]
+        
+        model = self.config.model.lower()
+        return any(model.startswith(supported.lower()) for supported in supported_models)
 
 
 # --- Main AIEngine Class ---
