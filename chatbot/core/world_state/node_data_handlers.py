@@ -338,19 +338,39 @@ class NodeDataHandlers:
             
             # Find specific media item by ID
             for media_item in world_state_data.generated_media_library:
-                if hasattr(media_item, 'media_id') and media_item.media_id == item_id:
-                    return {
-                        "media_id": media_item.media_id,
-                        "media_type": getattr(media_item, 'media_type', 'unknown'),
-                        "description": getattr(media_item, 'description', 'No description'),
-                        "generation_prompt": getattr(media_item, 'generation_prompt', 'No prompt recorded'),
-                        "timestamp": getattr(media_item, 'timestamp', 0),
-                        "file_path": getattr(media_item, 'file_path', None),
-                        "file_size": getattr(media_item, 'file_size', 0),
-                        "dimensions": getattr(media_item, 'dimensions', None),
-                        "available_for_posting": bool(getattr(media_item, 'file_path', None)),
-                        "usage_instructions": f"Use media_id '{media_item.media_id}' or file_path '{getattr(media_item, 'file_path', '')}' with cast_with_image tool"
-                    }
+                # Handle both dict and object formats
+                if isinstance(media_item, dict):
+                    media_id = media_item.get('media_id')
+                else:
+                    media_id = getattr(media_item, 'media_id', None)
+                    
+                if media_id == item_id:
+                    if isinstance(media_item, dict):
+                        return {
+                            "media_id": media_item.get('media_id'),
+                            "media_type": media_item.get('media_type', 'unknown'),
+                            "description": media_item.get('description', 'No description'),
+                            "generation_prompt": media_item.get('generation_prompt', 'No prompt recorded'),
+                            "timestamp": media_item.get('timestamp', 0),
+                            "file_path": media_item.get('file_path'),
+                            "file_size": media_item.get('file_size', 0),
+                            "dimensions": media_item.get('dimensions'),
+                            "available_for_posting": bool(media_item.get('file_path')),
+                            "usage_instructions": f"Use media_id '{media_item.get('media_id')}' or file_path '{media_item.get('file_path', '')}' with cast_with_image tool"
+                        }
+                    else:
+                        return {
+                            "media_id": media_item.media_id,
+                            "media_type": getattr(media_item, 'media_type', 'unknown'),
+                            "description": getattr(media_item, 'description', 'No description'),
+                            "generation_prompt": getattr(media_item, 'generation_prompt', 'No prompt recorded'),
+                            "timestamp": getattr(media_item, 'timestamp', 0),
+                            "file_path": getattr(media_item, 'file_path', None),
+                            "file_size": getattr(media_item, 'file_size', 0),
+                            "dimensions": getattr(media_item, 'dimensions', None),
+                            "available_for_posting": bool(getattr(media_item, 'file_path', None)),
+                            "usage_instructions": f"Use media_id '{media_item.media_id}' or file_path '{getattr(media_item, 'file_path', '')}' with cast_with_image tool"
+                        }
             
             return {"error": f"Media item '{item_id}' not found in gallery"}
             
