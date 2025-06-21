@@ -222,45 +222,137 @@ class OpenRouterProvider(AIProviderBase):
         last_exception = None
         for attempt in range(self.config.max_retries + 1):
             try:
-                # Log payload info (less verbose than before)
+                # Log comprehensive request details
                 payload_size = len(str(payload))
-                logger.debug(f"OpenRouter request: size={payload_size} chars, structured_output={structured_output_attempted}")
+                logger.info(f"🚀 OPENROUTER REQUEST (Attempt {attempt + 1}/{self.config.max_retries + 1})")
+                logger.info(f"   URL: {settings.openrouter_api_url}")
+                logger.info(f"   Model: {validated_model}")
+                logger.info(f"   Temperature: {payload.get('temperature')}")
+                logger.info(f"   Max Tokens: {payload.get('max_tokens')}")
+                logger.info(f"   Structured Output: {structured_output_attempted}")
+                logger.info(f"   Tools: {len(tools) if tools else 0}")
+                logger.info(f"   Payload Size: {payload_size} chars")
+                logger.info(f"   Messages Count: {len(messages)}")
                 
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"Payload keys: {list(payload.keys())}")
-                    if 'response_format' in payload:
-                        logger.debug(f"Using structured output with schema")
+                # Log message details
+                for i, msg in enumerate(messages):
+                    role = msg.get('role', 'unknown')
+                    content = msg.get('content', '')
+                    content_preview = content[:200] + "..." if len(content) > 200 else content
+                    logger.info(f"   Message {i+1} [{role}]: {content_preview}")
+                
+                # Log headers (excluding sensitive auth)
+                safe_headers = {k: v for k, v in headers.items() if k.lower() != 'authorization'}
+                safe_headers['authorization'] = f"Bearer {self.config.api_key[:10]}..." if self.config.api_key else "None"
+                logger.info(f"   Headers: {safe_headers}")
+                
+                # Log tools if present
+                if tools:
+                    logger.info(f"   Available Tools:")
+                    for tool in tools:
+                        tool_name = tool.get('function', {}).get('name', 'unknown')
+                        tool_desc = tool.get('function', {}).get('description', 'no description')
+                        logger.info(f"     - {tool_name}: {tool_desc[:100]}...")
+                
+                # Log structured output schema if present
+                if 'response_format' in payload:
+                    schema_name = payload['response_format'].get('json_schema', {}).get('name', 'unknown')
+                    logger.info(f"   Response Schema: {schema_name}")
+                    schema_props = list(payload['response_format'].get('json_schema', {}).get('schema', {}).get('properties', {}).keys())
+                    logger.info(f"   Schema Properties: {schema_props}")
+                
+                logger.info("📤 Sending request to OpenRouter...")
                     
                 response = await self.client.post(settings.openrouter_api_url, headers=headers, json=payload)
                 response.raise_for_status()
                 result = response.json()
                 
-                # Log successful response
+                # Log comprehensive response details
+                logger.info("📥 OPENROUTER RESPONSE RECEIVED")
+                logger.info(f"   Status: {response.status_code}")
+                logger.info(f"   Headers: {dict(response.headers)}")
+                
                 if 'choices' in result and result['choices']:
-                    content_length = len(result['choices'][0].get('message', {}).get('content', ''))
-                    logger.debug(f"OpenRouter response: content_length={content_length}")
+                    choice = result['choices'][0]
+                    message = choice.get('message', {})
+                    content = message.get('content', '')
+                    
+                    logger.info(f"   Choices: {len(result['choices'])}")
+                    logger.info(f"   Finish Reason: {choice.get('finish_reason', 'unknown')}")
+                    logger.info(f"   Content Length: {len(content)} chars")
+                    
+                    # Log content preview
+                    content_preview = content[:500] + "..." if len(content) > 500 else content
+                    logger.info(f"   Content Preview: {content_preview}")
+                    
+                    # Log tool calls if present
+                    if 'tool_calls' in message and message['tool_calls']:
+                        logger.info(f"   Tool Calls: {len(message['tool_calls'])}")
+                        for i, tool_call in enumerate(message['tool_calls']):
+                            tool_name = tool_call.get('function', {}).get('name', 'unknown')
+                            tool_args = tool_call.get('function', {}).get('arguments', '{}')
+                            logger.info(f"     Tool {i+1}: {tool_name} with args: {tool_args[:200]}...")
+                
+                # Log usage information if available
+                if 'usage' in result:
+                    usage = result['usage']
+                    logger.info(f"   Token Usage:")
+                    logger.info(f"     Prompt: {usage.get('prompt_tokens', 'unknown')}")
+                    logger.info(f"     Completion: {usage.get('completion_tokens', 'unknown')}")
+                    logger.info(f"     Total: {usage.get('total_tokens', 'unknown')}")
+                
+                # Log model information if available
+                if 'model' in result:
+                    logger.info(f"   Response Model: {result['model']}")
+                
+                logger.info("✅ OpenRouter request completed successfully")
                 
                 return result
                 
             except httpx.HTTPStatusError as e:
+                logger.error(f"❌ OPENROUTER HTTP ERROR")
+                logger.error(f"   Status Code: {e.response.status_code}")
+                logger.error(f"   Response Headers: {dict(e.response.headers)}")
+                
+                try:
+                    error_detail = e.response.text
+                    logger.error(f"   Response Text: {error_detail}")
+                    
+                    # Try to parse as JSON for better error details
+                    if error_detail:
+                        try:
+                            error_json = e.response.json()
+                            logger.error(f"   Error JSON: {error_json}")
+                        except:
+                            pass  # Not JSON, already logged as text
+                except Exception as detail_error:
+                    logger.error(f"   Could not read response details: {detail_error}")
+                
                 if e.response.status_code == 400:
-                    # Log error details but attempt fallback for structured output
-                    try:
-                        error_detail = e.response.json()
-                        logger.error(f"OpenRouter 400 error: {error_detail}")
-                        
-                        # If structured output failed, try without it
-                        if structured_output_attempted and 'response_format' in payload:
-                            logger.warning("Structured output failed, retrying without response_format")
+                    # If structured output failed, try without it
+                    if structured_output_attempted and 'response_format' in payload:
+                        try:
+                            logger.warning("🔄 Structured output failed, retrying without response_format")
                             payload_without_format = payload.copy()
                             del payload_without_format['response_format']
                             
+                            logger.info("🚀 OPENROUTER RETRY WITHOUT STRUCTURED OUTPUT")
+                            logger.info(f"   Retry Payload Size: {len(str(payload_without_format))} chars")
+                            
                             response = await self.client.post(settings.openrouter_api_url, headers=headers, json=payload_without_format)
                             response.raise_for_status()
-                            return response.json()
+                            result = response.json()
                             
-                    except Exception as fallback_error:
-                        logger.error(f"Fallback also failed: {fallback_error}")
+                            logger.info("📥 OPENROUTER RETRY RESPONSE")
+                            if 'choices' in result and result['choices']:
+                                content_length = len(result['choices'][0].get('message', {}).get('content', ''))
+                                logger.info(f"   Retry Content Length: {content_length} chars")
+                            logger.info("✅ Retry without structured output succeeded")
+                            
+                            return result
+                            
+                        except Exception as fallback_error:
+                            logger.error(f"❌ Fallback without structured output also failed: {fallback_error}")
                         
                 last_exception = e
                 if e.response.status_code in [401, 403]:
@@ -276,14 +368,24 @@ class OpenRouterProvider(AIProviderBase):
                         continue
                 raise
             except (httpx.RequestError, asyncio.TimeoutError) as e:
+                logger.error(f"❌ OPENROUTER CONNECTION ERROR")
+                logger.error(f"   Error Type: {type(e).__name__}")
+                logger.error(f"   Error Details: {str(e)}")
+                
                 last_exception = e
                 if attempt < self.config.max_retries:
                     delay = 2 ** attempt
-                    logger.warning(f"Request failed ({type(e).__name__}). Retrying in {delay}s...")
+                    logger.warning(f"🔄 Request failed ({type(e).__name__}). Retrying in {delay}s...")
                     await asyncio.sleep(delay)
                     continue
                 raise
 
+        logger.error(f"💥 OPENROUTER REQUEST FAILED AFTER ALL RETRIES")
+        logger.error(f"   Total Attempts: {self.config.max_retries + 1}")
+        logger.error(f"   Final Exception: {type(last_exception).__name__}: {last_exception}")
+        logger.error(f"   Model: {validated_model}")
+        logger.error(f"   Payload Size: {len(str(payload))} chars")
+        
         raise ValueError(f"Chat completion failed after {self.config.max_retries} retries.") from last_exception
 
 
@@ -293,27 +395,35 @@ class OpenRouterProvider(AIProviderBase):
         If not found, fallback to 'openrouter/auto'.
         """
         try:
+            logger.info("🔍 VALIDATING MODEL WITH OPENROUTER")
+            logger.info(f"   Checking model: {self.config.model}")
+            
             # Get available models from OpenRouter
             response = await self.client.get("https://openrouter.ai/api/v1/models")
             response.raise_for_status()
             
+            logger.info(f"   Model validation response: {response.status_code}")
+            
             models_data = response.json()
             available_model_ids = {model.get("id", "").lower() for model in models_data.get("data", [])}
+            
+            logger.info(f"   Total available models: {len(available_model_ids)}")
             
             current_model = self.config.model.lower()
             
             # Check if current model exists
             if current_model in available_model_ids:
-                logger.debug(f"Model '{self.config.model}' validated successfully")
+                logger.info(f"✅ Model '{self.config.model}' validated successfully")
                 return self.config.model
             else:
-                logger.warning(f"Model '{self.config.model}' not found in OpenRouter model list. Falling back to 'openrouter/auto'")
+                logger.warning(f"⚠️ Model '{self.config.model}' not found in OpenRouter model list. Falling back to 'openrouter/auto'")
+                logger.info(f"   Some available models: {list(sorted(available_model_ids))[:10]}...")
                 # Update the config to use the fallback
                 self.config.model = "openrouter/auto"
                 return "openrouter/auto"
                 
         except Exception as e:
-            logger.error(f"Failed to validate model via OpenRouter API: {e}. Using configured model '{self.config.model}' as-is")
+            logger.error(f"❌ Failed to validate model via OpenRouter API: {e}. Using configured model '{self.config.model}' as-is")
             return self.config.model
 
     async def _check_model_capabilities(self) -> Dict[str, bool]:
@@ -325,15 +435,19 @@ class OpenRouterProvider(AIProviderBase):
         
         # Use cache if it's still valid (cache for 1 hour)
         if self._structured_output_cache and current_time < self._cache_expiry:
+            logger.debug(f"📋 Using cached model capabilities ({len(self._structured_output_cache)} models)")
             return self._structured_output_cache
         
         try:
-            logger.debug("Fetching model capabilities from OpenRouter Models API")
+            logger.info("🔍 FETCHING MODEL CAPABILITIES FROM OPENROUTER")
             response = await self.client.get("https://openrouter.ai/api/v1/models")
             response.raise_for_status()
             
+            logger.info(f"   Capabilities response: {response.status_code}")
+            
             models_data = response.json()
             capabilities = {}
+            structured_output_models = []
             
             for model in models_data.get("data", []):
                 model_id = model.get("id", "")
@@ -344,17 +458,22 @@ class OpenRouterProvider(AIProviderBase):
                 capabilities[model_id.lower()] = supports_structured
                 
                 if supports_structured:
-                    logger.debug(f"Model {model_id} supports structured outputs")
+                    structured_output_models.append(model_id)
+                    logger.debug(f"   Model {model_id} supports structured outputs")
             
             # Cache the results for 1 hour
             self._structured_output_cache = capabilities
             self._cache_expiry = current_time + 3600
             
-            logger.info(f"Loaded capabilities for {len(capabilities)} models from OpenRouter API")
+            logger.info(f"✅ Loaded capabilities for {len(capabilities)} models from OpenRouter API")
+            logger.info(f"   Models supporting structured outputs: {len(structured_output_models)}")
+            if structured_output_models:
+                logger.info(f"   Examples: {structured_output_models[:5]}")
+            
             return capabilities
             
         except Exception as e:
-            logger.warning(f"Failed to fetch model capabilities from OpenRouter API: {e}")
+            logger.error(f"❌ Failed to fetch model capabilities from OpenRouter API: {e}")
             
             # Fallback to hardcoded list if API fails
             fallback_models = {
@@ -363,7 +482,7 @@ class OpenRouterProvider(AIProviderBase):
                 "openai/gpt-4-turbo": True,
                 "openai/gpt-4": True,
             }
-            logger.debug("Using fallback hardcoded model capabilities")
+            logger.warning(f"   Using fallback hardcoded model capabilities: {list(fallback_models.keys())}")
             return fallback_models
 
     def supports_structured_outputs(self) -> bool:
