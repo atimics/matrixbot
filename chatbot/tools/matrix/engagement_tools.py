@@ -26,7 +26,7 @@ class ReactToMatrixMessageTool(ToolInterface):
     @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
-            "room_id": "string - The room ID where the message is located",
+            "channel_id": "string - The room ID where the message is located",
             "event_id": "string - The event ID of the message to react to",
             "emoji": "string - The emoji to react with (e.g., '👍', '❤️', '😀')",
         }
@@ -47,13 +47,13 @@ class ReactToMatrixMessageTool(ToolInterface):
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
         # Extract and validate parameters
-        room_id = params.get("room_id")
+        channel_id = params.get("channel_id")
         event_id = params.get("event_id")
         emoji = params.get("emoji")
 
         missing_params = []
-        if not room_id:
-            missing_params.append("room_id")
+        if not channel_id:
+            missing_params.append("channel_id")
         if not event_id:
             missing_params.append("event_id")
         if not emoji:
