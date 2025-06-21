@@ -35,30 +35,7 @@ class NodeDataHandlers:
             "search": self.get_search_node_data,
         }
     
-    def get_search_node_data(self, world_state_data: 'WorldStateData', path_parts: List[str], expanded: bool = False) -> Optional[Dict]:
-        """Get search node data."""
-        if len(path_parts) < 2:
-            # Return general search status
-            return {
-                "status": "available",
-                "cached_searches": len(world_state_data.search_cache),
-                "note": "Search functionality available via tools"
-            }
-        
-        search_type = path_parts[1]
-        if search_type == "cache":
-            if len(path_parts) == 2:
-                # Return search cache overview
-                return {
-                    "cached_searches": list(world_state_data.search_cache.keys())[:10],
-                    "total_cached": len(world_state_data.search_cache)
-                }
-            elif len(path_parts) == 3:
-                # Return specific cached search
-                search_key = path_parts[2]
-                return world_state_data.search_cache.get(search_key, {"error": "Search not found"})
-        
-        return {"search_type": search_type, "status": "Search tools available"}
+
     
     def get_node_data_by_path(self, world_state_data: 'WorldStateData', node_path: str, expanded: bool = False) -> Optional[Dict]:
         """
