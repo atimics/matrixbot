@@ -351,8 +351,16 @@ class NodeProcessor:
                     "guidance": self._generate_self_state_guidance(context["cycle_actions"])
                 }
             
-            # Log the complete payload being sent to AI (for debugging)
-            logger.debug(f"Built AI payload for channel {primary_channel_id}: {payload}")
+            # Log summary of the complete payload being sent to AI (for debugging)
+            payload_summary = {
+                "primary_channel": primary_channel_id,
+                "payload_keys": list(payload.keys()) if payload else [],
+                "tools_count": len(payload.get("tools", [])),
+                "processing_mode": payload.get("processing_context", {}).get("mode"),
+                "has_self_state": "self_state" in payload,
+                "payload_size_kb": len(str(payload)) / 1024 if payload else 0
+            }
+            logger.info(f"Built AI Payload Summary: {payload_summary}")
             
             return payload
         except Exception as e:
@@ -362,8 +370,17 @@ class NodeProcessor:
     async def _get_next_actions(self, payload_data: Dict[str, Any], cycle_id: str, step: int):
         """Get the next action(s) from the AI."""
         try:
-            # Log the AI payload being sent (for debugging)
-            logger.debug(f"AI Payload for cycle {cycle_id}, step {step}: {payload_data}")
+            # Log a summary of the AI payload being sent (for debugging)
+            payload_summary = {
+                "cycle_id": cycle_id,
+                "step": step,
+                "payload_keys": list(payload_data.keys()) if payload_data else [],
+                "tools_count": len(payload_data.get("tools", [])),
+                "processing_mode": payload_data.get("processing_context", {}).get("mode"),
+                "primary_channel": payload_data.get("processing_context", {}).get("primary_channel"),
+                "payload_size_kb": len(str(payload_data)) / 1024 if payload_data else 0
+            }
+            logger.info(f"AI Payload Summary: {payload_summary}")
             
             decision_result = await self.ai_engine.decide_actions(
                 world_state=payload_data
@@ -965,8 +982,15 @@ class NodeProcessor:
                 logger.warning(f"Empty payload for node selection in cycle {cycle_id}")
                 return {"node_paths": [], "reasoning": "No payload data"}
 
-            # Log the AI payload being sent for node selection (for debugging)
-            logger.debug(f"AI Node Selection Payload for cycle {cycle_id}: {payload_data}")
+            # Log a summary of the AI payload being sent for node selection (for debugging)
+            payload_summary = {
+                "cycle_id": cycle_id,
+                "phase": "node_selection",
+                "payload_keys": list(payload_data.keys()) if payload_data else [],
+                "tools_count": len(payload_data.get("tools", [])),
+                "payload_size_kb": len(str(payload_data)) / 1024 if payload_data else 0
+            }
+            logger.info(f"AI Node Selection Payload Summary: {payload_summary}")
 
             # Send to AI engine for node selection
             decision_result = await self.ai_engine.decide_actions(
@@ -1002,8 +1026,15 @@ class NodeProcessor:
                 logger.warning(f"Empty payload for action selection in cycle {cycle_id}")
                 return {}
             
-            # Log the AI payload being sent for action selection (for debugging)
-            logger.debug(f"AI Action Selection Payload for cycle {cycle_id}: {payload_data}")
+            # Log a summary of the AI payload being sent for action selection (for debugging)
+            payload_summary = {
+                "cycle_id": cycle_id,
+                "phase": "action_selection",
+                "payload_keys": list(payload_data.keys()) if payload_data else [],
+                "tools_count": len(payload_data.get("tools", [])),
+                "payload_size_kb": len(str(payload_data)) / 1024 if payload_data else 0
+            }
+            logger.info(f"AI Action Selection Payload Summary: {payload_summary}")
 
             # Send to AI engine for action selection
             decision_result = await self.ai_engine.decide_actions(
@@ -1305,6 +1336,7 @@ class NodeProcessor:
             # Customize instruction based on trigger type
             if primary_trigger_type == "mention":
                 instruction = f"{base_instruction} **IMPORTANT: You have been mentioned in a channel. This requires immediate attention and response. Check the recent messages in the primary channel ({primary_channel_id}) for the mention and respond appropriately.** Also consider other proactive engagement opportunities, but prioritize responding to the mention first."
+                logger.info(f"🔔 MENTION TRIGGER: AI being instructed to respond to mention in channel {primary_channel_id}")
             else:
                 instruction = f"{base_instruction} Focus on responding to recent activity, mentions, or important updates, but also consider proactive engagement opportunities. Prioritize diverse actions across different channels and services when meaningful. Consider the current backlog to avoid redundant actions, but don't limit yourself unnecessarily - if there are genuine opportunities for valuable engagement, plan multiple complementary actions."
             
@@ -1328,8 +1360,16 @@ class NodeProcessor:
     async def _get_planned_actions(self, payload: Dict[str, Any], cycle_id: str) -> List[Dict[str, Any]]:
         """Get planned actions from AI for the backlog"""
         try:
-            # Log the AI payload being sent for planning (for debugging)
-            logger.debug(f"AI Planning Payload for cycle {cycle_id}: {payload}")
+            # Log a summary of the AI payload being sent for planning (for debugging)
+            payload_summary = {
+                "cycle_id": cycle_id,
+                "phase": "planning",
+                "payload_keys": list(payload.keys()) if payload else [],
+                "tools_count": len(payload.get("tools", [])),
+                "payload_size_kb": len(str(payload)) / 1024 if payload else 0,
+                "trigger_type": payload.get("processing_context", {}).get("primary_trigger_type")
+            }
+            logger.info(f"AI Planning Payload Summary: {payload_summary}")
             
             # Use AI engine to get planning decisions
             decision_result = await self.ai_engine.decide_actions(
