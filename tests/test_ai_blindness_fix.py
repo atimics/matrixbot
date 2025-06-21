@@ -93,7 +93,7 @@ class TestAIBlindnessFix:
         messages = channel_data.get("recent_messages", [])
         
         # Find the bot's message
-        bot_messages = [msg for msg in messages if msg.get("sender") == settings.MATRIX_USER_ID]
+        bot_messages = [msg for msg in messages if msg.get("sender") == settings.matrix.user_id]
         assert len(bot_messages) == 1
         
         bot_message = bot_messages[0]
@@ -136,7 +136,7 @@ class TestAIBlindnessFix:
         
         our_message = our_messages[0]
         assert our_message["event_id"] == "test_event_123"
-        assert our_message["sender"] == settings.MATRIX_USER_ID
+        assert our_message["sender"] == settings.matrix.user_id
         assert our_message["type"] == "assistant"
     
     @pytest.mark.asyncio
@@ -163,7 +163,7 @@ class TestAIBlindnessFix:
         world_state_data = orchestrator.world_state.to_dict()
         channel_data = world_state_data["channels"]["matrix"][channel_id]
         messages = channel_data.get("recent_messages", [])
-        bot_messages = [msg for msg in messages if msg.get("sender") == settings.MATRIX_USER_ID]
+        bot_messages = [msg for msg in messages if msg.get("sender") == settings.matrix.user_id]
         
         assert len(bot_messages) == 1
         assert bot_messages[0]["content"] == test_content
@@ -175,7 +175,7 @@ class TestAIBlindnessFix:
         our_messages = [msg for msg in assistant_messages if msg.get("content") == test_content]
         
         assert len(our_messages) == 1
-        assert our_messages[0]["sender"] == settings.MATRIX_USER_ID
+        assert our_messages[0]["sender"] == settings.matrix.user_id
     
     @pytest.mark.asyncio
     async def test_failed_action_not_recorded_as_bot_message(self, orchestrator, mock_matrix_observer):
@@ -214,7 +214,7 @@ class TestAIBlindnessFix:
         if "channels" in world_state_data and channel_id in world_state_data["channels"]:
             channel_data = world_state_data["channels"][channel_id]
             messages = channel_data.get("recent_messages", [])
-            bot_messages = [msg for msg in messages if msg.get("sender") == settings.MATRIX_USER_ID]
+            bot_messages = [msg for msg in messages if msg.get("sender") == settings.matrix.user_id]
             assert len(bot_messages) == 0
         
         # Verify no assistant message was created in ContextManager for the failed send

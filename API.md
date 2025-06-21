@@ -562,8 +562,8 @@ from chatbot.config import settings
 
 # Access configuration values
 db_path = settings.chatbot_db_path
-ai_model = settings.AI_MODEL
-matrix_homeserver = settings.MATRIX_HOMESERVER
+ai_model = settings.ai_model
+matrix_homeserver = settings.matrix.homeserver
 
 # Override via environment variables
 import os

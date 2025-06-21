@@ -46,7 +46,7 @@ async def get_ai_models():
     try:
         return {
             "current": {
-                "main": settings.AI_MODEL,
+                "main": settings.ai_model,
                 "web_search": settings.WEB_SEARCH_MODEL,
                 "summary": settings.AI_SUMMARY_MODEL,
                 "multimodal": settings.AI_MULTIMODAL_MODEL

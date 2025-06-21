@@ -193,7 +193,7 @@ async def enhance_message_with_image(
         return content, None
     
     # Auto-post to gallery if configured
-    if settings.MATRIX_MEDIA_GALLERY_ROOM_ID:
+    if settings.matrix_media_gallery_room_id:
         try:
             from .matrix import SendMatrixImageTool
             gallery_tool = SendMatrixImageTool()
@@ -205,7 +205,7 @@ async def enhance_message_with_image(
             )
             
             await gallery_tool.execute({
-                "channel_id": settings.MATRIX_MEDIA_GALLERY_ROOM_ID,
+                "channel_id": settings.matrix_media_gallery_room_id,
                 "image_url": image_info["image_url"],
                 "caption": gallery_caption
             }, context)

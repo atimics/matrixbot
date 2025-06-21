@@ -50,10 +50,10 @@ class ChatbotWithUI:
             db_path=settings.chatbot_db_path,
             processing_config=ProcessingConfig(
                 enable_node_based_processing=True,  # Start with traditional mode
-                observation_interval=settings.OBSERVATION_INTERVAL,
-                max_cycles_per_hour=settings.MAX_CYCLES_PER_HOUR,
+                observation_interval=settings.observation_interval,
+                max_cycles_per_hour=settings.max_cycles_per_hour,
             ),
-            ai_model=settings.AI_MODEL,
+            ai_model=settings.ai_model,
         )
         
         self.orchestrator = MainOrchestrator(config)

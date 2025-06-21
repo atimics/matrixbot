@@ -44,7 +44,7 @@ async def _auto_post_to_gallery(
     results = {"gallery_success": True, "user_channel_success": True}
     
     # Post to gallery channel
-    if settings.MATRIX_MEDIA_GALLERY_ROOM_ID:
+    if settings.matrix_media_gallery_room_id:
         try:
             gallery_caption = (
                 f"🎨 **New {media_type.capitalize()} Generated**\n\n"
@@ -55,11 +55,11 @@ async def _auto_post_to_gallery(
 
             if media_type == "image":
                 tool = SendMatrixImageTool()
-                params = {"channel_id": settings.MATRIX_MEDIA_GALLERY_ROOM_ID, "image_url": media_url, "caption": gallery_caption}
+                params = {"channel_id": settings.matrix_media_gallery_room_id, "image_url": media_url, "caption": gallery_caption}
             elif media_type == "video":
                 tool = SendMatrixVideoLinkTool()
                 params = {
-                    "channel_id": settings.MATRIX_MEDIA_GALLERY_ROOM_ID, 
+                    "channel_id": settings.matrix_media_gallery_room_id, 
                     "video_url": media_url, 
                     "caption": gallery_caption,
                     "title": f"{service_used.title()} Generated Video"
@@ -84,7 +84,7 @@ async def _auto_post_to_gallery(
     
     # Post to user's current channel if provided and different from gallery
     if (user_channel_id and 
-        user_channel_id != settings.MATRIX_MEDIA_GALLERY_ROOM_ID):
+        user_channel_id != settings.matrix_media_gallery_room_id):
         try:
             user_caption = f"🎨 Generated: {prompt[:100]}{'...' if len(prompt) > 100 else ''}"
             
@@ -233,7 +233,7 @@ class GenerateImageTool(ToolInterface):
             )
             
             # Update status based on posting results
-            if settings.MATRIX_MEDIA_GALLERY_ROOM_ID:
+            if settings.matrix_media_gallery_room_id:
                 if posting_results.get("gallery_success", False):
                     gallery_post_status = "success"
                 else:
@@ -242,9 +242,9 @@ class GenerateImageTool(ToolInterface):
 
             # Create comprehensive status message
             status_parts = []
-            if settings.MATRIX_MEDIA_GALLERY_ROOM_ID:
+            if settings.matrix_media_gallery_room_id:
                 status_parts.append(f"Gallery: {gallery_post_status}")
-            if current_channel_id and current_channel_id != settings.MATRIX_MEDIA_GALLERY_ROOM_ID:
+            if current_channel_id and current_channel_id != settings.matrix_media_gallery_room_id:
                 user_status = "success" if posting_results.get("user_channel_success", False) else "failed"
                 status_parts.append(f"Current channel: {user_status}")
             
@@ -265,7 +265,7 @@ class GenerateImageTool(ToolInterface):
                 "gallery_post_error": gallery_post_error,
                 "user_channel_post_status": "success" if posting_results.get("user_channel_success", False) else "failed",
                 "current_channel_id": current_channel_id,
-                "user_response_suggestion": f"🎨 Generated '{prompt[:50]}...'! Posted to gallery{' and current channel' if current_channel_id and current_channel_id != settings.MATRIX_MEDIA_GALLERY_ROOM_ID else ''}.",
+                "user_response_suggestion": f"🎨 Generated '{prompt[:50]}...'! Posted to gallery{' and current channel' if current_channel_id and current_channel_id != settings.matrix_media_gallery_room_id else ''}.",
                 "next_actions_suggestion": f"Image ready! Use 'send_matrix_image' with media_id: {media_id} for other channels, or 'send_farcaster_post' for cross-platform sharing."
             }
 
@@ -373,10 +373,10 @@ class GenerateVideoTool(ToolInterface):
             
             # Create comprehensive status message
             status_parts = []
-            if settings.MATRIX_MEDIA_GALLERY_ROOM_ID:
+            if settings.matrix_media_gallery_room_id:
                 gallery_status = "success" if posting_results.get("gallery_success", False) else "failed"
                 status_parts.append(f"Gallery: {gallery_status}")
-            if current_channel_id and current_channel_id != settings.MATRIX_MEDIA_GALLERY_ROOM_ID:
+            if current_channel_id and current_channel_id != settings.matrix_media_gallery_room_id:
                 user_status = "success" if posting_results.get("user_channel_success", False) else "failed"
                 status_parts.append(f"Current channel: {user_status}")
             
@@ -396,7 +396,7 @@ class GenerateVideoTool(ToolInterface):
                 "gallery_post_status": "success" if posting_results.get("gallery_success", False) else "failed",
                 "user_channel_post_status": "success" if posting_results.get("user_channel_success", False) else "failed",
                 "current_channel_id": current_channel_id,
-                "user_response_suggestion": f"🎬 Generated video '{prompt[:50]}...'! Posted to gallery{' and current channel' if current_channel_id and current_channel_id != settings.MATRIX_MEDIA_GALLERY_ROOM_ID else ''}.",
+                "user_response_suggestion": f"🎬 Generated video '{prompt[:50]}...'! Posted to gallery{' and current channel' if current_channel_id and current_channel_id != settings.matrix_media_gallery_room_id else ''}.",
                 "next_actions_suggestion": f"Video ready! Use 'send_farcaster_post' or 'send_matrix_video_link' with media_id: {media_id} for other channels."
             }
 

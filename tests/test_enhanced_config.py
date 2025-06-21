@@ -174,7 +174,7 @@ class TestUnifiedSettings:
         
         # Verify secrets are loaded
         assert settings.openrouter_api_key == "sk-or-test-key"
-        assert settings.matrix_password == "test-password"
+        assert settings.matrix.password == "test-password"
         
         # Verify metadata is filtered out
         assert not hasattr(settings, '_setup_completed')
@@ -223,7 +223,7 @@ class TestUnifiedSettings:
         }):
             settings = UnifiedSettings()
             assert settings.openrouter_api_key == 'env-key'
-            assert settings.matrix_password == 'env-password'
+            assert settings.matrix.password == 'env-password'
 
 
 class TestSecretManager:

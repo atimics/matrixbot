@@ -140,7 +140,7 @@ class DescribeImageTool(ToolInterface):
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
-        if not settings.OPENROUTER_API_KEY:
+        if not settings.openrouter_api_key:
             error_msg = "OpenRouter API key not configured."
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
@@ -192,7 +192,7 @@ class DescribeImageTool(ToolInterface):
         }
 
         headers = {
-            "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
+            "Authorization": f"Bearer {settings.openrouter_api_key}",
             "Content-Type": "application/json",
             "HTTP-Referer": settings.YOUR_SITE_URL
             or "https://github.com/ratimics/chatbot",  # From config

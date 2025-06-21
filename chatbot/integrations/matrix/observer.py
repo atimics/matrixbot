@@ -67,9 +67,9 @@ class MatrixObserver(Integration, BaseObserver):
         # Core properties
         self.world_state = world_state_manager
         self.arweave_client = arweave_client
-        self.homeserver = settings.MATRIX_HOMESERVER
-        self.user_id = settings.MATRIX_USER_ID
-        self.password = settings.MATRIX_PASSWORD
+        self.homeserver = settings.matrix.homeserver
+        self.user_id = settings.matrix.user_id
+        self.password = settings.matrix.password
         self.client: Optional[AsyncClient] = None
         self.sync_task: Optional[asyncio.Task] = None
         self.channels_to_monitor = []

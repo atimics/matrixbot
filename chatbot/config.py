@@ -232,31 +232,7 @@ class AppConfig(BaseSettings):
     security_config: SecurityConfig = SecurityConfig()  # Renamed to avoid conflict
     ecosystem: EcosystemConfig = EcosystemConfig()
     node_system: NodeSystemConfig = NodeSystemConfig()
-    
-    # Backward compatibility properties
-    @property
-    def MATRIX_HOMESERVER(self) -> Optional[str]:
-        return self.matrix.homeserver
-    
-    @property
-    def MATRIX_USER_ID(self) -> Optional[str]:
-        return self.matrix.user_id
-    
-    @property
-    def MATRIX_PASSWORD(self) -> Optional[str]:
-        return self.matrix.password
-    
-    @property
-    def NEYNAR_API_KEY(self) -> Optional[str]:
-        return self.farcaster.neynar_api_key
-    
-    @property
-    def AI_MODEL(self) -> str:
-        return self.ai.model
-    
-    @property
-    def OPENROUTER_API_KEY(self) -> Optional[str]:
-        return self.openrouter_api_key
+
     
     # AI Debugging and Analysis Configuration
     AI_ENABLE_PROMPT_LOGGING: bool = True  # Enable detailed prompt logging for analysis

@@ -113,7 +113,7 @@ async def diagnose_server_issues():
     
     import httpx
     
-    homeserver = settings.MATRIX_HOMESERVER
+    homeserver = settings.matrix.homeserver
     logger.info(f"🏠 Homeserver: {homeserver}")
     
     try:

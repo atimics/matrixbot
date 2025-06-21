@@ -48,8 +48,8 @@ class TestMediaGalleryIntegration:
     async def test_gallery_auto_post_success(self, mock_action_context):
         """Test successful auto-posting to media gallery."""
         # Setup
-        original_gallery_id = settings.MATRIX_MEDIA_GALLERY_ROOM_ID
-        settings.MATRIX_MEDIA_GALLERY_ROOM_ID = "!test-gallery:example.com"
+        original_gallery_id = settings.matrix_media_gallery_room_id
+        settings.matrix_media_gallery_room_id = "!test-gallery:example.com"
         
         try:
             with patch('chatbot.tools.media_generation_tools.SendMatrixImageTool') as mock_tool_class:
@@ -78,14 +78,14 @@ class TestMediaGalleryIntegration:
                 assert "google_gemini" in params["caption"]
                 
         finally:
-            settings.MATRIX_MEDIA_GALLERY_ROOM_ID = original_gallery_id
+            settings.matrix_media_gallery_room_id = original_gallery_id
 
     @pytest.mark.asyncio
     async def test_gallery_auto_post_no_gallery_configured(self, mock_action_context, caplog):
         """Test auto-posting when no gallery is configured."""
         # Setup
-        original_gallery_id = settings.MATRIX_MEDIA_GALLERY_ROOM_ID
-        settings.MATRIX_MEDIA_GALLERY_ROOM_ID = None
+        original_gallery_id = settings.matrix_media_gallery_room_id
+        settings.matrix_media_gallery_room_id = None
         
         try:
             with caplog.at_level(logging.DEBUG):
@@ -101,14 +101,14 @@ class TestMediaGalleryIntegration:
                 assert "MATRIX_MEDIA_GALLERY_ROOM_ID not set" in caplog.text
                 
         finally:
-            settings.MATRIX_MEDIA_GALLERY_ROOM_ID = original_gallery_id
+            settings.matrix_media_gallery_room_id = original_gallery_id
 
     @pytest.mark.asyncio 
     async def test_gallery_auto_post_failure_non_blocking(self, mock_action_context, caplog):
         """Test that gallery auto-post failures don't block media generation."""
         # Setup
-        original_gallery_id = settings.MATRIX_MEDIA_GALLERY_ROOM_ID
-        settings.MATRIX_MEDIA_GALLERY_ROOM_ID = "!test-gallery:example.com"
+        original_gallery_id = settings.matrix_media_gallery_room_id
+        settings.matrix_media_gallery_room_id = "!test-gallery:example.com"
         
         try:
             with patch('chatbot.tools.media_generation_tools.SendMatrixImageTool') as mock_tool_class:
@@ -130,14 +130,14 @@ class TestMediaGalleryIntegration:
                     assert "Failed to auto-post generated image to gallery" in caplog.text
                     
         finally:
-            settings.MATRIX_MEDIA_GALLERY_ROOM_ID = original_gallery_id
+            settings.matrix_media_gallery_room_id = original_gallery_id
 
     @pytest.mark.asyncio
     async def test_generate_image_tool_integration(self, mock_action_context):
         """Test that GenerateImageTool properly calls gallery auto-post."""
         # Setup
-        original_gallery_id = settings.MATRIX_MEDIA_GALLERY_ROOM_ID
-        settings.MATRIX_MEDIA_GALLERY_ROOM_ID = "!test-gallery:example.com"
+        original_gallery_id = settings.matrix_media_gallery_room_id
+        settings.matrix_media_gallery_room_id = "!test-gallery:example.com"
         
         try:
             with patch('chatbot.tools.media_generation_tools._auto_post_to_gallery') as mock_auto_post:
@@ -177,14 +177,14 @@ class TestMediaGalleryIntegration:
                         settings.GOOGLE_API_KEY = original_google_key
                         
         finally:
-            settings.MATRIX_MEDIA_GALLERY_ROOM_ID = original_gallery_id
+            settings.matrix_media_gallery_room_id = original_gallery_id
 
     @pytest.mark.asyncio
     async def test_orchestrator_gallery_room_creation(self):
         """Test that the orchestrator can create a gallery room when none exists."""
         # Setup
-        original_gallery_id = settings.MATRIX_MEDIA_GALLERY_ROOM_ID
-        settings.MATRIX_MEDIA_GALLERY_ROOM_ID = None
+        original_gallery_id = settings.matrix_media_gallery_room_id
+        settings.matrix_media_gallery_room_id = None
         
         try:
             orchestrator = MainOrchestrator()
@@ -219,10 +219,10 @@ class TestMediaGalleryIntegration:
                 mock_client.room_create.assert_called_once()
                 
                 # Verify the settings were updated
-                assert settings.MATRIX_MEDIA_GALLERY_ROOM_ID == "!new-gallery:example.com"
+                assert settings.matrix_media_gallery_room_id == "!new-gallery:example.com"
                 
         finally:
-            settings.MATRIX_MEDIA_GALLERY_ROOM_ID = original_gallery_id
+            settings.matrix_media_gallery_room_id = original_gallery_id
 
     def test_media_gallery_room_id_configuration(self):
         """Test that the MATRIX_MEDIA_GALLERY_ROOM_ID configuration exists."""
@@ -230,7 +230,7 @@ class TestMediaGalleryIntegration:
         assert hasattr(settings, 'MATRIX_MEDIA_GALLERY_ROOM_ID')
         
         # It should be Optional[str] and default to None
-        assert settings.MATRIX_MEDIA_GALLERY_ROOM_ID is None or isinstance(settings.MATRIX_MEDIA_GALLERY_ROOM_ID, str)
+        assert settings.matrix_media_gallery_room_id is None or isinstance(settings.matrix_media_gallery_room_id, str)
 
 
 def main():

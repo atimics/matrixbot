@@ -50,7 +50,7 @@ class OrchestratorConfig:
     rate_limit_config: RateLimitConfig = field(default_factory=RateLimitConfig)
     
     # AI Model settings
-    ai_model: str = field(default_factory=lambda: settings.AI_MODEL)
+    ai_model: str = field(default_factory=lambda: settings.ai_model)
 
 
 class MainOrchestrator:
@@ -120,7 +120,7 @@ class MainOrchestrator:
         from ...core.prompts import prompt_builder
         
         # Get API key from settings (already loaded from env/config)
-        api_key = settings.OPENROUTER_API_KEY
+        api_key = settings.openrouter_api_key
         if not api_key:
             logger.error("OPENROUTER_API_KEY is not configured in environment variables")
             raise ValueError("OPENROUTER_API_KEY is required but not available")
@@ -130,13 +130,13 @@ class MainOrchestrator:
         
         config = AIEngineConfig(
             api_key=api_key,
-            model=self.unified_settings.AI_MODEL,
+            model=self.unified_settings.ai_model,
             temperature=0.7,  # Default temperature since not in AppConfig
             max_tokens=4000,  # Default max_tokens since not in AppConfig
             timeout=30.0  # Default timeout since not in AppConfig
         )
         self.ai_engine = AIEngine(config)
-        logger.info(f"MainOrchestrator: Using unified AIEngine with model {self.unified_settings.AI_MODEL}")
+        logger.info(f"MainOrchestrator: Using unified AIEngine with model {self.unified_settings.ai_model}")
         
         # Initialize Arweave client for internal uploader service
         self.arweave_client = None
@@ -482,9 +482,9 @@ class MainOrchestrator:
             logger.info(f"Node manager initialized with {len(critical_pins)} critical pins: {critical_pins}")
             
             # Create node summary service
-            if settings.OPENROUTER_API_KEY:
+            if settings.openrouter_api_key:
                 self.node_summary_service = NodeSummaryService(
-                    api_key=settings.OPENROUTER_API_KEY,
+                    api_key=settings.openrouter_api_key,
                     model=settings.AI_SUMMARY_MODEL
                 )
             else:
@@ -621,7 +621,7 @@ class MainOrchestrator:
     async def _initialize_observers(self) -> None:
         """Initialize available observers based on environment configuration."""
         # Initialize Matrix observer if credentials available
-        if settings.MATRIX_USER_ID and settings.MATRIX_PASSWORD:
+        if settings.matrix.user_id and settings.matrix.password:
             try:
                 self.matrix_observer = MatrixObserver(self.world_state, self.arweave_client)
                 
@@ -639,10 +639,10 @@ class MainOrchestrator:
                 logger.info("Continuing without Matrix integration")
 
         # Initialize Farcaster observer if credentials available
-        if settings.NEYNAR_API_KEY:
+        if settings.neynar_api_key:
             try:
                 self.farcaster_observer = FarcasterObserver(
-                    settings.NEYNAR_API_KEY,
+                    settings.neynar_api_key,
                     settings.FARCASTER_BOT_SIGNER_UUID,
                     settings.FARCASTER_BOT_FID,
                     world_state_manager=self.world_state,
@@ -878,8 +878,8 @@ class MainOrchestrator:
 
     async def _ensure_media_gallery_exists(self) -> None:
         """Check for, create, and configure the media gallery room."""
-        if settings.MATRIX_MEDIA_GALLERY_ROOM_ID:
-            logger.info(f"Matrix media gallery is configured: {settings.MATRIX_MEDIA_GALLERY_ROOM_ID}")
+        if settings.matrix_media_gallery_room_id:
+            logger.info(f"Matrix media gallery is configured: {settings.matrix_media_gallery_room_id}")
             return
 
         logger.info("MATRIX_MEDIA_GALLERY_ROOM_ID not found in environment. Attempting to create a new gallery room...")
@@ -898,7 +898,7 @@ class MainOrchestrator:
             if isinstance(response, RoomCreateResponse) and response.room_id:
                 new_room_id = response.room_id
                 logger.info(f"Successfully created new Matrix media gallery: {new_room_id}")
-                settings.MATRIX_MEDIA_GALLERY_ROOM_ID = new_room_id
+                settings.matrix_media_gallery_room_id = new_room_id
                 logger.info(f"Set MATRIX_MEDIA_GALLERY_ROOM_ID to {new_room_id}. Please add this to your environment variables for persistence.")
             else:
                 logger.error(f"Failed to create gallery room. Response: {response}")
@@ -913,7 +913,7 @@ class MainOrchestrator:
         existing_integrations = await self.integration_manager.list_integrations()
         
         # Check for Farcaster integration
-        if (settings.NEYNAR_API_KEY and 
+        if (settings.neynar_api_key and 
             settings.FARCASTER_BOT_FID and 
             settings.FARCASTER_BOT_SIGNER_UUID):
             
@@ -932,7 +932,7 @@ class MainOrchestrator:
                             'username': settings.FARCASTER_BOT_USERNAME or 'farcaster_bot'
                         },
                         credentials={
-                            'api_key': settings.NEYNAR_API_KEY,
+                            'api_key': settings.neynar_api_key,
                             'bot_fid': settings.FARCASTER_BOT_FID,
                             'signer_uuid': settings.FARCASTER_BOT_SIGNER_UUID
                         }
@@ -956,7 +956,7 @@ class MainOrchestrator:
                         await self.integration_manager.update_credentials(
                             farcaster_integration['integration_id'],
                             {
-                                'api_key': settings.NEYNAR_API_KEY,
+                                'api_key': settings.neynar_api_key,
                                 'bot_fid': settings.FARCASTER_BOT_FID,
                                 'signer_uuid': settings.FARCASTER_BOT_SIGNER_UUID
                             }
@@ -980,9 +980,9 @@ class MainOrchestrator:
                     logger.error(f"Failed to remove Farcaster integration: {e}")
         
         # Check for Matrix integration
-        if (settings.MATRIX_HOMESERVER and 
-            settings.MATRIX_USER_ID and 
-            settings.MATRIX_PASSWORD):
+        if (settings.matrix.homeserver and 
+            settings.matrix.user_id and 
+            settings.matrix.password):
             
             matrix_exists = any(
                 integration.get('integration_type') == 'matrix' 
@@ -1000,9 +1000,9 @@ class MainOrchestrator:
                             'device_name': settings.DEVICE_NAME
                         },
                         credentials={
-                            'homeserver': settings.MATRIX_HOMESERVER,
-                            'user_id': settings.MATRIX_USER_ID,
-                            'password': settings.MATRIX_PASSWORD
+                            'homeserver': settings.matrix.homeserver,
+                            'user_id': settings.matrix.user_id,
+                            'password': settings.matrix.password
                         }
                     )
                     logger.info("✓ Matrix integration registered successfully")
@@ -1024,9 +1024,9 @@ class MainOrchestrator:
                         await self.integration_manager.update_credentials(
                             matrix_integration['integration_id'],
                             {
-                                'homeserver': settings.MATRIX_HOMESERVER,
-                                'user_id': settings.MATRIX_USER_ID,
-                                'password': settings.MATRIX_PASSWORD
+                                'homeserver': settings.matrix.homeserver,
+                                'user_id': settings.matrix.user_id,
+                                'password': settings.matrix.password
                             }
                         )
                         logger.info("✓ Matrix credentials updated from environment variables")

@@ -65,7 +65,7 @@ class TestFeedbackLoopPrevention:
         
         # Execute reply
         with patch('chatbot.config.settings') as mock_settings:
-            mock_settings.MATRIX_USER_ID = "@bot:example.com"
+            mock_settings.matrix.user_id = "@bot:example.com"
             
             result = await self.reply_tool.execute({
                 "channel_id": "!test:example.com",
@@ -92,7 +92,7 @@ class TestFeedbackLoopPrevention:
         
         # Try to reply again
         with patch('chatbot.config.settings') as mock_settings:
-            mock_settings.MATRIX_USER_ID = "@bot:example.com"
+            mock_settings.matrix.user_id = "@bot:example.com"
             
             result = await self.reply_tool.execute({
                 "channel_id": "!test:example.com",
@@ -121,7 +121,7 @@ class TestFeedbackLoopPrevention:
         
         # Bot's previous reply
         with patch('chatbot.config.settings') as mock_settings:
-            mock_settings.MATRIX_USER_ID = "@bot:example.com"
+            mock_settings.matrix.user_id = "@bot:example.com"
             
             bot_reply = Message(
                 id="$bot_reply_123",
@@ -160,7 +160,7 @@ class TestFeedbackLoopPrevention:
         
         # Try to reply to a different message
         with patch('chatbot.config.settings') as mock_settings:
-            mock_settings.MATRIX_USER_ID = "@bot:example.com"
+            mock_settings.matrix.user_id = "@bot:example.com"
             
             result = await self.reply_tool.execute({
                 "channel_id": "!test:example.com",
@@ -186,7 +186,7 @@ class TestFeedbackLoopPrevention:
         
         # Try to reply again
         with patch('chatbot.config.settings') as mock_settings:
-            mock_settings.MATRIX_USER_ID = "@bot:example.com"
+            mock_settings.matrix.user_id = "@bot:example.com"
             
             result = await self.reply_tool.execute({
                 "channel_id": "!test:example.com",
@@ -201,7 +201,7 @@ class TestFeedbackLoopPrevention:
     def test_has_bot_replied_to_matrix_event_method(self):
         """Test the has_bot_replied_to_matrix_event method directly"""
         with patch('chatbot.config.settings') as mock_settings:
-            mock_settings.MATRIX_USER_ID = "@bot:example.com"
+            mock_settings.matrix.user_id = "@bot:example.com"
             
             # Initially no reply exists
             assert not self.world_state_manager.has_bot_replied_to_matrix_event("$user_msg_123")
@@ -224,7 +224,7 @@ class TestFeedbackLoopPrevention:
     def test_has_bot_replied_checks_message_history(self):
         """Test that has_bot_replied_to_matrix_event checks message history"""
         with patch('chatbot.config.settings') as mock_settings:
-            mock_settings.MATRIX_USER_ID = "@bot:example.com"
+            mock_settings.matrix.user_id = "@bot:example.com"
             
             # Add bot reply message
             bot_reply = Message(

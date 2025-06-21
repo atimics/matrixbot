@@ -102,7 +102,7 @@ class TestMediaActionTracking:
             mock_settings.IMAGE_GENERATION_COOLDOWN_SECONDS = 0 
             mock_settings.VIDEO_GENERATION_COOLDOWN_SECONDS = 0
             # Setting for gallery auto-post (to avoid the gallery auto-post trying to execute)
-            mock_settings.MATRIX_MEDIA_GALLERY_ROOM_ID = None
+            mock_settings.matrix_media_gallery_room_id = None
 
 
             result = await generate_image_tool.execute({"prompt": "A beautiful landscape"}, mock_ctx)
@@ -149,7 +149,7 @@ class TestMediaActionTracking:
         
         # Mock settings
         with patch('chatbot.tools.describe_image_tool.settings') as mock_settings:
-            mock_settings.OPENROUTER_API_KEY = "test_key"
+            mock_settings.openrouter_api_key = "test_key"
             mock_settings.AI_MULTIMODAL_MODEL = "test_model"
             mock_settings.YOUR_SITE_URL = "http://test.com"
             mock_settings.YOUR_SITE_NAME = "Test"
@@ -204,7 +204,7 @@ class TestMediaActionTracking:
         
         # Mock settings
         with patch('chatbot.tools.describe_image_tool.settings') as mock_settings:
-            mock_settings.OPENROUTER_API_KEY = "test_key"
+            mock_settings.openrouter_api_key = "test_key"
             mock_settings.AI_MULTIMODAL_MODEL = "test_model"
             mock_settings.YOUR_SITE_URL = "http://test.com"
             mock_settings.YOUR_SITE_NAME = "Test"
