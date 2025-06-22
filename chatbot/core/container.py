@@ -377,6 +377,15 @@ class DependencyContainer:
             StoreUserMemoryTool,
             GetUserProfileTool
         )
+        # Node management tools (unified execution pipeline)
+        from ..tools.node_tools import (
+            ExpandNodeTool,
+            CollapseNodeTool,
+            PinNodeTool,
+            UnpinNodeTool,
+            RefreshSummaryTool,
+            GetExpansionStatusTool
+        )
         
         # Ensure tool registry is initialized
         assert self._tool_registry is not None, "Tool registry must be initialized before registering tools"
@@ -384,6 +393,14 @@ class DependencyContainer:
         # Core tools
         self._tool_registry.register_tool(WaitTool())
         self._tool_registry.register_tool(DescribeImageTool())
+        
+        # Node management tools (register early for priority in node-based processing)
+        self._tool_registry.register_tool(ExpandNodeTool())
+        self._tool_registry.register_tool(CollapseNodeTool())
+        self._tool_registry.register_tool(PinNodeTool())
+        self._tool_registry.register_tool(UnpinNodeTool())
+        self._tool_registry.register_tool(RefreshSummaryTool())
+        self._tool_registry.register_tool(GetExpansionStatusTool())
         
         # Web search and research tools
         self._tool_registry.register_tool(WebSearchTool())

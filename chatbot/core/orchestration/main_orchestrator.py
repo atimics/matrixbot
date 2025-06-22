@@ -433,10 +433,27 @@ class MainOrchestrator:
             ScheduleProactiveEngagementTool,
             GetProactiveEngagementStatusTool
         )
+        # Node management tools (unified execution pipeline)
+        from ...tools.node_tools import (
+            ExpandNodeTool,
+            CollapseNodeTool,
+            PinNodeTool,
+            UnpinNodeTool,
+            RefreshSummaryTool,
+            GetExpansionStatusTool
+        )
         
         # Core tools
         self.tool_registry.register_tool(WaitTool())
         self.tool_registry.register_tool(DescribeImageTool())
+        
+        # Node management tools (register early for priority in node-based processing)
+        self.tool_registry.register_tool(ExpandNodeTool())
+        self.tool_registry.register_tool(CollapseNodeTool())
+        self.tool_registry.register_tool(PinNodeTool())
+        self.tool_registry.register_tool(UnpinNodeTool())
+        self.tool_registry.register_tool(RefreshSummaryTool())
+        self.tool_registry.register_tool(GetExpansionStatusTool())
         
         # Web search and research tools
         self.tool_registry.register_tool(WebSearchTool())

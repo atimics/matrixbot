@@ -23,6 +23,7 @@ from ..ai_engine import AIDecisionEngine, DecisionResult
 from ..world_state.manager import WorldStateManager
 from ..world_state.payload_builder import PayloadBuilder
 from ...tools.registry import ToolRegistry
+from ...tools.base import ActionContext
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,8 @@ class NodeProcessor:
         ai_engine: AIDecisionEngine,
         world_state_manager: WorldStateManager,
         payload_builder: PayloadBuilder,
-        tool_registry: ToolRegistry
+        tool_registry: ToolRegistry,
+        action_context: Optional[ActionContext] = None
     ):
         self.node_manager = node_manager
         self.summary_service = summary_service
@@ -53,8 +55,9 @@ class NodeProcessor:
         self.world_state_manager = world_state_manager
         self.payload_builder = payload_builder
         self.tool_registry = tool_registry
+        self.action_context = action_context
         
-        # Create node interaction tools
+        # Create node interaction tools (legacy compatibility - now deprecated)
         self.node_tools = NodeInteractionTools(node_manager)
         
         # Phase control
@@ -62,6 +65,7 @@ class NodeProcessor:
         self.max_exploration_rounds = settings.MAX_EXPLORATION_ROUNDS
         
         logger.info(f"NodeProcessor initialized (two-phase: {self.enable_two_phase})")
+        logger.info("Note: Node tools are now executed through unified ToolRegistry pipeline")
     
     async def process_cycle(
         self, 
@@ -176,10 +180,8 @@ class NodeProcessor:
             }
         )
         
-        # Add all available tools (node tools + external tools)
-        # Note: node tools return dict, external tools return formatted string
-        payload["available_tools"] = self.node_tools.get_tool_definitions()
-        payload["external_tools_description"] = self.tool_registry.get_tool_descriptions_for_ai()
+        # Add all available tools through unified ToolRegistry
+        payload["available_tools"] = self.tool_registry.get_tool_descriptions_for_ai()
         
         # Get AI decision
         decision_result = await self.ai_engine.make_decision(payload, cycle_id)
@@ -194,7 +196,7 @@ class NodeProcessor:
                 "mode": "single_phase"
             }
         
-        # Execute selected actions
+        # Execute selected actions through unified pipeline
         actions_executed = 0
         for action in decision_result.selected_actions:
             try:
@@ -285,8 +287,14 @@ class NodeProcessor:
                 }
         payload["expanded_nodes"] = expanded_nodes
         
-        # Only provide node interaction tools in orient phase
-        payload["available_tools"] = self.node_tools.get_tool_definitions()
+        # Only provide node interaction tools in orient phase (get descriptions from ToolRegistry)
+        node_tool_names = ["expand_node", "collapse_node", "pin_node", "unpin_node", "refresh_summary", "get_expansion_status"]
+        node_tools_descriptions = []
+        for tool_name in node_tool_names:
+            tool = self.tool_registry.get_tool(tool_name)
+            if tool:
+                node_tools_descriptions.append(f"{tool.name}: {tool.description}")
+        payload["available_tools"] = "\n".join(node_tools_descriptions)
         
         # Execute orient decision
         orient_cycle_id = f"{cycle_id}_orient"
@@ -296,14 +304,14 @@ class NodeProcessor:
         if decision_result.selected_actions:
             for action in decision_result.selected_actions:
                 try:
-                    # Only execute node interaction tools in orient phase
+                    # Only execute node interaction tools in orient phase, use unified pipeline
                     if action.action_type in ["expand_node", "collapse_node", "pin_node", "unpin_node", "refresh_summary"]:
-                        result = self.node_tools.execute_tool(action.action_type, action.parameters)
-                        if result.get("success", False):
+                        success = await self._execute_action(action, cycle_id)
+                        if success:
                             expansion_actions += 1
                             logger.debug(f"NodeProcessor: Orient action {action.action_type} succeeded")
                         else:
-                            logger.warning(f"NodeProcessor: Orient action {action.action_type} failed: {result.get('message', 'Unknown error')}")
+                            logger.warning(f"NodeProcessor: Orient action {action.action_type} failed")
                     else:
                         logger.warning(f"NodeProcessor: Ignoring non-node action {action.action_type} in orient phase")
                 except Exception as e:
@@ -354,9 +362,8 @@ class NodeProcessor:
             "respond to the situation you've discovered."
         )
         
-        # Provide all available tools (node tools + external tools)
-        payload["available_tools"] = self.node_tools.get_tool_definitions()
-        payload["external_tools_description"] = self.tool_registry.get_tool_descriptions_for_ai()
+        # Provide all available tools through unified ToolRegistry
+        payload["available_tools"] = self.tool_registry.get_tool_descriptions_for_ai()
         
         # Execute decide/act decision
         decide_cycle_id = f"{cycle_id}_decide_act"
@@ -381,33 +388,45 @@ class NodeProcessor:
     
     async def _execute_action(self, action, cycle_id: str) -> bool:
         """
-        Execute an individual action (node tool or external tool).
+        Execute an individual action through the unified tool registry pipeline.
+        
+        This method now routes ALL actions (node and external) through the main
+        ToolRegistry, eliminating the forked execution pattern.
         
         Returns:
             True if action executed successfully, False otherwise
         """
         try:
-            # Check if it's a node interaction tool
-            if action.action_type in ["expand_node", "collapse_node", "pin_node", "unpin_node", "refresh_summary", "get_expansion_status"]:
-                result = self.node_tools.execute_tool(action.action_type, action.parameters)
-                success = result.get("success", False)
+            # All actions now go through the unified ToolRegistry
+            tool = self.tool_registry.get_tool(action.action_type)
+            if not tool:
+                logger.warning(f"NodeProcessor: Unknown tool {action.action_type}")
+                return False
+            
+            # For external tools, we need an ActionContext
+            if action.action_type not in ["expand_node", "collapse_node", "pin_node", "unpin_node", "refresh_summary", "get_expansion_status"]:
+                if not self.action_context:
+                    logger.info(f"NodeProcessor: External action {action.action_type} requires ActionContext - skipping in node-only mode")
+                    return True  # Consider successful for node-only processing
+                
+                # Execute external tool with full ActionContext
+                result = await tool.execute(action.parameters, self.action_context)
+                success = result.get("status") == "success"
+                if success:
+                    logger.info(f"NodeProcessor: External action {action.action_type} succeeded")
+                else:
+                    logger.warning(f"NodeProcessor: External action {action.action_type} failed: {result.get('error', 'Unknown error')}")
+                return success
+            else:
+                # Execute node management tool with minimal ActionContext
+                minimal_context = ActionContext(world_state_manager=self.world_state_manager)
+                result = await tool.execute(action.parameters, minimal_context)
+                success = result.get("status") == "success"
                 if success:
                     logger.debug(f"NodeProcessor: Node action {action.action_type} succeeded")
                 else:
-                    logger.warning(f"NodeProcessor: Node action {action.action_type} failed: {result.get('message', 'Unknown error')}")
+                    logger.warning(f"NodeProcessor: Node action {action.action_type} failed: {result.get('error', 'Unknown error')}")
                 return success
-            else:
-                # Execute external tool through tool registry
-                tool = self.tool_registry.get_tool(action.action_type)
-                if tool:
-                    # This would need ActionContext - for now, log the action
-                    # In a full implementation, this would integrate with the existing action execution system
-                    logger.info(f"NodeProcessor: Would execute external action {action.action_type} with params {action.parameters}")
-                    # TODO: Integrate with action execution system from main orchestrator
-                    return True
-                else:
-                    logger.warning(f"NodeProcessor: Unknown tool {action.action_type}")
-                    return False
                 
         except Exception as e:
             logger.error(f"NodeProcessor: Error executing action {action.action_type}: {e}")

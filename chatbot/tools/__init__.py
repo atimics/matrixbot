@@ -8,6 +8,7 @@ from .describe_image_tool import DescribeImageTool
 from .farcaster_tools import SendFarcasterPostTool, SendFarcasterReplyTool, DeleteFarcasterPostTool, DeleteFarcasterReactionTool
 from .frame_tools import CreateTransactionFrameTool, CreatePollFrameTool, CreateCustomFrameTool, SearchFramesTool, GetFrameCatalogTool
 from .matrix_tools import SendMatrixMessageTool, SendMatrixReplyTool, AcceptMatrixInviteTool, IgnoreMatrixInviteTool
+from .node_tools import ExpandNodeTool, CollapseNodeTool, PinNodeTool, UnpinNodeTool, RefreshSummaryTool, GetExpansionStatusTool
 from .registry import ToolRegistry
 
 __all__ = [
@@ -24,6 +25,12 @@ __all__ = [
     "SendFarcasterReplyTool",
     "DeleteFarcasterPostTool",
     "DeleteFarcasterReactionTool",
+    "ExpandNodeTool",
+    "CollapseNodeTool", 
+    "PinNodeTool",
+    "UnpinNodeTool",
+    "RefreshSummaryTool",
+    "GetExpansionStatusTool",
     "CreateTransactionFrameTool",
     "CreatePollFrameTool",
     "CreateCustomFrameTool",
