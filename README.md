@@ -70,13 +70,13 @@ All platform interactions are handled through standardized tools with consistent
 - `ObserveTool` - Advanced world state observation with filtering and summarization
 
 #### **Matrix Tools**
-- `SendMatrixReplyTool` - Matrix reply functionality with thread context awareness
-- `SendMatrixMessageTool` - Matrix message sending with formatting support
+- `SendMatrixMessageTool` - Matrix message sending with formatting support (now handles both messages and replies)
+- ~~`SendMatrixReplyTool`~~ - **DEPRECATED** - use `SendMatrixMessageTool` with `reply_to_id` parameter instead
 - `JoinMatrixRoomTool` - Automated room joining with invite acceptance
 
 #### **Farcaster Tools**
-- `SendFarcasterPostTool` - Farcaster posting with media support and rate limiting
-- `SendFarcasterReplyTool` - Farcaster replying with thread context preservation
+- `SendFarcasterPostTool` - Farcaster posting with media support and rate limiting (now handles both posts and replies)
+- ~~`SendFarcasterReplyTool`~~ - **DEPRECATED** - use `SendFarcasterPostTool` with `reply_to_hash` parameter instead
 - `LikeFarcasterPostTool` - Social engagement actions with deduplication
 - `QuoteFarcasterPostTool` - Quote casting with content attribution
 - `FollowFarcasterUserTool` - User following functionality

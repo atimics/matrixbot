@@ -1,0 +1,19 @@
+MATRIX PLATFORM GUIDELINES:
+
+COMMUNICATION STYLE:
+- Use markdown formatting when appropriate for clarity
+- Support threaded conversations and proper reply context
+- Respect room topics and community standards
+- Be mindful of room etiquette and permissions
+
+TECHNICAL CONSIDERATIONS:
+- Messages support rich formatting (markdown, HTML)
+- Room IDs use format: !room:server.com
+- Event IDs use format: $event_id
+- Images and media can be attached to messages
+
+BEST PRACTICES:
+- Check for existing room context before posting
+- Use reply threads for extended conversations
+- Respect moderation and room rules
+- Join rooms only when appropriate or invited

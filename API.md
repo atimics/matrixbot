@@ -138,35 +138,25 @@ Provides world state observation and reporting.
 
 #### SendMatrixMessageTool
 
-Send messages to Matrix rooms.
+Send messages to Matrix rooms. **This tool now handles both regular messages and replies**, consolidating the functionality previously split between SendMatrixMessageTool and SendMatrixReplyTool.
 
 ```python
 {
     "name": "send_matrix_message",
-    "description": "Send a message to a Matrix room",
+    "description": "Send a message to a Matrix room. Can be used for both new messages and replies.",
     "parameters_schema": {
-        "room_id": "string - Matrix room ID (!room:server.com)",
-        "content": "string - message content to send",
-        "format": "string (optional) - 'markdown' or 'html', defaults to 'markdown'"
+        "channel_id": "string (Matrix room ID) - The room where the message should be sent",
+        "content": "string - The message content to send (supports markdown formatting)",
+        "reply_to_id": "string (optional) - The event ID of the message to reply to. If provided, sends as a reply",
+        "format_as_markdown": "boolean (optional, default: true) - Whether to format the content as markdown",
+        "image_url": "string (optional) - URL of an image to attach. If not provided, recently generated media will be auto-attached"
     }
 }
 ```
 
-#### SendMatrixReplyTool
+#### ~~SendMatrixReplyTool~~ ⚠️ DEPRECATED
 
-Reply to specific Matrix messages.
-
-```python
-{
-    "name": "send_matrix_reply",
-    "description": "Reply to a specific message in Matrix",
-    "parameters_schema": {
-        "room_id": "string - Matrix room ID",
-        "content": "string - reply content",
-        "reply_to_event_id": "string - event ID to reply to"
-    }
-}
-```
+**This tool has been deprecated.** Use `SendMatrixMessageTool` with the `reply_to_id` parameter instead. The consolidation eliminates duplication and simplifies the AI's decision space.
 
 #### JoinMatrixRoomTool
 
@@ -186,12 +176,12 @@ Join Matrix rooms and accept invitations.
 
 #### SendFarcasterPostTool
 
-Create new Farcaster posts with automatic image embedding and social media optimization.
+Send posts to Farcaster. **This tool now handles both regular posts and replies**, consolidating the functionality previously split between SendFarcasterPostTool and SendFarcasterReplyTool.
 
 ```python
 {
     "name": "send_farcaster_post",
-    "description": "Send a new post to Farcaster",
+    "description": "Send a post (cast) to Farcaster. Can be used for both new posts and replies.",
     "parameters_schema": {
         "type": "object",
         "properties": {
@@ -199,9 +189,13 @@ Create new Farcaster posts with automatic image embedding and social media optim
                 "type": "string",
                 "description": "The text content of the cast to post"
             },
+            "reply_to_hash": {
+                "type": "string",
+                "description": "The hash of the cast to reply to. If provided, sends as a reply instead of a new post"
+            },
             "channel": {
                 "type": "string", 
-                "description": "The channel to post in (if not provided, posts to user's timeline)"
+                "description": "The channel to post in (if not provided, posts to user's timeline). Not used for replies."
             },
             "embed_url": {
                 "type": "string",
@@ -218,31 +212,11 @@ Create new Farcaster posts with automatic image embedding and social media optim
 - Social media optimized previews with descriptive titles
 - Proper URL encoding for special characters
 - Rich media display in Farcaster clients
+- Unified handling of both posts and replies
 
-#### SendFarcasterReplyTool
+#### ~~SendFarcasterReplyTool~~ ⚠️ DEPRECATED
 
-Reply to Farcaster casts.
-
-```python
-{
-    "name": "send_farcaster_reply",
-    "description": "Reply to a Farcaster cast",
-    "parameters_schema": {
-        "type": "object",
-        "properties": {
-            "content": {
-                "type": "string",
-                "description": "The text content of the reply"
-            },
-            "reply_to_hash": {
-                "type": "string",
-                "description": "The hash of the cast to reply to"
-            }
-        },
-        "required": ["content", "reply_to_hash"]
-    }
-}
-```
+**This tool has been deprecated.** Use `SendFarcasterPostTool` with the `reply_to_hash` parameter instead. The consolidation eliminates duplication and simplifies the AI's decision space.
 
 #### LikeFarcasterPostTool
 
