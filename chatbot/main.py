@@ -11,7 +11,8 @@ import logging
 from pathlib import Path
 
 from chatbot.config import settings
-from chatbot.core.orchestration import MainOrchestrator, OrchestratorConfig, ProcessingConfig
+from chatbot.core.container import DependencyContainer
+from chatbot.core.orchestration import OrchestratorConfig, ProcessingConfig
 
 
 def setup_logging() -> None:
@@ -45,8 +46,12 @@ async def main() -> None:
         ai_model=settings.AI_MODEL,
     )
 
-    # Create and start orchestrator
-    orchestrator = MainOrchestrator(config)
+    # Create and initialize the dependency container
+    container = DependencyContainer(db_path=settings.CHATBOT_DB_PATH)
+    await container.initialize()
+
+    # Create orchestrator with dependency injection
+    orchestrator = container.create_main_orchestrator(config)
 
     try:
         await orchestrator.start()
@@ -57,6 +62,7 @@ async def main() -> None:
         raise
     finally:
         await orchestrator.stop()
+        await container.cleanup()
         logger.info("Chatbot application stopped")
 
 

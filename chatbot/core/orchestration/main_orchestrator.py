@@ -11,7 +11,10 @@ import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ...tools.base import ActionContext
 
 from ...config import settings
 from ...core.ai_engine import AIDecisionEngine, ActionPlan
@@ -216,14 +219,92 @@ class MainOrchestrator:
     
     This is the primary entry point that:
     1. Manages system lifecycle (start/stop)
-    2. Initializes and coordinates all components
+    2. Coordinates between different subsystems
     3. Manages external observers (Matrix, Farcaster)
     4. Provides unified system status and control
+    
+    Dependencies are injected via constructor to enable clean testing and DI.
     """
     
-    def __init__(self, config: Optional[OrchestratorConfig] = None):
+    def __init__(
+        self,
+        config: Optional[OrchestratorConfig] = None,
+        # Core dependencies (injected by DI container)
+        world_state_manager: Optional[WorldStateManager] = None,
+        context_manager: Optional[ContextManager] = None,
+        integration_manager: Optional[IntegrationManager] = None,
+        ai_engine: Optional[AIDecisionEngine] = None,
+        payload_builder: Optional[PayloadBuilder] = None,
+        processing_hub: Optional[ProcessingHub] = None,
+        rate_limiter: Optional[RateLimiter] = None,
+        proactive_engine: Optional[ProactiveConversationEngine] = None,
+        tool_registry: Optional[ToolRegistry] = None,
+        action_context: Optional['ActionContext'] = None,
+        arweave_client: Optional[ArweaveUploaderClient] = None,
+    ):
         self.config = config or OrchestratorConfig()
         
+        # Determine if we're in DI mode (any non-None dependency indicates DI mode)
+        self._is_di_mode = (
+            world_state_manager is not None or
+            context_manager is not None or
+            integration_manager is not None or
+            ai_engine is not None or
+            payload_builder is not None or
+            processing_hub is not None or
+            rate_limiter is not None or
+            proactive_engine is not None or
+            tool_registry is not None or
+            action_context is not None
+        )
+        
+        # Use injected dependencies if provided, otherwise create them (legacy mode)
+        if self._is_di_mode:
+            # DI mode - use all injected dependencies
+            if not all([world_state_manager, context_manager, integration_manager, 
+                       ai_engine, payload_builder, processing_hub, rate_limiter, 
+                       proactive_engine, tool_registry, action_context]):
+                raise ValueError("In DI mode, all core dependencies must be provided")
+            
+            self.world_state = world_state_manager
+            self.context_manager = context_manager
+            self.integration_manager = integration_manager
+            self.ai_engine = ai_engine
+            self.payload_builder = payload_builder
+            self.processing_hub = processing_hub
+            self.rate_limiter = rate_limiter
+            self.proactive_engine = proactive_engine
+            self.tool_registry = tool_registry
+            self.action_context = action_context
+            self.arweave_client = arweave_client
+            
+            logger.info("MainOrchestrator initialized with dependency injection")
+        else:
+            # Legacy mode - create dependencies manually
+            logger.warning("MainOrchestrator initializing in legacy mode - consider using DependencyContainer")
+            self._initialize_legacy_dependencies()
+        
+        # External observers
+        self.matrix_observer: Optional[MatrixObserver] = None
+        self.farcaster_observer: Optional[FarcasterObserver] = None
+        
+        # NFT and eligibility services
+        self.base_nft_service: Optional[BaseNFTService] = None
+        self.eligibility_service: Optional[UserEligibilityService] = None
+        
+        # System state
+        self.running = False
+        self.cycle_count = 0  # Track processing cycles
+        
+        # Initialize node-based processing system (depends on core components being set)
+        self._initialize_node_system()
+        
+        # Initialize tool registry and register tools (only in legacy mode)
+        if not self._is_di_mode:
+            self._register_all_tools()
+    
+    def _initialize_legacy_dependencies(self):
+        """Initialize dependencies manually for legacy compatibility."""
         # Core components
         self.world_state = WorldStateManager()
         self.payload_builder = PayloadBuilder()
@@ -232,8 +313,6 @@ class MainOrchestrator:
         
         # Integration management
         encryption_key = settings.RATICHAT_ENCRYPTION_KEY
-        # Pass the key as string - Fernet expects base64-encoded string, not decoded bytes
-        
         self.integration_manager = IntegrationManager(
             db_path=self.config.db_path,
             encryption_key=encryption_key,
@@ -291,24 +370,6 @@ class MainOrchestrator:
             arweave_service=arweave_service_instance,
             s3_service=s3_service_instance
         )
-        
-        # External observers
-        self.matrix_observer: Optional[MatrixObserver] = None
-        self.farcaster_observer: Optional[FarcasterObserver] = None
-        
-        # NFT and eligibility services
-        self.base_nft_service: Optional[BaseNFTService] = None
-        self.eligibility_service: Optional[UserEligibilityService] = None
-        
-        # System state
-        self.running = False
-        self.cycle_count = 0  # Track processing cycles
-        
-        # Initialize node-based processing system
-        self._initialize_node_system()
-        
-        # Initialize tool registry and register tools
-        self._register_all_tools()
 
     def _register_all_tools(self):
         """Register all available tools with the tool registry."""
@@ -1111,6 +1172,18 @@ class MainOrchestrator:
     def _initialize_node_system(self):
         """Initialize the node-based processing system."""
         logger.info("Initializing node-based processing system...")
+        
+        # Ensure required dependencies are available
+        if not self.ai_engine:
+            raise RuntimeError("AI engine is required for node system initialization")
+        if not self.world_state:
+            raise RuntimeError("World state manager is required for node system initialization")  
+        if not self.payload_builder:
+            raise RuntimeError("Payload builder is required for node system initialization")
+        if not self.tool_registry:
+            raise RuntimeError("Tool registry is required for node system initialization")
+        if not self.processing_hub:
+            raise RuntimeError("Processing hub is required for node system initialization")
         
         # Initialize NodeManager with LRU and metadata management
         self.node_manager = NodeManager(
