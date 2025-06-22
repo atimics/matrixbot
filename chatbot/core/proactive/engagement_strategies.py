@@ -191,7 +191,7 @@ class UserMilestoneStrategy(EngagementStrategy):
         # Add platform-specific delivery
         if platform == "farcaster":
             action_sequence.append({
-                "action_type": "send_farcaster_reply",
+                "action_type": "send_farcaster_post",
                 "parameters": {
                     "content": "{{generated_message}}",
                     "mention_user": username

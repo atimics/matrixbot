@@ -422,7 +422,7 @@ class ProactiveConversationEngine:
     def _analyze_action_for_follow_up(self, action, world_state_data: WorldStateData) -> Optional[Dict[str, Any]]:
         """Analyze an action to see if it warrants a follow-up."""
         # Example follow-up logic
-        if action.action_type in ["send_farcaster_reply", "send_matrix_reply"]:
+        if action.action_type in ["send_farcaster_post", "send_matrix_reply"]:
             # Check if the conversation continued after our reply
             channel_id = action.parameters.get("channel_id")
             if channel_id and channel_id in world_state_data.channels:

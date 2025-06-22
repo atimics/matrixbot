@@ -324,7 +324,7 @@ class WorldStateManager:
         This now checks for successful or scheduled actions.
         """
         for action in self.state.action_history:
-            if action.action_type == "send_farcaster_reply":
+            if action.action_type == "send_farcaster_post":
                 reply_to_hash = action.parameters.get("reply_to_hash")
                 if reply_to_hash == cast_hash:
                     # Consider it replied if the action was successful OR is still scheduled.

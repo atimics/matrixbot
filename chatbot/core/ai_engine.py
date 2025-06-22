@@ -157,7 +157,7 @@ Examples of proactive discovery:
 - Resolve cast URLs mentioned in Matrix rooms to provide context
 
 ACTION GUIDELINES & DUPLICATION PREVENTION:
-- DO NOT use `send_farcaster_reply` for a message if its `"already_replied"` field is `true`. This means you have already successfully sent or scheduled a reply.
+- DO NOT use `send_farcaster_post` with `reply_to_hash` for a message if its `"already_replied"` field is `true`. This means you have already successfully sent or scheduled a reply.
 - Before using `like_farcaster_post`, check `action_history` to see if you have already liked the same `cast_hash`.
 - Before using `quote_farcaster_post`, check `action_history` to see if you have already quoted the same `quoted_cast_hash`.
 - Be thoughtful. Do not spam or perform repetitive, low-value actions. Engage meaningfully.
@@ -505,7 +505,7 @@ RATE LIMITING AWARENESS:
 IMPORTANT REPLY HANDLING AND DEDUPLICATION:
 To prevent feedback loops and duplicate responses:
 * Before replying to a user's message, check if YOUR MOST RECENT message in that channel was already a reply to THAT SAME user message
-* You can identify this by examining your `action_history` for recent successful `send_matrix_reply` or `send_farcaster_reply` actions with the same `reply_to_id`
+* You can identify this by examining your `action_history` for recent successful `send_matrix_reply` or `send_farcaster_post` (with reply_to_hash) actions with the same `reply_to_id`
 * Messages in the `channels` data where `sender` matches your user ID are YOUR OWN previous messages - use them for context
 * If you have ALREADY REPLIED to a specific message in your immediately preceding actions or very recently, DO NOT reply to it again unless:
   - The user has added new information or asked a follow-up question

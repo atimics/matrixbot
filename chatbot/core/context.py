@@ -153,7 +153,7 @@ class ContextManager:
         limit: int = 100,
     ) -> List[StateChangeBlock]:
         """Retrieve stored state changes with filtering using HistoryRecorder"""
-        return await self.history_recorder.get_state_changes(
+        return await self.history_recorder.get_recent_state_changes(
             channel_id=channel_id,
             change_type=change_type,
             since_timestamp=since_timestamp,

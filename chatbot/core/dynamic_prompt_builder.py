@@ -166,12 +166,12 @@ NEW USER DETECTED: Fresh engagement opportunity.
         """Get only tools relevant to the current situation."""
         # Tool categories by situation
         situation_tool_priorities = {
-            "user_waiting_for_reply": ["send_matrix_message", "send_farcaster_reply", "react_to_matrix_message"],
-            "high_activity": ["send_matrix_message", "send_farcaster_reply", "wait"],
+            "user_waiting_for_reply": ["send_matrix_message", "send_farcaster_post", "react_to_matrix_message"],
+            "high_activity": ["send_matrix_message", "send_farcaster_post", "wait"],
             "low_activity": ["get_trending_casts", "search_casts", "send_farcaster_post", "generate_image"],
             "rate_limited": ["wait", "react_to_matrix_message"],
             "error_recovery": ["wait", "send_matrix_message"],
-            "new_user_engagement": ["send_matrix_message", "send_farcaster_reply", "get_user_timeline"]
+            "new_user_engagement": ["send_matrix_message", "send_farcaster_post", "get_user_timeline"]
         }
         
         priority_tools = situation_tool_priorities.get(situation, available_tools[:10])  # Fallback to first 10
@@ -382,7 +382,7 @@ class ContextAnalyzer:
         # This would normally come from the tool registry
         # For now, return a default set
         return [
-            "wait", "send_matrix_message", "send_farcaster_reply", 
+            "wait", "send_matrix_message", "send_farcaster_post", 
             "send_farcaster_post", "react_to_matrix_message",
             "get_trending_casts", "search_casts", "generate_image"
         ]
