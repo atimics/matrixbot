@@ -378,7 +378,7 @@ class NewUserWelcomeStrategy(EngagementStrategy):
         # Add platform-specific delivery
         if platform == "farcaster":
             action_sequence.append({
-                "action_type": "send_farcaster_reply",
+                "action_type": "send_farcaster_post",
                 "parameters": {
                     "content": "{{welcome_message}}",
                     "mention_user": new_user
@@ -549,10 +549,10 @@ class ContentSharingStrategy(EngagementStrategy):
         # Add platform-specific delivery
         if platform == "farcaster":
             action_sequence.append({
-                "action_type": "send_farcaster_reply",
+                "action_type": "send_farcaster_post",
                 "parameters": {
                     "content": "{{helpful_response}}",
-                    "reply_to": opportunity.context.get("message_id")
+                    "reply_to_hash": opportunity.context.get("message_id")
                 },
                 "reasoning": "Reply with helpful information on Farcaster"
             })

@@ -258,7 +258,7 @@ class FarcasterScheduler:
                             )
                         else:
                             self.world_state_manager.add_action_result(
-                                "send_farcaster_reply", params_for_wsm, "success"
+                                "send_farcaster_post", params_for_wsm, "success"
                             )
                     else:
                         result_status = f"failure: {error_message or 'unknown error'}"
@@ -268,7 +268,7 @@ class FarcasterScheduler:
                             )
                         else:
                             self.world_state_manager.add_action_result(
-                                "send_farcaster_reply", params_for_wsm, result_status
+                                "send_farcaster_post", params_for_wsm, result_status
                             )
                 self.reply_queue.task_done()
                 await asyncio.sleep(self.scheduler_interval)

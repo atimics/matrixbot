@@ -320,7 +320,7 @@ class ActionHistory:
     performance monitoring, and intelligent decision-making about future actions.
 
     Attributes:
-        action_type: Type of action performed (e.g., 'send_farcaster_reply', 'like_farcaster_post')
+        action_type: Type of action performed (e.g., 'send_farcaster_post', 'like_farcaster_post')
         parameters: Dictionary of parameters used for the action execution
         result: Result or status of the action ('success', 'failure', 'scheduled', etc.)
         timestamp: Unix timestamp when the action was completed or updated
