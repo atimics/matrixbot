@@ -9,29 +9,53 @@ class ActionContext:
     """
     Provides context to tools during execution, including access to observers,
     world state manager, and other shared resources.
+    
+    NEW: ServiceRegistry provides clean abstraction layer for platform services.
+    Tools should prefer service_registry.get_messaging_service() over direct observer access.
     """
 
     def __init__(
         self,
-        matrix_observer=None,
-        farcaster_observer=None,
         world_state_manager=None,
         context_manager=None,
+        service_registry=None,
+        # Legacy direct access - deprecated, use service_registry instead
+        matrix_observer=None,
+        farcaster_observer=None,
         arweave_client=None,
         arweave_service=None,
         s3_service=None,
         base_nft_service=None,
         eligibility_service=None,
     ):
-        self.matrix_observer = matrix_observer
-        self.farcaster_observer = farcaster_observer
+        # New unified service access
+        self.service_registry = service_registry
         self.world_state_manager = world_state_manager
         self.context_manager = context_manager
+        
+        # Legacy direct access (deprecated - use service_registry instead)
+        self.matrix_observer = matrix_observer
+        self.farcaster_observer = farcaster_observer
         self.arweave_client = arweave_client
         self.arweave_service = arweave_service
         self.s3_service = s3_service
         self.base_nft_service = base_nft_service
         self.eligibility_service = eligibility_service
+        
+        # Auto-populate service registry if not provided
+        if not self.service_registry:
+            from ..core.services import ServiceRegistry
+            self.service_registry = ServiceRegistry()
+            
+            # Register legacy services for compatibility
+            if matrix_observer:
+                self.service_registry.register_service("matrix_observer", matrix_observer)
+            if farcaster_observer:
+                self.service_registry.register_service("farcaster_observer", farcaster_observer)
+            if arweave_service:
+                self.service_registry.register_service("arweave_storage", arweave_service)
+            if s3_service:
+                self.service_registry.register_service("s3_storage", s3_service)
 
 
 class ToolInterface(ABC):

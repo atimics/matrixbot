@@ -281,7 +281,10 @@ class SendMatrixReplyTool(ToolInterface):
 
 class SendMatrixMessageTool(ToolInterface):
     """
-    Tool for sending new messages to Matrix channels.
+    Unified tool for sending messages and replies to Matrix channels.
+    
+    This tool consolidates the functionality of both regular messages and replies,
+    eliminating the need for separate tools and simplifying the AI's decision space.
     """
 
     @property
@@ -290,7 +293,8 @@ class SendMatrixMessageTool(ToolInterface):
 
     @property
     def description(self) -> str:
-        return ("Send a new message to a Matrix channel. Use this when you want to start a new conversation or make an announcement. "
+        return ("Send a message to a Matrix channel. Can be used for both new messages and replies. "
+                "If reply_to_id is provided, sends as a reply to that message. "
                 "Recently generated media (within 5 minutes) will be automatically attached as a separate image message if no explicit image_url is provided.")
 
     @property
@@ -298,6 +302,7 @@ class SendMatrixMessageTool(ToolInterface):
         return {
             "channel_id": "string (Matrix room ID) - The room where the message should be sent",
             "content": "string - The message content to send (supports markdown formatting)",
+            "reply_to_id": "string (optional) - The event ID of the message to reply to. If provided, sends as a reply",
             "format_as_markdown": "boolean (optional, default: true) - Whether to format the content as markdown",
             "image_url": "string (optional) - URL of an image to attach. If not provided, recently generated media will be auto-attached",
         }

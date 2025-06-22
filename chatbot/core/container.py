@@ -321,14 +321,24 @@ class DependencyContainer:
         arweave_service = ArweaveService(arweave_client=self._arweave_client)
         s3_service = S3Service()
         
+        # Initialize service registry
+        from .services import ServiceRegistry
+        service_registry = ServiceRegistry()
+        
+        # Register basic services
+        service_registry.register_service("arweave_storage", arweave_service)
+        service_registry.register_service("s3_storage", s3_service)
+        
         self._action_context = ActionContext(
             world_state_manager=self._world_state_manager,
             context_manager=self._context_manager,
+            service_registry=service_registry,
+            # Legacy compatibility
             arweave_client=self._arweave_client,
             arweave_service=arweave_service,
             s3_service=s3_service
         )
-        logger.debug("ActionContext initialized")
+        logger.debug("ActionContext initialized with ServiceRegistry")
     
     def _init_tool_registry(self) -> None:
         """Initialize the tool registry and register all tools."""
