@@ -269,15 +269,20 @@ class MainOrchestrator:
         # Create action context for tool execution
         from ...tools.base import ActionContext
         from ...tools.arweave_service import ArweaveService
+        from ...tools.s3_service import S3Service
         
-        # Initialize arweave service with our client
+        # Initialize arweave service with our client (legacy support)
         arweave_service_instance = ArweaveService(arweave_client=self.arweave_client)
+        
+        # Initialize S3 service
+        s3_service_instance = S3Service()
         
         self.action_context = ActionContext(
             world_state_manager=self.world_state,
             context_manager=self.context_manager,
             arweave_client=self.arweave_client,
-            arweave_service=arweave_service_instance
+            arweave_service=arweave_service_instance,
+            s3_service=s3_service_instance
         )
         
         # External observers

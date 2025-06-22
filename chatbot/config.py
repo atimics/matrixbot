@@ -111,7 +111,12 @@ class AppConfig(BaseSettings):
     GOOGLE_GEMINI_IMAGE_MODEL: str = "gemini-1.5-flash-latest"
     GOOGLE_VEO_VIDEO_MODEL: str = "models/veo-experimental-v1"
 
-    # Arweave Configuration (Internal Uploader Service)
+    # S3 Configuration (replaces Arweave)
+    S3_API_ENDPOINT: Optional[str] = None
+    S3_API_KEY: Optional[str] = None
+    CLOUDFRONT_DOMAIN: Optional[str] = None
+
+    # Legacy Arweave Configuration (kept for backward compatibility during migration)
     ARWEAVE_INTERNAL_UPLOADER_SERVICE_URL: str = "http://arweave-uploader:8001"
     ARWEAVE_GATEWAY_URL: str = "https://arweave.net"
 

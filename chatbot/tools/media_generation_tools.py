@@ -2,7 +2,7 @@
 Media Generation Tools
 
 This module provides tools for generating images and videos using AI services
-like Replicate and Google AI (Gemini/Veo) and storing them permanently on Arweave.
+like Replicate and Google AI (Gemini/Veo) and storing them permanently on S3.
 """
 
 import httpx
@@ -102,8 +102,8 @@ class GenerateImageTool(ToolInterface):
         if not prompt.strip():
             return {"status": "error", "message": "Prompt cannot be empty"}
 
-        if not context.arweave_service or not context.arweave_service.is_configured():
-            return {"status": "error", "message": "Arweave service is not configured."}
+        if not context.s3_service or not context.s3_service.is_configured():
+            return {"status": "error", "message": "S3 service is not configured."}
 
         try:
             image_data = None
@@ -138,23 +138,24 @@ class GenerateImageTool(ToolInterface):
             if not image_data:
                 return {"status": "error", "message": "Failed to generate image data from any available service."}
 
-            image_arweave_url = await context.arweave_service.upload_image_data(image_data, "generated_image.png", "image/png")
-            if not image_arweave_url:
-                return {"status": "error", "message": "Failed to upload generated image to Arweave."}
+            image_s3_url = await context.s3_service.upload_image_data(image_data, "generated_image.png", "image/png")
+            if not image_s3_url:
+                return {"status": "error", "message": "Failed to upload generated image to S3."}
 
-            context.world_state_manager.record_generated_media(
-                media_url=image_arweave_url, media_type="image", prompt=prompt,
-                service_used=service_used, aspect_ratio=aspect_ratio
-            )
+            if hasattr(context, 'world_state_manager') and context.world_state_manager:
+                context.world_state_manager.record_generated_media(
+                    media_url=image_s3_url, media_type="image", prompt=prompt,
+                    service_used=service_used, aspect_ratio=aspect_ratio
+                )
 
-            await _auto_post_to_gallery(context, "image", image_arweave_url, prompt, service_used)
+            await _auto_post_to_gallery(context, "image", image_s3_url, prompt, service_used)
 
             return {
                 "status": "success",
-                "message": f"Image generated using {service_used} and stored on Arweave.",
-                "arweave_image_url": image_arweave_url,
+                "message": f"Image generated using {service_used} and stored on S3.",
+                "s3_image_url": image_s3_url,
                 "prompt_used": prompt,
-                "next_actions_suggestion": f"To share this image, use a tool like 'send_matrix_image' with the URL: {image_arweave_url}"
+                "next_actions_suggestion": f"To share this image, use a tool like 'send_matrix_image' with the URL: {image_s3_url}"
             }
 
         except Exception as e:
@@ -173,8 +174,8 @@ class GenerateVideoTool(ToolInterface):
     def description(self) -> str:
         return (
             "Generates a short video clip from a text prompt. "
-            "The resulting video is stored on Arweave and automatically posted to a gallery channel. "
-            "Use the returned `arweave_video_url` to share it elsewhere."
+            "The resulting video is stored on S3 and automatically posted to a gallery channel. "
+            "Use the returned `s3_video_url` to share it elsewhere."
         )
 
     @property
@@ -202,8 +203,8 @@ class GenerateVideoTool(ToolInterface):
 
         if not prompt.strip():
             return {"status": "error", "message": "Prompt cannot be empty"}
-        if not context.arweave_service or not context.arweave_service.is_configured():
-            return {"status": "error", "message": "Arweave service is not configured."}
+        if not context.s3_service or not context.s3_service.is_configured():
+            return {"status": "error", "message": "S3 service is not configured."}
         if not settings.GOOGLE_API_KEY:
             return {"status": "error", "message": "Google AI API key not configured for video generation."}
 
@@ -215,23 +216,24 @@ class GenerateVideoTool(ToolInterface):
                 return {"status": "error", "message": "Failed to generate video from Google Veo."}
 
             video_data = video_list[0]
-            video_arweave_url = await context.arweave_service.upload_image_data(video_data, "generated_video.mp4", "video/mp4")
-            if not video_arweave_url:
-                return {"status": "error", "message": "Failed to upload generated video to Arweave."}
+            video_s3_url = await context.s3_service.upload_image_data(video_data, "generated_video.mp4", "video/mp4")
+            if not video_s3_url:
+                return {"status": "error", "message": "Failed to upload generated video to S3."}
 
-            context.world_state_manager.record_generated_media(
-                media_url=video_arweave_url, media_type="video", prompt=prompt,
-                service_used="google_veo", aspect_ratio=aspect_ratio
-            )
+            if hasattr(context, 'world_state_manager') and context.world_state_manager:
+                context.world_state_manager.record_generated_media(
+                    media_url=video_s3_url, media_type="video", prompt=prompt,
+                    service_used="google_veo", aspect_ratio=aspect_ratio
+                )
 
-            await _auto_post_to_gallery(context, "video", video_arweave_url, prompt, "google_veo")
+            await _auto_post_to_gallery(context, "video", video_s3_url, prompt, "google_veo")
 
             return {
                 "status": "success",
-                "message": "Video generated and stored on Arweave.",
-                "arweave_video_url": video_arweave_url,
+                "message": "Video generated and stored on S3.",
+                "s3_video_url": video_s3_url,
                 "prompt_used": prompt,
-                "next_actions_suggestion": f"To share this video, use a tool like 'send_matrix_video' with the URL: {video_arweave_url}"
+                "next_actions_suggestion": f"To share this video, use a tool like 'send_matrix_video' with the URL: {video_s3_url}"
             }
 
         except Exception as e:

@@ -31,18 +31,18 @@ class VeoService:
     """
 
     def __init__(
-        self, api_key: str, arweave_service=None, default_model: str = "veo-2.0-generate-001"
+        self, api_key: str, s3_service=None, default_model: str = "veo-2.0-generate-001"
     ):
         """
         Initialize Veo service.
 
         Args:
             api_key: Google AI API key
-            arweave_service: Arweave service for video storage
+            s3_service: S3 service for video storage
             default_model: Default Veo model
         """
         self.api_key = api_key
-        self.arweave_service = arweave_service
+        self.s3_service = s3_service
         self.default_model = default_model
         self.base_url = "https://generativelanguage.googleapis.com/v1beta"
 
@@ -212,8 +212,8 @@ class VeoService:
                     logger.warning("VeoService: No videos generated")
                     return []
 
-                # Download each video and upload to Arweave
-                arweave_urls = []
+                # Download each video and upload to S3
+                s3_urls = []
                 for i, video_info in enumerate(generated_videos):
                     video_uri = video_info.get("video", {}).get("uri")
                     if not video_uri:
@@ -237,8 +237,8 @@ class VeoService:
                                 f"VeoService: Downloaded video ({len(video_bytes)} bytes)"
                             )
 
-                            # Upload to Arweave if service available
-                            if self.arweave_service:
+                            # Upload to S3 if service available
+                            if self.s3_service:
                                 # Create temporary file
                                 with tempfile.NamedTemporaryFile(
                                     suffix=".mp4", delete=False
@@ -248,14 +248,14 @@ class VeoService:
 
                                 try:
                                     logger.info(
-                                        f"VeoService: Uploading video to Arweave: {temp_path}"
+                                        f"VeoService: Uploading video to S3: {temp_path}"
                                     )
-                                    arweave_url = await self.arweave_service.upload_image(
+                                    s3_url = await self.s3_service.upload_image(
                                         temp_path
                                     )
-                                    arweave_urls.append(arweave_url)
+                                    s3_urls.append(s3_url)
                                     logger.info(
-                                        f"VeoService: Video uploaded to Arweave: {arweave_url}"
+                                        f"VeoService: Video uploaded to S3: {s3_url}"
                                     )
                                 finally:
                                     # Clean up temp file
@@ -265,7 +265,7 @@ class VeoService:
                                         pass
                             else:
                                 logger.warning(
-                                    "VeoService: No Arweave service available, skipping upload"
+                                    "VeoService: No S3 service available, skipping upload"
                                 )
 
                         else:
@@ -276,7 +276,7 @@ class VeoService:
                     except Exception as e:
                         logger.error(f"VeoService: Error processing video {i}: {e}")
 
-                return arweave_urls
+                return s3_urls
 
         except Exception as e:
             logger.error(f"VeoService: Unexpected error: {e}")

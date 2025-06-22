@@ -47,19 +47,19 @@ async def ensure_publicly_accessible_image_url(image_url: str, context: ActionCo
                 image_data = response.content
                 content_type = response.headers.get('content-type', 'image/jpeg')
 
-                # Now upload to arweave
-                if hasattr(context, 'arweave_service') and context.arweave_service:
+                # Now upload to S3
+                if hasattr(context, 's3_service') and context.s3_service:
                     media_id = matrix_match.group(3)
-                    arweave_url = await context.arweave_service.upload_image_data(
+                    s3_url = await context.s3_service.upload_image_data(
                         image_data,
                         f"matrix_media_{media_id}.jpg",
                         content_type
                     )
-                    if arweave_url:
-                        logger.info(f"Successfully uploaded Matrix media to Arweave: {arweave_url}")
-                        return arweave_url, True
+                    if s3_url:
+                        logger.info(f"Successfully uploaded Matrix media to S3: {s3_url}")
+                        return s3_url, True
                     else:
-                       logger.error("Failed to upload Matrix media to Arweave")
+                       logger.error("Failed to upload Matrix media to S3")
             except Exception as e:
                 logger.error(f"Failed to download/re-upload Matrix image: {e}")
     else:

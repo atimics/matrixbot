@@ -77,17 +77,22 @@ class SentimentAnalysisTool(ToolInterface):
                     "timestamp": time.time()
                 }
 
+            # Type check and ensure we have valid strings
+            platform = str(platform)
+            user_identifier = str(user_identifier)
+            message_content = str(message_content)
+
             # Simple rule-based sentiment analysis
             # In a production system, this could use ML models or external APIs
             sentiment_score, sentiment_label = self._analyze_sentiment(message_content)
             
             # Create sentiment data
             sentiment_data = SentimentData(
-                current_sentiment=sentiment_label,
-                sentiment_score=sentiment_score,
-                message_count=1,
-                last_interaction_time=time.time(),
-                interaction_history=[{
+                score=sentiment_score,
+                label=sentiment_label,
+                last_updated=time.time(),
+                confidence=0.8,  # Default confidence for rule-based analysis
+                history=[{
                     "timestamp": time.time(),
                     "sentiment": sentiment_label,
                     "score": sentiment_score,
@@ -245,20 +250,24 @@ class StoreUserMemoryTool(ToolInterface):
                     "timestamp": time.time()
                 }
 
+            # Type check and ensure we have valid strings
+            platform = str(platform)
+            user_identifier = str(user_identifier)
+            memory_type = str(memory_type)
+            content = str(content)
+
             # Create memory entry
+            user_platform_id = f"{platform}:{user_identifier}"
             memory_entry = MemoryEntry(
+                user_platform_id=user_platform_id,
                 content=content,
                 memory_type=memory_type,
-                importance=importance,
-                timestamp=time.time(),
-                context=memory_context
+                importance=0.5 if importance == "medium" else (0.8 if importance == "high" else 0.3),
+                timestamp=time.time()
             )
 
             # Store in world state
             if context.world_state_manager:
-                # Create platform-specific user identifier
-                user_platform_id = f"{platform}:{user_identifier}"
-                
                 context.world_state_manager.add_user_memory(user_platform_id, memory_entry)
                 
                 logger.info(f"Stored {memory_type} memory for {platform} user {user_identifier}: {content[:50]}...")

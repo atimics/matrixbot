@@ -885,28 +885,36 @@ The system includes comprehensive rate limiting with automatic monitoring:
 
 ### S3 Service Enhancements
 
-**Embeddable URL Generation:**
-- Automatic generation of embeddable URLs with Open Graph metadata
-- Proper URL encoding for titles and descriptions
-- Social media optimized previews for Farcaster sharing
+**Media Storage Migration:**
+- Migrated from Arweave to S3 for cost-effective and fast media storage
+- Automatic S3 upload for all generated images and videos
+- CloudFront CDN integration for fast global delivery
 
 **Usage:**
 ```python
-from chatbot.tools.arweave_service import ArweaveService
+from chatbot.tools.s3_service import S3Service
 
-arweave_service = ArweaveService()
-embeddable_url = arweave_service.generate_embeddable_url(
-    arweave_url="https://arweave.net/transaction_id",
-    title="AI Generated Image",
-    description="A beautiful sunset over mountains"
+s3_service = S3Service()
+s3_url = await s3_service.upload_image_data(
+    image_data=image_bytes,
+    filename="generated_image.png",
+    content_type="image/png"
 )
 ```
 
 **Features:**
-- Automatic URL encoding for special characters
-- Proper Open Graph meta tag generation
-- Enhanced social media preview support
-- Seamless integration with Farcaster posting
+- Fast upload and download speeds
+- Cost-effective storage compared to blockchain solutions
+- Enterprise-grade reliability and availability
+- Seamless integration with existing tool interfaces
+- Backward compatibility with existing Arweave URLs
+
+**Environment Configuration:**
+```bash
+S3_API_ENDPOINT=https://your-s3-api-endpoint.com
+S3_API_KEY=your-s3-api-key
+CLOUDFRONT_DOMAIN=https://your-cloudfront-domain.com
+```
 
 ### Tool Parameter Schema Standardization
 
