@@ -877,10 +877,25 @@ Analyze the situation and respond with your decision in the required JSON format
         except Exception as e:
             logger.error(f"AIDecisionEngine: Error in decision cycle {cycle_id}: {e}")
             
+            error_type = "top_level_error"
+            json_parse_success = False
+            
             # Attempt error recovery for top-level failures
             try:
                 recovery_result = await self.error_recovery.handle_ai_failure(e, world_state, cycle_id)
+                recovery_used = True
                 if recovery_result and recovery_result.get("selected_actions") is not None:
+                    # Record recovery success
+                    performance_monitor.record_cycle_complete(
+                        cycle_id=cycle_id,
+                        start_time=start_time,
+                        payload_size_kb=payload_size_kb,
+                        json_parse_success=True,  # Recovery succeeded
+                        selected_actions_count=len(recovery_result["selected_actions"]),
+                        error_type=error_type,
+                        recovery_used=recovery_used,
+                        loop_detected=loop_detected
+                    )
                     return DecisionResult(
                         selected_actions=recovery_result["selected_actions"],
                         reasoning=recovery_result["reasoning"],
@@ -889,6 +904,18 @@ Analyze the situation and respond with your decision in the required JSON format
                     )
             except Exception as recovery_error:
                 logger.error(f"AIDecisionEngine: Final recovery failed: {recovery_error}")
+            
+            # Record final failure
+            performance_monitor.record_cycle_complete(
+                cycle_id=cycle_id,
+                start_time=start_time,
+                payload_size_kb=payload_size_kb,
+                json_parse_success=json_parse_success,
+                selected_actions_count=0,
+                error_type=error_type,
+                recovery_used=recovery_used,
+                loop_detected=loop_detected
+            )
             
             return DecisionResult(
                 selected_actions=[],
