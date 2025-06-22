@@ -11,7 +11,7 @@ import pytest
 import time
 from unittest.mock import Mock, AsyncMock, patch
 
-from chatbot.core.orchestrator import ContextAwareOrchestrator, OrchestratorConfig
+from chatbot.core.orchestration.main_orchestrator import ContextAwareOrchestrator, OrchestratorConfig
 from chatbot.core.ai_engine import ActionPlan
 from chatbot.config import settings
 
