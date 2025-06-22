@@ -6,7 +6,7 @@ import asyncio
 import json
 import os
 import tempfile
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
+from unittest.mock import Mock, AsyncMock, patch, MagicMock, PropertyMock
 from typing import Dict, Any
 import pytest
 from fastapi.testclient import TestClient
