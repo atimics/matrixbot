@@ -281,3 +281,246 @@ class TestPayloadBuilderAdvanced:
         
         # Content should be the same for unchanged state
         assert payload1 == payload2
+
+
+class TestPayloadBuilderContextRefactoring:
+    """Test PayloadBuilder as the central context constructor after ContextManager refactoring."""
+    
+    @pytest.fixture
+    def sample_world_state_data(self):
+        """Create sample WorldStateData for testing."""
+        # Create test channels with messages
+        test_channel_1 = Channel(
+            id="test_channel_1",
+            type="matrix",
+            name="Test Channel 1",
+            recent_messages=[
+                Message(
+                    id="msg1",
+                    content="Hello world",
+                    sender="user1",
+                    timestamp=time.time() - 100,
+                    channel_id="test_channel_1"
+                ),
+                Message(
+                    id="msg2", 
+                    content="How are you?",
+                    sender="user2",
+                    timestamp=time.time() - 50,
+                    channel_id="test_channel_1"
+                )
+            ]
+        )
+        
+        test_channel_2 = Channel(
+            id="test_channel_2",
+            type="farcaster",
+            name="Test Channel 2",
+            recent_messages=[
+                Message(
+                    id="msg3",
+                    content="AI is amazing",
+                    sender="user3", 
+                    timestamp=time.time() - 75,
+                    channel_id="test_channel_2"
+                )
+            ]
+        )
+        
+        # Create sample action history
+        action_history = [
+            ActionHistory(
+                action="send_message",
+                result="success",
+                timestamp=time.time() - 200
+            ),
+            ActionHistory(
+                action="like_post",
+                result="success", 
+                timestamp=time.time() - 150
+            )
+        ]
+        
+        # Create WorldStateData
+        world_state_data = WorldStateData()
+        world_state_data.channels = {
+            "test_channel_1": test_channel_1,
+            "test_channel_2": test_channel_2
+        }
+        world_state_data.action_history = action_history
+        world_state_data.system_status = {"status": "active"}
+        world_state_data.rate_limits = {"matrix": 100, "farcaster": 50}
+        world_state_data.pending_matrix_invites = []
+        world_state_data.last_update = time.time()
+        
+        return world_state_data
+    
+    def test_build_full_payload_channel_filtering(self, sample_world_state_data):
+        """Test that PayloadBuilder correctly filters and prioritizes channels."""
+        builder = PayloadBuilder()
+        
+        # Test with primary channel specified
+        config = {
+            "max_messages_per_channel": 2,
+            "max_action_history": 5,
+            "optimize_for_size": True
+        }
+        
+        payload = builder.build_full_payload(
+            world_state_data=sample_world_state_data,
+            primary_channel_id="test_channel_1", 
+            config=config
+        )
+        
+        # Verify structure
+        assert isinstance(payload, dict)
+        assert "channels" in payload
+        assert "action_history" in payload
+        assert "current_processing_channel_id" in payload
+        assert payload["current_processing_channel_id"] == "test_channel_1"
+        
+        # Verify channel filtering worked
+        assert "test_channel_1" in payload["channels"]
+        assert "test_channel_2" in payload["channels"]
+        
+        # Verify message limiting
+        channel_1_data = payload["channels"]["test_channel_1"]
+        assert len(channel_1_data["recent_messages"]) <= 2
+        
+    def test_build_full_payload_action_history_limiting(self, sample_world_state_data):
+        """Test that PayloadBuilder correctly limits action history."""
+        builder = PayloadBuilder()
+        
+        config = {
+            "max_action_history": 1,  # Limit to 1 action
+            "optimize_for_size": True
+        }
+        
+        payload = builder.build_full_payload(
+            world_state_data=sample_world_state_data,
+            config=config
+        )
+        
+        # Verify action history is limited
+        assert len(payload["action_history"]) == 1
+        # Should be the most recent action
+        assert payload["action_history"][0]["action"] == "like_post"
+        
+    def test_build_full_payload_optimization_levels(self, sample_world_state_data):
+        """Test PayloadBuilder optimization options."""
+        builder = PayloadBuilder()
+        
+        # Test optimized payload
+        optimized_config = {"optimize_for_size": True}
+        optimized_payload = builder.build_full_payload(
+            world_state_data=sample_world_state_data,
+            config=optimized_config
+        )
+        
+        # Test unoptimized payload (includes more data)
+        unoptimized_config = {"optimize_for_size": False}
+        unoptimized_payload = builder.build_full_payload(
+            world_state_data=sample_world_state_data,
+            config=unoptimized_config
+        )
+        
+        # Unoptimized should have more fields
+        optimized_keys = set(optimized_payload.keys())
+        unoptimized_keys = set(unoptimized_payload.keys())
+        
+        # Unoptimized should have additional keys like generated_media_library, ecosystem_token_info
+        assert len(unoptimized_keys) >= len(optimized_keys)
+        
+    def test_build_full_payload_with_bot_identity(self, sample_world_state_data):
+        """Test PayloadBuilder includes bot identity information."""
+        builder = PayloadBuilder()
+        
+        config = {
+            "bot_fid": "12345",
+            "bot_username": "@testbot"
+        }
+        
+        payload = builder.build_full_payload(
+            world_state_data=sample_world_state_data,
+            config=config
+        )
+        
+        # Check that bot identity is included in payload stats
+        assert "payload_stats" in payload
+        assert "bot_identity" in payload["payload_stats"]
+        assert payload["payload_stats"]["bot_identity"]["fid"] == "12345"
+        assert payload["payload_stats"]["bot_identity"]["username"] == "@testbot"
+        
+    def test_build_node_based_payload_basic(self, sample_world_state_data):
+        """Test basic node-based payload construction."""
+        builder = PayloadBuilder()
+        
+        # Mock NodeManager
+        mock_node_manager = Mock()
+        mock_node_manager.get_node_metadata.return_value = Mock(
+            is_expanded=True,
+            is_pinned=False,
+            last_expanded_ts=time.time(),
+            ai_summary="Test summary"
+        )
+        mock_node_manager.get_expansion_status_summary.return_value = {
+            "expanded_count": 2,
+            "total_count": 5
+        }
+        mock_node_manager.get_system_events.return_value = []
+        
+        payload = builder.build_node_based_payload(
+            world_state_data=sample_world_state_data,
+            node_manager=mock_node_manager,
+            primary_channel_id="test_channel_1"
+        )
+        
+        # Verify node-based structure
+        assert isinstance(payload, dict)
+        assert "expanded_nodes" in payload
+        assert "collapsed_node_summaries" in payload
+        assert "expansion_status" in payload
+        assert "system_events" in payload
+        assert "current_processing_channel_id" in payload
+        assert payload["current_processing_channel_id"] == "test_channel_1"
+        
+    def test_payload_size_estimation(self, sample_world_state_data):
+        """Test payload size estimation functionality."""
+        estimated_size = PayloadBuilder.estimate_payload_size(sample_world_state_data)
+        
+        assert isinstance(estimated_size, int)
+        assert estimated_size > 0
+        
+        # Should be reasonable size (not too small or too large)
+        assert 100 < estimated_size < 1000000  # Between 100 bytes and 1MB
+        
+    def test_build_full_payload_replaces_context_manager(self, sample_world_state_data):
+        """Test that PayloadBuilder.build_full_payload provides all necessary context for AI."""
+        builder = PayloadBuilder()
+        
+        payload = builder.build_full_payload(
+            world_state_data=sample_world_state_data,
+            primary_channel_id="test_channel_1"
+        )
+        
+        # Verify it includes all essential elements that ContextManager used to provide
+        essential_keys = [
+            "channels",
+            "action_history", 
+            "system_status",
+            "current_processing_channel_id"
+        ]
+        
+        for key in essential_keys:
+            assert key in payload, f"Missing essential key: {key}"
+            
+        # Verify structure is suitable for AI consumption
+        assert isinstance(payload, dict)
+        
+        # Should be JSON serializable
+        json_str = json.dumps(payload, default=str)
+        assert len(json_str) > 0
+        
+        # Should be able to parse back
+        parsed = json.loads(json_str)
+        assert isinstance(parsed, dict)
