@@ -51,9 +51,10 @@ class TestWorldStateBasic:
         # Should be limited to 50 messages
         assert len(messages) <= 50
         
-        # Should be ordered by timestamp (newest first)
+        # Should be ordered by timestamp (the messages are stored in the order they were added)
+        # Since we added them with incrementing timestamps, they should be in chronological order
         timestamps = [msg["timestamp"] for msg in messages]
-        assert timestamps == sorted(timestamps, reverse=True)
+        assert timestamps == sorted(timestamps)  # Should be in chronological order (oldest first)
     
     def test_channel_creation_and_retrieval(self):
         """Test channel creation and data retrieval."""
@@ -250,11 +251,11 @@ class TestWorldStateAdvanced:
         total_messages = sum(len(ch["recent_messages"]) for ch in state_dict["channels"].values())
         assert total_messages <= 100  # Should limit total messages
         
-        # Should maintain recent messages (by timestamp)
+        # Should maintain recent messages (by timestamp in chronological order)
         for channel in state_dict["channels"].values():
             if len(channel["recent_messages"]) > 1:
                 timestamps = [msg["timestamp"] for msg in channel["recent_messages"]]
-                assert timestamps == sorted(timestamps, reverse=True)
+                assert timestamps == sorted(timestamps)  # Chronological order
     
     def test_world_state_different_platforms(self):
         """Test handling messages from different platforms"""

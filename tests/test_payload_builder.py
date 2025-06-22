@@ -130,20 +130,23 @@ class TestPayloadBuilderAdvanced:
         manager = Mock(spec=WorldStateManager)
         manager.current_state = Mock(spec=WorldState)
         
+        # Create proper Channel mock objects with recent_messages attribute
+        matrix_channel = Mock(spec=Channel)
+        matrix_channel.id = "matrix_room"
+        matrix_channel.type = "matrix"
+        matrix_channel.name = "Test Matrix Room"
+        matrix_channel.recent_messages = []
+        
+        farcaster_channel = Mock(spec=Channel)
+        farcaster_channel.id = "farcaster_feed"
+        farcaster_channel.type = "farcaster"
+        farcaster_channel.name = "Farcaster Feed"
+        farcaster_channel.recent_messages = []
+        
         # Set up comprehensive state
         manager.current_state.channels = {
-            "matrix_room": {
-                "id": "matrix_room",
-                "type": "matrix",
-                "name": "Test Matrix Room",
-                "recent_messages": []
-            },
-            "farcaster_feed": {
-                "id": "farcaster_feed", 
-                "type": "farcaster",
-                "name": "Farcaster Feed",
-                "recent_messages": []
-            }
+            "matrix_room": matrix_channel,
+            "farcaster_feed": farcaster_channel
         }
         
         manager.current_state.messages = {}
@@ -255,14 +258,16 @@ class TestPayloadBuilderAdvanced:
         # Create large message history
         large_messages = []
         for i in range(1000):
-            large_messages.append({
-                "id": f"msg_{i}",
-                "content": f"This is a long message number {i} with lots of content",
-                "timestamp": time.time() + i,
-                "sender": f"user_{i % 10}"
-            })
+            large_messages.append(Message(
+                id=f"msg_{i}",
+                content=f"This is a long message number {i} with lots of content",
+                timestamp=time.time() + i,
+                sender=f"user_{i % 10}",
+                channel_type="matrix"
+            ))
         
-        world_state_manager.current_state.channels["matrix_room"]["recent_messages"] = large_messages
+        # Update the channel mock to have large message list
+        world_state_manager.current_state.channels["matrix_room"].recent_messages = large_messages
         
         builder = PayloadBuilder(world_state_manager)
         payload = builder.build_full_payload(world_state_manager.state)
