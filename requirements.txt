@@ -3,7 +3,7 @@
 #   poetry export -f requirements.txt --output requirements.txt --without-hashes
 # The canonical dependency source is pyproject.toml/poetry.lock.
 
-matrix-nio[e2e]
+matrix-nio  # Temporarily removed [e2e] extra due to python-olm build issues
 python-dotenv
 pydantic
 aiosqlite
@@ -19,7 +19,7 @@ colorlog # Added for colorful logging
 
 # Testing dependencies
 pytest>=7.0.0
-pytest-asyncio>=0.21.0
+pytest-asyncio>=0.23.6,<2.0.0  # For async test support (updated range)
 pytest-mock>=3.10.0
 pytest-cov>=4.0.0
 pytest-xdist>=3.0.0  # For parallel test execution

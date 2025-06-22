@@ -460,9 +460,9 @@ class MainOrchestrator:
         self.tool_registry.register_tool(UpdateResearchTool())
         self.tool_registry.register_tool(QueryResearchTool())
         
-        # Matrix tools
+        # Matrix tools (consolidated - SendMatrixMessageTool now handles both messages and replies)
         self.tool_registry.register_tool(SendMatrixMessageTool())
-        self.tool_registry.register_tool(SendMatrixReplyTool())
+        # NOTE: SendMatrixReplyTool deprecated - use send_matrix_message with reply_to_id parameter
         self.tool_registry.register_tool(SendMatrixImageTool())
         self.tool_registry.register_tool(SendMatrixVideoTool())
         self.tool_registry.register_tool(ReactToMatrixMessageTool())

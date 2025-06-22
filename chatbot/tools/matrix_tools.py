@@ -311,7 +311,7 @@ class SendMatrixMessageTool(ToolInterface):
         self, params: Dict[str, Any], context: ActionContext
     ) -> Dict[str, Any]:
         """
-        Execute the Matrix message action.
+        Execute the Matrix message action (regular message or reply).
         """
         logger.info(f"Executing tool '{self.name}' with params: {params}")
 
@@ -324,6 +324,7 @@ class SendMatrixMessageTool(ToolInterface):
         # Extract and validate parameters
         room_id = params.get("channel_id")
         content = params.get("content")
+        reply_to_event_id = params.get("reply_to_id")  # NEW: Optional reply support
         format_as_markdown = params.get("format_as_markdown", True)
         image_url = params.get("image_url")
 
@@ -337,6 +338,24 @@ class SendMatrixMessageTool(ToolInterface):
             error_msg = f"Missing required parameters for Matrix message: {', '.join(missing_params)}"
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+        # Type assertions for safety
+        content = str(content)
+        room_id = str(room_id)
+
+        # Deduplication check for replies: prevent replying to events we've already replied to
+        if reply_to_event_id and context.world_state_manager:
+            if context.world_state_manager.has_bot_replied_to_matrix_event(reply_to_event_id):
+                warning_msg = f"Bot has already replied to Matrix event {reply_to_event_id}, skipping to prevent feedback loop"
+                logger.warning(warning_msg)
+                return {
+                    "status": "skipped",
+                    "message": warning_msg,
+                    "event_id": reply_to_event_id,
+                    "room_id": room_id,
+                    "reason": "already_replied",
+                    "timestamp": time.time(),
+                }
 
         # Auto-attachment: Check for recently generated media if no image_url provided
         if not image_url and context.world_state_manager:
@@ -353,20 +372,34 @@ class SendMatrixMessageTool(ToolInterface):
                             logger.info(f"Auto-attaching recently generated media to Matrix message: {image_url}")
 
         try:
-            # Send the text message first
-            if format_as_markdown:
-                formatted = format_for_matrix(content)
-                result = await context.matrix_observer.send_formatted_message(
-                    room_id, formatted["plain"], formatted["html"]
-                )
+            # Send the text message (reply or regular message)
+            if reply_to_event_id:
+                # Send as reply
+                if format_as_markdown:
+                    formatted = format_for_matrix(content)
+                    result = await context.matrix_observer.send_formatted_reply(
+                        room_id, formatted["plain"], formatted["html"], reply_to_event_id
+                    )
+                else:
+                    result = await context.matrix_observer.send_reply(
+                        room_id, content, reply_to_event_id
+                    )
+                logger.info(f"Matrix observer send_reply returned: {result}")
             else:
-                result = await context.matrix_observer.send_message(room_id, content)
-
-            logger.info(f"Matrix observer send_message returned: {result}")
+                # Send as regular message
+                if format_as_markdown:
+                    formatted = format_for_matrix(content)
+                    result = await context.matrix_observer.send_formatted_message(
+                        room_id, formatted["plain"], formatted["html"]
+                    )
+                else:
+                    result = await context.matrix_observer.send_message(room_id, content)
+                logger.info(f"Matrix observer send_message returned: {result}")
 
             if result.get("success"):
                 event_id = result.get("event_id", "unknown")
-                success_msg = f"Sent Matrix message to {room_id} (event: {event_id})"
+                action_type = "reply" if reply_to_event_id else "message"
+                success_msg = f"Sent Matrix {action_type} to {room_id} (event: {event_id})"
                 logger.info(success_msg)
 
                 # Record the sent message in world state for AI blindness fix
@@ -376,26 +409,27 @@ class SendMatrixMessageTool(ToolInterface):
                         id=event_id,
                         channel_id=room_id,
                         channel_type="matrix",
-                        sender=settings.MATRIX_USER_ID,
+                        sender=settings.MATRIX_USER_ID or "unknown",
                         content=content,
                         timestamp=time.time(),
-                        reply_to=None  # This is a regular message, not a reply
+                        reply_to=reply_to_event_id  # Set if this is a reply
                     )
                     context.world_state_manager.add_message(room_id, bot_message)
-                    logger.debug(f"Recorded sent Matrix message in world state: {event_id}")
+                    logger.debug(f"Recorded sent Matrix {action_type} in world state: {event_id}")
 
                 # Record the sent message in context manager for AI blindness fix
                 if context.context_manager:
                     assistant_message = {
                         "content": content,
-                        "sender": settings.MATRIX_USER_ID,
+                        "sender": settings.MATRIX_USER_ID or "unknown",
                         "timestamp": time.time(),
                         "event_id": event_id,
-                        "channel_type": "matrix"
+                        "channel_type": "matrix",
+                        "type": "assistant"
                     }
                     try:
                         await context.context_manager.add_assistant_message(room_id, assistant_message)
-                        logger.debug(f"Recorded sent Matrix message in context manager: {event_id}")
+                        logger.debug(f"Recorded sent Matrix {action_type} in context manager: {event_id}")
                     except Exception as e:
                         logger.warning(f"Failed to record message in context manager: {e}")
 
@@ -408,7 +442,7 @@ class SendMatrixMessageTool(ToolInterface):
                         )
                         if image_result.get("success"):
                             image_event_id = image_result.get("event_id", "unknown")
-                            logger.info(f"Auto-attached image to Matrix message: {image_event_id}")
+                            logger.info(f"Auto-attached image to Matrix {action_type}: {image_event_id}")
                         else:
                             logger.warning(f"Failed to auto-attach image: {image_result.get('error', 'unknown error')}")
                     except Exception as e:
@@ -419,13 +453,15 @@ class SendMatrixMessageTool(ToolInterface):
                     "message": success_msg,
                     "event_id": event_id,
                     "room_id": room_id,
+                    "reply_to_event_id": reply_to_event_id,
                     "sent_content": content,  # For AI Blindness Fix
                     "auto_attached_image": image_url if image_url else None,
                     "image_event_id": image_event_id,
                     "timestamp": time.time(),
                 }
             else:
-                error_msg = f"Failed to send Matrix message via observer: {result.get('error', 'unknown error')}"
+                action_type = "reply" if reply_to_event_id else "message"
+                error_msg = f"Failed to send Matrix {action_type} via observer: {result.get('error', 'unknown error')}"
                 logger.error(error_msg)
                 return {
                     "status": "failure",

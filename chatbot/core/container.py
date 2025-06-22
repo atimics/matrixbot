@@ -417,9 +417,9 @@ class DependencyContainer:
         self._tool_registry.register_tool(UpdateResearchTool())
         self._tool_registry.register_tool(QueryResearchTool())
         
-        # Matrix tools
+        # Matrix tools (consolidated - SendMatrixMessageTool now handles both messages and replies)
         self._tool_registry.register_tool(SendMatrixMessageTool())
-        self._tool_registry.register_tool(SendMatrixReplyTool())
+        # NOTE: SendMatrixReplyTool deprecated - use send_matrix_message with reply_to_id parameter
         self._tool_registry.register_tool(SendMatrixImageTool())
         self._tool_registry.register_tool(SendMatrixVideoTool())
         self._tool_registry.register_tool(ReactToMatrixMessageTool())

@@ -19,7 +19,7 @@ httpx = "^0.28.1"
 google-genai = "^1.19.0"
 
 # --- Matrix Integration ---
-matrix-nio = {extras = ["e2e"], version = "^0.24.0"}
+matrix-nio = "^0.24.0"  # Temporarily removed e2e extra due to python-olm build issues
 
 # --- Blockchain & Web3 ---
 web3 = "^6.15.1"
@@ -37,7 +37,7 @@ python-multipart = "^0.0.20"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.0"
-pytest-asyncio = "^0.23.6"
+pytest-asyncio = ">=0.23.6,<2.0.0"
 
 [build-system]
 requires = ["poetry-core"]
