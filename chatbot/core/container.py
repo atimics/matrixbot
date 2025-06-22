@@ -420,6 +420,7 @@ class DependencyContainer:
         # Matrix tools (consolidated - SendMatrixMessageTool now handles both messages and replies)
         self._tool_registry.register_tool(SendMatrixMessageTool())
         # NOTE: SendMatrixReplyTool deprecated - use send_matrix_message with reply_to_id parameter
+        # self._tool_registry.register_tool(SendMatrixReplyTool())  # DEPRECATED - functionality consolidated into SendMatrixMessageTool
         self._tool_registry.register_tool(SendMatrixImageTool())
         self._tool_registry.register_tool(SendMatrixVideoTool())
         self._tool_registry.register_tool(ReactToMatrixMessageTool())
@@ -428,9 +429,10 @@ class DependencyContainer:
         self._tool_registry.register_tool(AcceptMatrixInviteTool())
         self._tool_registry.register_tool(IgnoreMatrixInviteTool())
         
-        # Farcaster tools
+        # Farcaster tools (consolidated - SendFarcasterPostTool now handles both posts and replies)
         self._tool_registry.register_tool(SendFarcasterPostTool())
-        self._tool_registry.register_tool(SendFarcasterReplyTool())
+        # NOTE: SendFarcasterReplyTool deprecated - use send_farcaster_post with reply_to_hash parameter
+        # self._tool_registry.register_tool(SendFarcasterReplyTool())  # DEPRECATED - functionality consolidated into SendFarcasterPostTool
         self._tool_registry.register_tool(SendFarcasterDMTool())
         self._tool_registry.register_tool(LikeFarcasterPostTool())
         self._tool_registry.register_tool(QuoteFarcasterPostTool())

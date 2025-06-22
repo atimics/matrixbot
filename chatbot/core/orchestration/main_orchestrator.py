@@ -463,6 +463,7 @@ class MainOrchestrator:
         # Matrix tools (consolidated - SendMatrixMessageTool now handles both messages and replies)
         self.tool_registry.register_tool(SendMatrixMessageTool())
         # NOTE: SendMatrixReplyTool deprecated - use send_matrix_message with reply_to_id parameter
+        # self.tool_registry.register_tool(SendMatrixReplyTool())  # DEPRECATED - functionality consolidated into SendMatrixMessageTool
         self.tool_registry.register_tool(SendMatrixImageTool())
         self.tool_registry.register_tool(SendMatrixVideoTool())
         self.tool_registry.register_tool(ReactToMatrixMessageTool())
@@ -471,9 +472,10 @@ class MainOrchestrator:
         self.tool_registry.register_tool(AcceptMatrixInviteTool())
         self.tool_registry.register_tool(IgnoreMatrixInviteTool())
         
-        # Farcaster tools
+        # Farcaster tools (consolidated - SendFarcasterPostTool now handles both posts and replies)
         self.tool_registry.register_tool(SendFarcasterPostTool())
-        self.tool_registry.register_tool(SendFarcasterReplyTool())
+        # NOTE: SendFarcasterReplyTool deprecated - use send_farcaster_post with reply_to_hash parameter
+        # self.tool_registry.register_tool(SendFarcasterReplyTool())  # DEPRECATED - functionality consolidated into SendFarcasterPostTool
         self.tool_registry.register_tool(SendFarcasterDMTool())
         self.tool_registry.register_tool(LikeFarcasterPostTool())
         self.tool_registry.register_tool(QuoteFarcasterPostTool())

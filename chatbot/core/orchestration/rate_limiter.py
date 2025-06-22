@@ -28,10 +28,10 @@ class RateLimitConfig:
     # Action-specific limits (per hour)
     action_limits: Dict[str, int] = field(
         default_factory=lambda: {
-            "SendMatrixMessageTool": 100,
-            "SendMatrixReplyTool": 150,
-            "SendFarcasterPostTool": 50,
-            "SendFarcasterReplyTool": 100,
+            "SendMatrixMessageTool": 150,  # Increased limit since this now handles both messages and replies
+            # "SendMatrixReplyTool": 150,  # DEPRECATED - functionality consolidated into SendMatrixMessageTool
+            "SendFarcasterPostTool": 100,  # Increased limit since this now handles both posts and replies
+            # "SendFarcasterReplyTool": 100,  # DEPRECATED - functionality consolidated into SendFarcasterPostTool
             "SendFarcasterDMTool": 30,
             "LikeFarcasterPostTool": 200,
             "FollowFarcasterUserTool": 20,

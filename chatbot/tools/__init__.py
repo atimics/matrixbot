@@ -7,7 +7,7 @@ from .core_tools import WaitTool
 from .describe_image_tool import DescribeImageTool
 from .farcaster_tools import SendFarcasterPostTool, DeleteFarcasterPostTool, DeleteFarcasterReactionTool
 from .frame_tools import CreateTransactionFrameTool, CreatePollFrameTool, CreateCustomFrameTool, SearchFramesTool, GetFrameCatalogTool
-from .matrix_tools import SendMatrixMessageTool, SendMatrixReplyTool, AcceptMatrixInviteTool, IgnoreMatrixInviteTool
+from .matrix_tools import SendMatrixMessageTool, AcceptMatrixInviteTool, IgnoreMatrixInviteTool
 from .node_tools import ExpandNodeTool, CollapseNodeTool, PinNodeTool, UnpinNodeTool, RefreshSummaryTool, GetExpansionStatusTool
 from .registry import ToolRegistry
 
@@ -17,7 +17,7 @@ __all__ = [
     "ToolRegistry",
     "WaitTool",
     "DescribeImageTool",
-    "SendMatrixReplyTool",
+    # "SendMatrixReplyTool",  # DEPRECATED - use SendMatrixMessageTool with reply_to_id parameter
     "SendMatrixMessageTool",
     "AcceptMatrixInviteTool",
     "IgnoreMatrixInviteTool",
