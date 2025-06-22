@@ -25,19 +25,13 @@ class ContextManager:
     def __init__(self, world_state_manager: WorldStateManager, db_path: str):
         self.world_state = world_state_manager
         self.db_path = db_path
-        
-        # Use HistoryRecorder for state change persistence
         self.history_recorder = HistoryRecorder(db_path)
-        # Track state changes in-memory for easy inspection
-        self.state_changes: List[StateChangeBlock] = []
-
         logger.info("ContextManager: Initialized (DEPRECATED - use PayloadBuilder for context)")
 
     async def _store_state_change(self, state_change: StateChangeBlock):
         """Store state change using HistoryRecorder"""
         try:
             await self.history_recorder.record_state_change(state_change)
-            self.state_changes.append(state_change)
             logger.debug(f"ContextManager: Stored state change: {state_change.change_type}")
         except Exception as e:
             logger.error(f"ContextManager: Failed to store state change: {e}")
