@@ -969,12 +969,27 @@ class MainOrchestrator:
     async def _process_channel(self, channel_id: str) -> None:
         """Process a specific channel - simplified implementation for tests."""
         try:
-            # Get conversation messages
-            messages = await self.context_manager.get_conversation_messages(channel_id)
+            # Get world state data
+            world_state_data = self.world_state.get_state_data()
             
-            # Build world state payload
-            payload = self.world_state.to_dict()
-            payload['messages'] = messages
+            # Use PayloadBuilder to construct context instead of deprecated ContextManager
+            from chatbot.config import settings
+            config = {
+                "optimize_for_size": True,
+                "include_detailed_user_info": settings.AI_INCLUDE_DETAILED_USER_INFO,
+                "max_messages_per_channel": settings.AI_CONVERSATION_HISTORY_LENGTH,
+                "max_action_history": settings.AI_ACTION_HISTORY_LENGTH,
+                "bot_fid": settings.FARCASTER_BOT_FID,
+                "bot_username": settings.FARCASTER_BOT_USERNAME,
+            }
+            
+            # Build payload using PayloadBuilder
+            payload_builder = self.world_state.payload_builder
+            payload = payload_builder.build_full_payload(
+                world_state_data=world_state_data,
+                primary_channel_id=channel_id,
+                config=config
+            )
             
             # Process using traditional processor
             await self.process_payload(payload, [channel_id])
@@ -987,12 +1002,24 @@ class MainOrchestrator:
         await self.context_manager.add_user_message(channel_id, message_data)
 
     async def get_context_summary(self, channel_id: str) -> Optional[Dict[str, Any]]:
-        """Get context summary for a channel."""
-        return await self.context_manager.get_context_summary(channel_id)
+        """Get context summary for a channel - now uses HistoryRecorder instead of deprecated ContextManager."""
+        try:
+            # Get recent state changes from HistoryRecorder instead of deprecated ContextManager
+            recent_changes = await self.context_manager.get_state_changes(channel_id=channel_id, limit=50)
+            
+            return {
+                "channel_id": channel_id,
+                "recent_state_changes": len(recent_changes),
+                "message": "Context summary now based on HistoryRecorder data instead of deprecated ContextManager"
+            }
+        except Exception as e:
+            logger.error(f"Error getting context summary for {channel_id}: {e}")
+            return None
 
     async def clear_context(self, channel_id: str) -> None:
-        """Clear context for a channel."""
-        await self.context_manager.clear_context(channel_id)
+        """Clear context for a channel - deprecated since ContextManager no longer stores contexts."""
+        logger.warning(f"clear_context called for {channel_id} - this is deprecated since ContextManager is stateless now")
+        # No-op since ContextManager no longer stores contexts in memory
 
     async def _ensure_media_gallery_exists(self) -> None:
         """Check for, create, and configure the media gallery room."""

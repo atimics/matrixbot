@@ -965,42 +965,6 @@ class WorldStateData:
             self.action_history = self.action_history[-10:]
         self.last_update = time.time()
 
-    def to_dict_for_ai(self, include_channels: List[str] = None, max_messages_per_channel: int = None, message_limit_per_channel: int = None, max_actions: int = None) -> Dict[str, Any]:
-        """Convert world state to AI-friendly dict with optional limits."""
-        data: Dict[str, Any] = {}
-        # Channels
-        data["channels"] = {}
-        # Determine message limit
-        limit = message_limit_per_channel or max_messages_per_channel
-        for cid, ch in self.channels.items():
-            if include_channels and cid not in include_channels:
-                continue
-            msgs = ch.recent_messages
-            if limit is not None:
-                msgs = msgs[-limit:]
-            
-            # Add already_replied flag to messages
-            messages_for_payload = []
-            for msg in msgs:
-                # Check if we have already replied to this Farcaster cast
-                has_replied = self.has_replied_to_cast(msg.id) if msg.channel_type == 'farcaster' else False
-                
-                msg_dict = asdict(msg)
-                msg_dict['already_replied'] = has_replied  # Add the flag
-                messages_for_payload.append(msg_dict)
-            
-            data["channels"][cid] = {
-                "recent_messages": messages_for_payload
-            }
-        # Action history
-        actions = self.action_history
-        if max_actions is not None:
-            actions = actions[-max_actions:]
-        data["action_history"] = [asdict(act) for act in actions]
-        # Recent media actions
-        data["recent_media_actions"] = self.get_recent_media_actions()
-        return data
-
     def get_observation_data(self) -> Dict[str, Any]:
         """Alias for to_dict, for backward compatibility with direct world state use."""
         return self.to_dict()
