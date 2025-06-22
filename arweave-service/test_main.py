@@ -91,7 +91,8 @@ class TestArweaveWalletManager:
         """Test successful balance retrieval"""
         manager = ArweaveWalletManager("/fake/path")
         mock_wallet = Mock()
-        mock_wallet.get_balance = AsyncMock(return_value=2500000000000)  # 2.5 AR in winston
+        # Mock the 'balance' property, not a method
+        type(mock_wallet).balance = 2500000000000  # 2.5 AR in winston
         manager.wallet = mock_wallet
         
         balance = await manager.get_balance()
@@ -102,7 +103,8 @@ class TestArweaveWalletManager:
         """Test balance retrieval error handling"""
         manager = ArweaveWalletManager("/fake/path")
         mock_wallet = Mock()
-        mock_wallet.get_balance = AsyncMock(side_effect=Exception("Network error"))
+        # Mock the 'balance' property to raise an exception when accessed
+        type(mock_wallet).balance = PropertyMock(side_effect=Exception("Network error"))
         manager.wallet = mock_wallet
         
         with pytest.raises(HTTPException) as exc_info:
