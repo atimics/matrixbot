@@ -17,6 +17,8 @@ from typing import Any, Dict, List
 import httpx
 
 from .prompts import prompt_builder
+from .ai_response_validator import AIResponseValidator, ErrorRecoverySystem
+from .dynamic_prompt_builder import DynamicPromptBuilder, ContextAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +51,14 @@ class AIDecisionEngine:
         self.model = model
         self.base_url = "https://openrouter.ai/api/v1/chat/completions"
         self.max_actions_per_cycle = 3
+
+        # Initialize validation and recovery systems
+        self.validator = AIResponseValidator()
+        self.error_recovery = ErrorRecoverySystem(self)
+
+        # Initialize dynamic prompt system
+        self.dynamic_prompt_builder = DynamicPromptBuilder()
+        self.context_analyzer = ContextAnalyzer()
 
         # Base system prompt without hardcoded tool details
         self.base_system_prompt = """You are an AI agent observing and acting in a digital world. You can see messages from multiple platforms and plan actions accordingly.
@@ -521,9 +531,7 @@ You should respond with JSON in this format:
   "reasoning": "Overall reasoning for your selections"
 }
 
-Be thoughtful about when to act vs when to wait and observe. The `wait` tool means "do nothing until the next observation cycle". Focus primarily on the current_processing_channel_id but use other channel summaries for context. Don't feel compelled to act every cycle."""
-
-        # Dynamic tool prompt part that gets updated by tool registry
+Be thoughtful about when to act vs when to wait and observe. The `wait` tool means "do nothing until the next observation cycle". Focus primarily on the current_processing_channel_id but use other channel summaries for context. Don't feel compelled to act every cycle."""        # Dynamic tool prompt part that gets updated by tool registry
         self.dynamic_tool_prompt_part = "No tools currently available."
 
         # Build the full system prompt
@@ -637,6 +645,23 @@ Based on this world state, what actions (if any) should you take? Remember you c
                 logger.info(f"AIDecisionEngine: Received response for cycle {cycle_id}")
                 logger.debug(f"AIDecisionEngine: Raw response: {ai_response[:500]}...")
 
+                # Validate AI response format before parsing
+                validation_result = self.validator.validate_format(ai_response)
+                if not validation_result.is_valid:
+                    logger.warning(f"AIDecisionEngine: Response validation failed: {validation_result.error_message}")
+                    
+                    if validation_result.needs_retry:
+                        logger.info("AIDecisionEngine: Attempting response recovery...")
+                        try:
+                            recovery_response = await self.validator.retry_with_simple_prompt(
+                                world_state, self, cycle_id
+                            )
+                            ai_response = recovery_response
+                            logger.info("AIDecisionEngine: Response recovery successful")
+                        except Exception as e:
+                            logger.error(f"AIDecisionEngine: Response recovery failed: {e}")
+                            # Fall through to normal parsing which may still work
+
                 # Parse the JSON response
                 try:
                     decision_data = self._extract_json_from_response(ai_response)
@@ -695,6 +720,9 @@ Based on this world state, what actions (if any) should you take? Remember you c
                         cycle_id=cycle_id,
                     )
 
+                    # Reset failure count on successful operation
+                    self.error_recovery.reset_failure_count()
+
                     logger.info(
                         f"AIDecisionEngine: Cycle {cycle_id} complete - "
                         f"selected {len(result.selected_actions)} actions"
@@ -714,10 +742,23 @@ Based on this world state, what actions (if any) should you take? Remember you c
                     )
                     logger.error(f"AIDecisionEngine: Raw response was: {ai_response}")
 
-                    # Return empty decision
+                    # Attempt error recovery
+                    try:
+                        recovery_result = await self.error_recovery.handle_ai_failure(e, world_state, cycle_id)
+                        if recovery_result and recovery_result.get("selected_actions") is not None:
+                            return DecisionResult(
+                                selected_actions=recovery_result["selected_actions"],
+                                reasoning=recovery_result["reasoning"],
+                                observations=recovery_result["observations"],
+                                cycle_id=cycle_id,
+                            )
+                    except Exception as recovery_error:
+                        logger.error(f"AIDecisionEngine: Recovery failed: {recovery_error}")
+
+                    # Return empty decision as final fallback
                     return DecisionResult(
                         selected_actions=[],
-                        reasoning="Failed to parse AI response",
+                        reasoning="Failed to parse AI response and recovery failed",
                         observations="Error in AI response parsing",
                         cycle_id=cycle_id,
                     )
@@ -725,6 +766,19 @@ Based on this world state, what actions (if any) should you take? Remember you c
                 except Exception as e:
                     logger.error(f"AIDecisionEngine: Error processing AI response: {e}")
                     logger.error(f"AIDecisionEngine: Raw response was: {ai_response}")
+
+                    # Attempt error recovery
+                    try:
+                        recovery_result = await self.error_recovery.handle_ai_failure(e, world_state, cycle_id)
+                        if recovery_result and recovery_result.get("selected_actions") is not None:
+                            return DecisionResult(
+                                selected_actions=recovery_result["selected_actions"],
+                                reasoning=recovery_result["reasoning"],
+                                observations=recovery_result["observations"],
+                                cycle_id=cycle_id,
+                            )
+                    except Exception as recovery_error:
+                        logger.error(f"AIDecisionEngine: Recovery failed: {recovery_error}")
 
                     # Return empty decision
                     return DecisionResult(
@@ -736,6 +790,20 @@ Based on this world state, what actions (if any) should you take? Remember you c
 
         except Exception as e:
             logger.error(f"AIDecisionEngine: Error in decision cycle {cycle_id}: {e}")
+            
+            # Attempt error recovery for top-level failures
+            try:
+                recovery_result = await self.error_recovery.handle_ai_failure(e, world_state, cycle_id)
+                if recovery_result and recovery_result.get("selected_actions") is not None:
+                    return DecisionResult(
+                        selected_actions=recovery_result["selected_actions"],
+                        reasoning=recovery_result["reasoning"],
+                        observations=recovery_result["observations"],
+                        cycle_id=cycle_id,
+                    )
+            except Exception as recovery_error:
+                logger.error(f"AIDecisionEngine: Final recovery failed: {recovery_error}")
+            
             return DecisionResult(
                 selected_actions=[],
                 reasoning=f"Error: {str(e)}",
