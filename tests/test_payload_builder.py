@@ -297,17 +297,19 @@ class TestPayloadBuilderContextRefactoring:
             recent_messages=[
                 Message(
                     id="msg1",
-                    content="Hello world",
+                    channel_id="test_channel_1",
+                    channel_type="matrix",
                     sender="user1",
-                    timestamp=time.time() - 100,
-                    channel_id="test_channel_1"
+                    content="Hello world",
+                    timestamp=time.time() - 100
                 ),
                 Message(
                     id="msg2", 
-                    content="How are you?",
+                    channel_id="test_channel_1",
+                    channel_type="matrix",
                     sender="user2",
-                    timestamp=time.time() - 50,
-                    channel_id="test_channel_1"
+                    content="How are you?",
+                    timestamp=time.time() - 50
                 )
             ]
         )
@@ -319,10 +321,11 @@ class TestPayloadBuilderContextRefactoring:
             recent_messages=[
                 Message(
                     id="msg3",
+                    channel_id="test_channel_2",
+                    channel_type="farcaster",
+                    sender="user3",
                     content="AI is amazing",
-                    sender="user3", 
-                    timestamp=time.time() - 75,
-                    channel_id="test_channel_2"
+                    timestamp=time.time() - 75
                 )
             ]
         )
@@ -330,12 +333,14 @@ class TestPayloadBuilderContextRefactoring:
         # Create sample action history
         action_history = [
             ActionHistory(
-                action="send_message",
+                action_type="send_message",
+                parameters={"channel_id": "test_channel_1", "content": "Hello"},
                 result="success",
                 timestamp=time.time() - 200
             ),
             ActionHistory(
-                action="like_post",
+                action_type="like_post",
+                parameters={"post_id": "post123"},
                 result="success", 
                 timestamp=time.time() - 150
             )
@@ -404,7 +409,7 @@ class TestPayloadBuilderContextRefactoring:
         # Verify action history is limited
         assert len(payload["action_history"]) == 1
         # Should be the most recent action
-        assert payload["action_history"][0]["action"] == "like_post"
+        assert payload["action_history"][0]["action_type"] == "like_post"
         
     def test_build_full_payload_optimization_levels(self, sample_world_state_data):
         """Test PayloadBuilder optimization options."""
