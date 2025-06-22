@@ -273,6 +273,10 @@ class DependencyContainer:
             enable_node_based_processing=True  # Enable advanced processing by default
         )
         
+        assert self._world_state_manager is not None, "WorldStateManager must be initialized first"
+        assert self._payload_builder is not None, "PayloadBuilder must be initialized first"
+        assert self._rate_limiter is not None, "RateLimiter must be initialized first"
+        
         self._processing_hub = ProcessingHub(
             world_state_manager=self._world_state_manager,
             payload_builder=self._payload_builder,
@@ -283,6 +287,9 @@ class DependencyContainer:
     
     def _init_proactive_engine(self) -> None:
         """Initialize the proactive conversation engine."""
+        assert self._world_state_manager is not None, "WorldStateManager must be initialized first"
+        assert self._context_manager is not None, "ContextManager must be initialized first"
+        
         self._proactive_engine = ProactiveConversationEngine(
             world_state_manager=self._world_state_manager,
             context_manager=self._context_manager
@@ -291,7 +298,7 @@ class DependencyContainer:
         # Connect proactive engine to world state manager for easy access
         # Note: This may be a dynamic attribute added by the orchestrator for legacy compatibility
         if hasattr(self._world_state_manager, 'proactive_engine'):
-            self._world_state_manager.proactive_engine = self._proactive_engine
+            self._world_state_manager.proactive_engine = self._proactive_engine  # type: ignore
         else:
             # Set it anyway for backwards compatibility
             setattr(self._world_state_manager, 'proactive_engine', self._proactive_engine)
