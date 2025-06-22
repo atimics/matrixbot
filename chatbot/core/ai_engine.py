@@ -19,6 +19,7 @@ import httpx
 from .prompts import prompt_builder
 from .ai_response_validator import AIResponseValidator, ErrorRecoverySystem
 from .dynamic_prompt_builder import DynamicPromptBuilder, ContextAnalyzer
+from .performance_monitor import performance_monitor
 
 logger = logging.getLogger(__name__)
 
@@ -569,16 +570,31 @@ Be thoughtful about when to act vs when to wait and observe. The `wait` tool mea
         """Make a decision based on current world state"""
         logger.info(f"AIDecisionEngine: Starting decision cycle {cycle_id}")
 
-        # Construct the prompt
+        # Analyze world state to determine context
+        context = self.context_analyzer.analyze_world_state(world_state)
+        
+        # Build dynamic, context-aware system prompt
+        dynamic_system_prompt = self.dynamic_prompt_builder.build_context_aware_prompt(context)
+        
+        # Create simplified user prompt to avoid duplication
         user_prompt = f"""Current World State:
 {json.dumps(world_state, indent=2)}
 
-Based on this world state, what actions (if any) should you take? Remember you can take up to {self.max_actions_per_cycle} actions this cycle, or choose to wait and observe."""
+Analyze the situation and respond with your decision in the required JSON format."""
 
         messages = [
-            {"role": "system", "content": self.system_prompt},
+            {"role": "system", "content": dynamic_system_prompt},
             {"role": "user", "content": user_prompt},
         ]
+
+        # Start performance monitoring
+        payload_size_kb = context.payload_size_kb
+        start_time = performance_monitor.record_cycle_start(cycle_id, payload_size_kb)
+        json_parse_success = False
+        selected_actions_count = 0
+        error_type = None
+        recovery_used = False
+        loop_detected = False
 
         try:
             # Log payload size to monitor API limits
@@ -650,8 +666,13 @@ Based on this world state, what actions (if any) should you take? Remember you c
                 if not validation_result.is_valid:
                     logger.warning(f"AIDecisionEngine: Response validation failed: {validation_result.error_message}")
                     
+                    # Track validation failure
+                    if validation_result.error_type == "infinite_loop":
+                        loop_detected = True
+                    
                     if validation_result.needs_retry:
                         logger.info("AIDecisionEngine: Attempting response recovery...")
+                        recovery_used = True
                         try:
                             recovery_response = await self.validator.retry_with_simple_prompt(
                                 world_state, self, cycle_id
@@ -660,11 +681,11 @@ Based on this world state, what actions (if any) should you take? Remember you c
                             logger.info("AIDecisionEngine: Response recovery successful")
                         except Exception as e:
                             logger.error(f"AIDecisionEngine: Response recovery failed: {e}")
-                            # Fall through to normal parsing which may still work
-
-                # Parse the JSON response
+                            error_type = "recovery_failed"
+                            # Fall through to normal parsing which may still work                # Parse the JSON response
                 try:
                     decision_data = self._extract_json_from_response(ai_response)
+                    json_parse_success = True  # Mark as successful
                     logger.debug(
                         f"AIDecisionEngine: Parsed decision data keys: {list(decision_data.keys())}"
                     )
@@ -701,6 +722,9 @@ Based on this world state, what actions (if any) should you take? Remember you c
                             )
                             continue
 
+                    # Count selected actions for monitoring
+                    selected_actions_count = len(selected_actions)
+
                     # Limit to max actions
                     if len(selected_actions) > self.max_actions_per_cycle:
                         logger.warning(
@@ -723,6 +747,18 @@ Based on this world state, what actions (if any) should you take? Remember you c
                     # Reset failure count on successful operation
                     self.error_recovery.reset_failure_count()
 
+                    # Record successful cycle
+                    performance_monitor.record_cycle_complete(
+                        cycle_id=cycle_id,
+                        start_time=start_time,
+                        payload_size_kb=payload_size_kb,
+                        json_parse_success=json_parse_success,
+                        selected_actions_count=selected_actions_count,
+                        error_type=error_type,
+                        recovery_used=recovery_used,
+                        loop_detected=loop_detected
+                    )
+
                     logger.info(
                         f"AIDecisionEngine: Cycle {cycle_id} complete - "
                         f"selected {len(result.selected_actions)} actions"
@@ -741,11 +777,26 @@ Based on this world state, what actions (if any) should you take? Remember you c
                         f"AIDecisionEngine: Failed to parse AI response as JSON: {e}"
                     )
                     logger.error(f"AIDecisionEngine: Raw response was: {ai_response}")
+                    
+                    error_type = "json_parse_error"
+                    json_parse_success = False
 
                     # Attempt error recovery
                     try:
                         recovery_result = await self.error_recovery.handle_ai_failure(e, world_state, cycle_id)
+                        recovery_used = True
                         if recovery_result and recovery_result.get("selected_actions") is not None:
+                            # Record recovery success
+                            performance_monitor.record_cycle_complete(
+                                cycle_id=cycle_id,
+                                start_time=start_time,
+                                payload_size_kb=payload_size_kb,
+                                json_parse_success=True,  # Recovery succeeded
+                                selected_actions_count=len(recovery_result["selected_actions"]),
+                                error_type=error_type,
+                                recovery_used=recovery_used,
+                                loop_detected=loop_detected
+                            )
                             return DecisionResult(
                                 selected_actions=recovery_result["selected_actions"],
                                 reasoning=recovery_result["reasoning"],
@@ -755,7 +806,17 @@ Based on this world state, what actions (if any) should you take? Remember you c
                     except Exception as recovery_error:
                         logger.error(f"AIDecisionEngine: Recovery failed: {recovery_error}")
 
-                    # Return empty decision as final fallback
+                    # Record failure and return empty decision as final fallback
+                    performance_monitor.record_cycle_complete(
+                        cycle_id=cycle_id,
+                        start_time=start_time,
+                        payload_size_kb=payload_size_kb,
+                        json_parse_success=json_parse_success,
+                        selected_actions_count=0,
+                        error_type=error_type,
+                        recovery_used=recovery_used,
+                        loop_detected=loop_detected
+                    )
                     return DecisionResult(
                         selected_actions=[],
                         reasoning="Failed to parse AI response and recovery failed",
@@ -766,11 +827,26 @@ Based on this world state, what actions (if any) should you take? Remember you c
                 except Exception as e:
                     logger.error(f"AIDecisionEngine: Error processing AI response: {e}")
                     logger.error(f"AIDecisionEngine: Raw response was: {ai_response}")
+                    
+                    error_type = "processing_error"
+                    json_parse_success = False
 
                     # Attempt error recovery
                     try:
                         recovery_result = await self.error_recovery.handle_ai_failure(e, world_state, cycle_id)
+                        recovery_used = True
                         if recovery_result and recovery_result.get("selected_actions") is not None:
+                            # Record recovery success
+                            performance_monitor.record_cycle_complete(
+                                cycle_id=cycle_id,
+                                start_time=start_time,
+                                payload_size_kb=payload_size_kb,
+                                json_parse_success=True,  # Recovery succeeded
+                                selected_actions_count=len(recovery_result["selected_actions"]),
+                                error_type=error_type,
+                                recovery_used=recovery_used,
+                                loop_detected=loop_detected
+                            )
                             return DecisionResult(
                                 selected_actions=recovery_result["selected_actions"],
                                 reasoning=recovery_result["reasoning"],
@@ -780,7 +856,17 @@ Based on this world state, what actions (if any) should you take? Remember you c
                     except Exception as recovery_error:
                         logger.error(f"AIDecisionEngine: Recovery failed: {recovery_error}")
 
-                    # Return empty decision
+                    # Record failure and return empty decision
+                    performance_monitor.record_cycle_complete(
+                        cycle_id=cycle_id,
+                        start_time=start_time,
+                        payload_size_kb=payload_size_kb,
+                        json_parse_success=json_parse_success,
+                        selected_actions_count=0,
+                        error_type=error_type,
+                        recovery_used=recovery_used,
+                        loop_detected=loop_detected
+                    )
                     return DecisionResult(
                         selected_actions=[],
                         reasoning=f"Error processing response: {str(e)}",
