@@ -127,52 +127,13 @@ class TestPayloadBuilderAdvanced:
     @pytest.fixture
     def world_state_manager(self):
         """Create a comprehensive WorldStateManager for advanced testing."""
-        manager = Mock(spec=WorldStateManager)
-        manager.current_state = Mock(spec=WorldState)
+        # Use real WorldStateManager instead of mocks
+        manager = WorldStateManager()
         
-        # Create proper Channel mock objects with recent_messages attribute
-        matrix_channel = Mock(spec=Channel)
-        matrix_channel.id = "matrix_room"
-        matrix_channel.type = "matrix"
-        matrix_channel.name = "Test Matrix Room"
-        matrix_channel.recent_messages = []
+        # Add real channels
+        manager.add_channel("matrix_room", "matrix", "Test Matrix Room")
+        manager.add_channel("farcaster_feed", "farcaster", "Farcaster Feed")
         
-        farcaster_channel = Mock(spec=Channel)
-        farcaster_channel.id = "farcaster_feed"
-        farcaster_channel.type = "farcaster"
-        farcaster_channel.name = "Farcaster Feed"
-        farcaster_channel.recent_messages = []
-        
-        # Set up comprehensive state
-        manager.current_state.channels = {
-            "matrix_room": matrix_channel,
-            "farcaster_feed": farcaster_channel
-        }
-        
-        manager.current_state.messages = {}
-        manager.current_state.recent_activity = []
-        manager.current_state.current_channel_id = "matrix_room"
-        manager.current_state.action_history = []
-        manager.current_state.rate_limits = {}
-        manager.current_state.ecosystem_token_contract = "0x123..."
-        manager.current_state.token_metadata = {"symbol": "TEST", "decimals": 18}
-        manager.current_state.monitored_token_holders = {}
-        manager.current_state.recent_token_activity = []
-        manager.current_state.research_database = {}
-        manager.current_state.threads = {}
-        manager.current_state.generated_media_library = []
-        manager.current_state.bot_media_on_farcaster = {}
-        manager.current_state.pending_matrix_invites = []
-        manager.current_state.system_status = {"status": "active"}
-        
-        # Mock methods
-        manager.current_state.get_recent_media_actions.return_value = {
-            "recent_media_actions": [
-                {"action": "generate_image", "timestamp": time.time()}
-            ]
-        }
-        
-        manager.state = manager.current_state
         return manager
     
     def test_build_full_payload_with_data(self, world_state_manager):
@@ -203,15 +164,16 @@ class TestPayloadBuilderAdvanced:
     
     def test_payload_size_estimation_accuracy(self, world_state_manager):
         """Test that payload size estimation is reasonably accurate."""
-        # Set up test data in the world state
-        world_state_manager.current_state.channels = {
-            "test_channel": {
-                "messages": [
-                    {"id": f"msg_{i}", "content": f"Message {i}"} 
-                    for i in range(100)
-                ]
-            }
-        }
+        # Add messages to the world state using real methods
+        for i in range(100):
+            message = Message(
+                id=f"msg_{i}",
+                content=f"Message {i}",
+                sender=f"user_{i % 10}",
+                timestamp=time.time() + i,
+                channel_type="matrix"
+            )
+            world_state_manager.add_message("matrix_room", message)
         
         estimated_size = PayloadBuilder.estimate_payload_size(world_state_manager.state)
         
@@ -225,15 +187,14 @@ class TestPayloadBuilderAdvanced:
     
     def test_payload_with_action_history(self, world_state_manager):
         """Test payload generation with action history."""
-        # Add action history
-        world_state_manager.current_state.action_history = [
-            {
-                "action": "send_message",
-                "timestamp": time.time(),
-                "channel": "matrix_room",
-                "details": {"content": "Test message"}
-            }
-        ]
+        # Add action history using the real method
+        action_data = {
+            "action": "send_message",
+            "timestamp": time.time(),
+            "channel": "matrix_room",
+            "details": {"content": "Test message"}
+        }
+        world_state_manager.state.action_history.append(action_data)
         
         builder = PayloadBuilder(world_state_manager)
         payload = builder.build_full_payload(world_state_manager.state)
@@ -255,19 +216,16 @@ class TestPayloadBuilderAdvanced:
     
     def test_payload_optimization_for_large_data(self, world_state_manager):
         """Test that payload builder optimizes for large datasets."""
-        # Create large message history
-        large_messages = []
+        # Add many messages to test optimization
         for i in range(1000):
-            large_messages.append(Message(
+            message = Message(
                 id=f"msg_{i}",
                 content=f"This is a long message number {i} with lots of content",
                 timestamp=time.time() + i,
                 sender=f"user_{i % 10}",
                 channel_type="matrix"
-            ))
-        
-        # Update the channel mock to have large message list
-        world_state_manager.current_state.channels["matrix_room"].recent_messages = large_messages
+            )
+            world_state_manager.add_message("matrix_room", message)
         
         builder = PayloadBuilder(world_state_manager)
         payload = builder.build_full_payload(world_state_manager.state)
