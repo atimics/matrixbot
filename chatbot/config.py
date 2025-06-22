@@ -164,6 +164,10 @@ class AppConfig(BaseSettings):
     GITHUB_TOKEN: Optional[str] = None
     GITHUB_USERNAME: Optional[str] = None
 
+    # Developer Tools & Security
+    RATICHAT_ENCRYPTION_KEY: Optional[str] = None
+    DEVELOPER_TOOLS_ENABLED: bool = False
+
 
 # Global settings instance
 def create_settings() -> AppConfig:

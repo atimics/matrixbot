@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 class IntegrationManager:
     """Manages all service integrations for the chatbot"""
     
-    def __init__(self, db_path: str, encryption_key: Optional[bytes] = None, world_state_manager=None):
+    def __init__(self, db_path: str, encryption_key: Optional[str] = None, world_state_manager=None):
         self.db_path = db_path
         self.world_state_manager = world_state_manager
         self.active_integrations: Dict[str, Integration] = {}
@@ -37,6 +37,7 @@ class IntegrationManager:
         
         # Initialize encryption for credentials
         if encryption_key:
+            # encryption_key should be a base64-encoded string suitable for Fernet
             self.cipher = Fernet(encryption_key)
         else:
             # Generate a key for development - in production, this should come from a secure vault

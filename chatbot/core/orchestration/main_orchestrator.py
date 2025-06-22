@@ -20,6 +20,9 @@ from ...core.integration_manager import IntegrationManager
 from ...integrations.arweave_uploader_client import ArweaveUploaderClient
 from ...integrations.farcaster import FarcasterObserver
 from ..node_system.node_manager import NodeManager
+from ..node_system.summary_service import NodeSummaryService
+from ..node_system.interaction_tools import NodeInteractionTools
+from ..node_system.node_processor import NodeProcessor
 from ...integrations.matrix.observer import MatrixObserver
 from ...integrations.base_nft_service import BaseNFTService
 from ...integrations.eligibility_service import UserEligibilityService
@@ -228,8 +231,12 @@ class MainOrchestrator:
         self.context_manager = ContextManager(self.world_state, self.config.db_path)
         
         # Integration management
+        encryption_key = settings.RATICHAT_ENCRYPTION_KEY
+        # Pass the key as string - Fernet expects base64-encoded string, not decoded bytes
+        
         self.integration_manager = IntegrationManager(
             db_path=self.config.db_path,
+            encryption_key=encryption_key,
             world_state_manager=self.world_state
         )
         
@@ -296,6 +303,9 @@ class MainOrchestrator:
         # System state
         self.running = False
         self.cycle_count = 0  # Track processing cycles
+        
+        # Initialize node-based processing system
+        self._initialize_node_system()
         
         # Initialize tool registry and register tools
         self._register_all_tools()
@@ -1097,3 +1107,41 @@ class MainOrchestrator:
                     logger.info("✓ Matrix integration removed successfully")
                 except Exception as e:
                     logger.error(f"Failed to remove Matrix integration: {e}")
+    
+    def _initialize_node_system(self):
+        """Initialize the node-based processing system."""
+        logger.info("Initializing node-based processing system...")
+        
+        # Initialize NodeManager with LRU and metadata management
+        self.node_manager = NodeManager(
+            max_expanded_nodes=settings.MAX_EXPANDED_NODES,
+            default_pinned_nodes=settings.DEFAULT_PINNED_NODES
+        )
+        
+        # Initialize NodeSummaryService for AI summarization
+        api_key = settings.OPENROUTER_API_KEY
+        if not api_key:
+            raise ValueError("OPENROUTER_API_KEY is required for node summary service")
+        
+        self.node_summary_service = NodeSummaryService(
+            api_key=api_key,
+            model=settings.AI_SUMMARY_MODEL
+        )
+        
+        # Initialize NodeInteractionTools for AI node operations
+        self.node_interaction_tools = NodeInteractionTools(self.node_manager)
+        
+        # Initialize NodeProcessor with two-phase OODA loop
+        self.node_processor = NodeProcessor(
+            node_manager=self.node_manager,
+            summary_service=self.node_summary_service,
+            ai_engine=self.ai_engine,
+            world_state_manager=self.world_state,
+            payload_builder=self.payload_builder,
+            tool_registry=self.tool_registry
+        )
+        
+        # Connect NodeProcessor to ProcessingHub
+        self.processing_hub.set_node_processor(self.node_processor)
+        
+        logger.info("Node-based processing system initialized successfully")

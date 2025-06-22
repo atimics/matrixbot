@@ -25,14 +25,14 @@ RUN pip install poetry>=1.2.0
 RUN poetry config virtualenvs.create false
 RUN poetry config virtualenvs.in-project false
 
-# Copy the rest of the application's code into the container
-# This is done before poetry install to ensure files like README.md are available
-COPY . .
-
-# Install dependencies using poetry
+# Install dependencies using poetry BEFORE copying application code
 # --without dev ensures development packages are excluded
 # --no-interaction, --no-ansi are good for CI/Docker
-RUN poetry install --without dev --no-interaction --no-ansi
+# --no-root prevents installation of the current package (since we haven't copied the code yet)
+RUN poetry install --without dev --no-interaction --no-ansi --no-root
+
+# Copy the rest of the application's code into the container AFTER dependencies
+COPY . .
 
 # Create necessary directories
 RUN mkdir -p /app/data /app/matrix_store

@@ -16,10 +16,10 @@ RUN poetry config virtualenvs.create false
 # Copy pyproject.toml and poetry.lock for dependency installation
 COPY pyproject.toml poetry.lock* ./
 
-# Install dependencies using poetry
+# Install dependencies using poetry BEFORE copying application code
 RUN poetry install --no-dev --no-interaction --no-ansi
 
-# Copy the application source code
+# Copy the application source code AFTER dependencies are installed
 COPY . .
 
 # Create the data directory for the wallet file

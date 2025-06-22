@@ -26,16 +26,16 @@ RUN npm install -g ardrive-cli
 # Verify ardrive-cli installation
 RUN ardrive --version
 
-# Copy poetry configuration first for layer caching
+# Copy poetry configuration first for better Docker layer caching
 COPY pyproject.toml poetry.lock* ./
 
-# Install poetry and python dependencies as root first
+# Install poetry and python dependencies BEFORE copying application code
 # Using --no-cache-dir reduces image size
 RUN pip install --no-cache-dir poetry>=1.2.0 \
     && poetry config virtualenvs.create false \
     && poetry install --only=main --no-interaction --no-ansi
 
-# Copy the rest of the application code
+# Copy the rest of the application code AFTER dependencies are installed
 COPY . .
 
 # Create data directory and set permissions for the new user

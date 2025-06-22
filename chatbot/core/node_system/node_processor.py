@@ -165,7 +165,7 @@ class NodeProcessor:
         logger.info(f"NodeProcessor: Single-phase cycle {cycle_id}")
         
         # Build payload with current node state
-        world_state_data = await self.world_state_manager.get_world_state_data()
+        world_state_data = self.world_state_manager.get_world_state_data()
         payload = self.payload_builder.build_node_based_payload(
             world_state_data=world_state_data,
             node_manager=self.node_manager,
@@ -177,10 +177,9 @@ class NodeProcessor:
         )
         
         # Add all available tools (node tools + external tools)
-        all_tools = {}
-        all_tools.update(self.node_tools.get_tool_definitions())
-        all_tools.update(self.tool_registry.get_tool_descriptions_for_ai())
-        payload["available_tools"] = all_tools
+        # Note: node tools return dict, external tools return formatted string
+        payload["available_tools"] = self.node_tools.get_tool_definitions()
+        payload["external_tools_description"] = self.tool_registry.get_tool_descriptions_for_ai()
         
         # Get AI decision
         decision_result = await self.ai_engine.make_decision(payload, cycle_id)
@@ -229,7 +228,7 @@ class NodeProcessor:
         Returns:
             Dict with success status and expansion actions taken
         """
-        world_state_data = await self.world_state_manager.get_world_state_data()
+        world_state_data = self.world_state_manager.get_world_state_data()
         
         # Build minimal payload with collapsed summaries only
         payload = {
@@ -333,7 +332,7 @@ class NodeProcessor:
         Returns:
             Dict with success status and external actions taken
         """
-        world_state_data = await self.world_state_manager.get_world_state_data()
+        world_state_data = self.world_state_manager.get_world_state_data()
         
         # Build full payload with expanded node data
         payload = self.payload_builder.build_node_based_payload(
@@ -356,10 +355,8 @@ class NodeProcessor:
         )
         
         # Provide all available tools (node tools + external tools)
-        all_tools = {}
-        all_tools.update(self.node_tools.get_tool_definitions())
-        all_tools.update(self.tool_registry.get_tool_descriptions_for_ai())
-        payload["available_tools"] = all_tools
+        payload["available_tools"] = self.node_tools.get_tool_definitions()
+        payload["external_tools_description"] = self.tool_registry.get_tool_descriptions_for_ai()
         
         # Execute decide/act decision
         decide_cycle_id = f"{cycle_id}_decide_act"
@@ -423,7 +420,7 @@ class NodeProcessor:
         This ensures the Orient phase has accurate summaries to work with.
         """
         try:
-            world_state_data = await self.world_state_manager.get_world_state_data()
+            world_state_data = self.world_state_manager.get_world_state_data()
             all_node_paths = self.payload_builder._get_node_paths_from_world_state(world_state_data)
             
             # Find nodes needing summary updates

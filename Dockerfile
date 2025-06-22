@@ -26,17 +26,18 @@ ENV POETRY_NO_INTERACTION=1 \
 # Create and set work directory
 WORKDIR /app
 
-# Copy Poetry configuration files
+# Copy Poetry configuration files FIRST for better layer caching
 COPY pyproject.toml poetry.lock ./
 
-# Copy source code (needed for Poetry to install the current project)
+# Install dependencies using Poetry (no-root since package-mode is false)
+# This happens BEFORE copying source code for better Docker layer caching
+RUN poetry install --only=main --no-interaction --no-ansi --no-root && \
+    rm -rf $POETRY_CACHE_DIR
+
+# Copy source code AFTER dependencies are installed
 COPY chatbot/ ./chatbot/
 COPY scripts/ ./scripts/
 COPY README.md ./
-
-# Install dependencies using Poetry (no-root since package-mode is false)
-RUN poetry install --only=main --no-interaction --no-ansi --no-root && \
-    rm -rf $POETRY_CACHE_DIR
 
 # Copy control panel from scripts to root for Docker service
 COPY control_panel.py ./control_panel.py
