@@ -263,12 +263,22 @@ class NodeProcessor:
                 continue
             
             if not metadata.is_expanded:
-                # Include summary for collapsed nodes
-                summary = metadata.ai_summary or f"Node {node_path} (no summary available)"
+                # Include summary for collapsed nodes - P1 ENHANCEMENT: Handle structured summaries
+                if metadata.ai_summary:
+                    if isinstance(metadata.ai_summary, dict):
+                        # New structured summary format
+                        summary_data = metadata.ai_summary
+                    else:
+                        # Legacy string summary
+                        summary_data = {"summary": metadata.ai_summary, "legacy": True}
+                else:
+                    # No summary available
+                    summary_data = {"summary": f"Node {node_path} (no summary available)", "fallback": True}
+                
                 data_changed = self.node_manager.is_data_changed(node_path, node_data)
                 
                 collapsed_node_summaries[node_path] = {
-                    "summary": summary,
+                    **summary_data,  # Include all structured summary data
                     "data_changed": data_changed,
                     "last_summary_update": metadata.last_summary_update_ts
                 }

@@ -10,7 +10,7 @@ import json
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Union
 from datetime import datetime
 
 
@@ -38,7 +38,7 @@ class NodeMetadata:
     """Metadata for a single node in the expandable/collapsible tree."""
     is_expanded: bool = False
     is_pinned: bool = False
-    ai_summary: Optional[str] = None
+    ai_summary: Optional[Union[str, Dict[str, Any]]] = None  # P1 ENHANCEMENT: Support structured summaries
     last_summary_update_ts: Optional[float] = None
     last_expanded_ts: Optional[float] = None
     data_hash: Optional[str] = None
@@ -310,10 +310,24 @@ class NodeManager:
         
         return needs_summary
     
-    def update_node_summary(self, node_path: str, summary: str):
-        """Update the AI-generated summary for a node."""
+    def update_node_summary(self, node_path: str, summary):
+        """
+        Update the AI-generated summary for a node.
+        
+        Args:
+            node_path: Path of the node to update
+            summary: Either a string (legacy) or structured dict (new format)
+        """
         metadata = self.get_node_metadata(node_path)
-        metadata.ai_summary = summary
+        
+        # Handle both string and structured dictionary summaries
+        if isinstance(summary, dict):
+            # P1 ENHANCEMENT: Store structured summary
+            metadata.ai_summary = summary
+        else:
+            # Legacy string summary support
+            metadata.ai_summary = {"summary": str(summary), "legacy": True}
+        
         metadata.update_summary_timestamp()
     
     def get_expansion_status_summary(self) -> Dict[str, Any]:

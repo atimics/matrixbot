@@ -1,7 +1,19 @@
 """
 AI Summary Generation Service for Node Summarization
 
-This service generates concise, informative summaries of collapsed nodes
+This service generates concise, informat    async def generate_multiple_summaries(
+        self, 
+        node_requests: List[Dict[str, Any]]
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Generate structured summaries for multiple nodes efficiently.
+        
+        Args:
+            node_requests: List of dicts with keys 'node_path', 'node_data', 'node_type'
+            
+        Returns:
+            Dict mapping node_path to structured summary dict
+        """ of collapsed nodes
 using AI to help the main AI understand what's in each node without
 expanding it fully.
 """
@@ -31,9 +43,9 @@ class NodeSummaryService:
         node_path: str, 
         node_data: Any, 
         node_type: Optional[str] = None
-    ) -> str:
+    ) -> Dict[str, Any]:
         """
-        Generate a concise summary of a node's data.
+        Generate a structured summary of a node's data.
         
         Args:
             node_path: The path identifier of the node
@@ -41,7 +53,7 @@ class NodeSummaryService:
             node_type: Optional hint about the type of node (channel, user, thread, etc.)
         
         Returns:
-            A one-sentence summary string
+            A structured dictionary with summary and metadata
         """
         try:
             # Determine node type from path if not provided
@@ -81,28 +93,33 @@ class NodeSummaryService:
                     return self._create_fallback_summary(node_path, node_data, node_type)
                 
                 ai_response = result["choices"][0]["message"]["content"]
-                summary = self._extract_summary(ai_response)
+                summary_text = self._extract_summary(ai_response)
+                
+                # P1 ENHANCEMENT: Combine AI summary with structured metadata
+                structured_summary = self._create_fallback_summary(node_path, node_data, node_type)
+                structured_summary["summary"] = summary_text  # Replace fallback summary with AI-generated one
+                structured_summary["ai_generated"] = True
             
-            logger.debug(f"Generated summary for {node_path}: {summary}")
-            return summary
+            logger.debug(f"Generated structured summary for {node_path}: {structured_summary}")
+            return structured_summary
             
         except Exception as e:
             logger.error(f"Failed to generate summary for {node_path}: {e}")
-            # Return a fallback heuristic summary
-            return self._create_fallback_summary(node_path, node_data, node_type)
+            # Return a structured fallback summary
+            return self._create_fallback_summary(node_path, node_data, node_type or "unknown")
     
     async def generate_multiple_summaries(
         self, 
         node_requests: List[Dict[str, Any]]
-    ) -> Dict[str, str]:
+    ) -> Dict[str, Dict[str, Any]]:
         """
-        Generate summaries for multiple nodes efficiently.
+        Generate structured summaries for multiple nodes efficiently.
         
         Args:
             node_requests: List of dicts with keys: node_path, node_data, node_type
         
         Returns:
-            Dictionary mapping node_path to summary string
+            Dictionary mapping node_path to structured summary dict
         """
         if not node_requests:
             return {}
@@ -222,43 +239,102 @@ Summary:"""
         
         return summary
     
-    def _create_fallback_summary(self, node_path: str, node_data: Any, node_type: str) -> str:
-        """Create a heuristic summary when AI generation fails."""
+    def _create_fallback_summary(self, node_path: str, node_data: Any, node_type: Optional[str]) -> Dict[str, Any]:
+        """Create a structured heuristic summary when AI generation fails."""
         try:
+            # Default node_type if None
+            if node_type is None:
+                node_type = self._infer_node_type(node_path)
+            
             if node_type in ["matrix", "farcaster"] and isinstance(node_data, dict):
-                # Channel-like data
+                # Channel-like data - P1 ENHANCEMENT: Return structured summary
                 if "messages" in node_data:
-                    msg_count = len(node_data.get("messages", []))
-                    return f"Channel {node_path} with {msg_count} recent messages."
+                    messages = node_data.get("messages", [])
+                    msg_count = len(messages)
+                    # Calculate last activity timestamp
+                    last_activity_ts = max((msg.get("timestamp", 0) for msg in messages), default=0)
+                    # Get key participants
+                    participants = list(set(msg.get("sender", "unknown") for msg in messages[-10:]))[:3]
+                    
+                    return {
+                        "summary": f"Channel {node_path} with {msg_count} recent messages.",
+                        "message_count": msg_count,
+                        "last_activity_ts": last_activity_ts,
+                        "key_participants": participants
+                    }
                 elif "recent_messages" in node_data:
-                    msg_count = len(node_data.get("recent_messages", []))
-                    return f"Channel {node_path} with {msg_count} recent messages."
+                    messages = node_data.get("recent_messages", [])
+                    msg_count = len(messages)
+                    # Calculate last activity timestamp
+                    last_activity_ts = max((getattr(msg, "timestamp", 0) for msg in messages), default=0)
+                    # Get key participants
+                    participants = list(set(getattr(msg, "sender", "unknown") for msg in messages[-10:]))[:3]
+                    
+                    return {
+                        "summary": f"Channel {node_path} with {msg_count} recent messages.",
+                        "message_count": msg_count,
+                        "last_activity_ts": last_activity_ts,
+                        "key_participants": participants
+                    }
             
             elif node_type == "users" and isinstance(node_data, dict):
                 # User data
                 username = node_data.get("username") or node_data.get("display_name") or "unknown"
-                return f"User {username} profile and activity data."
+                follower_count = node_data.get("follower_count", 0)
+                return {
+                    "summary": f"User {username} profile and activity data.",
+                    "username": username,
+                    "follower_count": follower_count,
+                    "last_activity_ts": node_data.get("last_seen", 0)
+                }
             
             elif node_type == "threads" and isinstance(node_data, dict):
                 # Thread data
                 reply_count = len(node_data.get("replies", [])) if "replies" in node_data else 0
-                return f"Thread with {reply_count} replies."
+                last_reply_ts = max((msg.get("timestamp", 0) for msg in node_data.get("replies", [])), default=0)
+                return {
+                    "summary": f"Thread with {reply_count} replies.",
+                    "reply_count": reply_count,
+                    "last_activity_ts": last_reply_ts,
+                    "thread_root": node_data.get("root_message", {}).get("sender", "unknown")
+                }
             
             elif node_type == "system":
                 # System data
-                return f"System information: {node_path.split('.')[-1]}."
+                return {
+                    "summary": f"System information: {node_path.split('.')[-1]}.",
+                    "node_type": node_type,
+                    "data_size": len(str(node_data)) if node_data else 0
+                }
             
             else:
-                # Generic fallback
+                # Generic fallback with basic structure
                 if isinstance(node_data, dict):
                     key_count = len(node_data)
-                    return f"Node {node_path} containing {key_count} data fields."
+                    return {
+                        "summary": f"Node {node_path} containing {key_count} data fields.",
+                        "data_type": "dict",
+                        "item_count": key_count,
+                        "keys": list(node_data.keys())[:5] if node_data else []
+                    }
                 elif isinstance(node_data, list):
                     item_count = len(node_data)
-                    return f"Node {node_path} containing {item_count} items."
+                    return {
+                        "summary": f"Node {node_path} containing {item_count} items.",
+                        "data_type": "list", 
+                        "item_count": item_count
+                    }
                 else:
-                    return f"Node {node_path} with {node_type} data."
+                    return {
+                        "summary": f"Node {node_path} with {node_type} data.",
+                        "data_type": type(node_data).__name__
+                    }
         
         except Exception as e:
             logger.warning(f"Fallback summary generation failed for {node_path}: {e}")
-            return f"Node {node_path} (summary unavailable)."
+            
+        # Ensure we always return a dict - final fallback
+        return {
+            "summary": f"Node {node_path} (summary unavailable).",
+            "error": "summary_generation_failed"
+        }

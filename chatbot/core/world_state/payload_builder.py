@@ -327,14 +327,14 @@ class PayloadBuilder:
         
         # P1 FIX: Add essential context that AI needs for situational awareness
         # Add action history summary (last 5-10 actions for learning from past behavior)
-        recent_actions = world_state_data.action_history.actions[-10:] if world_state_data.action_history.actions else []
+        recent_actions = world_state_data.action_history[-10:] if world_state_data.action_history else []
         action_history_summary = []
         for action in recent_actions:
             action_summary = {
                 "action_type": action.action_type,
                 "timestamp": action.timestamp,
                 "status": "success" if action.result and "success" in str(action.result).lower() else "unknown",
-                "reasoning": action.reasoning[:100] + "..." if action.reasoning and len(action.reasoning) > 100 else action.reasoning
+                "reasoning": action.metadata.get("reasoning", "")[:100] + "..." if action.metadata.get("reasoning") and len(action.metadata.get("reasoning", "")) > 100 else action.metadata.get("reasoning", "")
             }
             action_history_summary.append(action_summary)
         payload["action_history"] = action_history_summary
@@ -343,15 +343,15 @@ class PayloadBuilder:
         pending_invites = []
         for invite in world_state_data.pending_matrix_invites:
             pending_invites.append({
-                "room_id": invite.room_id,
-                "sender": invite.sender,
-                "timestamp": invite.timestamp,
-                "room_name": invite.room_name
+                "room_id": invite.get("room_id", "unknown"),
+                "sender": invite.get("sender", "unknown"),
+                "timestamp": invite.get("timestamp", 0),
+                "room_name": invite.get("room_name", "unknown")
             })
         payload["pending_matrix_invites"] = pending_invites
         
         # Add research knowledge summary for long-term memory access
-        research_topics = list(world_state_data.research_database.entries.keys()) if world_state_data.research_database.entries else []
+        research_topics = list(world_state_data.research_database.keys()) if world_state_data.research_database else []
         payload["research_knowledge"] = {
             "available_topics": research_topics,
             "count": len(research_topics),
@@ -380,14 +380,23 @@ class PayloadBuilder:
                     "last_expanded": metadata.last_expanded_ts
                 }
             else:
-                # Include summary for collapsed nodes
-                summary = metadata.ai_summary or f"Node {node_path} (no summary available)"
+                # Include summary for collapsed nodes - P1 ENHANCEMENT: Handle structured summaries
+                if metadata.ai_summary:
+                    if isinstance(metadata.ai_summary, dict):
+                        # New structured summary format
+                        summary_data = metadata.ai_summary
+                    else:
+                        # Legacy string summary
+                        summary_data = {"summary": metadata.ai_summary, "legacy": True}
+                else:
+                    # No summary available
+                    summary_data = {"summary": f"Node {node_path} (no summary available)", "fallback": True}
                 
                 # Check if data has changed since last summary
                 data_changed = node_manager.is_data_changed(node_path, node_data)
                 
                 collapsed_node_summaries[node_path] = {
-                    "summary": summary,
+                    **summary_data,  # Include all structured summary data
                     "data_changed": data_changed,
                     "last_summary_update": metadata.last_summary_update_ts
                 }
