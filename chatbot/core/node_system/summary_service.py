@@ -1,19 +1,7 @@
 """
 AI Summary Generation Service for Node Summarization
 
-This service generates concise, informat    async def generate_multiple_summaries(
-        self, 
-        node_requests: List[Dict[str, Any]]
-    ) -> Dict[str, Dict[str, Any]]:
-        """
-        Generate structured summaries for multiple nodes efficiently.
-        
-        Args:
-            node_requests: List of dicts with keys 'node_path', 'node_data', 'node_type'
-            
-        Returns:
-            Dict mapping node_path to structured summary dict
-        """ of collapsed nodes
+This service generates concise, informative summaries of collapsed nodes
 using AI to help the main AI understand what's in each node without
 expanding it fully.
 """
