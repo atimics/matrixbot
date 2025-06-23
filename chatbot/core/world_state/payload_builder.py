@@ -731,10 +731,10 @@ class PayloadBuilder:
                         ]
                     
                     # Add enhanced context for expanded channels
-                    if is_expanded and settings.EXPANDED_CHANNEL_INCLUDE_ACTIVITY_METRICS:
+                    if is_expanded and settings.expanded_channel_include_activity_metrics:
                         channel_data["activity_summary"] = channel.get_activity_summary()
                     
-                    if is_expanded and settings.EXPANDED_CHANNEL_INCLUDE_USER_CONTEXT:
+                    if is_expanded and settings.expanded_channel_include_user_context:
                         # Add user context for recent active users
                         active_users = {}
                         for msg in recent_messages[-10:]:  # Last 10 messages for user context
@@ -748,11 +748,11 @@ class PayloadBuilder:
                                 }
                         channel_data["active_users"] = active_users
                     
-                    if is_expanded and settings.EXPANDED_CHANNEL_INCLUDE_THREAD_CONTEXT:
+                    if is_expanded and settings.expanded_channel_include_thread_context:
                         # Add related thread information
                         related_threads = []
                         current_time = time.time()
-                        lookback_seconds = settings.EXPANDED_CHANNEL_LOOKBACK_HOURS * 3600
+                        lookback_seconds = settings.expanded_channel_lookback_hours * 3600
                         
                         for thread_id, thread_messages in world_state_data.threads.items():
                             if thread_messages and len(thread_messages) > 0:
