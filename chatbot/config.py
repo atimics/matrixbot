@@ -108,7 +108,7 @@ class AppConfig(BaseSettings):
     GOOGLE_API_KEY: Optional[
         str
     ] = None  # For Google AI services (separate from OpenRouter)
-    GOOGLE_GEMINI_IMAGE_MODEL: str = "gemini-1.5-flash-latest"
+    GOOGLE_GEMINI_IMAGE_MODEL: str = "gemini-2.0-flash-preview-image-generation"
     GOOGLE_VEO_VIDEO_MODEL: str = "models/veo-experimental-v1"
 
     # S3 Configuration (replaces Arweave)
