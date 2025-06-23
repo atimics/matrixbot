@@ -64,175 +64,186 @@ class TestAIBlindnessFix:
     @pytest.mark.asyncio
     async def test_matrix_reply_recorded_in_world_state(self, orchestrator, mock_matrix_observer):
         """Test that bot's matrix reply is recorded in WorldStateManager."""
-        # Setup - set the matrix observer directly on the orchestrator
-        orchestrator.matrix_observer = mock_matrix_observer
-        # Also set it on the action context which is used by the tools
-        orchestrator.action_context.matrix_observer = mock_matrix_observer
-        
-        channel_id = "!test:example.com"
-        test_content = "This is a test reply"
-        
-        # Create action
-        action = ActionPlan(
-            action_type="send_matrix_reply",
-            parameters={
-                "channel_id": channel_id,  # Updated parameter name for new tool interface
-                "content": test_content,
-                "reply_to_id": "original_event_123"  # Updated parameter name for new tool interface
-            },
-            reasoning="Test action",
-            priority=5
-        )
-        
-        # Execute action
-        await orchestrator._execute_action(action)
-        
-        # Verify the message was added to world state
-        world_state_data = orchestrator.world_state.to_dict()
-        
-        assert "channels" in world_state_data
-        assert channel_id in world_state_data["channels"]
-        
-        channel_data = world_state_data["channels"][channel_id]
-        messages = channel_data.get("recent_messages", [])
-        
-        # Find the bot's message - use the configured user ID or default test value
-        bot_user_id = settings.MATRIX_USER_ID or "@test_bot:example.com"
-        bot_messages = [msg for msg in messages if msg.get("sender") == bot_user_id]
-        assert len(bot_messages) == 1
-        
-        bot_message = bot_messages[0]
-        assert bot_message["content"] == test_content
-        assert bot_message["id"] == "test_event_123"
-        assert bot_message["reply_to"] == "original_event_123"
-        assert bot_message["channel_type"] == "matrix"
+        with patch.object(settings, 'MATRIX_USER_ID', '@test_bot:example.com'):
+            # Setup - set the matrix observer directly on the orchestrator
+            orchestrator.matrix_observer = mock_matrix_observer
+            # Also set it on the action context which is used by the tools
+            orchestrator.action_context.matrix_observer = mock_matrix_observer
+            
+            channel_id = "!test:example.com"
+            test_content = "This is a test reply"
+            
+            # Create action
+            action = ActionPlan(
+                action_type="send_matrix_reply",
+                parameters={
+                    "channel_id": channel_id,  # Updated parameter name for new tool interface
+                    "content": test_content,
+                    "reply_to_id": "original_event_123"  # Updated parameter name for new tool interface
+                },
+                reasoning="Test action",
+                priority=5
+            )
+            
+            # Execute action
+            await orchestrator._execute_action(action)
+            
+            # Verify the message was added to world state
+            world_state_data = orchestrator.world_state.to_dict()
+            
+            assert "channels" in world_state_data
+            assert channel_id in world_state_data["channels"]
+            
+            channel_data = world_state_data["channels"][channel_id]
+            messages = channel_data.get("recent_messages", [])
+            
+            # Find the bot's message - use the test user ID
+            bot_messages = [msg for msg in messages if msg.get("sender") == '@test_bot:example.com']
+            assert len(bot_messages) == 1
+            
+            bot_message = bot_messages[0]
+            assert bot_message["content"] == test_content
+            assert bot_message["id"] == "test_event_123"
+            assert bot_message["reply_to"] == "original_event_123"
+            assert bot_message["channel_type"] == "matrix"
     
     @pytest.mark.asyncio
     async def test_matrix_reply_recorded_in_context(self, orchestrator, mock_matrix_observer):
         """Test that bot's matrix reply is recorded in ContextManager."""
-        # Setup - set the matrix observer directly on the orchestrator
-        orchestrator.matrix_observer = mock_matrix_observer
-        channel_id = "!test:example.com"
-        test_content = "This is a test reply for context"
-        
-        # Create action
-        action = ActionPlan(
-            action_type="send_matrix_reply",
-            parameters={
-                "channel_id": channel_id,  # Updated parameter name
-                "content": test_content,
-                "reply_to_id": "original_event_456"  # Updated parameter name
-            },
-            reasoning="Test action for context",
-            priority=5
-        )
-        
-        # Execute action
-        await orchestrator._execute_action(action)
-        
-        # Get context and verify the assistant message was added
-        context = await orchestrator.context_manager.get_context(channel_id)
-        
-        # Check that assistant messages include our sent message
-        assistant_messages = context.assistant_messages
-        assert len(assistant_messages) > 0
-        
-        # Find our message in assistant messages
-        our_messages = [msg for msg in assistant_messages if msg.get("content") == test_content]
-        assert len(our_messages) == 1
-        
-        our_message = our_messages[0]
-        assert our_message["event_id"] == "test_event_123"
-        assert our_message["sender"] == settings.MATRIX_USER_ID
-        assert our_message["type"] == "assistant"
+        with patch.object(settings, 'MATRIX_USER_ID', '@test_bot:example.com'):
+            # Setup - set the matrix observer directly on the orchestrator
+            orchestrator.matrix_observer = mock_matrix_observer
+            # Also set it on the action context which is used by the tools
+            orchestrator.action_context.matrix_observer = mock_matrix_observer
+            
+            channel_id = "!test:example.com"
+            test_content = "This is a test reply for context"
+            
+            # Create action
+            action = ActionPlan(
+                action_type="send_matrix_reply",
+                parameters={
+                    "channel_id": channel_id,  # Updated parameter name
+                    "content": test_content,
+                    "reply_to_id": "original_event_456"  # Updated parameter name
+                },
+                reasoning="Test action for context",
+                priority=5
+            )
+            
+            # Execute action
+            await orchestrator._execute_action(action)
+            
+            # Get context and verify the assistant message was added
+            context = await orchestrator.context_manager.get_context(channel_id)
+            
+            # Check that assistant messages include our sent message
+            assistant_messages = context.assistant_messages
+            assert len(assistant_messages) > 0
+            
+            # Find our message in assistant messages
+            our_messages = [msg for msg in assistant_messages if msg.get("content") == test_content]
+            assert len(our_messages) == 1
+            
+            our_message = our_messages[0]
+            assert our_message["event_id"] == "test_event_123"
+            assert our_message["sender"] == '@test_bot:example.com'
+            assert our_message["type"] == "assistant"
     
     @pytest.mark.asyncio
     async def test_matrix_message_recorded_in_both_stores(self, orchestrator, mock_matrix_observer):
         """Test that bot's matrix message is recorded in both WorldState and Context."""
-        # Setup - set the matrix observer directly on the orchestrator
-        orchestrator.matrix_observer = mock_matrix_observer
-        channel_id = "!test:example.com"
-        test_content = "This is a test message"
-        
-        # Create action
-        action = ActionPlan(
-            action_type="send_matrix_message",
-            parameters={
-                "channel_id": channel_id,  # Updated parameter name for new tool interface
-                "content": test_content
-            },
-            reasoning="Test message action",
-            priority=5
-        )
-        
-        # Execute action
-        await orchestrator._execute_action(action)
-        
-        # Verify WorldState
-        world_state_data = orchestrator.world_state.to_dict()
-        channel_data = world_state_data["channels"][channel_id]
-        messages = channel_data.get("recent_messages", [])
-        bot_messages = [msg for msg in messages if msg.get("sender") == settings.MATRIX_USER_ID]
-        
-        assert len(bot_messages) == 1
-        assert bot_messages[0]["content"] == test_content
-        assert bot_messages[0]["reply_to"] is None  # Not a reply
-        
-        # Verify ContextManager
-        context = await orchestrator.context_manager.get_context(channel_id)
-        assistant_messages = context.assistant_messages
-        our_messages = [msg for msg in assistant_messages if msg.get("content") == test_content]
-        
-        assert len(our_messages) == 1
-        assert our_messages[0]["sender"] == settings.MATRIX_USER_ID
+        with patch.object(settings, 'MATRIX_USER_ID', '@test_bot:example.com'):
+            # Setup - set the matrix observer directly on the orchestrator
+            orchestrator.matrix_observer = mock_matrix_observer
+            # Also set it on the action context which is used by the tools
+            orchestrator.action_context.matrix_observer = mock_matrix_observer
+            
+            channel_id = "!test:example.com"
+            test_content = "This is a test message"
+            
+            # Create action
+            action = ActionPlan(
+                action_type="send_matrix_message",
+                parameters={
+                    "channel_id": channel_id,  # Updated parameter name for new tool interface
+                    "content": test_content
+                },
+                reasoning="Test message action",
+                priority=5
+            )
+            
+            # Execute action
+            await orchestrator._execute_action(action)
+            
+            # Verify WorldState
+            world_state_data = orchestrator.world_state.to_dict()
+            channel_data = world_state_data["channels"][channel_id]
+            messages = channel_data.get("recent_messages", [])
+            bot_messages = [msg for msg in messages if msg.get("sender") == '@test_bot:example.com']
+            
+            assert len(bot_messages) == 1
+            assert bot_messages[0]["content"] == test_content
+            assert bot_messages[0]["reply_to"] is None  # Not a reply
+            
+            # Verify ContextManager
+            context = await orchestrator.context_manager.get_context(channel_id)
+            assistant_messages = context.assistant_messages
+            our_messages = [msg for msg in assistant_messages if msg.get("content") == test_content]
+            
+            assert len(our_messages) == 1
+            assert our_messages[0]["sender"] == '@test_bot:example.com'
     
     @pytest.mark.asyncio
     async def test_failed_action_not_recorded_as_bot_message(self, orchestrator, mock_matrix_observer):
         """Test that failed actions don't create phantom bot messages."""
-        # Setup failed observer
-        mock_matrix_observer.send_reply = AsyncMock(return_value={
-            "success": False,
-            "error": "Test failure"
-        })
-        mock_matrix_observer.send_formatted_reply = AsyncMock(return_value={
-            "success": False,
-            "error": "Test failure"
-        })
-        orchestrator.matrix_observer = mock_matrix_observer  # Updated for new architecture
-        
-        channel_id = "!test:example.com"
-        test_content = "This message will fail"
-        
-        # Create action
-        action = ActionPlan(
-            action_type="send_matrix_reply",
-            parameters={
-                "channel_id": channel_id,  # Updated parameter name
-                "content": test_content,
-                "reply_to_id": "original_event_789"  # Updated parameter name
-            },
-            reasoning="Test failed action",
-            priority=5
-        )
-        
-        # Execute action
-        await orchestrator._execute_action(action)
-        
-        # Verify no bot message was created in WorldState
-        world_state_data = orchestrator.world_state.to_dict()
-        
-        # Should either have no channels or no messages for this channel
-        if "channels" in world_state_data and channel_id in world_state_data["channels"]:
-            channel_data = world_state_data["channels"][channel_id]
-            messages = channel_data.get("recent_messages", [])
-            bot_messages = [msg for msg in messages if msg.get("sender") == settings.MATRIX_USER_ID]
-            assert len(bot_messages) == 0
-        
-        # Verify no assistant message was created in ContextManager for the failed send
-        context = await orchestrator.context_manager.get_context(channel_id)
-        assistant_messages = context.assistant_messages
-        our_messages = [msg for msg in assistant_messages if msg.get("content") == test_content]
-        assert len(our_messages) == 0
+        with patch.object(settings, 'MATRIX_USER_ID', '@test_bot:example.com'):
+            # Setup failed observer
+            mock_matrix_observer.send_reply = AsyncMock(return_value={
+                "success": False,
+                "error": "Test failure"
+            })
+            mock_matrix_observer.send_formatted_reply = AsyncMock(return_value={
+                "success": False,
+                "error": "Test failure"
+            })
+            orchestrator.matrix_observer = mock_matrix_observer
+            # Also set it on the action context which is used by the tools
+            orchestrator.action_context.matrix_observer = mock_matrix_observer
+            
+            channel_id = "!test:example.com"
+            test_content = "This message will fail"
+            
+            # Create action
+            action = ActionPlan(
+                action_type="send_matrix_reply",
+                parameters={
+                    "channel_id": channel_id,  # Updated parameter name
+                    "content": test_content,
+                    "reply_to_id": "original_event_789"  # Updated parameter name
+                },
+                reasoning="Test failed action",
+                priority=5
+            )
+            
+            # Execute action
+            await orchestrator._execute_action(action)
+            
+            # Verify no bot message was created in WorldState
+            world_state_data = orchestrator.world_state.to_dict()
+            
+            # Should either have no channels or no messages for this channel
+            if "channels" in world_state_data and channel_id in world_state_data["channels"]:
+                channel_data = world_state_data["channels"][channel_id]
+                messages = channel_data.get("recent_messages", [])
+                bot_messages = [msg for msg in messages if msg.get("sender") == '@test_bot:example.com']
+                assert len(bot_messages) == 0
+            
+            # Verify no assistant message was created in ContextManager for the failed send
+            context = await orchestrator.context_manager.get_context(channel_id)
+            assistant_messages = context.assistant_messages
+            our_messages = [msg for msg in assistant_messages if msg.get("content") == test_content]
+            assert len(our_messages) == 0
 
 
 if __name__ == "__main__":

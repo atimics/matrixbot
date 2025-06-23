@@ -682,7 +682,9 @@ Analyze the situation and respond with your decision in the required JSON format
                         except Exception as e:
                             logger.error(f"AIDecisionEngine: Response recovery failed: {e}")
                             error_type = "recovery_failed"
-                            # Fall through to normal parsing which may still work                # Parse the JSON response
+                            # Fall through to normal parsing which may still work
+                
+                # Parse the JSON response
                 try:
                     decision_data = self._extract_json_from_response(ai_response)
                     json_parse_success = True  # Mark as successful
