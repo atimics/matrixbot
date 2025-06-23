@@ -140,6 +140,12 @@ class SetMissionGoalTool(ToolInterface):
                 context=mission_context
             )
             
+            if not context.world_state_manager:
+                return {
+                    "status": "error",
+                    "message": "World state manager not available"
+                }
+            
             # Get world state data and set the mission
             world_state_data = context.world_state_manager.get_world_state_data()
             world_state_data.current_mission = mission
@@ -206,7 +212,7 @@ class UpdateMissionStatusTool(ToolInterface):
             add_key_result = params.get("add_key_result", "")
             
             # Get world state data
-            world_state_data = await context.world_state_manager.get_world_state_data()
+            world_state_data = context.world_state_manager.get_world_state_data()
             
             if not world_state_data.current_mission:
                 return {
