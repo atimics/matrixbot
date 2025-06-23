@@ -25,11 +25,16 @@ class APIKeyAuth:
     """Enhanced API key authentication with rate limiting and logging."""
     
     def __init__(self):
+        # Allow settings to be overridden for testing
         self.api_key = getattr(settings, 'API_SERVER_KEY', None)
         self.require_auth = getattr(settings, 'API_REQUIRE_AUTH', True)
         
     def __call__(self, credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)) -> bool:
         """Validate API key authentication."""
+        # Refresh settings in case they were changed (useful for testing)
+        self.api_key = getattr(settings, 'API_SERVER_KEY', None)
+        self.require_auth = getattr(settings, 'API_REQUIRE_AUTH', True)
+        
         # Skip authentication if not required (development mode only)
         if not self.require_auth:
             logger.warning("API authentication is disabled - development mode only")

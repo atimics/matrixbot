@@ -237,6 +237,52 @@ class PayloadBuilder:
         if user_profiling_data:
             payload["user_profiling"] = user_profiling_data
 
+        # Apply dynamic optimization if enabled and payload is large
+        if self.optimization_enabled:
+            payload_size = len(json.dumps(payload))
+            logger.debug(f"Payload size before optimization: {payload_size} characters")
+            
+            if payload_size > self.size_threshold:
+                # Determine urgency level based on size
+                if payload_size > 200000:  # Very large
+                    urgency_level = "aggressive"
+                elif payload_size > 150000:  # Large
+                    urgency_level = "normal"
+                else:  # Moderately large
+                    urgency_level = "conservative"
+                
+                try:
+                    optimized_payload, optimization_report = self.optimizer.optimize_payload(
+                        payload, 
+                        target_size=self.size_threshold,
+                        urgency_level=urgency_level
+                    )
+                    
+                    # Log optimization results
+                    logger.info(
+                        f"Payload optimized: {optimization_report['size_reduction_percent']:.1f}% reduction "
+                        f"({optimization_report['original_size']} -> {optimization_report['final_size']} chars) "
+                        f"using strategies: {', '.join(optimization_report['strategies_applied'])}"
+                    )
+                    
+                    # Add optimization metadata for monitoring
+                    optimized_payload["_optimization_applied"] = {
+                        "original_size": optimization_report["original_size"],
+                        "final_size": optimization_report["final_size"],
+                        "reduction_percent": optimization_report["size_reduction_percent"],
+                        "strategies": optimization_report["strategies_applied"],
+                        "urgency_level": urgency_level
+                    }
+                    
+                    return optimized_payload
+                    
+                except Exception as e:
+                    logger.error(f"Payload optimization failed: {e}")
+                    # Fall back to original payload if optimization fails
+                    logger.warning("Falling back to unoptimized payload")
+            else:
+                logger.debug(f"Payload size {payload_size} under threshold {self.size_threshold}, skipping optimization")
+
         return payload
 
     def build_node_based_payload(
@@ -1005,3 +1051,22 @@ class PayloadBuilder:
             ]
         
         return user_profiling
+
+    def enable_optimization(self, enabled: bool = True):
+        """Enable or disable payload optimization."""
+        self.optimization_enabled = enabled
+        logger.info(f"Payload optimization {'enabled' if enabled else 'disabled'}")
+    
+    def set_size_threshold(self, threshold: int):
+        """Set the size threshold for triggering optimization."""
+        self.size_threshold = threshold
+        logger.info(f"Payload optimization threshold set to {threshold} characters")
+    
+    def get_optimization_stats(self) -> Dict[str, Any]:
+        """Get optimization statistics from the optimizer."""
+        return self.optimizer.get_optimization_stats()
+    
+    def reset_optimization_stats(self):
+        """Reset optimization statistics."""
+        self.optimizer.reset_stats()
+        logger.info("Payload optimization statistics reset")
