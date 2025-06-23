@@ -687,7 +687,7 @@ class ProactiveConversationEngine:
         """Detect conversation opportunities based on current world state."""
         try:
             # Get current world state data
-            world_state_data = await self.world_state_manager.get_world_state_data()
+            world_state_data = self.world_state_manager.get_world_state_data()
             
             # Analyze for opportunities
             opportunities = self.analyze_world_state_for_opportunities(world_state_data)
