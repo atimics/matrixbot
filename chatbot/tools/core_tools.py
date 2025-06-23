@@ -135,7 +135,7 @@ class SetMissionGoalTool(ToolInterface):
             )
             
             # Get world state data and set the mission
-            world_state_data = context.world_state_manager.get_state_data()
+            world_state_data = await context.world_state_manager.get_world_state_data()
             world_state_data.current_mission = mission
             
             logger.info(f"Set new mission goal: {objective}")
