@@ -33,6 +33,9 @@ class ActionContext:
         self.world_state_manager = world_state_manager
         self.context_manager = context_manager
         
+        # Node system access
+        self.node_manager = None  # Will be set after node system initialization
+        
         # Legacy direct access (deprecated - use service_registry instead)
         self.matrix_observer = matrix_observer
         self.farcaster_observer = farcaster_observer

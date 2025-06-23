@@ -1266,4 +1266,16 @@ class MainOrchestrator:
         # Connect NodeProcessor to ProcessingHub
         self.processing_hub.set_node_processor(self.node_processor)
         
+        # Update ActionContext with the node_manager after initialization
+        self._update_action_context_with_node_manager()
+        
         logger.info("Node-based processing system initialized successfully")
+
+    def _update_action_context_with_node_manager(self):
+        """Update ActionContext to include the node_manager for node tools."""
+        if self.action_context and self.node_manager:
+            # Add node_manager to the ActionContext
+            self.action_context.node_manager = self.node_manager
+            logger.info("ActionContext updated with node_manager")
+        else:
+            logger.warning("Could not update ActionContext with node_manager - missing dependencies")
