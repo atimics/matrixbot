@@ -160,6 +160,16 @@ class AppConfig(BaseSettings):
     ENABLE_TWO_PHASE_AI_PROCESS: bool = False  # Enable separate exploration/action phases
     MAX_EXPLORATION_ROUNDS: int = 3  # Max rounds in exploration phase if two-phase enabled
     
+    # Enhanced Channel Context Configuration
+    EXPANDED_CHANNEL_RECENT_MESSAGES: int = 15  # Number of recent messages for expanded channels (vs 5 for collapsed)
+    COLLAPSED_CHANNEL_RECENT_MESSAGES: int = 5  # Number of recent messages for collapsed channels
+    EXPANDED_CHANNEL_INCLUDE_USER_CONTEXT: bool = True  # Include enhanced user context for expanded channels
+    EXPANDED_CHANNEL_INCLUDE_THREAD_CONTEXT: bool = True  # Include related thread context for expanded channels
+    EXPANDED_CHANNEL_INCLUDE_ACTIVITY_METRICS: bool = True  # Include detailed activity metrics for expanded channels
+    EXPANDED_CHANNEL_MESSAGE_DETAIL_LEVEL: str = "full"  # "full", "summary", or "minimal" for expanded channel messages
+    EXPANDED_CHANNEL_INCLUDE_SENTIMENT: bool = True  # Include sentiment analysis for expanded channels
+    EXPANDED_CHANNEL_LOOKBACK_HOURS: int = 6  # Hours to look back for additional context in expanded channels
+
     # GitHub ACE (Autonomous Code Evolution) Integration
     GITHUB_TOKEN: Optional[str] = None
     GITHUB_USERNAME: Optional[str] = None

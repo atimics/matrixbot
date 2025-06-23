@@ -525,12 +525,52 @@ class PayloadBuilder:
                 channel_type, channel_id = path_parts[1], path_parts[2]
                 channel = world_state_data.channels.get(channel_id)
                 if channel and channel.type == channel_type:
-                    return {
+                    # Check if this channel node is expanded to provide enhanced context
+                    is_expanded = False
+                    if self.node_manager:
+                        metadata = self.node_manager.get_node_metadata(node_path)
+                        is_expanded = metadata.is_expanded
+                    
+                    # Import settings here to avoid circular imports
+                    from ...config import settings
+                    
+                    # Determine message count and detail level based on expansion status
+                    message_count = settings.EXPANDED_CHANNEL_RECENT_MESSAGES if is_expanded else settings.COLLAPSED_CHANNEL_RECENT_MESSAGES
+                    detail_level = settings.EXPANDED_CHANNEL_MESSAGE_DETAIL_LEVEL if is_expanded else "summary"
+                    
+                    # Build basic channel data
+                    channel_data = {
                         "id": channel.id,
                         "name": channel.name[:30] + "..." if len(channel.name) > 30 else channel.name,
                         "type": channel.type,
                         "status": channel.status,
-                        "recent_messages": [
+                        "msg_count": len(channel.recent_messages),
+                        "last_activity": channel.recent_messages[-1].timestamp if channel.recent_messages else channel.last_checked,
+                        "is_expanded": is_expanded
+                    }
+                    
+                    # Build message data with appropriate detail level
+                    recent_messages = channel.recent_messages[-message_count:]
+                    if detail_level == "full":
+                        channel_data["recent_messages"] = [
+                            {
+                                "id": msg.id,
+                                "content": msg.content,  # Full content for expanded channels
+                                "sender": msg.sender_username or msg.sender,
+                                "sender_display_name": getattr(msg, 'sender_display_name', None),
+                                "sender_fid": getattr(msg, 'sender_fid', None),
+                                "timestamp": msg.timestamp,
+                                "has_images": bool(getattr(msg, 'image_urls', [])),
+                                "image_urls": getattr(msg, 'image_urls', []),
+                                "reply_to": getattr(msg, 'reply_to', None),
+                                "neynar_user_score": getattr(msg, 'neynar_user_score', None),
+                                "sender_follower_count": getattr(msg, 'sender_follower_count', None),
+                                "metadata": getattr(msg, 'metadata', {})
+                            }
+                            for msg in recent_messages
+                        ]
+                    else:
+                        channel_data["recent_messages"] = [
                             {
                                 "id": msg.id,
                                 "content": msg.content[:100] + "..." if len(msg.content) > 100 else msg.content,
@@ -538,11 +578,49 @@ class PayloadBuilder:
                                 "timestamp": msg.timestamp,
                                 "has_images": bool(getattr(msg, 'image_urls', []))
                             }
-                            for msg in channel.recent_messages[-5:]  # Reduced from 10 to 5
-                        ],
-                        "msg_count": len(channel.recent_messages),
-                        "last_activity": channel.recent_messages[-1].timestamp if channel.recent_messages else channel.last_checked
-                    }
+                            for msg in recent_messages
+                        ]
+                    
+                    # Add enhanced context for expanded channels
+                    if is_expanded and settings.EXPANDED_CHANNEL_INCLUDE_ACTIVITY_METRICS:
+                        channel_data["activity_summary"] = channel.get_activity_summary()
+                    
+                    if is_expanded and settings.EXPANDED_CHANNEL_INCLUDE_USER_CONTEXT:
+                        # Add user context for recent active users
+                        active_users = {}
+                        for msg in recent_messages[-10:]:  # Last 10 messages for user context
+                            if msg.sender_fid and msg.sender_fid not in active_users:
+                                active_users[msg.sender_fid] = {
+                                    "username": msg.sender_username,
+                                    "display_name": getattr(msg, 'sender_display_name', None),
+                                    "follower_count": getattr(msg, 'sender_follower_count', None),
+                                    "power_badge": getattr(msg, 'metadata', {}).get('power_badge', False),
+                                    "bio": getattr(msg, 'sender_bio', None)
+                                }
+                        channel_data["active_users"] = active_users
+                    
+                    if is_expanded and settings.EXPANDED_CHANNEL_INCLUDE_THREAD_CONTEXT:
+                        # Add related thread information
+                        related_threads = []
+                        current_time = time.time()
+                        lookback_seconds = settings.EXPANDED_CHANNEL_LOOKBACK_HOURS * 3600
+                        
+                        for thread_id, thread_messages in world_state_data.threads.items():
+                            if thread_messages and len(thread_messages) > 0:
+                                # Check if thread is related to this channel and recent
+                                latest_msg = thread_messages[-1]
+                                if (latest_msg.channel_id == channel_id and 
+                                    current_time - latest_msg.timestamp < lookback_seconds):
+                                    related_threads.append({
+                                        "thread_id": thread_id,
+                                        "message_count": len(thread_messages),
+                                        "latest_activity": latest_msg.timestamp,
+                                        "latest_content": latest_msg.content[:100] + "..." if len(latest_msg.content) > 100 else latest_msg.content
+                                    })
+                        
+                        channel_data["related_threads"] = related_threads[:5]  # Limit to 5 most recent threads
+                    
+                    return channel_data
             
             elif path_parts[0] == "users" and len(path_parts) >= 3:
                 user_type, user_id = path_parts[1], path_parts[2]

@@ -32,7 +32,11 @@ class ExpandNodeTool(ToolInterface):
             f"Expands a collapsed node in the world state to view its full details. "
             f"Maximum {settings.MAX_EXPANDED_NODES} nodes can be expanded simultaneously. "
             f"If the limit is reached, the oldest unpinned expanded node will be "
-            f"automatically collapsed to make room. Provide the node_path from the summary view."
+            f"automatically collapsed to make room. For channel nodes, expansion provides "
+            f"enhanced context including {settings.EXPANDED_CHANNEL_RECENT_MESSAGES} recent messages "
+            f"(vs {settings.COLLAPSED_CHANNEL_RECENT_MESSAGES} for collapsed), full message content, "
+            f"user context, thread relationships, and activity metrics. "
+            f"Provide the node_path from the summary view."
         )
 
     @property
@@ -82,6 +86,20 @@ class ExpandNodeTool(ToolInterface):
             if auto_collapsed:
                 result["auto_collapsed_node"] = auto_collapsed
                 result["auto_collapse_reason"] = "expansion_limit_reached"
+            
+            # Add enhanced context information for channel expansions
+            if success and node_path.startswith("channels."):
+                from ..config import settings
+                result["enhanced_context"] = {
+                    "recent_messages_count": settings.EXPANDED_CHANNEL_RECENT_MESSAGES,
+                    "message_detail_level": settings.EXPANDED_CHANNEL_MESSAGE_DETAIL_LEVEL,
+                    "includes_user_context": settings.EXPANDED_CHANNEL_INCLUDE_USER_CONTEXT,
+                    "includes_thread_context": settings.EXPANDED_CHANNEL_INCLUDE_THREAD_CONTEXT,
+                    "includes_activity_metrics": settings.EXPANDED_CHANNEL_INCLUDE_ACTIVITY_METRICS,
+                    "includes_sentiment": settings.EXPANDED_CHANNEL_INCLUDE_SENTIMENT,
+                    "lookback_hours": settings.EXPANDED_CHANNEL_LOOKBACK_HOURS
+                }
+                result["message"] += f" - Enhanced context now available with {settings.EXPANDED_CHANNEL_RECENT_MESSAGES} recent messages and enriched metadata."
             
             if success:
                 logger.info(f"Successfully expanded node: {node_path}")
@@ -404,11 +422,30 @@ class GetExpansionStatusTool(ToolInterface):
         try:
             status = node_manager.get_expansion_status_summary()
             
+            # Add enhanced context configuration information
+            from ..config import settings
+            enhanced_context_info = {
+                "expanded_channel_messages": settings.EXPANDED_CHANNEL_RECENT_MESSAGES,
+                "collapsed_channel_messages": settings.COLLAPSED_CHANNEL_RECENT_MESSAGES,
+                "message_detail_level": settings.EXPANDED_CHANNEL_MESSAGE_DETAIL_LEVEL,
+                "includes_user_context": settings.EXPANDED_CHANNEL_INCLUDE_USER_CONTEXT,
+                "includes_thread_context": settings.EXPANDED_CHANNEL_INCLUDE_THREAD_CONTEXT,
+                "includes_activity_metrics": settings.EXPANDED_CHANNEL_INCLUDE_ACTIVITY_METRICS,
+                "lookback_hours": settings.EXPANDED_CHANNEL_LOOKBACK_HOURS
+            }
+            
+            # Count expanded channel nodes
+            expanded_channels = [node for node in status.get("pinned_nodes", []) + status.get("unpinned_nodes", []) 
+                               if node.startswith("channels.")]
+            
             result = {
                 "status": "success",
                 "message": "Current expansion status retrieved",
                 "action": "get_expansion_status",
                 "expansion_status": status,
+                "enhanced_context_config": enhanced_context_info,
+                "expanded_channels": expanded_channels,
+                "expanded_channels_count": len(expanded_channels),
                 "timestamp": time.time()
             }
             
