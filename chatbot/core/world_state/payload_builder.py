@@ -46,6 +46,11 @@ class PayloadBuilder:
         """
         self.world_state_manager = world_state_manager
         self.node_manager = node_manager
+        
+        # Initialize dynamic optimizer
+        self.optimizer = DynamicPayloadOptimizer()
+        self.optimization_enabled = True  # Can be disabled for debugging
+        self.size_threshold = 100000  # Characters - trigger optimization above this size
 
     def _build_action_history_payload(self, world_state_data: WorldStateData, max_history: int, optimize: bool) -> List[Dict[str, Any]]:
         """Builds a consistent action history payload."""
