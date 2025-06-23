@@ -75,7 +75,8 @@ class TestAIDecisionEngine:
         """Test handling of invalid JSON response."""
         engine = AIDecisionEngine(api_key="test_key")
         
-        mock_response_data = {
+        # Mock response for initial request (invalid JSON)
+        mock_invalid_response_data = {
             "choices": [{
                 "message": {
                     "content": "Invalid JSON response"
@@ -83,14 +84,29 @@ class TestAIDecisionEngine:
             }]
         }
         
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = mock_response_data
-        mock_response.raise_for_status = Mock()
+        # Mock response for recovery request (valid JSON)
+        mock_recovery_response_data = {
+            "choices": [{
+                "message": {
+                    "content": '{"reasoning": "Error recovery response", "selected_actions": [{"action_type": "wait", "details": {}}]}'
+                }
+            }]
+        }
+        
+        mock_invalid_response = Mock()
+        mock_invalid_response.status_code = 200
+        mock_invalid_response.json.return_value = mock_invalid_response_data
+        mock_invalid_response.raise_for_status = Mock()
+        
+        mock_recovery_response = Mock()
+        mock_recovery_response.status_code = 200
+        mock_recovery_response.json.return_value = mock_recovery_response_data
+        mock_recovery_response.raise_for_status = Mock()
         
         with patch('httpx.AsyncClient') as mock_client_class:
             mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=mock_response)
+            # First call returns invalid JSON, second call (recovery) returns valid JSON
+            mock_client.post = AsyncMock(side_effect=[mock_invalid_response, mock_recovery_response])
             
             # Set up the async context manager properly
             mock_client_class.return_value = mock_client
@@ -99,9 +115,14 @@ class TestAIDecisionEngine:
             
             result = await engine.make_decision({"test": "state"}, "test_cycle")
             
-            # Should handle invalid JSON gracefully
+            # Should handle invalid JSON gracefully via error recovery
             assert result.cycle_id == "test_cycle"
-            assert "error" in result.reasoning.lower() or "failed" in result.reasoning.lower() or "parse" in result.reasoning.lower()
+            assert result.reasoning == "Error recovery response"
+            assert len(result.selected_actions) == 1
+            assert result.selected_actions[0].action_type == "wait"
+            
+            # Verify that two HTTP requests were made (original + recovery)
+            assert mock_client.post.call_count == 2
     
     @pytest.mark.asyncio
     async def test_make_decision_http_error(self):
@@ -133,20 +154,27 @@ class TestAIDecisionEngine:
         """Test handling of network exceptions."""
         engine = AIDecisionEngine(api_key="test_key")
         
-        with patch('httpx.AsyncClient') as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(side_effect=Exception("Network timeout"))
+        # Mock the error recovery system to prevent recursive calls
+        with patch.object(engine.error_recovery, 'handle_ai_failure') as mock_recovery:
+            mock_recovery.return_value = None  # Make recovery fail quickly
             
-            # Set up the async context manager properly
-            mock_client_class.return_value = mock_client
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            
-            result = await engine.make_decision({"test": "state"}, "test_cycle")
-            
-            assert result.cycle_id == "test_cycle"
-            assert len(result.selected_actions) == 0
-            assert "error" in result.reasoning.lower()
+            with patch('httpx.AsyncClient') as mock_client_class:
+                mock_client = AsyncMock()
+                mock_client.post = AsyncMock(side_effect=Exception("Network timeout"))
+                
+                # Set up the async context manager properly
+                mock_client_class.return_value = mock_client
+                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_client.__aexit__ = AsyncMock(return_value=None)
+                
+                result = await engine.make_decision({"test": "state"}, "test_cycle")
+                
+                assert result.cycle_id == "test_cycle"
+                assert len(result.selected_actions) == 0
+                assert "error" in result.reasoning.lower()
+                
+                # Verify that error recovery was attempted
+                mock_recovery.assert_called_once()
     
     @pytest.mark.asyncio
     async def test_make_decision_no_choices_in_response(self):
