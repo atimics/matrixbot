@@ -1002,15 +1002,18 @@ class MainOrchestrator:
         await self.context_manager.add_user_message(channel_id, message_data)
 
     async def get_context_summary(self, channel_id: str) -> Optional[Dict[str, Any]]:
-        """Get context summary for a channel - now uses HistoryRecorder instead of deprecated ContextManager."""
+        """Get context summary for a channel using HistoryRecorder directly."""
         try:
-            # Get recent state changes from HistoryRecorder instead of deprecated ContextManager
-            recent_changes = await self.context_manager.get_state_changes(channel_id=channel_id, limit=50)
+            # Access HistoryRecorder directly instead of through deprecated ContextManager methods
+            recent_changes = await self.context_manager.history_recorder.get_recent_state_changes(
+                channel_id=channel_id, 
+                limit=50
+            )
             
             return {
                 "channel_id": channel_id,
                 "recent_state_changes": len(recent_changes),
-                "message": "Context summary now based on HistoryRecorder data instead of deprecated ContextManager"
+                "message": "Context summary based on HistoryRecorder data. Use PayloadBuilder for AI context construction."
             }
         except Exception as e:
             logger.error(f"Error getting context summary for {channel_id}: {e}")

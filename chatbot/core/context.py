@@ -2,8 +2,15 @@
 """
 Context Manager - DEPRECATED
 
-This module is being phased out in favor of PayloadBuilder for context management.
-Now only delegates message storage to HistoryRecorder and provides compatibility methods.
+This module has been fully deprecated in favor of PayloadBuilder for context management.
+It now only serves as a delegation layer to HistoryRecorder for message storage.
+
+All context construction for AI should use PayloadBuilder, which provides:
+- Full payload construction with intelligent filtering
+- Node-based payload construction for large datasets
+- Optimized context delivery without stateful storage
+
+This class remains only for compatibility with existing message storage workflows.
 """
 
 import logging
@@ -147,10 +154,11 @@ class ContextManager:
         limit: int = 100,
     ) -> List[StateChangeBlock]:
         """Retrieve stored state changes with filtering using HistoryRecorder"""
+        # Note: since_timestamp filtering is not supported by HistoryRecorder yet
+        # This is a compatibility method that delegates to HistoryRecorder
         return await self.history_recorder.get_recent_state_changes(
             channel_id=channel_id,
             change_type=change_type,
-            since_timestamp=since_timestamp,
             limit=limit
         )
 
@@ -163,32 +171,4 @@ class ContextManager:
             format=format
         )
 
-    # Compatibility methods that are now deprecated
-    async def get_context(self, channel_id: str) -> Dict[str, Any]:
-        """DEPRECATED: Return empty context, use PayloadBuilder instead"""
-        logger.warning("ContextManager.get_context() is deprecated. Use PayloadBuilder for AI context.")
-        return {
-            "error": "deprecated",
-            "message": "Use PayloadBuilder for AI context construction"
-        }
 
-    async def get_conversation_messages(self, channel_id: str, include_system: bool = True) -> List[Dict[str, Any]]:
-        """DEPRECATED: Use HistoryRecorder and PayloadBuilder instead"""
-        logger.warning("ContextManager.get_conversation_messages() is deprecated. Use PayloadBuilder for AI context.")
-        return []
-
-    async def clear_context(self, channel_id: str):
-        """DEPRECATED: No-op since we don't store contexts anymore"""
-        logger.warning("ContextManager.clear_context() is deprecated.")
-
-    async def get_context_summary(self, channel_id: str) -> Dict[str, Any]:
-        """DEPRECATED: Get summary from HistoryRecorder instead"""
-        logger.warning("ContextManager.get_context_summary() is deprecated.")
-        recent_changes = await self.get_state_changes(channel_id=channel_id, limit=50)
-        
-        return {
-            "channel_id": channel_id,
-            "recent_state_changes": len(recent_changes),
-            "deprecated": True,
-            "message": "Use PayloadBuilder and HistoryRecorder for context management"
-        }
