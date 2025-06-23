@@ -381,15 +381,10 @@ class GetExpansionStatusTool(ToolInterface):
         """Execute the get expansion status action."""
         logger.info(f"Executing tool '{self.name}' with params: {params}")
 
-        # Get node manager from world state manager
-        if not context.world_state_manager:
-            error_msg = "World state manager not available"
-            logger.error(error_msg)
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
-
-        node_manager = getattr(context.world_state_manager, 'node_manager', None)
+        # Get node manager from action context
+        node_manager = getattr(context, 'node_manager', None)
         if not node_manager:
-            error_msg = "Node manager not available in world state manager"
+            error_msg = "Node manager not available in action context"
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
