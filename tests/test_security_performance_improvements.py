@@ -14,7 +14,7 @@ class TestAPIKeyAuth:
     
     def test_api_key_validation_success(self):
         """Test successful API key validation."""
-        with patch('chatbot.config.settings') as mock_settings:
+        with patch('chatbot.api_server.security.settings') as mock_settings:
             mock_settings.API_SERVER_KEY = "test_key_123"
             mock_settings.API_REQUIRE_AUTH = True
             
