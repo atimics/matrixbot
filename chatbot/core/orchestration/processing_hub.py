@@ -1,8 +1,11 @@
 """
-Processing Hub
+Processing Hub - Commander/Sub-Agent Coordination Center
 
-Central hub for handling different processing strategies (traditional vs node-based)
-and managing the main event loop logic.
+Central hub for the new Commander/Sub-Agent architecture where the system:
+1. Routes channels with active missions to Sub-Agents (MissionProcessor)
+2. Routes complex analysis and delegation to the Commander AI (AdaptiveProcessor)
+3. Coordinates multiple concurrent processing streams
+4. Manages mission lifecycle and Sub-Agent coordination
 """
 
 import asyncio
@@ -15,37 +18,48 @@ if TYPE_CHECKING:
     from ..world_state.manager import WorldStateManager
     from ..world_state.payload_builder import PayloadBuilder
     from .rate_limiter import RateLimiter
+    from ..processors.adaptive_processor import AdaptiveProcessor
+    from ..processors.mission_processor import MissionProcessor
+    from ..lightweight_ai_engine import LightweightAIEngine
+    from ...tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class ProcessingConfig:
-    """Configuration for processing strategy selection."""
+    """Configuration for the Commander/Sub-Agent processing system."""
     
-    # Processing mode settings
-    enable_node_based_processing: bool = True
-    force_traditional_fallback: bool = False
-    max_traditional_payload_size: int = 80000  # Bytes
-    
-    # Observation settings
+    # Core processing settings
     observation_interval: float = 2.0
     max_cycles_per_hour: int = 300
     
-    # AI Model settings
-    traditional_ai_model: str = "openai/gpt-4o-mini"
-    node_based_ai_model: str = "openai/gpt-4o-mini"
+    # Commander/Sub-Agent settings
+    enable_sub_agent_processing: bool = True
+    max_concurrent_missions: int = 10
+    mission_timeout_hours: int = 24
+    
+    # Legacy compatibility
+    enable_node_based_processing: bool = True  # Kept for compatibility
+    force_traditional_fallback: bool = False  # No longer used
+    max_traditional_payload_size: int = 80000  # No longer used
+    traditional_ai_model: str = "openai/gpt-4o-mini"  # No longer used
+    node_based_ai_model: str = "openai/gpt-4o-mini"  # Used by Commander AI
 
 
 class ProcessingHub:
     """
-    Central processing hub that coordinates different processing strategies.
+    Central coordination hub for the Commander/Sub-Agent architecture.
     
-    This class is responsible for:
-    1. Managing the main event loop
-    2. Selecting between traditional and node-based processing
-    3. Coordinating rate limiting and state change detection
-    4. Providing unified status and metrics
+    This hub revolutionizes processing by:
+    1. Identifying channels with active missions and routing them to Sub-Agents
+    2. Routing remaining channels to the Commander AI for strategic analysis
+    3. Coordinating concurrent processing streams
+    4. Managing mission lifecycle and Sub-Agent health
+    5. Providing unified metrics and monitoring
+    
+    The new architecture eliminates the binary traditional/node-based choice,
+    replacing it with intelligent per-channel routing.
     """
     
     def __init__(
@@ -53,33 +67,61 @@ class ProcessingHub:
         world_state_manager: "WorldStateManager",
         payload_builder: "PayloadBuilder", 
         rate_limiter: "RateLimiter",
-        config: Optional[ProcessingConfig] = None
+        config: Optional[ProcessingConfig] = None,
+        tool_registry: Optional["ToolRegistry"] = None
     ):
         self.world_state = world_state_manager
         self.payload_builder = payload_builder
         self.rate_limiter = rate_limiter
         self.config = config or ProcessingConfig()
+        self.tool_registry = tool_registry
         
         # Processing state
         self.running = False
         self.cycle_count = 0
         self.last_cycle_time = 0
-        self.current_processing_mode = "traditional"
-        self.payload_size_history: List[int] = []
         
         # Event coordination
         self.state_changed_event = asyncio.Event()
         
-        # Component availability tracking
-        self.traditional_processor = None
-        self.node_processor = None
+        # Commander/Sub-Agent components
+        self.commander_processor: Optional["AdaptiveProcessor"] = None
+        self.lightweight_ai_engine: Optional["LightweightAIEngine"] = None
         
+        # Mission and Sub-Agent tracking
+        self.active_sub_agents: Dict[str, "MissionProcessor"] = {}  # mission_id -> processor
+        self.sub_agent_performance: Dict[str, Dict[str, Any]] = {}  # mission_id -> metrics
+        
+        # Processing metrics
+        self.payload_size_history: List[int] = []
+        
+        # Legacy compatibility tracking
+        self.traditional_processor = None  # Deprecated
+        self.node_processor = None  # Deprecated
+        self.current_processing_mode = "commander_sub_agent"  # New unified mode
+        
+        logger.info("ProcessingHub initialized with Commander/Sub-Agent architecture")
+        
+    def set_commander_processor(self, processor: "AdaptiveProcessor"):
+        """Set the Commander AI processor."""
+        self.commander_processor = processor
+        logger.info("Commander AI processor configured")
+        
+    def set_lightweight_ai_engine(self, engine: "LightweightAIEngine"):
+        """Set the lightweight AI engine for Sub-Agents."""
+        self.lightweight_ai_engine = engine
+        logger.info("Lightweight AI engine configured")
+        
+    # Legacy compatibility methods (deprecated)
     def set_traditional_processor(self, processor):
-        """Set the traditional AI processing component."""
+        """Legacy method - kept for compatibility."""
+        logger.warning("set_traditional_processor is deprecated in Commander/Sub-Agent architecture")
         self.traditional_processor = processor
         
     def set_node_processor(self, processor):
-        """Set the node-based processing component."""
+        """Legacy method - kept for compatibility."""
+        logger.warning("set_node_processor is deprecated in Commander/Sub-Agent architecture")
+        self.node_processor = processor
         self.node_processor = processor
         
     async def start_processing_loop(self) -> None:
@@ -175,36 +217,302 @@ class ProcessingHub:
 
     async def _process_world_state(self, active_channels: List[str]) -> None:
         """
-        Process world state using the appropriate strategy.
+        Process world state using the Commander/Sub-Agent architecture.
+        
+        This method:
+        1. Routes channels with active missions to Sub-Agents
+        2. Routes strategic analysis to the Commander AI
+        3. Manages concurrent processing streams
+        4. Handles mission lifecycle and Sub-Agent coordination
         """
         try:
             # P0 FEATURE: Detect proactive opportunities at the beginning of each cycle
             await self._detect_proactive_opportunities()
             
-            # Determine processing mode
-            processing_mode = self._determine_processing_mode(active_channels)
+            # Get mission-assigned channels and non-mission channels
+            mission_channels, strategic_channels = await self._categorize_channels(active_channels)
             
-            if processing_mode == "node_based" and self.node_processor:
-                await self._process_with_node_based_strategy(active_channels)
-            else:
-                await self._process_with_traditional_strategy(active_channels)
+            # Process concurrently
+            tasks = []
+            
+            # 1. Process channels with active missions via Sub-Agents
+            if mission_channels:
+                tasks.append(self._process_mission_channels(mission_channels))
+            
+            # 2. Process strategic analysis and mission delegation via Commander
+            if strategic_channels or not mission_channels:  # Always run Commander if no missions active
+                tasks.append(self._process_strategic_channels(strategic_channels))
+                
+            # 3. Execute all processing streams concurrently
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+                
+            # 4. Clean up completed missions and Sub-Agents
+            await self._cleanup_completed_missions()
                 
         except Exception as e:
-            logger.error(f"Error in world state processing: {e}")
-            # Fallback to traditional processing
-            if self.current_processing_mode != "traditional" and self.traditional_processor:
-                logger.warning("Falling back to traditional processing")
-                await self._process_with_traditional_strategy(active_channels)
+            logger.error(f"Error in Commander/Sub-Agent processing: {e}")
+            # Fallback: ensure Commander AI can handle critical situations
+            if self.commander_processor:
+                logger.warning("Falling back to Commander-only processing")
+                await self._emergency_commander_processing(active_channels)
+
+    async def _categorize_channels(self, active_channels: List[str]) -> tuple[List[str], List[str]]:
+        """
+        Categorize channels into mission-assigned vs strategic analysis.
+        
+        Returns:
+            (mission_channels, strategic_channels)
+        """
+        mission_channels = []
+        strategic_channels = []
+        
+        for channel_id in active_channels:
+            channel_data = self.world_state.get_channel(channel_id)
+            if channel_data and hasattr(channel_data, 'current_mission_id') and getattr(channel_data, 'current_mission_id', None):
+                # Channel has an active mission - route to Sub-Agent
+                mission_channels.append(channel_id)
+            else:
+                # Channel needs strategic analysis - route to Commander
+                strategic_channels.append(channel_id)
+        
+        logger.debug(f"Categorized {len(mission_channels)} mission channels, {len(strategic_channels)} strategic channels")
+        return mission_channels, strategic_channels
+
+    async def _process_mission_channels(self, mission_channels: List[str]) -> None:
+        """Process channels with active missions using Sub-Agents."""
+        processing_tasks = []
+        
+        for channel_id in mission_channels:
+            channel_data = self.world_state.get_channel(channel_id)
+            if not channel_data or not hasattr(channel_data, 'current_mission_id'):
+                continue
+                
+            mission_id = getattr(channel_data, 'current_mission_id', None)
+            if not mission_id:
+                continue
+                
+            # Get or create Sub-Agent for this mission
+            sub_agent = await self._get_or_create_sub_agent(mission_id, channel_id)
+            
+            if sub_agent:
+                # Process this mission-channel pair
+                task = self._process_single_mission(sub_agent, mission_id, channel_id)
+                processing_tasks.append(task)
+        
+        # Execute all Sub-Agent tasks concurrently
+        if processing_tasks:
+            results = await asyncio.gather(*processing_tasks, return_exceptions=True)
+            
+            # Log results and update performance metrics
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    logger.error(f"Sub-Agent task {i} failed: {result}")
+                else:
+                    logger.debug(f"Sub-Agent task {i} completed successfully")
+
+    async def _process_strategic_channels(self, strategic_channels: List[str]) -> None:
+        """Process strategic analysis and mission delegation via Commander AI."""
+        if not self.commander_processor:
+            logger.warning("Commander processor not available for strategic processing")
+            return
+            
+        try:
+            # Create comprehensive context for strategic analysis
+            strategic_context = {
+                "active_channels": strategic_channels,
+                "active_missions": list(self.active_sub_agents.keys()),
+                "sub_agent_performance": self.sub_agent_performance,
+                "world_state_summary": self._get_world_state_summary(),
+                "system_capacity": self._get_system_capacity_info()
+            }
+            
+            # Commander AI processes strategic concerns and mission delegation
+            result = await self.commander_processor.process_cycle(
+                cycle_id=f"strategic_{int(time.time())}",
+                primary_channel_id=strategic_channels[0] if strategic_channels else None,
+                context=strategic_context
+            )
+            
+            if result and len(result) > 0:
+                # Look for mission assignment actions in the result
+                mission_actions = [action for action in result if hasattr(action, 'action_type') and getattr(action, 'action_type') == 'assign_mission']
+                if mission_actions:
+                    logger.info(f"Commander assigned {len(mission_actions)} new missions")
+                
+        except Exception as e:
+            logger.error(f"Error in strategic processing: {e}")
+
+    async def _get_or_create_sub_agent(self, mission_id: str, channel_id: str) -> Optional["MissionProcessor"]:
+        """Get existing or create new Sub-Agent for a mission."""
+        if mission_id in self.active_sub_agents:
+            return self.active_sub_agents[mission_id]
+            
+        # Create new Sub-Agent
+        if not self.lightweight_ai_engine:
+            logger.error("Lightweight AI engine not available for Sub-Agent creation")
+            return None
+            
+        if not self.tool_registry:
+            logger.error("Tool registry not available for Sub-Agent creation")
+            return None
+            
+        try:
+            from ..processors.mission_processor import MissionProcessor
+            
+            # Get mission data
+            world_state_data = self.world_state.get_state_data()
+            mission_data = world_state_data.missions.get(mission_id) if world_state_data.missions else None
+            
+            if not mission_data:
+                logger.error(f"Mission {mission_id} not found in world state")
+                return None
+            
+            sub_agent = MissionProcessor(
+                mission=mission_data,
+                lightweight_ai_engine=self.lightweight_ai_engine,
+                world_state_data=world_state_data,
+                tool_registry=self.tool_registry
+            )
+            
+            self.active_sub_agents[mission_id] = sub_agent
+            self.sub_agent_performance[mission_id] = {
+                "created_at": time.time(),
+                "tasks_completed": 0,
+                "errors": 0,
+                "channel_id": channel_id
+            }
+            
+            logger.info(f"Created new Sub-Agent for mission {mission_id}")
+            return sub_agent
+            
+        except Exception as e:
+            logger.error(f"Failed to create Sub-Agent for mission {mission_id}: {e}")
+            return None
+
+    async def _process_single_mission(self, sub_agent: "MissionProcessor", mission_id: str, channel_id: str) -> None:
+        """Process a single mission with its Sub-Agent."""
+        try:
+            start_time = time.time()
+            
+            # Get mission-specific context
+            mission_context = self._get_mission_context(mission_id, channel_id)
+            
+            # Process with Sub-Agent
+            result = await sub_agent.process_cycle(
+                cycle_id=f"mission_{mission_id}_{int(time.time())}",
+                primary_channel_id=channel_id,
+                context=mission_context
+            )
+            
+            # Update performance metrics
+            duration = time.time() - start_time
+            self.sub_agent_performance[mission_id]["tasks_completed"] += 1
+            self.sub_agent_performance[mission_id]["last_duration"] = duration
+            
+            if result and len(result) > 0:
+                logger.info(f"Sub-Agent {mission_id} generated {len(result)} action plans")
+                
+        except Exception as e:
+            logger.error(f"Error processing mission {mission_id}: {e}")
+            if mission_id in self.sub_agent_performance:
+                self.sub_agent_performance[mission_id]["errors"] += 1
+
+    def _get_mission_context(self, mission_id: str, channel_id: str) -> Dict[str, Any]:
+        """Get lightweight context for mission processing."""
+        # Get mission data
+        world_state_data = self.world_state.get_state_data()
+        mission_data = world_state_data.missions.get(mission_id) if world_state_data.missions else None
+        
+        # Get channel data
+        channel_data = self.world_state.get_channel(channel_id)
+        
+        return {
+            "mission_id": mission_id,
+            "channel_id": channel_id,
+            "mission_data": mission_data.__dict__ if mission_data else None,
+            "channel_data": channel_data.__dict__ if channel_data else None,
+            "recent_messages": channel_data.recent_messages[-5:] if channel_data and channel_data.recent_messages else [],
+            "timestamp": time.time()
+        }
+
+    def _get_world_state_summary(self) -> Dict[str, Any]:
+        """Get high-level world state summary for strategic analysis."""
+        world_state_data = self.world_state.get_state_data()
+        
+        return {
+            "total_channels": len(world_state_data.channels),
+            "active_missions": len(world_state_data.missions) if world_state_data.missions else 0,
+            "recent_activity_count": sum(
+                len(channel.recent_messages) 
+                for channel in world_state_data.channels.values()
+            ),
+            "timestamp": time.time()
+        }
+
+    def _get_system_capacity_info(self) -> Dict[str, Any]:
+        """Get system capacity information for resource management."""
+        return {
+            "active_sub_agents": len(self.active_sub_agents),
+            "max_concurrent_missions": self.config.max_concurrent_missions,
+            "cycle_count": self.cycle_count,
+            "processing_mode": self.current_processing_mode
+        }
+
+    async def _cleanup_completed_missions(self) -> None:
+        """Clean up completed missions and their Sub-Agents."""
+        completed_missions = []
+        
+        for mission_id, sub_agent in self.active_sub_agents.items():
+            # Check if mission is completed
+            world_state_data = self.world_state.get_state_data()
+            mission_data = world_state_data.missions.get(mission_id) if world_state_data.missions else None
+            
+            if not mission_data or mission_data.status == "completed":
+                completed_missions.append(mission_id)
+                
+        # Clean up completed missions
+        for mission_id in completed_missions:
+            if mission_id in self.active_sub_agents:
+                del self.active_sub_agents[mission_id]
+            if mission_id in self.sub_agent_performance:
+                performance = self.sub_agent_performance.pop(mission_id)
+                logger.info(f"Cleaned up completed mission {mission_id} - completed {performance.get('tasks_completed', 0)} tasks")
+
+    async def _emergency_commander_processing(self, active_channels: List[str]) -> None:
+        """Emergency fallback processing using only the Commander AI."""
+        if not self.commander_processor:
+            logger.error("No Commander processor available for emergency processing")
+            return
+            
+        try:
+            emergency_context = {
+                "active_channels": active_channels,
+                "emergency_mode": True,
+                "world_state_summary": self._get_world_state_summary(),
+                "failed_sub_agents": list(self.active_sub_agents.keys())
+            }
+            
+            await self.commander_processor.process_cycle(
+                cycle_id=f"emergency_{int(time.time())}",
+                primary_channel_id=active_channels[0] if active_channels else None,
+                context=emergency_context
+            )
+            logger.info("Emergency Commander processing completed")
+            
+        except Exception as e:
+            logger.error(f"Emergency Commander processing failed: {e}")
 
     async def _detect_proactive_opportunities(self) -> None:
         """Detect proactive conversation opportunities and register them with the engine."""
         try:
-            # Check if proactive engine is available
+            # Check if proactive engine is available via the dynamic attribute pattern
             if (hasattr(self.world_state, 'proactive_engine') and 
-                self.world_state.proactive_engine):
+                getattr(self.world_state, 'proactive_engine', None)):
                 
                 # Trigger opportunity detection based on current world state
-                await self.world_state.proactive_engine.on_world_state_change()
+                proactive_engine = getattr(self.world_state, 'proactive_engine')
+                await proactive_engine.on_world_state_change()
                 logger.debug("Proactive opportunity detection completed")
             else:
                 logger.debug("Proactive engine not available for opportunity detection")

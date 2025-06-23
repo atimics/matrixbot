@@ -46,6 +46,14 @@ class AppConfig(BaseSettings):
     OPENROUTER_API_KEY: Optional[str] = None  # Made optional for demo mode
     LOG_LEVEL: str = "INFO"
     
+    # Lightweight AI Engine for Sub-Agents
+    LIGHTWEIGHT_AI_MODEL: str = "openai/gpt-4o-mini"  # Cheaper model for Sub-Agent tasks
+    LIGHTWEIGHT_AI_MAX_TOKENS: int = 500  # Shorter responses for efficiency
+    LIGHTWEIGHT_AI_TEMPERATURE: float = 0.7  # Balanced creativity for conversations
+    
+    # Commander/Sub-Agent Architecture
+    ENABLE_MISSION_DELEGATION: bool = True  # Allow Commander AI to delegate tasks to Sub-Agents
+    
     # Web Search and Research
     WEB_SEARCH_MODEL: str = "openai/gpt-4o-mini:online"  # OpenRouter online model for web search
 

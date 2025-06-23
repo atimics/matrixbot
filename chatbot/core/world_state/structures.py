@@ -228,6 +228,9 @@ class Channel:
     # Channel status tracking
     status: str = "active"  # Status: 'active', 'left_by_bot', 'kicked', 'banned', 'invited'
     last_status_update: float = 0.0  # When status was last updated
+    
+    # Mission assignment for Sub-Agent processing
+    current_mission_id: Optional[str] = None  # ID of the mission currently active in this channel
 
     def __post_init__(self):
         """
@@ -745,6 +748,7 @@ class Mission:
         completed_at: When the mission was completed (if applicable)
         priority: Priority level (1-10, higher = more important)
         context: Additional context data for the mission
+        channel_id: The channel this mission is assigned to (for Sub-Agent processing)
     """
     id: str
     objective: str
@@ -755,6 +759,7 @@ class Mission:
     completed_at: Optional[float] = None
     priority: int = 5  # 1-10, higher = more important
     context: Dict[str, Any] = field(default_factory=dict)
+    channel_id: Optional[str] = None  # The channel this mission is assigned to
     
     def update_status(self, new_status: str) -> None:
         """Update the mission status and timestamp."""
@@ -875,6 +880,7 @@ class WorldStateData:
         
         # P1 FEATURE: Mission/Goal management system for multi-cycle task completion
         self.current_mission: Optional[Mission] = None
+        self.missions: Dict[str, Mission] = {}  # mission_id -> Mission (for Sub-Agent delegation)
         
         # Autonomous Code Evolution (ACE) capabilities
         self.target_repositories: Dict[str, TargetRepositoryContext] = {}  # repo_url -> context

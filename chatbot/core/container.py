@@ -82,17 +82,17 @@ class DependencyContainer:
             self._init_context_manager()
             self._init_integration_manager()
             
-            # 2. Initialize AI and processing components
+            # 2. Initialize tool system first (needed by processing components)
+            self._init_arweave_client()
+            self._init_action_context()
+            self._init_tool_registry()
+            
+            # 3. Initialize AI and processing components
             self._init_ai_engine()
             self._init_payload_builder()
             self._init_rate_limiter()
             self._init_processing_hub()
             self._init_proactive_engine()
-            
-            # 3. Initialize tool system
-            self._init_arweave_client()
-            self._init_action_context()
-            self._init_tool_registry()
             
             self._initialized = True
             logger.info("DependencyContainer initialized successfully")
@@ -281,9 +281,63 @@ class DependencyContainer:
             world_state_manager=self._world_state_manager,
             payload_builder=self._payload_builder,
             rate_limiter=self._rate_limiter,
-            config=processing_config
+            config=processing_config,
+            tool_registry=self._tool_registry
         )
+        
+        # Configure Commander/Sub-Agent architecture
+        self._configure_commander_sub_agent_architecture()
+        
         logger.debug("ProcessingHub initialized")
+    
+    def _configure_commander_sub_agent_architecture(self) -> None:
+        """Configure the Commander AI and Sub-Agent components."""
+        try:
+            # Ensure all required components are available
+            assert self._processing_hub is not None, "ProcessingHub must be initialized first"
+            assert self._ai_engine is not None, "AIDecisionEngine must be initialized first"
+            assert self._world_state_manager is not None, "WorldStateManager must be initialized first"
+            assert self._payload_builder is not None, "PayloadBuilder must be initialized first"
+            assert self._tool_registry is not None, "ToolRegistry must be initialized first"
+            assert self._action_context is not None, "ActionContext must be initialized first"
+            
+            # Initialize Lightweight AI Engine for Sub-Agents
+            from .lightweight_ai_engine import LightweightAIEngine
+            lightweight_ai = LightweightAIEngine()  # Uses default openai_client=None
+            self._processing_hub.set_lightweight_ai_engine(lightweight_ai)
+            
+            # Initialize Commander AI (AdaptiveProcessor)
+            from .processors.adaptive_processor import AdaptiveProcessor
+            from .node_system.node_manager import NodeManager
+            from .node_system.summary_service import NodeSummaryService
+            
+            # Create node system components for Commander AI
+            if not settings.OPENROUTER_API_KEY:
+                raise ValueError("OPENROUTER_API_KEY is required for Commander/Sub-Agent architecture")
+                
+            node_manager = NodeManager()
+            summary_service = NodeSummaryService(
+                api_key=settings.OPENROUTER_API_KEY,
+                model=settings.AI_SUMMARY_MODEL
+            )
+            
+            commander_ai = AdaptiveProcessor(
+                node_manager=node_manager,
+                summary_service=summary_service,
+                ai_engine=self._ai_engine,
+                world_state_manager=self._world_state_manager,
+                payload_builder=self._payload_builder,
+                tool_registry=self._tool_registry,
+                action_context=self._action_context
+            )
+            self._processing_hub.set_commander_processor(commander_ai)
+            
+            logger.info("Commander/Sub-Agent architecture configured successfully")
+            
+        except Exception as e:
+            logger.error(f"Failed to configure Commander/Sub-Agent architecture: {e}")
+            # Continue with basic hub functionality
+            logger.warning("ProcessingHub will operate without Commander/Sub-Agent features")
     
     def _init_proactive_engine(self) -> None:
         """Initialize the proactive conversation engine."""
@@ -349,7 +403,7 @@ class DependencyContainer:
     def _register_all_tools(self) -> None:
         """Register all available tools with the tool registry."""
         # Import tools here to avoid circular imports
-        from ..tools.core_tools import WaitTool
+        from ..tools.core_tools import WaitTool, AssignMissionTool, UpdateMissionStatusTool
         from ..tools.describe_image_tool import DescribeImageTool
         from ..tools.farcaster_tools import (
             FollowFarcasterUserTool,
@@ -403,6 +457,8 @@ class DependencyContainer:
         # Core tools
         self._tool_registry.register_tool(WaitTool())
         self._tool_registry.register_tool(DescribeImageTool())
+        self._tool_registry.register_tool(AssignMissionTool())
+        self._tool_registry.register_tool(UpdateMissionStatusTool())
         
         # Node management tools (register early for priority in node-based processing)
         self._tool_registry.register_tool(ExpandNodeTool())
