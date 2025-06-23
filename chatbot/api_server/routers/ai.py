@@ -15,6 +15,7 @@ import logging
 from chatbot.core.orchestration import MainOrchestrator
 from chatbot.config import settings
 from ..dependencies import get_orchestrator
+from ..security import require_api_key, validate_admin_access
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +111,7 @@ async def get_ai_health():
 
 
 @router.post("/performance/reset")
-async def reset_ai_performance_metrics():
+async def reset_ai_performance_metrics(authenticated: bool = Depends(validate_admin_access)):
     """Reset AI performance metrics (admin endpoint)."""
     try:
         from chatbot.core.performance_monitor import performance_monitor
