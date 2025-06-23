@@ -29,10 +29,10 @@ class ArweaveService:
         self.arweave_client = arweave_client
         
         # Create client from settings if not provided
-        if not self.arweave_client and settings.ARWEAVE_INTERNAL_UPLOADER_SERVICE_URL:
+        if not self.arweave_client and settings.storage.arweave_internal_uploader_service_url:
             self.arweave_client = ArweaveUploaderClient(
-                uploader_service_url=settings.ARWEAVE_INTERNAL_UPLOADER_SERVICE_URL,
-                gateway_url=settings.ARWEAVE_GATEWAY_URL,
+                uploader_service_url=settings.storage.arweave_internal_uploader_service_url,
+                gateway_url=settings.storage.arweave_gateway_url,
             )
     
     def is_configured(self) -> bool:

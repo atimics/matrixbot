@@ -30,14 +30,14 @@ class S3Service:
         
         # Create client from settings if not provided
         if not self.s3_client and all([
-            settings.S3_API_ENDPOINT,
-            settings.S3_API_KEY,
-            settings.CLOUDFRONT_DOMAIN
+            settings.storage.s3_api_endpoint,
+            settings.storage.s3_api_key,
+            settings.storage.cloudfront_domain
         ]):
             self.s3_client = S3Client(
-                s3_api_endpoint=settings.S3_API_ENDPOINT,
-                s3_api_key=settings.S3_API_KEY,
-                cloudfront_domain=settings.CLOUDFRONT_DOMAIN
+                s3_api_endpoint=settings.storage.s3_api_endpoint,
+                s3_api_key=settings.storage.s3_api_key,
+                cloudfront_domain=settings.storage.cloudfront_domain
             )
     
     def is_configured(self) -> bool:
@@ -50,7 +50,7 @@ class S3Service:
             return False
         # Check for CloudFront domains and common S3 patterns
         return (
-            url.startswith(settings.CLOUDFRONT_DOMAIN) if settings.CLOUDFRONT_DOMAIN else False
+            url.startswith(settings.storage.cloudfront_domain) if settings.storage.cloudfront_domain else False
             or "amazonaws.com" in url.lower()
             or "cloudfront.net" in url.lower()
             or "s3" in url.lower()

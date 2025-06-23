@@ -235,20 +235,20 @@ class DependencyContainer:
         """Initialize the integration manager."""
         self._integration_manager = IntegrationManager(
             db_path=self.db_path,
-            encryption_key=settings.RATICHAT_ENCRYPTION_KEY,
+            encryption_key=settings.security.ratichat_encryption_key,
             world_state_manager=self._world_state_manager
         )
         logger.debug("IntegrationManager initialized")
     
     def _init_ai_engine(self) -> None:
         """Initialize the AI engine."""
-        if not settings.OPENROUTER_API_KEY:
+        if not settings.openrouter_api_key:
             logger.warning("OPENROUTER_API_KEY not set - AI engine may not function properly")
             raise ValueError("OPENROUTER_API_KEY is required for AI engine initialization")
         
         self._ai_engine = AIDecisionEngine(
-            api_key=settings.OPENROUTER_API_KEY,
-            model=settings.AI_MODEL
+            api_key=settings.openrouter_api_key,
+            model=settings.processing.ai_model
         )
         logger.debug("AIDecisionEngine initialized")
     
@@ -260,7 +260,7 @@ class DependencyContainer:
     def _init_rate_limiter(self) -> None:
         """Initialize the rate limiter."""
         rate_limit_config = RateLimitConfig(
-            max_cycles_per_hour=settings.MAX_CYCLES_PER_HOUR
+            max_cycles_per_hour=settings.processing.max_cycles_per_hour
         )
         self._rate_limiter = RateLimiter(rate_limit_config)
         logger.debug("RateLimiter initialized")
@@ -268,8 +268,8 @@ class DependencyContainer:
     def _init_processing_hub(self) -> None:
         """Initialize the processing hub."""
         processing_config = ProcessingConfig(
-            observation_interval=settings.OBSERVATION_INTERVAL,
-            max_cycles_per_hour=settings.MAX_CYCLES_PER_HOUR,
+            observation_interval=settings.processing.observation_interval,
+            max_cycles_per_hour=settings.processing.max_cycles_per_hour,
             enable_node_based_processing=True  # Enable advanced processing by default
         )
         

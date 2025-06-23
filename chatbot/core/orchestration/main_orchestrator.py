@@ -279,6 +279,8 @@ class MainOrchestrator:
             self.arweave_client = arweave_client
             
             logger.info("MainOrchestrator initialized with dependency injection")
+            logger.info(f"DI Mode: {self._is_di_mode}")
+            logger.info("Commander/Sub-Agent architecture will be used")
         else:
             # Legacy mode - create dependencies manually
             logger.warning("MainOrchestrator initializing in legacy mode - consider using DependencyContainer")
@@ -296,12 +298,13 @@ class MainOrchestrator:
         self.running = False
         self.cycle_count = 0  # Track processing cycles
         
-        # Initialize node-based processing system (depends on core components being set)
-        self._initialize_node_system()
-        
         # Initialize tool registry and register tools (only in legacy mode)
         if not self._is_di_mode:
             self._register_all_tools()
+            
+        # Initialize node-based processing system (depends on core components being set)
+        # This must happen after dependencies are set (either via DI or legacy init)
+        self._initialize_node_system()
     
     def _initialize_legacy_dependencies(self):
         """Initialize dependencies manually for legacy compatibility."""
@@ -312,7 +315,7 @@ class MainOrchestrator:
         self.context_manager = ContextManager(self.world_state, self.config.db_path)
         
         # Integration management
-        encryption_key = settings.RATICHAT_ENCRYPTION_KEY
+        encryption_key = settings.security.ratichat_encryption_key
         self.integration_manager = IntegrationManager(
             db_path=self.config.db_path,
             encryption_key=encryption_key,
@@ -339,16 +342,16 @@ class MainOrchestrator:
         # Tool Registry and AI Engine
         self.tool_registry = ToolRegistry()
         self.ai_engine = AIDecisionEngine(
-            api_key=settings.OPENROUTER_API_KEY,
+            api_key=settings.openrouter_api_key,
             model=self.config.ai_model
         )
         
         # Initialize Arweave client for internal uploader service
         self.arweave_client = None
-        if settings.ARWEAVE_INTERNAL_UPLOADER_SERVICE_URL:
+        if settings.storage.arweave_internal_uploader_service_url:
             self.arweave_client = ArweaveUploaderClient(
-                uploader_service_url=settings.ARWEAVE_INTERNAL_UPLOADER_SERVICE_URL,
-                gateway_url=settings.ARWEAVE_GATEWAY_URL,
+                uploader_service_url=settings.storage.arweave_internal_uploader_service_url,
+                gateway_url=settings.storage.arweave_gateway_url,
             )
             logger.info("Arweave client initialized for internal uploader service.")
         
@@ -373,6 +376,9 @@ class MainOrchestrator:
 
     def _register_all_tools(self):
         """Register all available tools with the tool registry."""
+        if not self.tool_registry:
+            logger.warning("Tool registry not available - skipping tool registration")
+            return
         from ...tools.core_tools import WaitTool, SetMissionGoalTool, UpdateMissionStatusTool
         from ...tools.describe_image_tool import DescribeImageTool
         from ...tools.farcaster_tools import (
@@ -568,8 +574,9 @@ class MainOrchestrator:
             # Initialize NFT and blockchain services
             await self._initialize_nft_services()
             
-            # Set up processing hub with traditional processor
-            self._setup_processing_components()
+            # Set up processing hub with traditional processor (only in legacy mode)
+            if not self._is_di_mode:
+                self._setup_processing_components()
             
             # Start the proactive conversation engine
             await self.proactive_engine.start()
