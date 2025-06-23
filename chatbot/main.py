@@ -36,18 +36,18 @@ async def main() -> None:
 
     # Load configuration with node-based processing
     config = OrchestratorConfig(
-        db_path=settings.CHATBOT_DB_PATH,
+        db_path=settings.chatbot_db_path,
         processing_config=ProcessingConfig(
             enable_node_based_processing=True,  # Advanced node-based mode
-            observation_interval=settings.OBSERVATION_INTERVAL,
-            max_cycles_per_hour=settings.MAX_CYCLES_PER_HOUR,
-            traditional_ai_model=settings.AI_MODEL,
+            observation_interval=settings.processing.observation_interval,
+            max_cycles_per_hour=settings.processing.max_cycles_per_hour,
+            traditional_ai_model=settings.processing.ai_model,
         ),
-        ai_model=settings.AI_MODEL,
+        ai_model=settings.processing.ai_model,
     )
 
     # Create and initialize the dependency container
-    container = DependencyContainer(db_path=settings.CHATBOT_DB_PATH)
+    container = DependencyContainer(db_path=settings.chatbot_db_path)
     await container.initialize()
 
     # Create orchestrator with dependency injection

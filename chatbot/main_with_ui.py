@@ -16,6 +16,7 @@ import uvicorn
 
 from chatbot.api_server import create_api_server
 from chatbot.config import settings
+from chatbot.core.container import DependencyContainer
 from chatbot.core.orchestration import MainOrchestrator, OrchestratorConfig, ProcessingConfig
 
 logger = logging.getLogger(__name__)
@@ -24,7 +25,7 @@ logger = logging.getLogger(__name__)
 def setup_logging() -> None:
     """Set up logging configuration."""
     # Convert string log level to logging constant
-    log_level = getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO)
+    log_level = getattr(logging, settings.log_level.upper(), logging.INFO)
     logging.basicConfig(
         level=log_level,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -43,22 +44,28 @@ class ChatbotWithUI:
         self.api_server = None
         self.server_thread = None
         self.running = False
+        self.container = None
         
     async def setup_orchestrator(self):
-        """Set up the main orchestrator with configuration."""
+        """Set up the main orchestrator with configuration using DependencyContainer."""
         config = OrchestratorConfig(
-            db_path=settings.CHATBOT_DB_PATH,
+            db_path=settings.chatbot_db_path,
             processing_config=ProcessingConfig(
-                enable_node_based_processing=True,  # Start with traditional mode
-                observation_interval=settings.OBSERVATION_INTERVAL,
-                max_cycles_per_hour=settings.MAX_CYCLES_PER_HOUR,
-                traditional_ai_model=settings.AI_MODEL,
+                enable_node_based_processing=True,  # Enable Commander/Sub-Agent architecture
+                observation_interval=settings.processing.observation_interval,
+                max_cycles_per_hour=settings.processing.max_cycles_per_hour,
+                traditional_ai_model=settings.processing.ai_model,
             ),
-            ai_model=settings.AI_MODEL,
+            ai_model=settings.processing.ai_model,
         )
         
-        self.orchestrator = MainOrchestrator(config)
-        logger.info("Orchestrator configured successfully")
+        # Create and initialize the dependency container
+        self.container = DependencyContainer(db_path=settings.chatbot_db_path)
+        await self.container.initialize()
+        
+        # Create orchestrator with dependency injection
+        self.orchestrator = self.container.create_main_orchestrator(config)
+        logger.info("Orchestrator configured successfully with DependencyContainer")
         
     def setup_api_server(self):
         """Set up the FastAPI server for the management UI."""
@@ -71,6 +78,10 @@ class ChatbotWithUI:
     def start_api_server(self):
         """Start the API server in a separate thread."""
         def run_server():
+            if not self.api_server:
+                logger.error("API server not configured")
+                return
+                
             config = uvicorn.Config(
                 self.api_server,
                 host="0.0.0.0",
@@ -98,6 +109,10 @@ class ChatbotWithUI:
         if self.orchestrator:
             await self.orchestrator.stop()
             logger.info("Chatbot orchestrator stopped")
+            
+        if self.container:
+            await self.container.cleanup()
+            logger.info("DependencyContainer cleaned up")
             
     async def run(self):
         """Main run loop for the application."""

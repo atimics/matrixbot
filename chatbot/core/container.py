@@ -44,7 +44,7 @@ class DependencyContainer:
     """
     
     def __init__(self, db_path: Optional[str] = None):
-        self.db_path = db_path or settings.CHATBOT_DB_PATH
+        self.db_path = db_path or settings.chatbot_db_path
         
         # Core infrastructure
         self._database_manager: Optional[DatabaseManager] = None
