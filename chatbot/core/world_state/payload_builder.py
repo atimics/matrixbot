@@ -325,6 +325,39 @@ class PayloadBuilder:
             }
         }
         
+        # P1 FIX: Add essential context that AI needs for situational awareness
+        # Add action history summary (last 5-10 actions for learning from past behavior)
+        recent_actions = world_state_data.action_history.actions[-10:] if world_state_data.action_history.actions else []
+        action_history_summary = []
+        for action in recent_actions:
+            action_summary = {
+                "action_type": action.action_type,
+                "timestamp": action.timestamp,
+                "status": "success" if action.result and "success" in str(action.result).lower() else "unknown",
+                "reasoning": action.reasoning[:100] + "..." if action.reasoning and len(action.reasoning) > 100 else action.reasoning
+            }
+            action_history_summary.append(action_summary)
+        payload["action_history"] = action_history_summary
+        
+        # Add pending Matrix invites for administrative awareness
+        pending_invites = []
+        for invite in world_state_data.pending_matrix_invites:
+            pending_invites.append({
+                "room_id": invite.room_id,
+                "sender": invite.sender,
+                "timestamp": invite.timestamp,
+                "room_name": invite.room_name
+            })
+        payload["pending_matrix_invites"] = pending_invites
+        
+        # Add research knowledge summary for long-term memory access
+        research_topics = list(world_state_data.research_database.entries.keys()) if world_state_data.research_database.entries else []
+        payload["research_knowledge"] = {
+            "available_topics": research_topics,
+            "count": len(research_topics),
+            "sample_topics": research_topics[:5] if research_topics else []  # Show first 5 as examples
+        }
+        
         # Get all available node paths from world state
         all_node_paths = self._get_node_paths_from_world_state(world_state_data)
         
