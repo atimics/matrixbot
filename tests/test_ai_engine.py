@@ -190,19 +190,23 @@ class TestAIDecisionEngine:
         mock_response.json.return_value = mock_response_data
         mock_response.raise_for_status = Mock()
         
-        with patch('httpx.AsyncClient') as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=mock_response)
-            
-            # Set up the async context manager properly
-            mock_client_class.return_value = mock_client
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            
-            result = await engine.make_decision({"test": "state"}, "test_cycle")
-            
-            assert result.cycle_id == "test_cycle"
-            assert len(result.selected_actions) == 0
+        # Mock the error recovery system to prevent hanging
+        with patch.object(engine.error_recovery, 'handle_ai_failure', return_value=None) as mock_recovery:
+            # Mock the performance monitor to prevent any issues there
+            with patch('chatbot.core.ai_engine.performance_monitor'):
+                with patch('httpx.AsyncClient') as mock_client_class:
+                    mock_client = AsyncMock()
+                    mock_client.post = AsyncMock(return_value=mock_response)
+                    
+                    # Set up the async context manager properly
+                    mock_client_class.return_value = mock_client
+                    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+                    mock_client.__aexit__ = AsyncMock(return_value=None)
+                    
+                    result = await engine.make_decision({"test": "state"}, "test_cycle")
+                    
+                    assert result.cycle_id == "test_cycle"
+                    assert len(result.selected_actions) == 0
     
     def test_cleanup(self):
         """Test cleanup method (if it exists)."""
