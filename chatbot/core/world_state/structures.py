@@ -325,12 +325,15 @@ class ActionHistory:
         result: Result or status of the action ('success', 'failure', 'scheduled', etc.)
         timestamp: Unix timestamp when the action was completed or updated
         action_id: Unique identifier for tracking and updating scheduled actions
+        status: Action execution status ("success", "failure", "skipped", "pending")
+        error_message: Optional error message if action failed
 
     Usage:
         - Deduplication: Prevents duplicate likes, follows, and replies
         - Performance Monitoring: Tracks success rates and execution times
         - State Consistency: Ensures actions are properly recorded and updated
         - AI Context: Provides historical context for future decision-making
+        - Learning: P2 FEATURE - Enables reflection and learning from action outcomes
     """
 
     action_type: str
@@ -339,6 +342,8 @@ class ActionHistory:
     timestamp: float
     metadata: Dict[str, Any] = field(default_factory=dict)
     action_id: Optional[str] = None  # Unique ID for tracking/updating scheduled actions
+    status: str = "success"  # P2 FEATURE: "success", "failure", "skipped", "pending"
+    error_message: Optional[str] = None  # P2 FEATURE: Error details for learning
 
 
 @dataclass
