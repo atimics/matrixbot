@@ -154,27 +154,27 @@ class TestAIDecisionEngine:
         """Test handling of network exceptions."""
         engine = AIDecisionEngine(api_key="test_key")
         
-        # Mock the error recovery system to prevent recursive calls
-        with patch.object(engine.error_recovery, 'handle_ai_failure') as mock_recovery:
-            mock_recovery.return_value = None  # Make recovery fail quickly
-            
-            with patch('httpx.AsyncClient') as mock_client_class:
-                mock_client = AsyncMock()
-                mock_client.post = AsyncMock(side_effect=Exception("Network timeout"))
-                
-                # Set up the async context manager properly
-                mock_client_class.return_value = mock_client
-                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_client.__aexit__ = AsyncMock(return_value=None)
-                
-                result = await engine.make_decision({"test": "state"}, "test_cycle")
-                
-                assert result.cycle_id == "test_cycle"
-                assert len(result.selected_actions) == 0
-                assert "error" in result.reasoning.lower()
-                
-                # Verify that error recovery was attempted
-                mock_recovery.assert_called_once()
+        # Mock the error recovery system to return None (failed recovery)
+        with patch.object(engine.error_recovery, 'handle_ai_failure', return_value=None) as mock_recovery:
+            # Mock the performance monitor to prevent any issues there
+            with patch('chatbot.core.ai_engine.performance_monitor'):
+                with patch('httpx.AsyncClient') as mock_client_class:
+                    mock_client = AsyncMock()
+                    mock_client.post = AsyncMock(side_effect=Exception("Network timeout"))
+                    
+                    # Set up the async context manager properly
+                    mock_client_class.return_value = mock_client
+                    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+                    mock_client.__aexit__ = AsyncMock(return_value=None)
+                    
+                    result = await engine.make_decision({"test": "state"}, "test_cycle")
+                    
+                    assert result.cycle_id == "test_cycle"
+                    assert len(result.selected_actions) == 0
+                    assert "error" in result.reasoning.lower()
+                    
+                    # Verify that error recovery was attempted
+                    mock_recovery.assert_called_once()
     
     @pytest.mark.asyncio
     async def test_make_decision_no_choices_in_response(self):
