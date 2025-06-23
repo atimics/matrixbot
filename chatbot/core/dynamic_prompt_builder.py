@@ -151,6 +151,34 @@ NEW USER DETECTED: Fresh engagement opportunity.
 - Welcome new users appropriately
 - Provide helpful context about the community
 - Encourage meaningful participation
+            """,
+            
+            "ooda_orient_phase": """
+ORIENT PHASE - CONTEXT EXPLORATION: You are in the exploration phase of a two-phase process.
+- Your goal is to gather just enough context to make a decision
+- Use expand_node to explore relevant areas of the world state
+- Focus on nodes that seem most important for understanding the current situation
+- IMPORTANT: After a few exploration rounds, you MUST proceed to action even if information is incomplete
+- Prioritize breadth of understanding over perfect detail
+- Remember: Better to act with 80% information than to endlessly seek 100% perfect knowledge
+            """,
+            
+            "ooda_decide_act_phase": """
+DECIDE/ACT PHASE - ACTION REQUIRED: You now have expanded context and must take external actions.
+- Analyze the information you've gathered from expanded nodes
+- Take meaningful external actions based on your understanding
+- Focus on user interactions, content engagement, or community participation
+- Avoid further exploration unless absolutely critical
+- Make decisions quickly and act decisively
+            """,
+            
+            "ooda_stalemate_prevention": """
+STALEMATE PREVENTION - EXTERNAL ACTION REQUIRED: You have been exploring for multiple cycles.
+- You MUST now take at least one external action, even with incomplete information
+- Stop exploring and start acting based on what you already know
+- Prioritize user responses, content creation, or meaningful engagement
+- Remember: Imperfect action is better than perfect inaction
+- Break the analysis paralysis and engage with the community
             """
         }
     

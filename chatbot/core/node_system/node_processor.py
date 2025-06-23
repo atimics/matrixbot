@@ -64,7 +64,12 @@ class NodeProcessor:
         self.enable_two_phase = settings.ENABLE_TWO_PHASE_AI_PROCESS
         self.max_exploration_rounds = settings.MAX_EXPLORATION_ROUNDS
         
+        # OODA loop stalemate prevention
+        self.exploration_rounds_counter = 0
+        self.last_cycle_had_external_actions = True  # Start optimistic
+        
         logger.info(f"NodeProcessor initialized (two-phase: {self.enable_two_phase})")
+        logger.info(f"OODA stalemate prevention: max exploration rounds = {self.max_exploration_rounds}")
         logger.info("Note: Node tools are now executed through unified ToolRegistry pipeline")
     
     async def process_cycle(
@@ -113,27 +118,55 @@ class NodeProcessor:
         
         Phase 1 (Orient): AI sees only collapsed summaries, uses expand_node to explore
         Phase 2 (Decide/Act): AI sees expanded nodes, uses full action toolset
+        
+        Includes stalemate prevention: if too many consecutive cycles with only exploration
+        actions, force transition to external actions.
         """
         total_actions = 0
         phases_completed = 0
         
+        # Check for exploration stalemate condition
+        force_external_action = self._should_force_external_action()
+        if force_external_action:
+            logger.warning(f"NodeProcessor: Exploration stalemate detected after {self.exploration_rounds_counter} rounds. "
+                         f"Forcing external action in cycle {cycle_id}")
+        
         # Refresh node summaries for collapsed nodes
         await self._refresh_stale_summaries()
         
-        # Phase 1: Orient - Exploration with summaries only
-        logger.info(f"NodeProcessor: Phase 1 (Orient) - cycle {cycle_id}")
-        
-        orient_result = await self._execute_orient_phase(cycle_id, primary_channel_id)
-        total_actions += orient_result.get("expansion_actions", 0)
-        phases_completed = 1
+        # Phase 1: Orient - Exploration with summaries only (unless forcing external action)
+        if not force_external_action:
+            logger.info(f"NodeProcessor: Phase 1 (Orient) - cycle {cycle_id}")
+            
+            orient_result = await self._execute_orient_phase(cycle_id, primary_channel_id)
+            total_actions += orient_result.get("expansion_actions", 0)
+            phases_completed = 1
+            
+            # Track exploration rounds for stalemate prevention
+            if orient_result.get("expansion_actions", 0) > 0:
+                self.exploration_rounds_counter += 1
+                logger.debug(f"NodeProcessor: Exploration round {self.exploration_rounds_counter}/{self.max_exploration_rounds}")
+        else:
+            # Skip orient phase and go directly to decide/act
+            logger.info(f"NodeProcessor: Skipping Orient phase due to stalemate prevention")
+            orient_result = {"success": True, "expansion_actions": 0, "forced_skip": True}
+            phases_completed = 1
         
         if orient_result.get("success", False):
             # Phase 2: Decide/Act - Full decision making with expanded context
             logger.info(f"NodeProcessor: Phase 2 (Decide/Act) - cycle {cycle_id}")
             
-            decide_result = await self._execute_decide_act_phase(cycle_id, primary_channel_id)
+            decide_result = await self._execute_decide_act_phase(cycle_id, primary_channel_id, force_external_action)
             total_actions += decide_result.get("external_actions", 0)
             phases_completed = 2
+            
+            # Reset exploration counter if external actions were taken
+            if decide_result.get("external_actions", 0) > 0:
+                logger.debug(f"NodeProcessor: External actions taken, resetting exploration counter")
+                self.exploration_rounds_counter = 0
+                self.last_cycle_had_external_actions = True
+            else:
+                self.last_cycle_had_external_actions = False
             
             return {
                 "cycle_id": cycle_id,
@@ -142,7 +175,9 @@ class NodeProcessor:
                 "phases_completed": phases_completed,
                 "orient_phase": orient_result,
                 "decide_phase": decide_result,
-                "mode": "two_phase"
+                "mode": "two_phase",
+                "exploration_rounds": self.exploration_rounds_counter,
+                "forced_external_action": force_external_action
             }
         else:
             logger.warning(f"NodeProcessor: Orient phase failed for cycle {cycle_id}")
@@ -152,7 +187,8 @@ class NodeProcessor:
                 "actions_executed": total_actions,
                 "phases_completed": phases_completed,
                 "error": "Orient phase failed",
-                "mode": "two_phase"
+                "mode": "two_phase",
+                "exploration_rounds": self.exploration_rounds_counter
             }
     
     async def _process_single_phase_cycle(
@@ -243,11 +279,13 @@ class NodeProcessor:
             "system_events": self.node_manager.get_system_events(),
             "phase": "orient",
             "instructions": (
-                "ORIENT PHASE: You are in exploration mode. Examine the collapsed_node_summaries "
-                "and use expand_node to explore nodes that seem relevant for understanding the "
-                "current situation. You cannot take external actions in this phase - only node "
-                "exploration. Focus on expanding nodes that will help you understand what's "
-                "happening and what actions might be needed."
+                f"ORIENT PHASE: You are in exploration mode (round {self.exploration_rounds_counter + 1}/"
+                f"{self.max_exploration_rounds}). Examine the collapsed_node_summaries and use expand_node "
+                "to explore nodes that seem relevant for understanding the current situation. You cannot "
+                "take external actions in this phase - only node exploration. Focus on expanding nodes "
+                "that will help you understand what's happening and what actions might be needed. "
+                "IMPORTANT: After a few exploration rounds, you MUST proceed to the Decide/Act phase "
+                "even if your information is incomplete. Prioritize action over perfect information."
             )
         }
         
@@ -337,7 +375,8 @@ class NodeProcessor:
     async def _execute_decide_act_phase(
         self, 
         cycle_id: str, 
-        primary_channel_id: Optional[str]
+        primary_channel_id: Optional[str],
+        force_external_action: bool = False
     ) -> Dict[str, Any]:
         """
         Execute Phase 2: Decide/Act - AI makes decisions with expanded context.
@@ -346,6 +385,11 @@ class NodeProcessor:
         1. Sees full data for expanded nodes
         2. Can use all available tools (node tools + external action tools)
         3. Makes final decisions and takes external actions
+        
+        Args:
+            cycle_id: Unique cycle identifier
+            primary_channel_id: Primary channel to focus on
+            force_external_action: If True, prompt AI to prioritize external actions
         
         Returns:
             Dict with success status and external actions taken
@@ -365,12 +409,22 @@ class NodeProcessor:
         
         # Add phase-specific context
         payload["phase"] = "decide_act"
-        payload["instructions"] = (
-            "DECIDE/ACT PHASE: You now have full context from expanded nodes. "
-            "Analyze the information and take appropriate external actions. You can "
-            "still use node tools if needed, but focus on external actions that "
-            "respond to the situation you've discovered."
-        )
+        
+        if force_external_action:
+            payload["instructions"] = (
+                "DECIDE/ACT PHASE - EXTERNAL ACTION REQUIRED: You have been exploring for several "
+                "cycles without taking external actions. You MUST now take at least one external action "
+                "based on the available information, even if it's incomplete. Prioritize responding to "
+                "users, engaging with content, or taking other meaningful external actions. Avoid further "
+                "exploration unless absolutely critical."
+            )
+        else:
+            payload["instructions"] = (
+                "DECIDE/ACT PHASE: You now have full context from expanded nodes. "
+                "Analyze the information and take appropriate external actions. You can "
+                "still use node tools if needed, but focus on external actions that "
+                "respond to the situation you've discovered."
+            )
         
         # Provide all available tools through unified ToolRegistry
         payload["available_tools"] = self.tool_registry.get_tool_descriptions_for_ai()
@@ -497,27 +551,54 @@ class NodeProcessor:
         except Exception as e:
             logger.error(f"NodeProcessor: Error refreshing summaries: {e}")
     
+    def _should_force_external_action(self) -> bool:
+        """
+        Determine if we should force external action to prevent OODA loop stalemate.
+        
+        Returns True if:
+        1. We've had too many consecutive exploration rounds without external actions
+        2. The last cycle had no external actions
+        
+        This prevents analysis paralysis where the AI gets stuck in the Orient phase.
+        """
+        return (
+            self.exploration_rounds_counter >= self.max_exploration_rounds and 
+            not self.last_cycle_had_external_actions
+        )
+    
     def _infer_node_type(self, node_path: str) -> str:
-        """Infer the type of a node from its path."""
-        if node_path.startswith("channels."):
-            return "channel"
-        elif node_path.startswith("users."):
-            return "user"
-        elif node_path.startswith("threads."):
-            return "thread"
-        elif node_path.startswith("farcaster.feeds."):
-            return "feed"
-        elif node_path.startswith("system."):
-            return "system"
-        else:
-            return "unknown"
+        """Infer the type of node from its path structure."""
+        if "." not in node_path:
+            return "root"
+        
+        path_parts = node_path.split(".")
+        if len(path_parts) >= 2:
+            if "channels" in path_parts:
+                return "channel"
+            elif "users" in path_parts:
+                return "user"
+            elif "threads" in path_parts:
+                return "thread"
+            elif "messages" in path_parts:
+                return "message"
+            else:
+                return "data"
+        return "unknown"
     
     def get_status(self) -> Dict[str, Any]:
-        """Get current processor status."""
+        """Get current processor status including stalemate prevention state."""
         return {
             "processor_type": "node_based",
             "two_phase_enabled": self.enable_two_phase,
             "max_exploration_rounds": self.max_exploration_rounds,
-            "node_manager_status": self.node_manager.get_expansion_status_summary(),
-            "recent_system_events": len(self.node_manager.system_events)
+            "current_exploration_rounds": self.exploration_rounds_counter,
+            "last_cycle_had_external_actions": self.last_cycle_had_external_actions,
+            "stalemate_risk": self._should_force_external_action(),
+            "components": {
+                "node_manager_available": self.node_manager is not None,
+                "summary_service_available": self.summary_service is not None,
+                "ai_engine_available": self.ai_engine is not None,
+                "world_state_manager_available": self.world_state_manager is not None,
+                "tool_registry_available": self.tool_registry is not None
+            }
         }
