@@ -722,6 +722,48 @@ class NFTMintRecord:
     eligibility_criteria_met: Dict[str, bool] = field(default_factory=dict)
 
 
+@dataclass
+class Mission:
+    """
+    P1 FEATURE: Represents a high-level goal or mission for the AI agent.
+    
+    This enables multi-cycle task completion and goal-oriented behavior by providing
+    persistent objectives that guide AI decision-making across processing cycles.
+    
+    Attributes:
+        id: Unique identifier for the mission
+        objective: Text description of what needs to be accomplished  
+        status: Current status ('active', 'completed', 'failed', 'paused')
+        key_results: List of specific outcomes or milestones to achieve
+        created_at: When the mission was created
+        updated_at: When the mission was last updated
+        completed_at: When the mission was completed (if applicable)
+        priority: Priority level (1-10, higher = more important)
+        context: Additional context data for the mission
+    """
+    id: str
+    objective: str
+    status: str = "active"  # 'active', 'completed', 'failed', 'paused'
+    key_results: List[str] = field(default_factory=list)
+    created_at: float = field(default_factory=time.time)
+    updated_at: float = field(default_factory=time.time)
+    completed_at: Optional[float] = None
+    priority: int = 5  # 1-10, higher = more important
+    context: Dict[str, Any] = field(default_factory=dict)
+    
+    def update_status(self, new_status: str) -> None:
+        """Update the mission status and timestamp."""
+        self.status = new_status
+        self.updated_at = time.time()
+        if new_status in ["completed", "failed"]:
+            self.completed_at = time.time()
+    
+    def add_key_result(self, key_result: str) -> None:
+        """Add a new key result to the mission."""
+        self.key_results.append(key_result)
+        self.updated_at = time.time()
+
+
 class WorldStateData:
     def add_action_history(self, action_data: dict):
         """Compatibility method for tests that call add_action_history on WorldStateData."""
@@ -825,6 +867,9 @@ class WorldStateData:
         
         # Research knowledge base - persistent AI learning and knowledge accumulation
         self.research_database: Dict[str, Dict[str, Any]] = {}  # topic -> research_entry
+        
+        # P1 FEATURE: Mission/Goal management system for multi-cycle task completion
+        self.current_mission: Optional[Mission] = None
         
         # Autonomous Code Evolution (ACE) capabilities
         self.target_repositories: Dict[str, TargetRepositoryContext] = {}  # repo_url -> context

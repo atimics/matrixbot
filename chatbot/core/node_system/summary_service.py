@@ -277,14 +277,27 @@ Summary:"""
                 }
             
             elif node_type == "threads" and isinstance(node_data, dict):
-                # Thread data
-                reply_count = len(node_data.get("replies", [])) if "replies" in node_data else 0
-                last_reply_ts = max((msg.get("timestamp", 0) for msg in node_data.get("replies", [])), default=0)
+                # P1 FEATURE: Enhanced thread data summary for conversation threads
+                message_count = node_data.get("message_count", 0)
+                participant_count = node_data.get("participant_count", 0)
+                participants = node_data.get("participants", [])
+                last_activity_ts = node_data.get("last_message_time", 0)
+                root_message = node_data.get("root_message", {})
+                
+                # Create a meaningful summary about the conversation
+                if root_message and root_message.get("content"):
+                    root_content = root_message["content"][:50] + "..." if len(root_message["content"]) > 50 else root_message["content"]
+                    summary_text = f"Thread by @{root_message.get('sender', 'unknown')} about '{root_content}' with {message_count} messages."
+                else:
+                    summary_text = f"Conversation thread with {message_count} messages."
+                
                 return {
-                    "summary": f"Thread with {reply_count} replies.",
-                    "reply_count": reply_count,
-                    "last_activity_ts": last_reply_ts,
-                    "thread_root": node_data.get("root_message", {}).get("sender", "unknown")
+                    "summary": summary_text,
+                    "message_count": message_count,
+                    "participant_count": participant_count,
+                    "last_activity_ts": last_activity_ts,
+                    "key_participants": participants[:3],  # Top 3 participants
+                    "thread_starter": root_message.get("sender", "unknown") if root_message else "unknown"
                 }
             
             elif node_type == "system":

@@ -75,6 +75,41 @@ WORLD STATE STRUCTURE:
 - "channels": Contains channel data with different detail levels
 - "action_history": Recent actions taken to avoid repetition
 - "system_status": Rate limit and health information
+- "proactive_opportunities": High-priority opportunities detected by the proactive engine
+
+PROACTIVE OPPORTUNITY SYSTEM:
+The world state includes "proactive_opportunities" - a list of detected conversation opportunities that you should review and consider acting upon:
+
+Each opportunity contains:
+- "opportunity_id": Unique identifier for tracking
+- "opportunity_type": Type of opportunity (e.g., "quiet_channel", "trending_topic", "user_milestone", "follow_up")
+- "priority": Priority score (1-10, higher = more important)
+- "channel_id": Relevant channel for the opportunity
+- "user_id": Relevant user (if applicable)
+- "platform": Platform where the opportunity exists
+- "reasoning": Explanation of why this is an opportunity
+- "context": Additional context data
+- "expires_at": When this opportunity expires (Unix timestamp)
+
+ACTING ON PROACTIVE OPPORTUNITIES:
+1. **Review opportunities**: Always examine the "proactive_opportunities" section in your observations
+2. **Prioritize high-value opportunities**: Focus on opportunities with priority 7+ first
+3. **Consider expansion**: Use "expand_node" to investigate opportunities requiring more context
+4. **Take targeted actions**: Use tools like "search_casts", "get_user_timeline", or "send_farcaster_post" to act on opportunities
+5. **Follow up appropriately**: For "follow_up" opportunities, check what action was previously taken and provide appropriate follow-up
+
+Example proactive opportunity workflow:
+- Opportunity type "quiet_channel" with reasoning "Channel has been inactive for 3 hours"
+- Consider: expand_node to see recent channel activity, then search_casts for relevant topics to share
+- Action: Post engaging content or ask a discussion question
+
+- Opportunity type "user_milestone" with reasoning "User reached 100 followers"
+- Consider: get_user_timeline to understand their content, then congratulate appropriately
+- Action: Like their recent post or send congratulatory reply
+
+- Opportunity type "trending_topic" with reasoning "AI discussions trending across 3 channels"
+- Consider: search_casts to find trending AI content, engage with high-quality discussions
+- Action: Join conversations with thoughtful replies or share relevant insights
 
 RATE LIMIT AWARENESS:
 * Your actions are subject to rate limits (per-tool, per-channel, and global).

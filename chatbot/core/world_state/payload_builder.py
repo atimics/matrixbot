@@ -358,6 +358,46 @@ class PayloadBuilder:
             "sample_topics": research_topics[:5] if research_topics else []  # Show first 5 as examples
         }
         
+        # P0 FEATURE: Add proactive opportunities from the proactive engine
+        proactive_opportunities = []
+        if (self.world_state_manager and 
+            hasattr(self.world_state_manager, 'proactive_engine') and 
+            self.world_state_manager.proactive_engine):
+            try:
+                # Get active opportunities from the proactive engine
+                active_opportunities = self.world_state_manager.proactive_engine.get_active_opportunities()
+                for opportunity in active_opportunities:
+                    proactive_opportunities.append({
+                        "opportunity_id": opportunity.opportunity_id,
+                        "opportunity_type": opportunity.opportunity_type,
+                        "priority": opportunity.priority,
+                        "channel_id": opportunity.channel_id,
+                        "user_id": opportunity.user_id,
+                        "platform": opportunity.platform,
+                        "reasoning": opportunity.reasoning,
+                        "context": opportunity.context,
+                        "expires_at": opportunity.expires_at
+                    })
+            except Exception as e:
+                logger.warning(f"Failed to get proactive opportunities: {e}")
+        
+        payload["proactive_opportunities"] = proactive_opportunities
+        
+        # P1 FEATURE: Add current mission/goal for multi-cycle task orientation
+        if world_state_data.current_mission:
+            payload["current_mission"] = {
+                "id": world_state_data.current_mission.id,
+                "objective": world_state_data.current_mission.objective,
+                "status": world_state_data.current_mission.status,
+                "key_results": world_state_data.current_mission.key_results,
+                "priority": world_state_data.current_mission.priority,
+                "created_at": world_state_data.current_mission.created_at,
+                "updated_at": world_state_data.current_mission.updated_at,
+                "context": world_state_data.current_mission.context
+            }
+        else:
+            payload["current_mission"] = None
+        
         # Get all available node paths from world state
         all_node_paths = self._get_node_paths_from_world_state(world_state_data)
         
@@ -571,17 +611,32 @@ class PayloadBuilder:
                     if count > 2:  # Only include platforms with multiple memories
                         paths.append(f"memory_bank.{platform}")
         
-        # Optimized thread nodes - limit to active threads only
+        # P1 FEATURE: Enhanced thread nodes - make conversation threads first-class expandable nodes
         if world_state_data.threads:
             active_threads = []
             current_time = time.time()
-            for thread_id, msgs in world_state_data.threads.items():
-                if msgs and msgs[-1].timestamp > (current_time - 7200):  # Active in last 2 hours
-                    active_threads.append(thread_id)
             
-            # Only include recent active threads (limit to 3)
-            for thread_id in active_threads[:3]:
+            # Collect threads with activity in the last 24 hours, prioritizing recent activity
+            thread_activity = []
+            for thread_id, msgs in world_state_data.threads.items():
+                if msgs:
+                    last_activity = msgs[-1].timestamp
+                    if last_activity > (current_time - 86400):  # Active in last 24 hours
+                        thread_activity.append((thread_id, last_activity, len(msgs)))
+            
+            # Sort by last activity time (most recent first) and include up to 10 active threads
+            thread_activity.sort(key=lambda x: x[1], reverse=True)
+            
+            for thread_id, last_activity, msg_count in thread_activity[:10]:
+                # Create thread node paths - these are now first-class expandable nodes
                 paths.append(f"threads.farcaster.{thread_id}")
+                
+                # Add metadata about thread activity level for AI decision-making
+                thread_metadata = {
+                    "last_activity": last_activity,
+                    "message_count": msg_count,
+                    "hours_since_activity": (current_time - last_activity) / 3600
+                }
         
         # Essential system nodes only
         paths.extend([
@@ -938,12 +993,39 @@ class PayloadBuilder:
                         }
             
             elif path_parts[0] == "threads" and len(path_parts) >= 3:
+                # P1 FEATURE: Enhanced thread node data with full conversation context
                 thread_type, thread_id = path_parts[1], path_parts[2]
                 thread_messages = world_state_data.threads.get(thread_id, [])
+                
+                if not thread_messages:
+                    return {"error": f"Thread {thread_id} not found"}
+                
+                # Sort messages chronologically for proper conversation flow
+                sorted_messages = sorted(thread_messages, key=lambda m: m.timestamp)
+                
+                # Get thread root message
+                root_message = world_state_data.thread_roots.get(thread_id)
+                
+                # Calculate thread statistics
+                participants = set()
+                for msg in thread_messages:
+                    if msg.sender_username:
+                        participants.add(msg.sender_username)
+                    elif msg.sender:
+                        participants.add(msg.sender)
+                
+                # Build comprehensive thread data
                 return {
                     "thread_id": thread_id,
                     "type": thread_type,
-                    "messages": [asdict(msg) for msg in thread_messages[-5:]]  # Recent thread messages
+                    "root_message": asdict(root_message) if root_message else None,
+                    "message_count": len(sorted_messages),
+                    "participant_count": len(participants),
+                    "participants": list(participants),
+                    "first_message_time": sorted_messages[0].timestamp if sorted_messages else None,
+                    "last_message_time": sorted_messages[-1].timestamp if sorted_messages else None,
+                    "messages": [msg.to_ai_summary_dict() for msg in sorted_messages],
+                    "thread_summary": f"Conversation thread with {len(participants)} participants and {len(sorted_messages)} messages"
                 }
             
             elif path_parts[0] == "system":

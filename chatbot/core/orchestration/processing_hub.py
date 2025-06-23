@@ -178,6 +178,9 @@ class ProcessingHub:
         Process world state using the appropriate strategy.
         """
         try:
+            # P0 FEATURE: Detect proactive opportunities at the beginning of each cycle
+            await self._detect_proactive_opportunities()
+            
             # Determine processing mode
             processing_mode = self._determine_processing_mode(active_channels)
             
@@ -192,6 +195,23 @@ class ProcessingHub:
             if self.current_processing_mode != "traditional" and self.traditional_processor:
                 logger.warning("Falling back to traditional processing")
                 await self._process_with_traditional_strategy(active_channels)
+
+    async def _detect_proactive_opportunities(self) -> None:
+        """Detect proactive conversation opportunities and register them with the engine."""
+        try:
+            # Check if proactive engine is available
+            if (hasattr(self.world_state, 'proactive_engine') and 
+                self.world_state.proactive_engine):
+                
+                # Trigger opportunity detection based on current world state
+                await self.world_state.proactive_engine.on_world_state_change()
+                logger.debug("Proactive opportunity detection completed")
+            else:
+                logger.debug("Proactive engine not available for opportunity detection")
+                
+        except Exception as e:
+            logger.warning(f"Error detecting proactive opportunities: {e}")
+            # Don't let proactive detection failures block normal processing
 
     def _determine_processing_mode(self, active_channels: List[str]) -> str:
         """
