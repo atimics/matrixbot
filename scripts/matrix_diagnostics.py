@@ -113,7 +113,7 @@ async def diagnose_server_issues():
     
     import httpx
     
-    homeserver = settings.MATRIX_HOMESERVER
+    homeserver = settings.matrix.homeserver
     logger.info(f"🏠 Homeserver: {homeserver}")
     
     try:
@@ -152,7 +152,7 @@ async def main():
     
     # Check environment variables
     logger.info("🔧 Checking configuration...")
-    required_vars = ["MATRIX_HOMESERVER", "MATRIX_USER_ID", "MATRIX_PASSWORD"]
+    required_vars = ["matrix.homeserver", "matrix.user_id", "matrix.password"]
     for var in required_vars:
         value = getattr(settings, var, None)
         if value:

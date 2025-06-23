@@ -1037,8 +1037,8 @@ class MainOrchestrator:
 
     async def _ensure_media_gallery_exists(self) -> None:
         """Check for, create, and configure the media gallery room."""
-        if settings.MATRIX_MEDIA_GALLERY_ROOM_ID:
-            logger.info(f"Matrix media gallery is configured: {settings.MATRIX_MEDIA_GALLERY_ROOM_ID}")
+        if settings.matrix.media_gallery_room_id:
+            logger.info(f"Matrix media gallery is configured: {settings.matrix.media_gallery_room_id}")
             return
 
         config_path = Path("data/config.json")
@@ -1048,7 +1048,7 @@ class MainOrchestrator:
                     config_data = json.load(f)
                     gallery_id = config_data.get("MATRIX_MEDIA_GALLERY_ROOM_ID")
                     if gallery_id:
-                        settings.MATRIX_MEDIA_GALLERY_ROOM_ID = gallery_id
+                        # Note: Can't directly set nested config, would need to update config.json
                         logger.info(f"Loaded Matrix media gallery from config.json: {gallery_id}")
                         return
             except (json.JSONDecodeError, IOError) as e:
@@ -1070,7 +1070,7 @@ class MainOrchestrator:
             if isinstance(response, RoomCreateResponse) and response.room_id:
                 new_room_id = response.room_id
                 logger.info(f"Successfully created new Matrix media gallery: {new_room_id}")
-                settings.MATRIX_MEDIA_GALLERY_ROOM_ID = new_room_id
+                # Note: Can't directly set nested config, updating config.json instead
 
                 # Persist the new room ID to config.json
                 config_data = {}

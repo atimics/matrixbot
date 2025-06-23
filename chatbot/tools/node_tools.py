@@ -30,11 +30,11 @@ class ExpandNodeTool(ToolInterface):
     def description(self) -> str:
         return (
             f"Expands a collapsed node in the world state to view its full details. "
-            f"Maximum {settings.MAX_EXPANDED_NODES} nodes can be expanded simultaneously. "
+            f"Maximum {settings.processing.max_expanded_nodes} nodes can be expanded simultaneously. "
             f"If the limit is reached, the oldest unpinned expanded node will be "
             f"automatically collapsed to make room. For channel nodes, expansion provides "
-            f"enhanced context including {settings.EXPANDED_CHANNEL_RECENT_MESSAGES} recent messages "
-            f"(vs {settings.COLLAPSED_CHANNEL_RECENT_MESSAGES} for collapsed), full message content, "
+            f"enhanced context including {settings.expanded_channel_recent_messages} recent messages "
+            f"(vs {settings.collapsed_channel_recent_messages} for collapsed), full message content, "
             f"user context, thread relationships, and activity metrics. "
             f"Provide the node_path from the summary view."
         )
@@ -89,15 +89,15 @@ class ExpandNodeTool(ToolInterface):
             if success and node_path.startswith("channels."):
                 from ..config import settings
                 result["enhanced_context"] = {
-                    "recent_messages_count": settings.EXPANDED_CHANNEL_RECENT_MESSAGES,
-                    "message_detail_level": settings.EXPANDED_CHANNEL_MESSAGE_DETAIL_LEVEL,
-                    "includes_user_context": settings.EXPANDED_CHANNEL_INCLUDE_USER_CONTEXT,
-                    "includes_thread_context": settings.EXPANDED_CHANNEL_INCLUDE_THREAD_CONTEXT,
-                    "includes_activity_metrics": settings.EXPANDED_CHANNEL_INCLUDE_ACTIVITY_METRICS,
-                    "includes_sentiment": settings.EXPANDED_CHANNEL_INCLUDE_SENTIMENT,
-                    "lookback_hours": settings.EXPANDED_CHANNEL_LOOKBACK_HOURS
+                    "recent_messages_count": settings.expanded_channel_recent_messages,
+                    "message_detail_level": settings.expanded_channel_message_detail_level,
+                    "includes_user_context": settings.expanded_channel_include_user_context,
+                    "includes_thread_context": settings.expanded_channel_include_thread_context,
+                    "includes_activity_metrics": settings.expanded_channel_include_activity_metrics,
+                    "includes_sentiment": settings.expanded_channel_include_sentiment,
+                    "lookback_hours": settings.expanded_channel_lookback_hours
                 }
-                result["message"] += f" - Enhanced context now available with {settings.EXPANDED_CHANNEL_RECENT_MESSAGES} recent messages and enriched metadata."
+                result["message"] += f" - Enhanced context now available with {settings.expanded_channel_recent_messages} recent messages and enriched metadata."
             
             if success:
                 logger.info(f"Successfully expanded node: {node_path}")
@@ -398,13 +398,13 @@ class GetExpansionStatusTool(ToolInterface):
             # Add enhanced context configuration information
             from ..config import settings
             enhanced_context_info = {
-                "expanded_channel_messages": settings.EXPANDED_CHANNEL_RECENT_MESSAGES,
-                "collapsed_channel_messages": settings.COLLAPSED_CHANNEL_RECENT_MESSAGES,
-                "message_detail_level": settings.EXPANDED_CHANNEL_MESSAGE_DETAIL_LEVEL,
-                "includes_user_context": settings.EXPANDED_CHANNEL_INCLUDE_USER_CONTEXT,
-                "includes_thread_context": settings.EXPANDED_CHANNEL_INCLUDE_THREAD_CONTEXT,
-                "includes_activity_metrics": settings.EXPANDED_CHANNEL_INCLUDE_ACTIVITY_METRICS,
-                "lookback_hours": settings.EXPANDED_CHANNEL_LOOKBACK_HOURS
+                "expanded_channel_messages": settings.expanded_channel_recent_messages,
+                "collapsed_channel_messages": settings.collapsed_channel_recent_messages,
+                "message_detail_level": settings.expanded_channel_message_detail_level,
+                "includes_user_context": settings.expanded_channel_include_user_context,
+                "includes_thread_context": settings.expanded_channel_include_thread_context,
+                "includes_activity_metrics": settings.expanded_channel_include_activity_metrics,
+                "lookback_hours": settings.expanded_channel_lookback_hours
             }
             
             # Count expanded channel nodes

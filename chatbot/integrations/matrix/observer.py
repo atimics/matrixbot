@@ -54,9 +54,9 @@ class MatrixObserver(Integration):
         # Assign world state manager and optional Arweave client
         self.world_state = world_state_manager
         self.arweave_client = arweave_client
-        self.homeserver = settings.MATRIX_HOMESERVER
-        self.user_id = settings.MATRIX_USER_ID
-        self.password = settings.MATRIX_PASSWORD
+        self.homeserver = settings.matrix.homeserver
+        self.user_id = settings.matrix.user_id
+        self.password = settings.matrix.password
         self.client: Optional[AsyncClient] = None
         self.sync_task: Optional[asyncio.Task] = None
         self.channels_to_monitor = []
@@ -70,7 +70,7 @@ class MatrixObserver(Integration):
         if not self._enabled:
             logger.warning(
                 "Matrix configuration incomplete. Matrix observer will be disabled. "
-                "Check MATRIX_HOMESERVER, MATRIX_USER_ID, and MATRIX_PASSWORD environment variables."
+                "Check matrix.homeserver, matrix.user_id, and matrix.password configuration settings."
             )
             return
 
@@ -94,8 +94,8 @@ class MatrixObserver(Integration):
         logger.info("MatrixObserver: Starting Matrix client...")
 
         # Create client with device configuration and store path
-        device_name = settings.DEVICE_NAME
-        device_id = settings.MATRIX_DEVICE_ID
+        device_name = settings.matrix.device_name
+        device_id = settings.matrix.device_id
 
         self.client = AsyncClient(
             self.homeserver,

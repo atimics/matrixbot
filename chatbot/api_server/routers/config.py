@@ -35,7 +35,7 @@ async def get_configuration(orchestrator: MainOrchestrator = Depends(get_orchest
             },
             "processing": {
                 "node_based_enabled": orchestrator.processing_hub.get_processing_status().get("node_based_enabled", True),
-                "max_expanded_nodes": getattr(settings, 'MAX_EXPANDED_NODES', 3),
+                "max_expanded_nodes": getattr(settings.processing, 'max_expanded_nodes', 3),
                 "auto_collapse_threshold": getattr(settings, 'AUTO_COLLAPSE_THRESHOLD', 10)
             },
             "rate_limits": {
@@ -100,7 +100,7 @@ async def update_configuration(
         # configuration management system
         allowed_updates = {
             "ai.temperature": lambda v: setattr(settings, 'AI_TEMPERATURE', float(v)),
-            "processing.max_expanded_nodes": lambda v: setattr(settings, 'MAX_EXPANDED_NODES', int(v)),
+            "processing.max_expanded_nodes": lambda v: setattr(settings.processing, 'max_expanded_nodes', int(v)),
             "processing.auto_collapse_threshold": lambda v: setattr(settings, 'AUTO_COLLAPSE_THRESHOLD', int(v)),
             "rate_limits.max_cycles_per_hour": lambda v: setattr(settings, 'MAX_CYCLES_PER_HOUR', int(v)),
             "rate_limits.max_actions_per_hour": lambda v: setattr(settings, 'MAX_ACTIONS_PER_HOUR', int(v)),
