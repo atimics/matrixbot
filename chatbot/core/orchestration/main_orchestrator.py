@@ -447,6 +447,10 @@ class MainOrchestrator:
         self.tool_registry.register_tool(WaitTool())
         self.tool_registry.register_tool(DescribeImageTool())
         
+        # P1 FEATURE: Mission/Goal management tools
+        self.tool_registry.register_tool(SetMissionGoalTool())
+        self.tool_registry.register_tool(UpdateMissionStatusTool())
+        
         # Node management tools (register early for priority in node-based processing)
         self.tool_registry.register_tool(ExpandNodeTool())
         self.tool_registry.register_tool(CollapseNodeTool())
