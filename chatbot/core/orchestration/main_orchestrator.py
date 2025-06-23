@@ -1267,6 +1267,10 @@ class MainOrchestrator:
         # Connect NodeProcessor to ProcessingHub
         self.processing_hub.set_node_processor(self.node_processor)
         
+        # CRITICAL FIX: Connect NodeManager to WorldStateManager so tools can access it
+        self.world_state.node_manager = self.node_manager
+        logger.info("NodeManager connected to WorldStateManager for tool access")
+        
         # Update ActionContext with the node_manager after initialization
         self._update_action_context_with_node_manager()
         

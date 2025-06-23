@@ -19,7 +19,10 @@ moved to PayloadBuilder for better separation of concerns.
 
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..node_system.node_manager import NodeManager
 
 from .structures import (
     WorldStateData, 
@@ -47,7 +50,7 @@ class WorldStateManager:
         self.state = WorldStateData()
         
         # Node system integration (set by main orchestrator after initialization)
-        self.node_manager = None
+        self.node_manager: Optional["NodeManager"] = None
         
         # Initialize system status
         self.state.system_status = {
