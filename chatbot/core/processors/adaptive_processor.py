@@ -73,7 +73,7 @@ class AdaptiveProcessor(Processor):
         self.action_context = action_context
         
         # Strategic awareness settings
-        self.enable_mission_delegation = settings.ENABLE_MISSION_DELEGATION
+        self.enable_mission_delegation = settings.processing.enable_mission_delegation
         self.delegation_cooldown = 300  # 5 minutes between delegation checks
         self.last_delegation_check = 0
         
@@ -173,8 +173,8 @@ class AdaptiveProcessor(Processor):
                 node_manager=self.node_manager,
                 primary_channel_id=primary_channel_id or "strategic_overview",
                 config={
-                    "bot_fid": settings.FARCASTER_BOT_FID,
-                    "bot_username": settings.FARCASTER_BOT_USERNAME,
+                    "bot_fid": settings.farcaster.bot_fid,
+                    "bot_username": settings.farcaster.bot_username,
                     "mode": "strategic_analysis"
                 }
             )

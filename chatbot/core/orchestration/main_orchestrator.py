@@ -1247,12 +1247,11 @@ class MainOrchestrator:
         
         # Initialize NodeManager with LRU and metadata management
         self.node_manager = NodeManager(
-            max_expanded_nodes=settings.MAX_EXPANDED_NODES,
-            default_pinned_nodes=settings.DEFAULT_PINNED_NODES
+            max_expanded_nodes=settings.processing.max_expanded_nodes,
+            default_pinned_nodes=settings.processing.default_pinned_nodes
         )
         
-        # Initialize NodeSummaryService for AI summarization
-        api_key = settings.OPENROUTER_API_KEY
+        # Initialize NodeSummaryService for AI summarization            api_key = settings.openrouter_api_key
         if not api_key:
             raise ValueError("OPENROUTER_API_KEY is required for node summary service")
         

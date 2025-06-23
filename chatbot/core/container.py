@@ -312,13 +312,13 @@ class DependencyContainer:
             from .node_system.summary_service import NodeSummaryService
             
             # Create node system components for Commander AI
-            if not settings.OPENROUTER_API_KEY:
+            if not settings.openrouter_api_key:
                 raise ValueError("OPENROUTER_API_KEY is required for Commander/Sub-Agent architecture")
                 
             node_manager = NodeManager()
             summary_service = NodeSummaryService(
-                api_key=settings.OPENROUTER_API_KEY,
-                model=settings.AI_SUMMARY_MODEL
+                api_key=settings.openrouter_api_key,
+                model=settings.processing.ai_summary_model
             )
             
             commander_ai = AdaptiveProcessor(
@@ -360,10 +360,10 @@ class DependencyContainer:
     
     def _init_arweave_client(self) -> None:
         """Initialize the Arweave client if configured."""
-        if settings.ARWEAVE_INTERNAL_UPLOADER_SERVICE_URL:
+        if settings.storage.arweave_internal_uploader_service_url:
             self._arweave_client = ArweaveUploaderClient(
-                uploader_service_url=settings.ARWEAVE_INTERNAL_UPLOADER_SERVICE_URL,
-                gateway_url=settings.ARWEAVE_GATEWAY_URL,
+                uploader_service_url=settings.storage.arweave_internal_uploader_service_url,
+                gateway_url=settings.storage.arweave_gateway_url,
             )
             logger.debug("ArweaveUploaderClient initialized")
         else:

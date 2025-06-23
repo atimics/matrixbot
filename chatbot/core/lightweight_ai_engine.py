@@ -32,9 +32,9 @@ class LightweightAIEngine:
     def __init__(self, openai_client=None):
         """Initialize with a lightweight model configuration."""
         self.openai_client = openai_client
-        self.model = settings.LIGHTWEIGHT_AI_MODEL or "gpt-4o-mini"
-        self.max_tokens = settings.LIGHTWEIGHT_AI_MAX_TOKENS or 500
-        self.temperature = settings.LIGHTWEIGHT_AI_TEMPERATURE or 0.7
+        self.model = settings.processing.lightweight_ai_model or "gpt-4o-mini"
+        self.max_tokens = settings.processing.lightweight_ai_max_tokens or 500
+        self.temperature = settings.processing.lightweight_ai_temperature or 0.7
         
         logger.info(f"LightweightAIEngine initialized with model: {self.model}")
     
