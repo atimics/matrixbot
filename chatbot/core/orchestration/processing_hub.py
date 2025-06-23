@@ -576,14 +576,14 @@ class ProcessingHub:
             from ...config import settings
             config = {
                 "optimize_for_size": True,
-                "include_detailed_user_info": settings.AI_INCLUDE_DETAILED_USER_INFO,
-                "max_messages_per_channel": settings.AI_CONVERSATION_HISTORY_LENGTH,
-                "max_action_history": settings.AI_ACTION_HISTORY_LENGTH,
-                "max_thread_messages": settings.AI_THREAD_HISTORY_LENGTH,
-                "max_other_channels": settings.AI_OTHER_CHANNELS_SUMMARY_COUNT,
-                "message_snippet_length": settings.AI_OTHER_CHANNELS_MESSAGE_SNIPPET_LENGTH,
-                "bot_fid": settings.FARCASTER_BOT_FID,
-                "bot_username": settings.FARCASTER_BOT_USERNAME,
+                "include_detailed_user_info": settings.ai_include_detailed_user_info,
+                "max_messages_per_channel": settings.ai_conversation_history_length,
+                "max_action_history": settings.ai_action_history_length,
+                "max_thread_messages": settings.ai_thread_history_length,
+                "max_other_channels": settings.ai_other_channels_summary_count,
+                "message_snippet_length": settings.ai_other_channels_message_snippet_length,
+                "bot_fid": settings.farcaster.bot_fid,
+                "bot_username": settings.farcaster.bot_username,
             }
             
             payload = self.payload_builder.build_full_payload(

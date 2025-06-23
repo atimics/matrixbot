@@ -138,15 +138,15 @@ class PayloadBuilder:
         from chatbot.config import settings
         if config is None: config = {}
         
-        max_messages_per_channel = config.get("max_messages_per_channel", settings.AI_CONVERSATION_HISTORY_LENGTH)
-        max_action_history = config.get("max_action_history", settings.AI_ACTION_HISTORY_LENGTH)
-        max_thread_messages = config.get("max_thread_messages", settings.AI_THREAD_HISTORY_LENGTH)
-        max_other_channels = config.get("max_other_channels", settings.AI_OTHER_CHANNELS_SUMMARY_COUNT)
-        message_snippet_length = config.get("message_snippet_length", settings.AI_OTHER_CHANNELS_MESSAGE_SNIPPET_LENGTH)
-        include_detailed_user_info = config.get("include_detailed_user_info", settings.AI_INCLUDE_DETAILED_USER_INFO)
+        max_messages_per_channel = config.get("max_messages_per_channel", settings.ai_conversation_history_length)
+        max_action_history = config.get("max_action_history", settings.ai_action_history_length)
+        max_thread_messages = config.get("max_thread_messages", settings.ai_thread_history_length)
+        max_other_channels = config.get("max_other_channels", settings.ai_other_channels_summary_count)
+        message_snippet_length = config.get("message_snippet_length", settings.ai_other_channels_message_snippet_length)
+        include_detailed_user_info = config.get("include_detailed_user_info", settings.ai_include_detailed_user_info)
         optimize_for_size = config.get("optimize_for_size", True)
-        bot_fid = settings.FARCASTER_BOT_FID
-        bot_username = settings.FARCASTER_BOT_USERNAME
+        bot_fid = settings.farcaster.bot_fid
+        bot_username = settings.farcaster.bot_username
 
         # Sort channels with improved cross-platform balance
         active_integrations = set()
@@ -684,8 +684,8 @@ class PayloadBuilder:
                     from ...config import settings
                     
                     # Determine message count and detail level based on expansion status
-                    message_count = settings.EXPANDED_CHANNEL_RECENT_MESSAGES if is_expanded else settings.COLLAPSED_CHANNEL_RECENT_MESSAGES
-                    detail_level = settings.EXPANDED_CHANNEL_MESSAGE_DETAIL_LEVEL if is_expanded else "summary"
+                    message_count = settings.expanded_channel_recent_messages if is_expanded else settings.collapsed_channel_recent_messages
+                    detail_level = settings.expanded_channel_message_detail_level if is_expanded else "summary"
                     
                     # Build basic channel data
                     channel_data = {

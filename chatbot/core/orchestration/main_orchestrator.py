@@ -688,10 +688,10 @@ class MainOrchestrator:
     async def _initialize_observers(self) -> None:
         """Initialize available observers based on environment configuration."""
         # Initialize Matrix observer if credentials available
-        if settings.MATRIX_USER_ID and settings.MATRIX_PASSWORD:
+        if settings.matrix.user_id and settings.matrix.password:
             try:
                 self.matrix_observer = MatrixObserver(self.world_state, self.arweave_client)
-                room_id = settings.MATRIX_ROOM_ID
+                room_id = settings.matrix.room_id
                 self.matrix_observer.add_channel(room_id, "Robot Laboratory")
                 await self.matrix_observer.start()
                 
@@ -707,12 +707,12 @@ class MainOrchestrator:
                 logger.info("Continuing without Matrix integration")
 
         # Initialize Farcaster observer if credentials available
-        if settings.NEYNAR_API_KEY:
+        if settings.farcaster.neynar_api_key:
             try:
                 self.farcaster_observer = FarcasterObserver(
-                    settings.NEYNAR_API_KEY,
-                    settings.FARCASTER_BOT_SIGNER_UUID,
-                    settings.FARCASTER_BOT_FID,
+                    api_key=settings.farcaster.neynar_api_key,
+                    signer_uuid=settings.farcaster.bot_signer_uuid,
+                    bot_fid=settings.farcaster.bot_fid,
                     world_state_manager=self.world_state,
                 )
                 await self.farcaster_observer.start()
@@ -770,9 +770,9 @@ class MainOrchestrator:
         critical_pins = []
         
         # Add Matrix room if available
-        if self.matrix_observer and settings.MATRIX_ROOM_ID:
-            critical_pins.append(f"channels.matrix.{settings.MATRIX_ROOM_ID}")
-            logger.info(f"Added Matrix room to critical pins: channels.matrix.{settings.MATRIX_ROOM_ID}")
+        if self.matrix_observer and settings.matrix.room_id:
+            critical_pins.append(f"channels.matrix.{settings.matrix.room_id}")
+            logger.info(f"Added Matrix room to critical pins: channels.matrix.{settings.matrix.room_id}")
         
         # Add Farcaster feeds if available
         if self.farcaster_observer:
@@ -860,7 +860,7 @@ class MainOrchestrator:
                 },
                 "farcaster": {
                     "connected": self.farcaster_observer is not None,
-                    "bot_fid": settings.FARCASTER_BOT_FID,
+                    "bot_fid": settings.farcaster.bot_fid,
                     "post_queue_size": getattr(self.farcaster_observer.scheduler.post_queue, 'qsize', lambda: 0)() if self.farcaster_observer and hasattr(self.farcaster_observer, 'scheduler') else 0,
                     "reply_queue_size": getattr(self.farcaster_observer.scheduler.reply_queue, 'qsize', lambda: 0)() if self.farcaster_observer and hasattr(self.farcaster_observer, 'scheduler') else 0
                 }
@@ -987,11 +987,11 @@ class MainOrchestrator:
             from chatbot.config import settings
             config = {
                 "optimize_for_size": True,
-                "include_detailed_user_info": settings.AI_INCLUDE_DETAILED_USER_INFO,
-                "max_messages_per_channel": settings.AI_CONVERSATION_HISTORY_LENGTH,
-                "max_action_history": settings.AI_ACTION_HISTORY_LENGTH,
-                "bot_fid": settings.FARCASTER_BOT_FID,
-                "bot_username": settings.FARCASTER_BOT_USERNAME,
+                "include_detailed_user_info": settings.ai_include_detailed_user_info,
+                "max_messages_per_channel": settings.ai_conversation_history_length,
+                "max_action_history": settings.ai_action_history_length,
+                "bot_fid": settings.farcaster.bot_fid,
+                "bot_username": settings.farcaster.bot_username,
             }
             
             # Build payload using PayloadBuilder
@@ -1095,9 +1095,9 @@ class MainOrchestrator:
         existing_integrations = await self.integration_manager.list_integrations()
         
         # Check for Farcaster integration
-        if (settings.NEYNAR_API_KEY and 
-            settings.FARCASTER_BOT_FID and 
-            settings.FARCASTER_BOT_SIGNER_UUID):
+        if (settings.farcaster.neynar_api_key and 
+            settings.farcaster.bot_fid and 
+            settings.farcaster.bot_signer_uuid):
             
             farcaster_exists = any(
                 integration.get('integration_type') == 'farcaster' 
@@ -1114,9 +1114,9 @@ class MainOrchestrator:
                             'username': settings.FARCASTER_BOT_USERNAME or 'farcaster_bot'
                         },
                         credentials={
-                            'api_key': settings.NEYNAR_API_KEY,
-                            'bot_fid': settings.FARCASTER_BOT_FID,
-                            'signer_uuid': settings.FARCASTER_BOT_SIGNER_UUID
+                            'api_key': settings.farcaster.neynar_api_key,
+                            'bot_fid': settings.farcaster.bot_fid,
+                            'signer_uuid': settings.farcaster.bot_signer_uuid
                         }
                     )
                     logger.info("✓ Farcaster integration registered successfully")
@@ -1138,9 +1138,9 @@ class MainOrchestrator:
                         await self.integration_manager.update_credentials(
                             farcaster_integration['integration_id'],
                             {
-                                'api_key': settings.NEYNAR_API_KEY,
-                                'bot_fid': settings.FARCASTER_BOT_FID,
-                                'signer_uuid': settings.FARCASTER_BOT_SIGNER_UUID
+                                'api_key': settings.farcaster.neynar_api_key,
+                                'bot_fid': settings.farcaster.bot_fid,
+                                'signer_uuid': settings.farcaster.bot_signer_uuid
                             }
                         )
                         logger.info("✓ Farcaster credentials updated from environment variables")
