@@ -114,6 +114,12 @@ class SetMissionGoalTool(ToolInterface):
         try:
             from ..core.world_state.structures import Mission
             
+            if not context.world_state_manager:
+                return {
+                    "status": "error",
+                    "message": "World state manager not available"
+                }
+            
             objective = params.get("objective", "")
             key_results = params.get("key_results", [])
             priority = params.get("priority", 5)
