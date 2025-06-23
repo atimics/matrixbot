@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from ..schemas import SystemCommand, StatusResponse
 from chatbot.core.orchestration import MainOrchestrator
 from ..dependencies import get_orchestrator
+from ..security import require_api_key, validate_admin_access
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +97,8 @@ async def get_system_status(orchestrator: MainOrchestrator = Depends(get_orchest
 @router.post("/command", response_model=StatusResponse)
 async def execute_system_command(
     command: SystemCommand,
-    orchestrator: MainOrchestrator = Depends(get_orchestrator)
+    orchestrator: MainOrchestrator = Depends(get_orchestrator),
+    authenticated: bool = Depends(validate_admin_access)
 ):
     """Execute system commands like start, stop, restart."""
     try:

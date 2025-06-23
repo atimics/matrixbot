@@ -46,11 +46,24 @@ class ChatbotAPIServer:
         
     def _setup_middleware(self):
         """Configure CORS and other middleware."""
+        # Get allowed origins from environment or use secure defaults
+        from ..config import settings
+        allowed_origins = getattr(settings, 'ALLOWED_CORS_ORIGINS', [
+            "http://localhost:3000",
+            "http://localhost:8080", 
+            "https://localhost:3000",
+            "https://localhost:8080"
+        ])
+        
+        # Only allow wildcard in development
+        if getattr(settings, 'DEVELOPMENT_MODE', False):
+            allowed_origins = ["*"]
+        
         self.app.add_middleware(
             CORSMiddleware,
-            allow_origins=["*"],  # Configure appropriately for production
+            allow_origins=allowed_origins,
             allow_credentials=True,
-            allow_methods=["*"],
+            allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             allow_headers=["*"],
         )
     

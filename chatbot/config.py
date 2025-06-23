@@ -49,6 +49,14 @@ class AppConfig(BaseSettings):
     # Web Search and Research
     WEB_SEARCH_MODEL: str = "openai/gpt-4o-mini:online"  # OpenRouter online model for web search
 
+    # Security Configuration
+    API_SERVER_KEY: Optional[str] = None  # API key for management endpoints
+    API_REQUIRE_AUTH: bool = True  # Whether to require authentication
+    DEVELOPMENT_MODE: bool = False  # Enable development mode features
+    ALLOWED_CORS_ORIGINS: list = []  # Allowed CORS origins
+    MAX_AUTH_ATTEMPTS_PER_MINUTE: int = 10  # Rate limiting for auth attempts
+    SESSION_SECRET_KEY: Optional[str] = None  # For JWT token signing
+
     # Matrix (Optional since we removed Synapse dependency)
     MATRIX_HOMESERVER: Optional[str] = None
     MATRIX_USER_ID: Optional[str] = None

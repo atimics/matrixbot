@@ -12,6 +12,7 @@ from ..schemas import ConfigUpdate, StatusResponse
 from chatbot.core.orchestration import MainOrchestrator
 from chatbot.config import settings
 from ..dependencies import get_orchestrator
+from ..security import require_api_key, validate_admin_access
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +85,8 @@ async def get_configuration(orchestrator: MainOrchestrator = Depends(get_orchest
 @router.put("", response_model=StatusResponse)
 async def update_configuration(
     config_update: ConfigUpdate,
-    orchestrator: MainOrchestrator = Depends(get_orchestrator)
+    orchestrator: MainOrchestrator = Depends(get_orchestrator),
+    authenticated: bool = Depends(validate_admin_access)
 ):
     """Update a configuration value."""
     try:
