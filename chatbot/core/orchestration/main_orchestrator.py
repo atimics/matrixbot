@@ -1251,13 +1251,14 @@ class MainOrchestrator:
             default_pinned_nodes=settings.processing.default_pinned_nodes
         )
         
-        # Initialize NodeSummaryService for AI summarization            api_key = settings.openrouter_api_key
+        # Initialize NodeSummaryService for AI summarization
+        api_key = settings.openrouter_api_key
         if not api_key:
             raise ValueError("OPENROUTER_API_KEY is required for node summary service")
         
         self.node_summary_service = NodeSummaryService(
             api_key=api_key,
-            model=settings.AI_SUMMARY_MODEL
+            model=settings.processing.ai_summary_model
         )
         
         # Initialize NodeInteractionTools for AI node operations

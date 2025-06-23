@@ -61,8 +61,8 @@ class NodeProcessor:
         self.node_tools = NodeInteractionTools(node_manager)
         
         # Phase control
-        self.enable_two_phase = settings.ENABLE_TWO_PHASE_AI_PROCESS
-        self.max_exploration_rounds = settings.MAX_EXPLORATION_ROUNDS
+        self.enable_two_phase = settings.processing.enable_two_phase_ai_process
+        self.max_exploration_rounds = settings.processing.max_exploration_rounds
         
         # OODA loop stalemate prevention
         self.exploration_rounds_counter = 0
@@ -211,8 +211,8 @@ class NodeProcessor:
             node_manager=self.node_manager,
             primary_channel_id=primary_channel_id or "unknown",
             config={
-                "bot_fid": settings.FARCASTER_BOT_FID,
-                "bot_username": settings.FARCASTER_BOT_USERNAME
+                "bot_fid": settings.farcaster.bot_fid,
+                "bot_username": settings.farcaster.bot_username
             }
         )
         
@@ -402,8 +402,8 @@ class NodeProcessor:
             node_manager=self.node_manager,
             primary_channel_id=primary_channel_id or "unknown",
             config={
-                "bot_fid": settings.FARCASTER_BOT_FID,
-                "bot_username": settings.FARCASTER_BOT_USERNAME
+                "bot_fid": settings.farcaster.bot_fid,
+                "bot_username": settings.farcaster.bot_username
             }
         )
         
