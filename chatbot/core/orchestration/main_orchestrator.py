@@ -1260,7 +1260,8 @@ class MainOrchestrator:
             ai_engine=self.ai_engine,
             world_state_manager=self.world_state,
             payload_builder=self.payload_builder,
-            tool_registry=self.tool_registry
+            tool_registry=self.tool_registry,
+            action_context=self.action_context
         )
         
         # Connect NodeProcessor to ProcessingHub
