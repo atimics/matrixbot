@@ -644,9 +644,9 @@ class MainOrchestrator:
         """Initialize NFT and blockchain services if credentials are available."""
         try:
             # Initialize Base NFT service
-            if (settings.BASE_RPC_URL and 
-                settings.NFT_DEV_WALLET_PRIVATE_KEY and 
-                settings.NFT_COLLECTION_ADDRESS_BASE):
+            if (settings.base_rpc_url and 
+                settings.nft_dev_wallet_private_key and 
+                settings.nft_collection_address_base):
                 
                 self.base_nft_service = BaseNFTService()
                 
@@ -655,7 +655,7 @@ class MainOrchestrator:
                     logger.info("Base NFT service initialized successfully")
                     
                     # Initialize eligibility service if we have Farcaster observer
-                    if (settings.ECOSYSTEM_TOKEN_CONTRACT_ADDRESS and 
+                    if (settings.ecosystem_token_contract_address and 
                         hasattr(self, 'farcaster_observer') and 
                         self.farcaster_observer and 
                         hasattr(self.farcaster_observer, 'neynar_api_client')):
@@ -1111,7 +1111,7 @@ class MainOrchestrator:
                         integration_type='farcaster',
                         display_name='Farcaster Bot',
                         config={
-                            'username': settings.FARCASTER_BOT_USERNAME or 'farcaster_bot'
+                            'username': settings.farcaster.bot_username or 'farcaster_bot'
                         },
                         credentials={
                             'api_key': settings.farcaster.neynar_api_key,
@@ -1162,9 +1162,9 @@ class MainOrchestrator:
                     logger.error(f"Failed to remove Farcaster integration: {e}")
         
         # Check for Matrix integration
-        if (settings.MATRIX_HOMESERVER and 
-            settings.MATRIX_USER_ID and 
-            settings.MATRIX_PASSWORD):
+        if (settings.matrix.homeserver and 
+            settings.matrix.user_id and 
+            settings.matrix.password):
             
             matrix_exists = any(
                 integration.get('integration_type') == 'matrix' 
@@ -1178,13 +1178,13 @@ class MainOrchestrator:
                         integration_type='matrix',
                         display_name='Matrix Bot',
                         config={
-                            'room_id': settings.MATRIX_ROOM_ID,
-                            'device_name': settings.DEVICE_NAME
+                            'room_id': settings.matrix.room_id,
+                            'device_name': settings.matrix.device_name
                         },
                         credentials={
-                            'homeserver': settings.MATRIX_HOMESERVER,
-                            'user_id': settings.MATRIX_USER_ID,
-                            'password': settings.MATRIX_PASSWORD
+                            'homeserver': settings.matrix.homeserver,
+                            'user_id': settings.matrix.user_id,
+                            'password': settings.matrix.password
                         }
                     )
                     logger.info("✓ Matrix integration registered successfully")
@@ -1206,9 +1206,9 @@ class MainOrchestrator:
                         await self.integration_manager.update_credentials(
                             matrix_integration['integration_id'],
                             {
-                                'homeserver': settings.MATRIX_HOMESERVER,
-                                'user_id': settings.MATRIX_USER_ID,
-                                'password': settings.MATRIX_PASSWORD
+                                'homeserver': settings.matrix.homeserver,
+                                'user_id': settings.matrix.user_id,
+                                'password': settings.matrix.password
                             }
                         )
                         logger.info("✓ Matrix credentials updated from environment variables")
