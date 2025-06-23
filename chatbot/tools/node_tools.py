@@ -62,9 +62,13 @@ class ExpandNodeTool(ToolInterface):
         # Get node manager from action context
         node_manager = getattr(context, 'node_manager', None)
         if not node_manager:
-            error_msg = "Node manager not available in action context"
-            logger.error(error_msg)
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+            # CRITICAL FIX: Try alternative paths for accessing node_manager
+            if hasattr(context, 'world_state_manager') and hasattr(context.world_state_manager, 'node_manager'):
+                node_manager = context.world_state_manager.node_manager
+            else:
+                error_msg = "Node manager not available in action context"
+                logger.error(error_msg)
+                return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
         try:
             success, auto_collapsed, message = node_manager.expand_node(node_path)

@@ -46,6 +46,9 @@ class WorldStateManager:
     def __init__(self):
         self.state = WorldStateData()
         
+        # Node system integration (set by main orchestrator after initialization)
+        self.node_manager = None
+        
         # Initialize system status
         self.state.system_status = {
             "matrix_connected": False,

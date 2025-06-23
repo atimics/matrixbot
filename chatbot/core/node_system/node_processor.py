@@ -403,11 +403,12 @@ class NodeProcessor:
                 logger.warning(f"NodeProcessor: Unknown tool {action.action_type}")
                 return False
             
-            # For external tools, we need an ActionContext
+            # CRITICAL FIX: All tools should be executed, whether node tools or external tools
             if action.action_type not in ["expand_node", "collapse_node", "pin_node", "unpin_node", "refresh_summary", "get_expansion_status"]:
+                # External tool - requires full ActionContext
                 if not self.action_context:
-                    logger.info(f"NodeProcessor: External action {action.action_type} requires ActionContext - skipping in node-only mode")
-                    return True  # Consider successful for node-only processing
+                    logger.warning(f"NodeProcessor: External action {action.action_type} requires ActionContext - cannot execute without it")
+                    return False  # This is actually a failure, not success
                 
                 # Execute external tool with full ActionContext
                 result = await tool.execute(action.parameters, self.action_context)
@@ -418,9 +419,17 @@ class NodeProcessor:
                     logger.warning(f"NodeProcessor: External action {action.action_type} failed: {result.get('error', 'Unknown error')}")
                 return success
             else:
-                # Execute node management tool with minimal ActionContext
-                minimal_context = ActionContext(world_state_manager=self.world_state_manager)
-                result = await tool.execute(action.parameters, minimal_context)
+                # CRITICAL FIX: Execute node management tool with ActionContext that has node_manager
+                # Use full action_context if available, otherwise create one with node_manager
+                if self.action_context:
+                    # Use the full action context which already has the node_manager
+                    node_context = self.action_context
+                else:
+                    # Create minimal context but ensure it has node_manager for tools
+                    node_context = ActionContext(world_state_manager=self.world_state_manager)
+                    node_context.node_manager = self.node_manager
+                
+                result = await tool.execute(action.parameters, node_context)
                 success = result.get("status") == "success"
                 if success:
                     logger.debug(f"NodeProcessor: Node action {action.action_type} succeeded")
