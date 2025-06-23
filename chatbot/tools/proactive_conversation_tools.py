@@ -244,16 +244,16 @@ class DetectConversationOpportunitiesTool(ToolInterface):
             }
         }
     
-    async def execute(self, context: ActionContext, **kwargs) -> Dict[str, Any]:
+    async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
         """Execute opportunity detection."""
         try:
-            analysis_scope = kwargs.get("analysis_scope", "current_context")
-            opportunity_types = kwargs.get("opportunity_types", [
+            analysis_scope = params.get("analysis_scope", "current_context")
+            opportunity_types = params.get("opportunity_types", [
                 "trending_topic", "user_milestone", "quiet_channel", 
                 "follow_up", "cross_platform_bridge", "community_engagement"
             ])
-            minimum_priority = kwargs.get("minimum_priority", 0.5)
-            max_opportunities = kwargs.get("max_opportunities", 5)
+            minimum_priority = params.get("minimum_priority", 0.5)
+            max_opportunities = params.get("max_opportunities", 5)
             
             logger.info(f"Detecting conversation opportunities with scope: {analysis_scope}")
             
@@ -355,15 +355,15 @@ class ScheduleProactiveEngagementTool(ToolInterface):
             "required": ["opportunity_id", "engagement_strategy", "scheduled_time", "message_template"]
         }
     
-    async def execute(self, context: ActionContext, **kwargs) -> Dict[str, Any]:
+    async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
         """Execute engagement scheduling."""
         try:
-            opportunity_id = kwargs.get("opportunity_id")
-            engagement_strategy = kwargs.get("engagement_strategy")
-            scheduled_time = kwargs.get("scheduled_time")
-            message_template = kwargs.get("message_template")
-            priority_score = kwargs.get("priority_score", 0.5)
-            context_data = kwargs.get("context_data", {})
+            opportunity_id = params.get("opportunity_id")
+            engagement_strategy = params.get("engagement_strategy")
+            scheduled_time = params.get("scheduled_time")
+            message_template = params.get("message_template")
+            priority_score = params.get("priority_score", 0.5)
+            context_data = params.get("context_data", {})
             
             logger.info(f"Scheduling proactive engagement: {opportunity_id} for {scheduled_time}")
             
@@ -478,13 +478,13 @@ class GetProactiveEngagementStatusTool(ToolInterface):
             }
         }
     
-    async def execute(self, context: ActionContext, **kwargs) -> Dict[str, Any]:
+    async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
         """Execute engagement status check."""
         try:
-            opportunity_id = kwargs.get("opportunity_id")
-            time_range_hours = kwargs.get("time_range_hours", 24)
-            include_metrics = kwargs.get("include_metrics", True)
-            status_filter = kwargs.get("status_filter", [])
+            opportunity_id = params.get("opportunity_id")
+            time_range_hours = params.get("time_range_hours", 24)
+            include_metrics = params.get("include_metrics", True)
+            status_filter = params.get("status_filter", [])
             
             logger.info(f"Checking proactive engagement status for range: {time_range_hours}h")
             

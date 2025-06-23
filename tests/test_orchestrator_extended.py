@@ -48,30 +48,23 @@ class TestOrchestratorExtended:
         # (This would be tested in tool-specific unit tests)
     
     @pytest.mark.asyncio
-    async def test_start_stop_without_observers(self):
-        """Test starting and stopping orchestrator without observers."""
-        # Mock the processing hub to avoid actual processing
-        with patch.object(self.orchestrator.processing_hub, 'start_processing_loop') as mock_start:
-            with patch.object(self.orchestrator.processing_hub, 'stop_processing_loop') as mock_stop:
-                # Mock _initialize_observers to avoid actual observer initialization
-                with patch.object(self.orchestrator, '_initialize_observers') as mock_init:
-                    loop = asyncio.get_event_loop()
-                    init_future = loop.create_future()
-                    init_future.set_result(None)
-                    mock_init.return_value = init_future
-                    
-                    # Mock the processing loop to return immediately
-                    start_future = loop.create_future()
-                    start_future.set_result(None)
-                    mock_start.return_value = start_future
-                    
-                    # Test start
-                    await self.orchestrator.start()
-                    assert self.orchestrator.running is False  # Will be set to False in finally block
-                    
-                    # Verify methods were called
-                    mock_init.assert_called_once()
-                    mock_start.assert_called_once()
+    async def test_start_stop_lifecycle(self):
+        """Test orchestrator start/stop lifecycle."""
+        # Test that we can start the orchestrator
+        assert self.orchestrator.running is False
+        
+        # Mock the necessary components for starting
+        self.orchestrator.matrix_observer = AsyncMock()
+        self.orchestrator.farcaster_observer = AsyncMock()
+        
+        # In the new architecture, start() sets up the processing hub
+        await self.orchestrator.start()
+        assert self.orchestrator.running is True
+        assert self.orchestrator.processing_hub is not None
+        
+        # Test that we can stop it
+        await self.orchestrator.stop()
+        assert self.orchestrator.running is False
     
     @pytest.mark.asyncio
     async def test_message_processing(self):
