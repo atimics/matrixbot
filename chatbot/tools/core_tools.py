@@ -211,6 +211,12 @@ class UpdateMissionStatusTool(ToolInterface):
             status = params.get("status", "")
             add_key_result = params.get("add_key_result", "")
             
+            if not context.world_state_manager:
+                return {
+                    "status": "error",
+                    "message": "World state manager not available"
+                }
+            
             # Get world state data
             world_state_data = context.world_state_manager.get_world_state_data()
             

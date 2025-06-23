@@ -373,7 +373,7 @@ class MainOrchestrator:
 
     def _register_all_tools(self):
         """Register all available tools with the tool registry."""
-        from ...tools.core_tools import WaitTool
+        from ...tools.core_tools import WaitTool, SetMissionGoalTool, UpdateMissionStatusTool
         from ...tools.describe_image_tool import DescribeImageTool
         from ...tools.farcaster_tools import (
             FollowFarcasterUserTool,
