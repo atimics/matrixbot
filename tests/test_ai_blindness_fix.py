@@ -66,6 +66,9 @@ class TestAIBlindnessFix:
         """Test that bot's matrix reply is recorded in WorldStateManager."""
         # Setup - set the matrix observer directly on the orchestrator
         orchestrator.matrix_observer = mock_matrix_observer
+        # Also set it on the action context which is used by the tools
+        orchestrator.action_context.matrix_observer = mock_matrix_observer
+        
         channel_id = "!test:example.com"
         test_content = "This is a test reply"
         
@@ -93,8 +96,9 @@ class TestAIBlindnessFix:
         channel_data = world_state_data["channels"][channel_id]
         messages = channel_data.get("recent_messages", [])
         
-        # Find the bot's message
-        bot_messages = [msg for msg in messages if msg.get("sender") == settings.MATRIX_USER_ID]
+        # Find the bot's message - use the configured user ID or default test value
+        bot_user_id = settings.MATRIX_USER_ID or "@test_bot:example.com"
+        bot_messages = [msg for msg in messages if msg.get("sender") == bot_user_id]
         assert len(bot_messages) == 1
         
         bot_message = bot_messages[0]

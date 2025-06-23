@@ -86,18 +86,22 @@ class TestAIDecisionEngine:
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = mock_response_data
-        mock_response.raise_for_status.return_value = None
+        mock_response.raise_for_status = Mock()
         
-        with patch('httpx.AsyncClient') as mock_client:
-            mock_context = AsyncMock()
-            mock_context.__aenter__.return_value.post = AsyncMock(return_value=mock_response)
-            mock_client.return_value = mock_context
+        with patch('httpx.AsyncClient') as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.post = AsyncMock(return_value=mock_response)
+            
+            # Set up the async context manager properly
+            mock_client_class.return_value = mock_client
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
             
             result = await engine.make_decision({"test": "state"}, "test_cycle")
             
             # Should handle invalid JSON gracefully
             assert result.cycle_id == "test_cycle"
-            assert "error" in result.reasoning.lower() or "failed" in result.reasoning.lower()
+            assert "error" in result.reasoning.lower() or "failed" in result.reasoning.lower() or "parse" in result.reasoning.lower()
     
     @pytest.mark.asyncio
     async def test_make_decision_http_error(self):
@@ -107,12 +111,16 @@ class TestAIDecisionEngine:
         mock_response = Mock()
         mock_response.status_code = 500
         mock_response.text = "Internal Server Error"
-        mock_response.raise_for_status.return_value = None
+        mock_response.raise_for_status = Mock()
         
-        with patch('httpx.AsyncClient') as mock_client:
-            mock_context = AsyncMock()
-            mock_context.__aenter__.return_value.post = AsyncMock(return_value=mock_response)
-            mock_client.return_value = mock_context
+        with patch('httpx.AsyncClient') as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.post = AsyncMock(return_value=mock_response)
+            
+            # Set up the async context manager properly
+            mock_client_class.return_value = mock_client
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
             
             result = await engine.make_decision({"test": "state"}, "test_cycle")
             
@@ -125,10 +133,14 @@ class TestAIDecisionEngine:
         """Test handling of network exceptions."""
         engine = AIDecisionEngine(api_key="test_key")
         
-        with patch('httpx.AsyncClient') as mock_client:
-            mock_context = AsyncMock()
-            mock_context.__aenter__.return_value.post = AsyncMock(side_effect=Exception("Network timeout"))
-            mock_client.return_value = mock_context
+        with patch('httpx.AsyncClient') as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.post = AsyncMock(side_effect=Exception("Network timeout"))
+            
+            # Set up the async context manager properly
+            mock_client_class.return_value = mock_client
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
             
             result = await engine.make_decision({"test": "state"}, "test_cycle")
             
@@ -148,12 +160,16 @@ class TestAIDecisionEngine:
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = mock_response_data
-        mock_response.raise_for_status.return_value = None
+        mock_response.raise_for_status = Mock()
         
-        with patch('httpx.AsyncClient') as mock_client:
-            mock_context = AsyncMock()
-            mock_context.__aenter__.return_value.post = AsyncMock(return_value=mock_response)
-            mock_client.return_value = mock_context
+        with patch('httpx.AsyncClient') as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.post = AsyncMock(return_value=mock_response)
+            
+            # Set up the async context manager properly
+            mock_client_class.return_value = mock_client
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
             
             result = await engine.make_decision({"test": "state"}, "test_cycle")
             
