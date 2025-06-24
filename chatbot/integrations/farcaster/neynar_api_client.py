@@ -262,7 +262,7 @@ class NeynarAPIClient:
     async def search_casts_by_query(
         self, query: str, limit: int = 25, channel_id: Optional[str] = None
     ) -> Dict[str, Any]:
-        params: Dict[str, Any] = {"q": query.strip(), "limit": min(limit, 25)}
+        params: Dict[str, Any] = {"q": query.strip(), "limit": min(limit, 25), "mode": "semantic"}
         if channel_id:
             normalized_channel = channel_id.lstrip("/")
             if normalized_channel.startswith("channel/"):

@@ -63,6 +63,15 @@ class ToolRegistry:
             List of tool names
         """
         return list(self._tools.keys())
+    
+    def get_all_tool_names(self) -> List[str]:
+        """
+        Get names of all registered tools (alias for get_tool_names).
+
+        Returns:
+            List of tool names
+        """
+        return self.get_tool_names()
 
     def get_tool_descriptions_for_ai(self, access_level: str = 'core') -> str:
         """

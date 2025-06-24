@@ -468,7 +468,20 @@ class AttentionEngine:
         
         # Convert score to ThreadPriority
         priority_score = max(ThreadPriority.LOWEST.value, min(priority_score, ThreadPriority.CRITICAL.value))
-        return ThreadPriority(priority_score)
+        
+        # Map to nearest valid ThreadPriority value
+        if priority_score <= 1:
+            return ThreadPriority.LOWEST
+        elif priority_score <= 3:
+            return ThreadPriority.LOW
+        elif priority_score <= 5:
+            return ThreadPriority.NORMAL
+        elif priority_score <= 7:
+            return ThreadPriority.HIGH
+        elif priority_score <= 9:
+            return ThreadPriority.URGENT
+        else:
+            return ThreadPriority.CRITICAL
     
     def _generate_attention_reason(self, message: Message, priority: ThreadPriority) -> str:
         """
