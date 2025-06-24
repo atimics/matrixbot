@@ -412,7 +412,7 @@ class DependencyContainer:
         # Import tools here to avoid circular imports
         from ..tools.core_tools import WaitTool, AssignMissionTool, UpdateMissionStatusTool
         from ..tools.describe_image_tool import DescribeImageTool
-        from ..tools.farcaster_tools import (
+        from ..tools.farcaster import (
             FollowFarcasterUserTool,
             GetUserTimelineTool,
             LikeFarcasterPostTool,

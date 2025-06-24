@@ -10,7 +10,7 @@ from chatbot.tools.base import ToolInterface, ActionContext
 from chatbot.tools.registry import ToolRegistry
 from chatbot.tools.core_tools import WaitTool
 from chatbot.tools.matrix import SendMatrixMessageTool
-from chatbot.tools.farcaster_tools import SendFarcasterPostTool, SendFarcasterReplyTool
+from chatbot.tools.farcaster import SendFarcasterPostTool, SendFarcasterReplyTool
 
 
 class TestToolRegistry:

@@ -8,7 +8,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 from chatbot.tools.base import ActionContext
-from chatbot.tools.farcaster_tools import SendFarcasterPostTool
+from chatbot.tools.farcaster import SendFarcasterPostTool
 
 
 @pytest.mark.asyncio
