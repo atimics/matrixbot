@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 from ...config import settings
 from ...core.ai_engine import AIDecisionEngine, ActionPlan
-from ...core.context import ContextManager
+from ...core.history_recorder import HistoryRecorder
 from ...core.integration_manager import IntegrationManager
 from ...integrations.arweave_uploader_client import ArweaveUploaderClient
 from ...integrations.farcaster import FarcasterObserver
@@ -232,7 +232,7 @@ class MainOrchestrator:
         config: Optional[OrchestratorConfig] = None,
         # Core dependencies (injected by DI container)
         world_state_manager: Optional[WorldStateManager] = None,
-        context_manager: Optional[ContextManager] = None,
+        history_recorder: Optional[HistoryRecorder] = None,
         integration_manager: Optional[IntegrationManager] = None,
         ai_engine: Optional[AIDecisionEngine] = None,
         payload_builder: Optional[PayloadBuilder] = None,
@@ -248,7 +248,7 @@ class MainOrchestrator:
         # Determine if we're in DI mode (any non-None dependency indicates DI mode)
         self._is_di_mode = (
             world_state_manager is not None or
-            context_manager is not None or
+            history_recorder is not None or
             integration_manager is not None or
             ai_engine is not None or
             payload_builder is not None or
@@ -262,13 +262,13 @@ class MainOrchestrator:
         # Use injected dependencies if provided, otherwise create them (legacy mode)
         if self._is_di_mode:
             # DI mode - use all injected dependencies
-            if not all([world_state_manager, context_manager, integration_manager, 
+            if not all([world_state_manager, history_recorder, integration_manager, 
                        ai_engine, payload_builder, processing_hub, rate_limiter, 
                        proactive_engine, tool_registry, action_context]):
                 raise ValueError("In DI mode, all core dependencies must be provided")
             
             self.world_state = world_state_manager
-            self.context_manager = context_manager
+            self.history_recorder = history_recorder
             self.integration_manager = integration_manager
             self.ai_engine = ai_engine
             self.payload_builder = payload_builder
@@ -313,7 +313,7 @@ class MainOrchestrator:
         self.world_state = WorldStateManager()
         self.payload_builder = PayloadBuilder()
         self.rate_limiter = RateLimiter(self.config.rate_limit_config)
-        self.context_manager = ContextManager(self.world_state, self.config.db_path)
+        self.history_recorder = HistoryRecorder(self.config.db_path)
         
         # Integration management
         encryption_key = settings.security.ratichat_encryption_key
@@ -334,7 +334,7 @@ class MainOrchestrator:
         # Proactive conversation engine (Initiative C)
         self.proactive_engine = ProactiveConversationEngine(
             world_state_manager=self.world_state,
-            context_manager=self.context_manager
+            context_manager=None  # ContextManager deprecated, using None
         )
         
         # Connect proactive engine to world state manager for easy access
@@ -369,7 +369,7 @@ class MainOrchestrator:
         
         self.action_context = ActionContext(
             world_state_manager=self.world_state,
-            context_manager=self.context_manager,
+            context_manager=None,  # ContextManager deprecated
             arweave_client=self.arweave_client,
             arweave_service=arweave_service_instance,
             s3_service=s3_service_instance

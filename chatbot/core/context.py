@@ -33,7 +33,7 @@ class ContextManager:
         self.world_state = world_state_manager
         self.db_path = db_path
         self.history_recorder = HistoryRecorder(db_path)
-        logger.info("ContextManager: Initialized (DEPRECATED - use PayloadBuilder for context)")
+        logger.debug("ContextManager: Initialized for message storage only (context construction now uses PayloadBuilder)")
 
     async def _store_state_change(self, state_change: StateChangeBlock):
         """Store state change using HistoryRecorder"""
@@ -170,5 +170,82 @@ class ContextManager:
             output_path=output_path,
             format=format
         )
+
+    # Backward compatibility methods - redirect to PayloadBuilder
+    async def get_context(self, channel_id: str) -> Dict[str, Any]:
+        """DEPRECATED: Get context for a channel. Use PayloadBuilder.build_full_payload() instead."""
+        logger.warning(f"get_context() is deprecated. Use PayloadBuilder.build_full_payload() for channel {channel_id}")
+        
+        # Return a basic context using world state data
+        from .world_state.payload_builder import PayloadBuilder
+        
+        try:
+            payload_builder = PayloadBuilder(self.world_state)
+            payload = payload_builder.build_full_payload(
+                self.world_state.state,
+                primary_channel_id=channel_id
+            )
+            return payload
+        except Exception as e:
+            logger.error(f"Failed to build context payload for {channel_id}: {e}")
+            return {
+                "channel_id": channel_id,
+                "error": "Failed to build context",
+                "message": "Use PayloadBuilder.build_full_payload() directly"
+            }
+
+    async def get_context_summary(self, channel_id: str) -> Dict[str, Any]:
+        """DEPRECATED: Get context summary. Use PayloadBuilder for context construction."""
+        logger.warning(f"get_context_summary() is deprecated for {channel_id}")
+        
+        try:
+            # Get recent state changes
+            recent_changes = await self.history_recorder.get_recent_state_changes(
+                channel_id=channel_id, 
+                limit=10
+            )
+            
+            return {
+                "channel_id": channel_id,
+                "recent_state_changes": len(recent_changes),
+                "last_activity": recent_changes[-1].timestamp if recent_changes else None,
+                "message": "Use PayloadBuilder.build_full_payload() for complete context"
+            }
+        except Exception as e:
+            logger.error(f"Error getting context summary for {channel_id}: {e}")
+            return {
+                "channel_id": channel_id,
+                "error": str(e),
+                "message": "Use PayloadBuilder.build_full_payload() instead"
+            }
+
+    async def get_conversation_messages(self, channel_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """DEPRECATED: Get conversation messages. Use world_state.channels for messages."""
+        logger.warning(f"get_conversation_messages() is deprecated for {channel_id}")
+        
+        # Try to get messages from world state
+        try:
+            channel = self.world_state.state.channels.get(channel_id)
+            if channel and channel.recent_messages:
+                messages = []
+                for msg in channel.recent_messages[-limit:]:
+                    messages.append({
+                        "id": msg.id,
+                        "content": msg.content,
+                        "sender": msg.sender_username or msg.sender,
+                        "timestamp": msg.timestamp,
+                        "type": "user"  # Simplified
+                    })
+                return messages
+            else:
+                return []
+        except Exception as e:
+            logger.error(f"Error getting conversation messages for {channel_id}: {e}")
+            return []
+
+    async def clear_context(self, channel_id: str) -> None:
+        """DEPRECATED: Clear context for a channel. ContextManager no longer stores contexts."""
+        logger.warning(f"clear_context() called for {channel_id} - this is deprecated since ContextManager is stateless now")
+        # No-op since ContextManager no longer stores contexts in memory
 
 

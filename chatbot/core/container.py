@@ -17,7 +17,7 @@ from ..config import settings
 from ..utils.logging_utils import get_colored_logger
 from .persistence import DatabaseManager
 from .ai_engine import AIDecisionEngine
-from .context import ContextManager
+from .history_recorder import HistoryRecorder
 from .integration_manager import IntegrationManager
 from .world_state.manager import WorldStateManager
 from .world_state.payload_builder import PayloadBuilder
@@ -50,7 +50,7 @@ class DependencyContainer:
         # Core infrastructure
         self._database_manager: Optional[DatabaseManager] = None
         self._world_state_manager: Optional[WorldStateManager] = None
-        self._context_manager: Optional[ContextManager] = None
+        self._history_recorder: Optional[HistoryRecorder] = None
         self._integration_manager: Optional[IntegrationManager] = None
         
         # AI and processing
@@ -80,7 +80,7 @@ class DependencyContainer:
             # 1. Initialize core infrastructure first
             await self._init_database_manager()
             self._init_world_state_manager()
-            self._init_context_manager()
+            self._init_history_recorder()
             self._init_integration_manager()
             
             # 2. Initialize tool system first (needed by processing components)
@@ -150,11 +150,11 @@ class DependencyContainer:
         return self._world_state_manager
     
     @property
-    def context_manager(self) -> ContextManager:
-        """Get the context manager instance."""
-        if not self._context_manager:
-            raise RuntimeError("ContextManager not initialized")
-        return self._context_manager
+    def history_recorder(self) -> HistoryRecorder:
+        """Get the history recorder instance."""
+        if self._history_recorder is None:
+            raise RuntimeError("HistoryRecorder not initialized")
+        return self._history_recorder
     
     @property
     def integration_manager(self) -> IntegrationManager:
@@ -226,14 +226,11 @@ class DependencyContainer:
         self._world_state_manager = WorldStateManager()
         logger.debug("WorldStateManager initialized")
     
-    def _init_context_manager(self) -> None:
-        """Initialize the context manager."""
+    def _init_history_recorder(self) -> None:
+        """Initialize the history recorder."""
         assert self._world_state_manager is not None, "WorldStateManager must be initialized first"
-        self._context_manager = ContextManager(
-            world_state_manager=self._world_state_manager,
-            db_path=self.db_path
-        )
-        logger.debug("ContextManager initialized")
+        self._history_recorder = HistoryRecorder(db_path=self.db_path)
+        logger.debug("HistoryRecorder initialized")
     
     def _init_integration_manager(self) -> None:
         """Initialize the integration manager."""
@@ -349,11 +346,10 @@ class DependencyContainer:
     def _init_proactive_engine(self) -> None:
         """Initialize the proactive conversation engine."""
         assert self._world_state_manager is not None, "WorldStateManager must be initialized first"
-        assert self._context_manager is not None, "ContextManager must be initialized first"
         
         self._proactive_engine = ProactiveConversationEngine(
             world_state_manager=self._world_state_manager,
-            context_manager=self._context_manager
+            context_manager=None  # ContextManager is deprecated, using None
         )
         
         # Connect proactive engine to world state manager for easy access
@@ -392,7 +388,7 @@ class DependencyContainer:
         
         self._action_context = ActionContext(
             world_state_manager=self._world_state_manager,
-            context_manager=self._context_manager,
+            context_manager=None,  # ContextManager is deprecated
             service_registry=service_registry,
             # Legacy compatibility
             arweave_client=self._arweave_client,
