@@ -479,6 +479,20 @@ class DependencyContainer:
         self._tool_registry.register_tool(UpdateResearchTool())
         self._tool_registry.register_tool(QueryResearchTool())
         
+        # Strategic Scratchpad tools (Commander AI only)
+        from ..tools.strategic_scratchpad_tools import (
+            ScratchpadWriteTool,
+            ScratchpadReadTool,
+            ScratchpadListTool,
+            ScratchpadClearTool,
+            ScratchpadDeleteTool,
+        )
+        self._tool_registry.register_tool(ScratchpadWriteTool())
+        self._tool_registry.register_tool(ScratchpadReadTool())
+        self._tool_registry.register_tool(ScratchpadListTool())
+        self._tool_registry.register_tool(ScratchpadClearTool())
+        self._tool_registry.register_tool(ScratchpadDeleteTool())
+        
         # Matrix tools (consolidated - SendMatrixMessageTool now handles both messages and replies)
         self._tool_registry.register_tool(SendMatrixMessageTool())
         # NOTE: SendMatrixReplyTool deprecated - use send_matrix_message with reply_to_id parameter
