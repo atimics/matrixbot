@@ -64,6 +64,11 @@ class MatrixObserver(Integration):
         # Track seen message events to prevent duplicate processing
         self.seen_message_events = set()
         
+        # PHASE 1B: Track recently sent events to prevent echoback loops
+        from collections import deque
+        self.recently_sent_events = deque(maxlen=100)  # Store up to 100 recent events
+        self.recently_sent_timestamps = {}  # event_id -> timestamp mapping
+        
         # State change notification callback
         self.on_state_change: Optional[Callable] = None
 
@@ -263,6 +268,34 @@ class MatrixObserver(Integration):
 
     async def _on_message(self, room: MatrixRoom, event):
         """Handle incoming Matrix messages and update room details"""
+        # PHASE 1A: Enhanced echoback filtering - CRITICAL for stability
+        # Skip our own messages FIRST before any processing
+        if event.sender == self.user_id:
+            logger.debug(f"MatrixObserver: Filtered out own message {event.event_id} from {event.sender}")
+            return
+            
+        # Additional safety check using bot username from settings
+        from ...config import settings
+        if hasattr(settings.matrix, 'user_id') and event.sender == settings.matrix.user_id:
+            logger.debug(f"MatrixObserver: Filtered out bot message {event.event_id} using settings user_id")
+            return
+        
+        # PHASE 1B: Check recently sent events cache to prevent immediate echoback
+        current_time = time.time()
+        if event.event_id in self.recently_sent_events:
+            logger.debug(f"MatrixObserver: Filtered out recently sent message {event.event_id}")
+            return
+            
+        # Clean up old entries from recently_sent_timestamps (older than 30 seconds)
+        cutoff_time = current_time - 30
+        old_events = [eid for eid, ts in self.recently_sent_timestamps.items() if ts < cutoff_time]
+        for old_event in old_events:
+            del self.recently_sent_timestamps[old_event]
+            try:
+                self.recently_sent_events.remove(old_event)
+            except ValueError:
+                pass  # Already removed
+        
         # Deduplicate at the observer level to prevent double processing
         if event.event_id in self.seen_message_events:
             logger.debug(f"MatrixObserver: Deduplicated message event {event.event_id}")
@@ -274,9 +307,6 @@ class MatrixObserver(Integration):
             # Fallback to default WorldStateManager if not provided
             from ...core.world_state import WorldStateManager
             self.world_state = WorldStateManager()
-        # Skip our own messages
-        if event.sender == self.user_id:
-            return
 
         # Extract comprehensive room details
         room_details = self._extract_room_details(room)
@@ -1676,3 +1706,18 @@ class MatrixObserver(Integration):
         except Exception as e:
             logger.error(f"Failed to check room permissions: {e}")
             return {"error": str(e)}
+
+    def record_sent_event(self, event_id: str) -> None:
+        """
+        PHASE 1B: Record a recently sent event to prevent echoback processing.
+        
+        This method should be called whenever the bot sends a message to Matrix,
+        storing the event_id to prevent it from being processed when it echoes back.
+        
+        Args:
+            event_id: The Matrix event ID that was just sent
+        """
+        current_time = time.time()
+        self.recently_sent_events.append(event_id)
+        self.recently_sent_timestamps[event_id] = current_time
+        logger.debug(f"MatrixObserver: Recorded sent event {event_id} for echoback prevention")
