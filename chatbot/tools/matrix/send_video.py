@@ -30,7 +30,7 @@ class SendMatrixVideoTool(ToolInterface):
     @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
-            "channel_id": "string (Matrix room ID) - The room where the video should be sent",
+            "channel_id": "string - The unique identifier of the Matrix room where the video should be sent",
             "video_url": "string - The public URL of the video to send",
             "caption": "string (optional) - Optional text caption for the video",
             "filename": "string (optional) - Optional filename for the video",
@@ -49,7 +49,10 @@ class SendMatrixVideoTool(ToolInterface):
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
-        room_id = params.get("channel_id")
+        # Extract and validate parameters
+        # Accept both 'channel_id' and 'room_id' for better LLM tolerance
+        # This prevents errors when LLMs use 'room_id' based on the Matrix context
+        room_id = params.get("channel_id") or params.get("room_id")
         video_url = params.get("video_url")
         caption = params.get("caption")
         filename = params.get("filename", "video.mp4")

@@ -30,7 +30,7 @@ class SendMatrixImageTool(ToolInterface):
     @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
-            "channel_id": "string (Matrix room ID) - The room where the image should be sent",
+            "channel_id": "string - The unique identifier of the Matrix room where the image should be sent",
             "image_url": "string - The URL of the image to send (must be publicly accessible, such as Arweave URLs from image generation)",
             "caption": "string (optional) - Optional text caption or description for the image",
             "filename": "string (optional) - Optional filename for the image (will be auto-detected if not provided)",
@@ -52,7 +52,9 @@ class SendMatrixImageTool(ToolInterface):
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
         # Extract and validate parameters
-        room_id = params.get("channel_id")
+        # Accept both 'channel_id' and 'room_id' for better LLM tolerance
+        # This prevents errors when LLMs use 'room_id' based on the Matrix context
+        room_id = params.get("channel_id") or params.get("room_id")
         image_url = params.get("image_url")
         caption = params.get("caption")
         filename = params.get("filename")

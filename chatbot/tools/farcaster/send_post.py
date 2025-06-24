@@ -47,7 +47,7 @@ class SendFarcasterPostTool(ToolInterface):
                 },
                 "channel": {
                     "type": "string",
-                    "description": "The channel to post in (if not provided, posts to user's timeline). Not used for replies."
+                    "description": "The Farcaster channel name to post in (if not provided, posts to user's timeline). Not used for replies."
                 },
                 "embed_url": {
                     "type": "string",

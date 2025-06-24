@@ -4,6 +4,12 @@ Send Matrix Message Tool - Unified Messaging for Matrix
 This tool consolidates the functionality of both regular messages and replies,
 eliminating the need for separate tools and simplifying the AI's decision space.
 Uses ServiceRegistry abstraction for clean platform integration.
+
+Parameter Consistency Note:
+- Uses 'channel_id' as the primary parameter name for specifying target rooms
+- Accepts both 'channel_id' and 'room_id' for LLM tolerance (common confusion source)
+- Parameter description avoids "Matrix room ID" phrase to prevent LLM confusion
+- This follows the project-wide standard of using 'channel_id' for platform-agnostic channel targeting
 """
 
 import logging
@@ -43,7 +49,7 @@ class SendMatrixMessageTool(ToolInterface):
     @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
-            "channel_id": "string (Matrix room ID) - The room where the message should be sent",
+            "channel_id": "string - The unique identifier of the Matrix room where the message should be sent",
             "content": "string - The message content to send (supports markdown formatting)",
             "reply_to_id": "string (optional) - The event ID of the message to reply to. If provided, sends as a reply",
             "format_as_markdown": "boolean (optional, default: true) - Whether to format the content as markdown",
@@ -66,7 +72,9 @@ class SendMatrixMessageTool(ToolInterface):
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
         # Extract and validate parameters
-        room_id = params.get("channel_id")
+        # Accept both 'channel_id' and 'room_id' for better LLM tolerance
+        # This prevents errors when LLMs use 'room_id' based on the Matrix context
+        room_id = params.get("channel_id") or params.get("room_id")
         content = params.get("content")
         reply_to_event_id = params.get("reply_to_id")
         format_as_markdown = params.get("format_as_markdown", True)

@@ -14,7 +14,6 @@ import pytest_asyncio  # Import this
 from unittest.mock import AsyncMock, MagicMock
 
 from chatbot.config import AppConfig
-from chatbot.core.context import ContextManager
 from chatbot.core.history_recorder import HistoryRecorder
 from chatbot.core.world_state import WorldStateManager
 from chatbot.tools.base import ActionContext
@@ -37,28 +36,25 @@ def world_state_manager() -> WorldStateManager:
     return WorldStateManager()
 
 
-@pytest.fixture
-async def context_manager(temp_dir: Path) -> AsyncGenerator[ContextManager, None]:
-    """Provide a ContextManager with temporary database."""
-    world_state = WorldStateManager()
-    db_path = temp_dir / "test_context.db"
+@pytest_asyncio.fixture
+async def history_recorder(temp_dir: Path) -> AsyncGenerator[HistoryRecorder, None]:
+    """Provide a HistoryRecorder with temporary database (replaces deprecated context_manager)."""
+    db_path = temp_dir / "test_history.db"
 
-    context_mgr = ContextManager(world_state, str(db_path))
-    await context_mgr.initialize()
+    recorder = HistoryRecorder(db_path=str(db_path))
+    await recorder.initialize()
 
-    try:
-        yield context_mgr
-    finally:
-        await context_mgr.cleanup()
+    yield recorder
+    # HistoryRecorder doesn't need explicit cleanup
 
 
 @pytest_asyncio.fixture  # Changed from @pytest.fixture
-async def history_recorder(tmp_path):
+async def history_recorder_instance(tmp_path):
     """Provides an initialized HistoryRecorder instance for async tests."""
-    logging.info(f"[Fixture history_recorder] STARTING. tmp_path: {tmp_path}")
+    logging.info(f"[Fixture history_recorder_instance] STARTING. tmp_path: {tmp_path}")
     db_path = tmp_path / "test_chat.db"
     recorder = HistoryRecorder(db_path=str(db_path))
-    logging.info(f"[Fixture history_recorder] HistoryRecorder instance created: {recorder}")
+    logging.info(f"[Fixture history_recorder_instance] HistoryRecorder instance created: {recorder}")
 
     # Ensure initialize is awaited and check its type
     init_coro = recorder.initialize()
