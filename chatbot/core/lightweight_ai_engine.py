@@ -257,7 +257,3 @@ Focus on simple, conversational actions that directly advance the mission. Avoid
             "api_available": bool(self.api_key),
             "tool_registry_available": bool(self.tool_registry)
         }
-            "max_tokens": self.max_tokens,
-            "temperature": self.temperature,
-            "api_key_available": self.api_key is not None
-        }
