@@ -594,13 +594,7 @@ class DependencyContainer:
         available_services = service_registry.list_services()
         logger.info(f"Available services: {available_services}")
         
-        # Check for at least one messaging service
-        has_messaging_service = any(
-            service_name.endswith('_messaging') or service_name.endswith('_observer')
-            for service_name in available_services.keys()
-        )
-        
-        if not has_messaging_service:
-            logger.warning("No messaging services registered - tools may not function properly")
+        # Note: Messaging services (observers) will be registered during orchestrator initialization
+        logger.debug("Messaging services will be registered when the orchestrator starts")
         
         logger.info("✓ Startup validation completed successfully")
