@@ -34,7 +34,7 @@ class LightweightAIEngine:
     
     def __init__(self, api_key: Optional[str] = None, tool_registry=None):
         """Initialize with a lightweight model configuration and access to conversational tools."""
-        self.api_key = api_key or settings.openrouter_api_key
+        self.api_key = api_key or settings.processing.openrouter_api_key
         self.base_url = "https://openrouter.ai/api/v1/chat/completions"
         self.model = settings.processing.lightweight_ai_model or "openai/gpt-4o-mini"
         self.max_tokens = settings.processing.lightweight_ai_max_tokens or 500

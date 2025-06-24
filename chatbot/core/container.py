@@ -243,12 +243,12 @@ class DependencyContainer:
     
     def _init_ai_engine(self) -> None:
         """Initialize the AI engine."""
-        if not settings.openrouter_api_key:
+        if not settings.processing.openrouter_api_key:
             logger.warning("OPENROUTER_API_KEY not set - AI engine may not function properly")
             raise ValueError("OPENROUTER_API_KEY is required for AI engine initialization")
         
         self._ai_engine = AIDecisionEngine(
-            api_key=settings.openrouter_api_key,
+            api_key=settings.processing.openrouter_api_key,
             model=settings.processing.ai_model
         )
         logger.debug("AIDecisionEngine initialized")
@@ -305,12 +305,12 @@ class DependencyContainer:
             assert self._action_context is not None, "ActionContext must be initialized first"
             
             # Check for required API key
-            if not settings.openrouter_api_key:
+            if not settings.processing.openrouter_api_key:
                 raise ValueError("OPENROUTER_API_KEY is required for Commander/Sub-Agent architecture")
             
             # Initialize Lightweight AI Engine for Sub-Agents
             from .lightweight_ai_engine import LightweightAIEngine
-            lightweight_ai = LightweightAIEngine(api_key=settings.openrouter_api_key)
+            lightweight_ai = LightweightAIEngine(api_key=settings.processing.openrouter_api_key)
             self._processing_hub.set_lightweight_ai_engine(lightweight_ai)
             
             # Initialize Commander AI (AdaptiveProcessor)
@@ -321,7 +321,7 @@ class DependencyContainer:
             # Create node system components for Commander AI
             node_manager = NodeManager()
             summary_service = NodeSummaryService(
-                api_key=settings.openrouter_api_key,
+                api_key=settings.processing.openrouter_api_key,
                 model=settings.processing.ai_summary_model
             )
             

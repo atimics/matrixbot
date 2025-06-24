@@ -43,8 +43,10 @@ class ProcessingConfig(BaseSettings):
     
     # Commander/Sub-Agent Architecture
     enable_mission_delegation: bool = Field(default=True, alias="ENABLE_MISSION_DELEGATION")
+    log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     
     # AI Models and Performance
+    openrouter_api_key: Optional[str] = Field(default=None, alias="OPENROUTER_API_KEY")
     ai_model: str = Field(default="openai/gpt-4o-mini", alias="AI_MODEL")
     ai_multimodal_model: str = Field(default="openai/gpt-4o", alias="AI_MULTIMODAL_MODEL")
     lightweight_ai_model: str = Field(default="openai/gpt-4o-mini", alias="LIGHTWEIGHT_AI_MODEL")
@@ -244,8 +246,6 @@ class AppConfig(BaseSettings):
 
     # Core System Settings
     chatbot_db_path: str = Field(default="data/chatbot.db", alias="CHATBOT_DB_PATH")
-    openrouter_api_key: Optional[str] = Field(default=None, alias="OPENROUTER_API_KEY")
-    log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     
     # Nested Configuration Sections
     processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
@@ -323,7 +323,7 @@ class AppConfig(BaseSettings):
             )
         
         # Validate that if OpenRouter is the primary provider, API key is present
-        if self.primary_llm_provider == "openrouter" and not self.openrouter_api_key:
+        if self.primary_llm_provider == "openrouter" and not self.processing.openrouter_api_key:
             raise ValueError(
                 "If PRIMARY_LLM_PROVIDER is 'openrouter', OPENROUTER_API_KEY is required"
             )

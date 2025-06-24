@@ -342,7 +342,7 @@ class MainOrchestrator:
         # Tool Registry and AI Engine
         self.tool_registry = ToolRegistry()
         self.ai_engine = AIDecisionEngine(
-            api_key=settings.openrouter_api_key,
+            api_key=settings.processing.openrouter_api_key,
             model=self.config.ai_model
         )
         
@@ -1258,7 +1258,7 @@ class MainOrchestrator:
         )
         
         # Initialize NodeSummaryService for AI summarization
-        api_key = settings.openrouter_api_key
+        api_key = settings.processing.openrouter_api_key
         if not api_key:
             raise ValueError("OPENROUTER_API_KEY is required for node summary service")
         
