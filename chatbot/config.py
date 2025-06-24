@@ -32,8 +32,14 @@ def load_config_json() -> dict:
     return {}
 
 
-class ProcessingConfig(BaseModel):
+class ProcessingConfig(BaseSettings):
     """Configuration for the Commander/Sub-Agent processing architecture."""
+    
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
     
     # Commander/Sub-Agent Architecture
     enable_mission_delegation: bool = Field(default=True, alias="ENABLE_MISSION_DELEGATION")
@@ -117,8 +123,14 @@ class FarcasterConfig(BaseSettings):
         return self
 
 
-class MediaGenerationConfig(BaseModel):
+class MediaGenerationConfig(BaseSettings):
     """Configuration for AI media generation services."""
+    
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
     
     # Replicate Configuration
     replicate_api_token: Optional[str] = Field(default=None, alias="REPLICATE_API_TOKEN")
@@ -138,8 +150,14 @@ class MediaGenerationConfig(BaseModel):
     max_video_generations_per_hour: int = Field(default=5, alias="MAX_VIDEO_GENERATIONS_PER_HOUR")
 
 
-class StorageConfig(BaseModel):
+class StorageConfig(BaseSettings):
     """Configuration for permanent storage services."""
+    
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
     
     # S3 Configuration (primary)
     s3_api_endpoint: Optional[str] = Field(default=None, alias="S3_API_ENDPOINT")
@@ -167,8 +185,14 @@ class StorageConfig(BaseModel):
         return self
 
 
-class DeveloperToolsConfig(BaseModel):
+class DeveloperToolsConfig(BaseSettings):
     """Configuration for developer tools and GitHub integration."""
+    
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
     
     developer_tools_enabled: bool = Field(default=False, alias="DEVELOPER_TOOLS_ENABLED")
     github_token: Optional[str] = Field(default=None, alias="GITHUB_TOKEN")
@@ -185,8 +209,14 @@ class DeveloperToolsConfig(BaseModel):
         return self
 
 
-class SecurityConfig(BaseModel):
+class SecurityConfig(BaseSettings):
     """Security and authentication configuration."""
+    
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
     
     api_server_key: Optional[str] = Field(default=None, alias="API_SERVER_KEY")
     api_require_auth: bool = Field(default=True, alias="API_REQUIRE_AUTH")
