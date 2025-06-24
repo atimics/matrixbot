@@ -5,7 +5,7 @@ Neynar API Client for Farcaster
 This module provides a client for interacting with the Neynar Farcaster API.
 """
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import httpx
 
@@ -55,8 +55,8 @@ class NeynarAPIClient:
         self,
         method: str,
         endpoint: str,
-        params: Optional[Dict] = None,
-        json_data: Optional[Dict] = None,
+        params: Optional[Dict[str, Union[str, int]]] = None,
+        json_data: Optional[Dict[str, Any]] = None,
     ) -> httpx.Response:
         url = f"{self.base_url}{endpoint}"
         headers = self._get_headers(is_post=(method.upper() == "POST"))
@@ -213,11 +213,11 @@ class NeynarAPIClient:
         signer_uuid: str,
         channel_id: Optional[str] = None,
         parent: Optional[str] = None,
-        embeds: Optional[List[Dict]] = None,
+        embeds: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         if not signer_uuid:
             raise ValueError("signer_uuid is required to publish a cast.")
-        payload = {"text": text, "signer_uuid": signer_uuid}
+        payload: Dict[str, Any] = {"text": text, "signer_uuid": signer_uuid}
         if channel_id:
             payload["channel_id"] = channel_id
         if parent:
@@ -260,15 +260,53 @@ class NeynarAPIClient:
         return response.json()
 
     async def search_casts_by_query(
-        self, query: str, limit: int = 25, channel_id: Optional[str] = None
+        self, 
+        query: str, 
+        limit: int = 25, 
+        channel_id: Optional[str] = None,
+        mode: str = "hybrid",
+        sort_type: str = "desc_chron",
+        author_fid: Optional[int] = None,
+        viewer_fid: Optional[int] = None,
+        parent_url: Optional[str] = None
     ) -> Dict[str, Any]:
-        params: Dict[str, Any] = {"q": query.strip(), "limit": min(limit, 25), "mode": "semantic"}
+        """
+        Search for casts using enhanced semantic capabilities.
+        
+        Args:
+            query: Search query string with support for operators
+            limit: Number of results (1-100)
+            channel_id: Channel to search within
+            mode: Search mode - 'literal', 'semantic', or 'hybrid' (default)
+            sort_type: Sorting - 'desc_chron' (default) or 'algorithmic'
+            author_fid: Search only casts by specific author
+            viewer_fid: Personalize results for viewer (respects mutes/blocks)
+            parent_url: Search within specific parent URL context
+        """
+        # Build parameters with enhanced options
+        params: Dict[str, Union[str, int]] = {
+            "q": query.strip(), 
+            "limit": min(max(limit, 1), 100),  # Ensure limit is within valid range
+            "mode": mode,
+            "sort_type": sort_type
+        }
+        
+        # Add optional filters
         if channel_id:
             normalized_channel = channel_id.lstrip("/")
             if normalized_channel.startswith("channel/"):
                 params["channel_id"] = normalized_channel
             else:
                 params["channel_id"] = f"channel/{normalized_channel}"
+                
+        if author_fid and author_fid >= 1:
+            params["author_fid"] = author_fid
+            
+        if viewer_fid and viewer_fid >= 1:
+            params["viewer_fid"] = viewer_fid
+            
+        if parent_url:
+            params["parent_url"] = parent_url.strip()
 
         response = await self._make_request(
             "GET", "/farcaster/cast/search", params=params
@@ -404,10 +442,27 @@ class NeynarAPIClient:
         return result
 
     async def search_casts(
-        self, query: str, channel_id: Optional[str] = None, limit: int = 25
+        self, 
+        query: str, 
+        channel_id: Optional[str] = None, 
+        limit: int = 25,
+        mode: str = "hybrid",
+        sort_type: str = "algorithmic",
+        author_fid: Optional[int] = None,
+        viewer_fid: Optional[int] = None,
+        parent_url: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Search for casts matching a query."""
-        return await self.search_casts_by_query(query, limit, channel_id)
+        """Search for casts matching a query with enhanced semantic capabilities."""
+        return await self.search_casts_by_query(
+            query=query, 
+            limit=limit, 
+            channel_id=channel_id,
+            mode=mode,
+            sort_type=sort_type,
+            author_fid=author_fid,
+            viewer_fid=viewer_fid,
+            parent_url=parent_url
+        )
 
     async def get_trending_casts(
         self,
