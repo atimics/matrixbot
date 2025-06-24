@@ -999,6 +999,11 @@ class WorldStateManager:
         if thread.last_speaker_id == str(bot_id):
             logger.info(f"Turn validation failed: Bot was the last speaker in thread '{thread_id}'. Waiting for user response.")
             return False
+        
+        # ENHANCEMENT: Check for recent failed actions to prevent immediate retries
+        if thread.has_recent_failed_action('send_farcaster_post') or thread.has_recent_failed_action('send_matrix_message'):
+            logger.info(f"Turn validation failed: Recent failed action in thread '{thread_id}'. Waiting for cooldown.")
+            return False
             
         logger.info(f"Turn validation passed: It is the bot's turn in thread '{thread_id}'.")
         return True
@@ -1040,7 +1045,7 @@ class WorldStateManager:
         thread.participants.add(message.sender)
         thread.last_activity_timestamp = max(thread.last_activity_timestamp, message.timestamp)
         
-        # CRITICAL: Update turn state
+        # CRITICAL: Update turn state with multi-user conversation handling
         from ...config import settings
         
         # Determine bot ID for this platform
@@ -1056,14 +1061,50 @@ class WorldStateManager:
         else:
             bot_id = None
         
-        # Update who spoke last
-        thread.last_speaker_id = message.sender
-        
-        # If a user spoke, it's now the bot's turn
+        # ENHANCEMENT: Handle "New Speaker" Turn Reset for multi-user conversations
         if bot_id and message.sender != str(bot_id):
+            # A user spoke - check if this creates a new conversational turn
+            
+            # If bot was the last speaker and this is a different user than who spoke before bot's last message
+            if thread.last_speaker_id == str(bot_id) and len(thread.messages) >= 2:
+                # Find the message before the bot's last message to see who was speaking then
+                bot_messages = [m for m in thread.messages if m.sender == str(bot_id)]
+                if bot_messages:
+                    last_bot_message = bot_messages[-1]
+                    # Find messages before the last bot message
+                    pre_bot_messages = [m for m in thread.messages if m.timestamp < last_bot_message.timestamp]
+                    if pre_bot_messages:
+                        last_pre_bot_speaker = pre_bot_messages[-1].sender
+                        # If current speaker is different from who spoke before bot's last message
+                        if message.sender != last_pre_bot_speaker:
+                            logger.info(f"New speaker {message.sender} detected in thread {thread_id} - resetting bot's turn")
+                            thread.last_speaker_id = message.sender
+                            thread.bot_turn_timestamp = time.time()
+                            return
+            
+            # Normal case: User spoke, now it's bot's turn
+            thread.last_speaker_id = message.sender
             thread.bot_turn_timestamp = time.time()
-            logger.debug(f"User spoke in thread {thread_id}, now bot's turn")
+            logger.debug(f"User {message.sender} spoke in thread {thread_id}, now bot's turn")
+            
         # If the bot spoke, it's no longer the bot's turn
         elif bot_id and message.sender == str(bot_id):
+            thread.last_speaker_id = str(bot_id)
             thread.bot_turn_timestamp = None
             logger.debug(f"Bot spoke in thread {thread_id}, waiting for user response")
+    
+    def record_action_failure(self, thread_id: str, action_type: str, error: str) -> None:
+        """
+        Record a failed action in the specified thread to prevent immediate retries.
+        
+        Args:
+            thread_id: The thread where the action failed
+            action_type: Type of action that failed (e.g., 'send_farcaster_post')
+            error: Error message or reason for failure
+        """
+        thread = self.state.threads.get(thread_id)
+        if thread:
+            thread.add_failed_action(action_type, error)
+            logger.info(f"Recorded failed action {action_type} in thread {thread_id}: {error}")
+        else:
+            logger.warning(f"Cannot record failed action - thread {thread_id} not found")

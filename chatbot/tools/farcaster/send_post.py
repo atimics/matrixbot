@@ -276,11 +276,23 @@ class SendFarcasterPostTool(ToolInterface):
             if result.get("success"):
                 return {"status": "success", **result}
             else:
-                return create_error_response(result.get("error", "unknown"))
+                # Record the failure in the thread for cooldown management
+                error_msg = result.get("error", "unknown")
+                if context.world_state_manager and reply_to_hash:
+                    context.world_state_manager.record_action_failure(
+                        reply_to_hash, self.name, error_msg
+                    )
+                return create_error_response(error_msg)
                 
         except Exception as e:
             error_msg = f"Error executing send_farcaster_{'reply' if reply_to_hash else 'post'}: {e}"
             logger.exception(error_msg)
+
+            # Record the failure in the thread for cooldown management
+            if context.world_state_manager and reply_to_hash:
+                context.world_state_manager.record_action_failure(
+                    reply_to_hash, self.name, str(e)
+                )
 
             # Record this action failure in world state
             if context.world_state_manager:

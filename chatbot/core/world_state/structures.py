@@ -332,6 +332,7 @@ class Thread:
         message_count: Total number of messages in thread
         last_speaker_id: ID of whoever spoke last (user or bot)
         bot_turn_timestamp: When it became the bot's turn (None if not bot's turn)
+        failed_actions: Track recent failed actions to prevent immediate retries
     """
     thread_id: str
     platform: str
@@ -341,6 +342,7 @@ class Thread:
     message_count: int = 0
     last_speaker_id: Optional[str] = None  # ID of last speaker (bot or user)
     bot_turn_timestamp: Optional[float] = None  # When it became bot's turn
+    failed_actions: List[Dict[str, Any]] = field(default_factory=list)  # Track failed attempts
     
     def is_active(self, active_threshold_seconds: int = 86400) -> bool:
         """Check if thread has recent activity and is a real conversation."""
@@ -350,8 +352,47 @@ class Thread:
     
     def is_bot_turn(self, bot_id: str) -> bool:
         """Check if it's the bot's turn to speak in this thread."""
-        # Bot can only speak if it wasn't the last one to speak
+        # ENHANCEMENT: Stale thread timeout - allow bot to re-engage after timeout
+        STALE_THREAD_TIMEOUT = 3600  # 1 hour in seconds
+        
+        # If bot was the last speaker, check if enough time has passed to re-engage
+        if self.last_speaker_id == str(bot_id):
+            time_since_last_activity = time.time() - self.last_activity_timestamp
+            if time_since_last_activity > STALE_THREAD_TIMEOUT:
+                return True  # Thread is stale, bot can re-engage
+            return False  # Bot spoke recently, wait for user response
+        
+        # Bot can speak if it wasn't the last one to speak
         return self.last_speaker_id != str(bot_id)
+    
+    def add_failed_action(self, action_type: str, error: str) -> None:
+        """Record a failed action attempt to prevent immediate retries."""
+        FAILED_ACTION_COOLDOWN = 300  # 5 minutes
+        
+        # Clean up old failed actions
+        current_time = time.time()
+        self.failed_actions = [
+            action for action in self.failed_actions
+            if current_time - action.get('timestamp', 0) < FAILED_ACTION_COOLDOWN
+        ]
+        
+        # Add new failed action
+        self.failed_actions.append({
+            'action_type': action_type,
+            'error': error,
+            'timestamp': current_time
+        })
+    
+    def has_recent_failed_action(self, action_type: str) -> bool:
+        """Check if this action type has recently failed."""
+        FAILED_ACTION_COOLDOWN = 300  # 5 minutes
+        current_time = time.time()
+        
+        for action in self.failed_actions:
+            if (action.get('action_type') == action_type and
+                current_time - action.get('timestamp', 0) < FAILED_ACTION_COOLDOWN):
+                return True
+        return False
 
 
 @dataclass
@@ -1133,7 +1174,8 @@ class WorldStateData:
                     "last_activity_timestamp": thread.last_activity_timestamp,
                     "message_count": thread.message_count,
                     "last_speaker_id": thread.last_speaker_id,
-                    "bot_turn_timestamp": thread.bot_turn_timestamp
+                    "bot_turn_timestamp": thread.bot_turn_timestamp,
+                    "failed_actions": thread.failed_actions
                 }
                 for thread_id, thread in self.threads.items()
             },

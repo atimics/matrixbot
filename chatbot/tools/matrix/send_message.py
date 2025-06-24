@@ -2,8 +2,34 @@
 Send Matrix Message Tool - Unified Messaging for Matrix
 
 This tool consolidates the functionality of both regular messages and replies,
-eliminating the need for separate tools and simplifying the AI's decision space.
-Uses ServiceRegistry abstraction for clean platform integration.
+eliminating the need for separate tools and simplifying the AI's decisio            else:
+                action_type = "reply" if reply_to_event_id else "message"
+                error_msg = f"Failed to send Matrix {action_type} via service: {result.get('error', 'unknown error')}"
+                logger.error(error_msg)
+                
+                # Record the failure in the thread for cooldown management
+                if context.world_state_manager and reply_to_event_id:
+                    context.world_state_manager.record_action_failure(
+                        reply_to_event_id, self.name, result.get('error', 'unknown error')
+                    )
+                
+                return {
+                    "status": "failure",
+                    "error": error_msg,
+                    "timestamp": time.time(),
+                }
+
+        except Exception as e:
+            error_msg = f"Error executing {self.name}: {str(e)}"
+            logger.exception(error_msg)
+            
+            # Record the failure in the thread for cooldown management
+            if context.world_state_manager and reply_to_event_id:
+                context.world_state_manager.record_action_failure(
+                    reply_to_event_id, self.name, str(e)
+                )
+            
+            return {"status": "failure", "error": error_msg, "timestamp": time.time()}ServiceRegistry abstraction for clean platform integration.
 
 Parameter Consistency Note:
 - Uses 'channel_id' as the primary parameter name for specifying target rooms
