@@ -130,7 +130,41 @@ You **MUST** respond with a valid JSON object in this exact format. Do not inclu
 
 *   **Explicit JSON Structure:** Providing the JSON structure as a code block is the most effective way to ensure the LLM generates a valid output.
 
-This simplified prompt is more of a **high-level directive** than a detailed manual. It is better suited for modern, highly capable LLMs that excel at in-context learning and reasoning from structured data, which is precisely the kind of model this advanced agent architecture is designed to leverage."""        # Dynamic tool prompt part that gets updated by tool registry
+This simplified prompt is more of a **high-level directive** than a detailed manual. It is better suited for modern, highly capable LLMs that excel at in-context learning and reasoning from structured data, which is precisely the kind of model this advanced agent architecture is designed to leverage.
+
+### REPLYING TO FARCASTER CASTS:
+To reply to a specific Farcaster cast, use the `send_farcaster_post` tool with the `reply_to_hash` parameter:
+- Set `reply_to_hash` to the message's `id` field (which contains the cast hash).
+- Do NOT set a `channel` parameter when replying - replies are automatically posted to the correct context.
+- Always check the message's `already_replied` field before replying to avoid duplicates.
+
+Example reply action:
+{
+  "action_type": "send_farcaster_post",
+  "parameters": {
+    "content": "Great point! I agree with your perspective on...",
+    "reply_to_hash": "0x8fea8a584a7a36a52ca53cf300c3f1504381aaa0"
+  },
+  "reasoning": "Replying to an interesting discussion about AI",
+  "priority": 8
+}
+
+### QUOTING FARCASTER CASTS:
+To quote a Farcaster cast (repost with commentary), use the `send_farcaster_post` tool with the `quoted_cast_hash` parameter:
+- Set `quoted_cast_hash` to the cast's hash that you want to quote.
+- Provide your own `content` with commentary about the quoted cast.
+- The quoted cast will be automatically embedded in your new post.
+
+Example quote action:
+{
+  "action_type": "send_farcaster_post",
+  "parameters": {
+    "content": "This is exactly what I was thinking about yesterday...",
+    "quoted_cast_hash": "0x8fea8a584a7a36a52ca53cf300c3f1504381aaa0"
+  },
+  "reasoning": "Adding my perspective to an interesting cast",
+  "priority": 7
+}"""        # Dynamic tool prompt part that gets updated by tool registry
         self.dynamic_tool_prompt_part = "No tools currently available."
 
         # Build the full system prompt

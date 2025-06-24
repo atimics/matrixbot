@@ -397,7 +397,6 @@ class MainOrchestrator:
             QuoteFarcasterPostTool,
             SendFarcasterDMTool,
             SendFarcasterPostTool,
-            SendFarcasterReplyTool,
             UnfollowFarcasterUserTool,
             DeleteFarcasterPostTool,
             DeleteFarcasterReactionTool,

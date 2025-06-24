@@ -415,7 +415,6 @@ class DependencyContainer:
             QuoteFarcasterPostTool,
             SendFarcasterDMTool,
             SendFarcasterPostTool,
-            SendFarcasterReplyTool,
             UnfollowFarcasterUserTool,
             DeleteFarcasterPostTool,
             DeleteFarcasterReactionTool,

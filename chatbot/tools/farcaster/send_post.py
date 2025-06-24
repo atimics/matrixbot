@@ -45,6 +45,10 @@ class SendFarcasterPostTool(ToolInterface):
                     "type": "string",
                     "description": "The hash of the cast to reply to. If provided, sends as a reply instead of a new post"
                 },
+                "quoted_cast_hash": {
+                    "type": "string",
+                    "description": "The hash of the cast to quote. When provided, this cast will be embedded in the new post."
+                },
                 "channel": {
                     "type": "string",
                     "description": "The Farcaster channel name to post in (if not provided, posts to user's timeline). Not used for replies."
@@ -73,6 +77,7 @@ class SendFarcasterPostTool(ToolInterface):
         # Extract and validate parameters
         content = params.get("content", "")
         reply_to_hash = params.get("reply_to_hash")  # Optional - if provided, sends as reply
+        quoted_cast_hash = params.get("quoted_cast_hash")  # Optional - if provided, embeds the quoted cast
         channel = params.get("channel")  # Optional
         embed_url = params.get("embed_url")  # Optional
 
@@ -184,6 +189,21 @@ class SendFarcasterPostTool(ToolInterface):
         if embed_url:
             embeds.append({"url": embed_url})
             logger.info(f"Adding embed to Farcaster post: {embed_url}")
+        
+        # Handle quote casting
+        if quoted_cast_hash:
+            # Fetch the author FID of the cast to be quoted
+            try:
+                cast_details_result = await farcaster_observer.get_cast_details(quoted_cast_hash)
+                if cast_details_result.get("cast"):
+                    quoted_author_fid = cast_details_result["cast"]["author"]["fid"]
+                    embeds.append({"cast_id": {"hash": quoted_cast_hash, "fid": quoted_author_fid}})
+                    logger.info(f"Adding quote embed for cast: {quoted_cast_hash}")
+                else:
+                    logger.warning(f"Could not get details for cast to be quoted: {quoted_cast_hash}. Proceeding without quote.")
+            except Exception as e:
+                logger.error(f"Error fetching details for quoted cast: {e}")
+                return create_error_response(f"Failed to fetch quoted cast details: {str(e)}")
 
         # For non-replies, check for duplicate posts with identical content
         if not reply_to_hash and (
