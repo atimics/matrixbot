@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from chatbot.tools.base import ActionContext
 from chatbot.tools.farcaster import SendFarcasterPostTool
-from chatbot.core.service_registry import ServiceRegistry
+from chatbot.core.services.registry import ServiceRegistry
 
 
 @pytest.mark.asyncio
@@ -66,8 +66,8 @@ async def test_farcaster_empty_content_with_image():
     assert result["status"] == "success", f"Expected success, got: {result}"
     
     # Verify that post_cast was called with non-empty content
-    context.farcaster_observer.post_cast.assert_called_once()
-    call_args = context.farcaster_observer.post_cast.call_args
+    mock_farcaster_observer.post_cast.assert_called_once()
+    call_args = mock_farcaster_observer.post_cast.call_args
     posted_content = call_args[1]["content"]
     
     print(f"Posted content: '{posted_content}'")
@@ -83,9 +83,15 @@ async def test_farcaster_empty_content_with_image():
 async def test_farcaster_no_content_no_media_fails():
     """Test that Farcaster posting fails when no content and no media."""
     
+    # Create mock Farcaster observer
+    mock_farcaster_observer = AsyncMock()
+    
+    # Create service registry and register the observer
+    service_registry = ServiceRegistry()
+    service_registry.register_service("farcaster_observer", mock_farcaster_observer)
+    
     # Create mock context
-    context = ActionContext()
-    context.farcaster_observer = AsyncMock()
+    context = ActionContext(service_registry=service_registry)
     
     # Create tool instance
     tool = SendFarcasterPostTool()
