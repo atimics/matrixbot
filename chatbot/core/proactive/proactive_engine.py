@@ -103,7 +103,10 @@ class ProactiveConversationEngine:
             opportunities.extend(self._detect_trending_opportunities(world_state_data))
             
             # 3. Identify user milestone opportunities
-            opportunities.extend(self._detect_user_milestone_opportunities(world_state_data))
+            try:
+                opportunities.extend(self._detect_user_milestone_opportunities(world_state_data))
+            except Exception as e:
+                logger.error(f"Error detecting user milestone opportunities: {e}", exc_info=True)
             
             # 4. Check for follow-up opportunities from previous conversations
             opportunities.extend(self._detect_follow_up_opportunities(world_state_data))
@@ -207,17 +210,18 @@ class ProactiveConversationEngine:
         current_time = time.time()
         
         # Check Farcaster user milestones
-        for fid, user_details in world_state_data.farcaster_users.items():
-            milestones = self._check_user_milestones(user_details, "farcaster")
-            for milestone in milestones:
-                opportunities.append(ConversationOpportunity(
-                    opportunity_id=f"user_milestone_{fid}_{milestone['type']}_{int(current_time)}",
-                    opportunity_type="user_milestone",
-                    priority=6,
-                    context={
-                        "user_id": fid,
-                        "username": getattr(user_details, 'username', f"fid:{fid}"),
-                        "milestone_type": milestone["type"],
+        try:
+            for fid, user_details in world_state_data.farcaster_users.items():
+                milestones = self._check_user_milestones(user_details, "farcaster")
+                for milestone in milestones:
+                    opportunities.append(ConversationOpportunity(
+                        opportunity_id=f"user_milestone_{fid}_{milestone['type']}_{int(current_time)}",
+                        opportunity_type="user_milestone",
+                        priority=6,
+                        context={
+                            "user_id": fid,
+                            "username": getattr(user_details, 'username', f"fid:{fid}"),
+                            "milestone_type": milestone["type"],
                         "milestone_data": milestone["data"],
                         "platform": "farcaster"
                     },
@@ -226,27 +230,32 @@ class ProactiveConversationEngine:
                     expires_at=current_time + 43200,  # 12 hours
                     reasoning=f"User {getattr(user_details, 'username', fid)} achieved milestone: {milestone['type']}"
                 ))
+        except Exception as e:
+            logger.error(f"Error detecting Farcaster user milestone opportunities: {e}", exc_info=True)
         
         # Check Matrix user milestones
-        for user_id, user_details in world_state_data.matrix_users.items():
-            milestones = self._check_user_milestones(user_details, "matrix")
-            for milestone in milestones:
-                opportunities.append(ConversationOpportunity(
-                    opportunity_id=f"user_milestone_{user_id}_{milestone['type']}_{int(current_time)}",
-                    opportunity_type="user_milestone",
-                    priority=6,
-                    context={
-                        "user_id": user_id,
-                        "display_name": getattr(user_details, 'display_name', user_id),
-                        "milestone_type": milestone["type"],
-                        "milestone_data": milestone["data"],
-                        "platform": "matrix"
-                    },
-                    platform="matrix",
-                    user_id=user_id,
-                    expires_at=current_time + 43200,  # 12 hours
-                    reasoning=f"User {getattr(user_details, 'display_name', user_id)} achieved milestone: {milestone['type']}"
-                ))
+        try:
+            for user_id, user_details in world_state_data.matrix_users.items():
+                milestones = self._check_user_milestones(user_details, "matrix")
+                for milestone in milestones:
+                    opportunities.append(ConversationOpportunity(
+                        opportunity_id=f"user_milestone_{user_id}_{milestone['type']}_{int(current_time)}",
+                        opportunity_type="user_milestone",
+                        priority=6,
+                        context={
+                            "user_id": user_id,
+                            "display_name": getattr(user_details, 'display_name', user_id),
+                            "milestone_type": milestone["type"],
+                            "milestone_data": milestone["data"],
+                            "platform": "matrix"
+                        },
+                        platform="matrix",
+                        user_id=user_id,
+                        expires_at=current_time + 43200,  # 12 hours
+                        reasoning=f"User {getattr(user_details, 'display_name', user_id)} achieved milestone: {milestone['type']}"
+                    ))
+        except Exception as e:
+            logger.error(f"Error detecting Matrix user milestone opportunities: {e}", exc_info=True)
         
         return opportunities
     
@@ -395,27 +404,34 @@ class ProactiveConversationEngine:
         """Check if a user has achieved any notable milestones."""
         milestones = []
         
-        # Example milestone checks (can be expanded based on platform capabilities)
-        if platform == "farcaster":
-            follower_count = getattr(user_details, 'follower_count', 0)
-            following_count = getattr(user_details, 'following_count', 0)
-            
-            # Follower milestone
-            if follower_count > 0 and follower_count % 100 == 0:  # Every 100 followers
-                milestones.append({
-                    "type": "follower_milestone",
-                    "data": {"followers": follower_count}
-                })
-            
-            # Recent activity milestone
-            last_interaction = getattr(getattr(user_details, 'sentiment', None), 'last_interaction_time', None)
-            if last_interaction and time.time() - last_interaction < 300:  # Active in last 5 minutes
-                message_count = getattr(getattr(user_details, 'sentiment', None), 'message_count', 0)
-                if message_count > 0 and message_count % 10 == 0:  # Every 10 messages
+        try:
+            # Example milestone checks (can be expanded based on platform capabilities)
+            if platform == "farcaster":
+                follower_count = getattr(user_details, 'follower_count', 0) or 0
+                following_count = getattr(user_details, 'following_count', 0) or 0
+                
+                # Debug logging for None values
+                if hasattr(user_details, 'follower_count') and user_details.follower_count is None:
+                    logger.debug(f"User {getattr(user_details, 'username', 'unknown')} has follower_count=None")
+                
+                # Follower milestone - ensure follower_count is not None
+                if follower_count and follower_count > 0 and follower_count % 100 == 0:  # Every 100 followers
                     milestones.append({
-                        "type": "activity_milestone",
-                        "data": {"message_count": message_count}
+                        "type": "follower_milestone",
+                        "data": {"followers": follower_count}
                     })
+                
+                # Recent activity milestone
+                last_interaction = getattr(getattr(user_details, 'sentiment', None), 'last_interaction_time', None)
+                if last_interaction and time.time() - last_interaction < 300:  # Active in last 5 minutes
+                    message_count = getattr(getattr(user_details, 'sentiment', None), 'message_count', 0) or 0
+                    if message_count and message_count > 0 and message_count % 10 == 0:  # Every 10 messages
+                        milestones.append({
+                            "type": "activity_milestone",
+                            "data": {"message_count": message_count}
+                        })
+        except Exception as e:
+            logger.error(f"Error checking user milestones for {getattr(user_details, 'username', 'unknown')}: {e}", exc_info=True)
         
         return milestones
     
