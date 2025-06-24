@@ -39,6 +39,7 @@ class ConversationOpportunity:
 
 
 @dataclass
+@dataclass
 class EngagementPlan:
     """Plan for engaging with a conversation opportunity."""
     plan_id: str
@@ -71,6 +72,7 @@ class ProactiveConversationEngine:
         self.active_opportunities: Dict[str, ConversationOpportunity] = {}
         self.opportunity_history: List[ConversationOpportunity] = []
         self.engagement_plans: Dict[str, EngagementPlan] = {}
+        self.scheduled_engagements: Dict[str, Dict[str, Any]] = {}  # For tracking scheduled items
         
         # Configuration
         self.max_active_opportunities = 10
@@ -699,7 +701,7 @@ class ProactiveConversationEngine:
         except Exception as e:
             logger.error(f"Error handling world state change: {e}", exc_info=True)
 
-    async def detect_opportunities(self, opportunity_types: List[str] = None, minimum_priority: float = 0.5) -> List[Dict[str, Any]]:
+    async def detect_opportunities(self, opportunity_types: Optional[List[str]] = None, minimum_priority: float = 0.5) -> List[Dict[str, Any]]:
         """Detect conversation opportunities based on current world state."""
         try:
             # Get current world state data
@@ -786,9 +788,9 @@ class ProactiveConversationEngine:
             # In a full implementation, this would integrate with a task scheduler
             logger.info(f"Scheduled engagement: {scheduled_engagement['opportunity_id']} for {scheduled_engagement['scheduled_time']}")
             
-            # Store in engagement plans for tracking
+            # Store in scheduled engagements for tracking
             plan_id = f"scheduled_{scheduled_engagement['opportunity_id']}"
-            self.engagement_plans[plan_id] = scheduled_engagement
+            self.scheduled_engagements[plan_id] = scheduled_engagement
             
             return True
             
@@ -825,7 +827,7 @@ class ProactiveConversationEngine:
             logger.error(f"Error getting engagement status: {e}", exc_info=True)
             return None
 
-    async def get_recent_engagements(self, since_time, status_filter: List[str] = None, include_metrics: bool = True) -> List[Dict[str, Any]]:
+    async def get_recent_engagements(self, since_time, status_filter: Optional[List[str]] = None, include_metrics: bool = True) -> List[Dict[str, Any]]:
         """Get recent engagements with optional filtering."""
         try:
             since_timestamp = since_time.timestamp() if hasattr(since_time, 'timestamp') else since_time
