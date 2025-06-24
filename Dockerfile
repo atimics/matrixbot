@@ -37,8 +37,6 @@ RUN poetry install --only=main --no-interaction --no-ansi --no-root && \
 # Copy source code AFTER dependencies are installed
 COPY chatbot/ ./chatbot/
 
-# Copy control panel from scripts to root for Docker service
-COPY control_panel.py ./control_panel.py
 
 # Production stage
 FROM python:3.11-slim-bookworm AS production
