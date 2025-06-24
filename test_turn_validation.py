@@ -30,7 +30,7 @@ def test_turn_validation():
     
     bot_message = Message(
         id="test_msg_2",
-        sender="ratichat",  # This should match the bot username in config
+        sender="@immanence",  # This should match the bot username in config
         content="Hello user!",
         timestamp=time.time() + 1,
         channel_id="test_channel", 
@@ -58,6 +58,11 @@ def test_turn_validation():
     # Check if it's bot's turn
     is_bot_turn = wsm.is_bot_turn_in_thread(thread_id)
     print(f"Is bot's turn after user message: {is_bot_turn}")
+    
+    # Check config settings
+    from chatbot.config import settings
+    print(f"Bot username from config: '{settings.farcaster.bot_username}'")
+    print(f"Bot FID from config: '{settings.farcaster.bot_fid}'")
     
     # Test 2: Add bot message - should NOT be bot's turn
     print("\n=== Test 2: Bot responds ===")
