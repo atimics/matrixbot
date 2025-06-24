@@ -406,7 +406,7 @@ class MainOrchestrator:
             CreateMintFrameTool,
             CreateAirdropClaimFrameTool,
         )
-        from ...tools.matrix_tools import (
+        from ...tools.matrix import (
             AcceptMatrixInviteTool,
             IgnoreMatrixInviteTool,
             JoinMatrixRoomTool,
@@ -414,7 +414,6 @@ class MainOrchestrator:
             ReactToMatrixMessageTool,
             SendMatrixImageTool,
             SendMatrixMessageTool,
-            SendMatrixReplyTool,
             SendMatrixVideoTool,
         )
         from ...tools.media_generation_tools import GenerateImageTool, GenerateVideoTool
@@ -911,7 +910,7 @@ class MainOrchestrator:
     async def _execute_matrix_action_directly(self, action) -> None:
         """Execute matrix actions directly for test compatibility."""
         try:
-            from ...tools.matrix_tools import SendMatrixReplyTool, SendMatrixMessageTool
+            from ...tools.matrix import SendMatrixMessageTool
             
             # Get matrix observer from integration manager
             active_integrations = self.integration_manager.get_active_integrations()
@@ -926,9 +925,8 @@ class MainOrchestrator:
             self.action_context.world_state_manager = self.world_state
             self.action_context.context_manager = self.context_manager
             
-            if action.action_type == "send_matrix_reply":
-                tool = SendMatrixReplyTool()
-            elif action.action_type == "send_matrix_message":
+            # Use unified SendMatrixMessageTool for both messages and replies
+            if action.action_type in ["send_matrix_reply", "send_matrix_message"]:
                 tool = SendMatrixMessageTool()
             else:
                 logger.error(f"Unknown matrix action type: {action.action_type}")

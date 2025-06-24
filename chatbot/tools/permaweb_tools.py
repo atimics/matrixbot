@@ -85,7 +85,7 @@ class StorePermanentMemoryTool(ToolInterface):
             return cooldown_check
 
         # Check if S3 service is configured
-        if not all([settings.S3_API_ENDPOINT, settings.S3_API_KEY, settings.CLOUDFRONT_DOMAIN]):
+        if not all([settings.s3_api_endpoint, settings.s3_api_key, settings.cloudfront_domain]):
             return {
                 "status": "error",
                 "message": "S3 service not configured",
@@ -93,9 +93,9 @@ class StorePermanentMemoryTool(ToolInterface):
 
         try:
             s3_client = S3Client(
-                s3_api_endpoint=settings.S3_API_ENDPOINT,
-                s3_api_key=settings.S3_API_KEY,
-                cloudfront_domain=settings.CLOUDFRONT_DOMAIN
+                s3_api_endpoint=settings.s3_api_endpoint,
+                s3_api_key=settings.s3_api_key,
+                cloudfront_domain=settings.cloudfront_domain,
             )
 
             # Prepare data for upload

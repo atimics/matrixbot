@@ -95,17 +95,17 @@ class TestMediaActionTracking:
 
         # Simulate settings required by GenerateImageTool
         with patch("chatbot.tools.media_generation_tools.settings") as mock_settings:
-            mock_settings.GOOGLE_API_KEY = "fake_google_key"
-            mock_settings.REPLICATE_API_TOKEN = None # To ensure Google path is tested first
+            mock_settings.google_api_key = "fake_google_key"
+            mock_settings.replicate_api_token = None # To ensure Google path is tested first
             # These are needed for arweave_service to be considered configured by the tool
-            mock_settings.ARWEAVE_UPLOADER_API_ENDPOINT = "http://mock-arweave-uploader.com"
-            mock_settings.ARWEAVE_UPLOADER_API_KEY = "mock_arweave_key"
-            mock_settings.ARWEAVE_GATEWAY_URL = "http://mock-arweave-gateway.com"
+            mock_settings.arweave_uploader_api_endpoint = "http://mock-arweave-uploader.com"
+            mock_settings.arweave_uploader_api_key = "mock_arweave_key"
+            mock_settings.arweave_gateway_url = "http://mock-arweave-gateway.com"
             # Settings for cooldowns (assuming they exist and are checked)
-            mock_settings.IMAGE_GENERATION_COOLDOWN_SECONDS = 0 
-            mock_settings.VIDEO_GENERATION_COOLDOWN_SECONDS = 0
+            mock_settings.image_generation_cooldown_seconds = 0 
+            mock_settings.video_generation_cooldown_seconds = 0
             # Setting for gallery auto-post (to avoid the gallery auto-post trying to execute)
-            mock_settings.MATRIX_MEDIA_GALLERY_ROOM_ID = None
+            mock_settings.matrix_media_gallery_room_id = None
 
 
             result = await generate_image_tool.execute({"prompt": "A beautiful landscape"}, mock_ctx)
@@ -153,7 +153,7 @@ class TestMediaActionTracking:
         # Mock settings
         with patch('chatbot.tools.describe_image_tool.settings') as mock_settings:
             mock_settings.openrouter_api_key = "test_key"
-            mock_settings.AI_MULTIMODAL_MODEL = "test_model"
+            mock_settings.ai_multimodal_model = "test_model"
             mock_settings.your_site_url = "http://test.com"
             mock_settings.your_site_name= "Test"
             
@@ -208,7 +208,7 @@ class TestMediaActionTracking:
         # Mock settings
         with patch('chatbot.tools.describe_image_tool.settings') as mock_settings:
             mock_settings.openrouter_api_key = "test_key"
-            mock_settings.AI_MULTIMODAL_MODEL = "test_model"
+            mock_settings.ai_multimodal_model = "test_model"
             mock_settings.your_site_url = "http://test.com"
             mock_settings.your_site_name= "Test"
             

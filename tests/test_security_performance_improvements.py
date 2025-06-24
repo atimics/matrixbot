@@ -15,8 +15,8 @@ class TestAPIKeyAuth:
     def test_api_key_validation_success(self):
         """Test successful API key validation."""
         with patch('chatbot.api_server.security.settings') as mock_settings:
-            mock_settings.API_SERVER_KEY = "test_key_123"
-            mock_settings.API_REQUIRE_AUTH = True
+            mock_settings.api_server_key = "test_key_123"
+            mock_settings.api_require_auth = True
             
             auth = APIKeyAuth()
             
@@ -30,8 +30,8 @@ class TestAPIKeyAuth:
     def test_api_key_validation_failure(self):
         """Test failed API key validation."""
         with patch('chatbot.config.settings') as mock_settings:
-            mock_settings.API_SERVER_KEY = "test_key_123"
-            mock_settings.API_REQUIRE_AUTH = True
+            mock_settings.api_server_key = "test_key_123"
+            mock_settings.api_require_auth = True
             
             auth = APIKeyAuth()
             
@@ -45,7 +45,7 @@ class TestAPIKeyAuth:
     def test_api_key_disabled_auth(self):
         """Test when authentication is disabled."""
         with patch('chatbot.config.settings') as mock_settings:
-            mock_settings.API_REQUIRE_AUTH = False
+            mock_settings.api_require_auth = False
             
             auth = APIKeyAuth()
             

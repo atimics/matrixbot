@@ -428,7 +428,7 @@ class DependencyContainer:
             SearchCastsTool,
             GetCastByUrlTool,
         )
-        from ..tools.matrix_tools import (
+        from ..tools.matrix import (
             AcceptMatrixInviteTool,
             IgnoreMatrixInviteTool,
             JoinMatrixRoomTool,
@@ -436,7 +436,6 @@ class DependencyContainer:
             ReactToMatrixMessageTool,
             SendMatrixImageTool,
             SendMatrixMessageTool,
-            SendMatrixReplyTool,
             SendMatrixVideoTool,
         )
         from ..tools.media_generation_tools import GenerateImageTool, GenerateVideoTool

@@ -633,7 +633,7 @@ class CreateMintFrameTool(ToolInterface):
             
             # Create frame URL - this would point to your frame server
             from chatbot.config import settings
-            base_url = settings.FRAMES_BASE_URL or "https://yourbot.com"
+            base_url = settings.frames_base_url or "https://yourbot.com"
             frame_url = f"{base_url}/frames/mint/{frame_id}?claim_type={claim_type}&max_mints={max_mints}"
             
             # Store frame metadata for the server to use

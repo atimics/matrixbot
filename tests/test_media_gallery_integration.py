@@ -149,8 +149,8 @@ class TestMediaGalleryIntegration:
                     mock_client_class.return_value = mock_client
                     
                     # Configure settings for Google AI
-                    original_google_key = settings.GOOGLE_API_KEY
-                    settings.GOOGLE_API_KEY = "test-key"
+                    original_google_key = settings.google_api_key
+                    settings.google_api_key = "test-key"
                     
                     try:
                         # Execute
@@ -174,7 +174,7 @@ class TestMediaGalleryIntegration:
                         )
                         
                     finally:
-                        settings.GOOGLE_API_KEY = original_google_key
+                        settings.google_api_key = original_google_key
                         
         finally:
             settings.matrix.media_gallery_room_id = original_gallery_id
@@ -219,7 +219,7 @@ class TestMediaGalleryIntegration:
                 mock_client.room_create.assert_called_once()
                 
                 # Verify the settings were updated
-                assert settings.MATRIX_MEDIA_GALLERY_ROOM_ID == "!new-gallery:example.com"
+                assert settings.matrix_media_gallery_room_id == "!new-gallery:example.com"
                 
         finally:
             settings.matrix.media_gallery_room_id = original_gallery_id
@@ -230,7 +230,7 @@ class TestMediaGalleryIntegration:
         assert hasattr(settings, 'MATRIX_MEDIA_GALLERY_ROOM_ID')
         
         # It should be Optional[str] and default to None
-        assert settings.MATRIX_MEDIA_GALLERY_ROOM_ID is None or isinstance(settings.MATRIX_MEDIA_GALLERY_ROOM_ID, str)
+        assert settings.matrix_media_gallery_room_id is None or isinstance(settings.matrix_media_gallery_room_id, str)
 
 
 def main():

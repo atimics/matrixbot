@@ -94,7 +94,7 @@ async def serve_mint_frame(
         button_text = "Check Eligibility" if claim_type == "gated" else "Mint NFT"
         
         # Construct action URL
-        action_url = f"{settings.FRAMES_BASE_URL or 'https://yourbot.com'}/frames/action/mint/{frame_id}"
+        action_url = f"{settings.frames_base_url or 'https://yourbot.com'}/frames/action/mint/{frame_id}"
         
         html_content = f"""
 <!DOCTYPE html>

@@ -39,8 +39,8 @@ class EcosystemTokenService:
         self.token_contract = settings.ecosystem_token_contract_address
         self.token_network = settings.ecosystem_token_network
         self.num_top_holders = settings.num_top_holders_to_track
-        self.cast_history_length = settings.HOLDER_CAST_HISTORY_LENGTH
-        self.update_interval = settings.TOP_HOLDERS_UPDATE_INTERVAL_MINUTES * 60
+        self.cast_history_length = settings.holder_cast_history_length
+        self.update_interval = settings.top_holders_update_interval_minutes * 60
         self._running = False
         self._task: Optional[asyncio.Task] = None
         

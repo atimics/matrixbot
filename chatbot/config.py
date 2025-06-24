@@ -336,12 +336,6 @@ class AppConfig(BaseSettings):
             
         return self
 
-    # Configuration migration complete - all modules should now use nested configuration
-    # Examples:
-    # - settings.matrix.password instead of settings.MATRIX_PASSWORD  
-    # - settings.processing.ai_model instead of settings.AI_MODEL
-    # - settings.farcaster.neynar_api_key instead of settings.NEYNAR_API_KEY
-
 
 # Global settings instance
 def create_settings() -> AppConfig:

@@ -591,7 +591,7 @@ class SetupDevelopmentWorkspaceTool(ToolInterface):
         if not target_repo_url or not task_id:
             return {"status": "failure", "message": "target_repo_url and task_id are required"}
 
-        if not settings.GITHUB_TOKEN or not settings.GITHUB_USERNAME:
+        if not settings.github_token or not settings.github_token:
             return {
                 "status": "failure",
                 "message": "GITHUB_TOKEN and GITHUB_USERNAME must be configured.",
@@ -629,7 +629,7 @@ class SetupDevelopmentWorkspaceTool(ToolInterface):
                 return {"status": "failure", "message": f"Failed to clone/pull repository {main_repo_full_name}"}
 
             # 3. Add fork as a remote with authentication
-            fork_auth_url = fork_clone_url.replace('https://', f'https://{settings.GITHUB_USERNAME}:{settings.GITHUB_TOKEN}@')
+            fork_auth_url = fork_clone_url.replace('https://', f'https://{settings.github_username}:{settings.github_token}@')
             await lg.add_remote("fork", fork_auth_url)
 
             # 4. Create and checkout a feature branch

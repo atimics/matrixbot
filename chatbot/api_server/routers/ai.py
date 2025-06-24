@@ -51,9 +51,9 @@ async def get_ai_models():
         return {
             "current": {
                 "main": settings.processing.ai_model,
-                "web_search": settings.WEB_SEARCH_MODEL,
-                "summary": settings.AI_SUMMARY_MODEL,
-                "multimodal": settings.AI_MULTIMODAL_MODEL
+                "web_search": settings.web_search_model,
+                "summary": settings.ai_summary_model,
+                "multimodal": settings.ai_multimodal_model,
             },
             "available": [
                 "openai/gpt-4o-mini",
