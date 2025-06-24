@@ -155,7 +155,7 @@ class TestMediaActionTracking:
             mock_settings.openrouter_api_key = "test_key"
             mock_settings.AI_MULTIMODAL_MODEL = "test_model"
             mock_settings.your_site_url = "http://test.com"
-            mock_settings.YOUR_SITE_NAME = "Test"
+            mock_settings.your_site_name= "Test"
             
             # Mock httpx response
             with patch('chatbot.tools.describe_image_tool.httpx.AsyncClient') as mock_client_class:
@@ -210,7 +210,7 @@ class TestMediaActionTracking:
             mock_settings.openrouter_api_key = "test_key"
             mock_settings.AI_MULTIMODAL_MODEL = "test_model"
             mock_settings.your_site_url = "http://test.com"
-            mock_settings.YOUR_SITE_NAME = "Test"
+            mock_settings.your_site_name= "Test"
             
             # Mock httpx response with inaccessible image (404 error)
             with patch('chatbot.tools.describe_image_tool.httpx.AsyncClient') as mock_client_class:

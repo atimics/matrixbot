@@ -284,27 +284,66 @@ class AdaptiveProcessor(Processor):
                 
                 # Look for channels with recent user activity but no bot responses
                 if len(channel.recent_messages) >= 2:
+                    # Get recent messages that are NOT from the bot
                     recent_user_messages = [
-                        msg for msg in channel.recent_messages[-5:] 
+                        msg for msg in channel.recent_messages[-10:] 
                         if not msg.is_from_bot()
                     ]
                     
-                    # If there are recent user messages without bot responses, consider delegation
-                    if len(recent_user_messages) >= 2:
+                    # Only proceed if there are actual user messages
+                    if len(recent_user_messages) >= 1:
                         latest_user_msg = recent_user_messages[-1]
                         
-                        # Simple heuristics for delegation
-                        if (
-                            "?" in latest_user_msg.content or  # Questions
-                            any(word in latest_user_msg.content.lower() for word in ["help", "how", "what", "explain"]) or  # Help requests
-                            len(latest_user_msg.content) < 200  # Short messages (likely conversational)
-                        ):
-                            delegation_opportunities.append({
-                                "channel_id": channel_id,
-                                "channel_name": channel.name,
-                                "user_messages": len(recent_user_messages),
-                                "latest_message": latest_user_msg.content[:100] + "..." if len(latest_user_msg.content) > 100 else latest_user_msg.content,
-                                "suggested_objective": f"Provide helpful responses and engage with users in {channel.name}"
+                        # Check if this message is actually recent (not older than 10 minutes)
+                        current_time = time.time()
+                        message_age_minutes = (current_time - latest_user_msg.timestamp) / 60
+                        
+                        if message_age_minutes > 10:  # Skip old messages
+                            continue
+                        
+                        # CRITICAL: Check if we've already responded to this specific message
+                        # Check both action history and message history for replies to this specific message
+                        already_responded = False
+                        
+                        # Check if we have a reply in our message history
+                        bot_messages_after_user = [
+                            msg for msg in channel.recent_messages
+                            if (msg.is_from_bot() and 
+                                msg.timestamp > latest_user_msg.timestamp and
+                                (msg.reply_to == latest_user_msg.id or 
+                                 msg.timestamp - latest_user_msg.timestamp < 300))  # 5 min window
+                        ]
+                        
+                        if bot_messages_after_user:
+                            already_responded = True
+                            logger.debug(f"Already responded to message {latest_user_msg.id} in {channel_id}")
+                        
+                        # Double-check using world state manager if available
+                        if (not already_responded and 
+                            self.world_state_manager and 
+                            hasattr(self.world_state_manager, 'has_bot_replied_to_matrix_event')):
+                            already_responded = self.world_state_manager.has_bot_replied_to_matrix_event(latest_user_msg.id)
+                        
+                        # Only create delegation opportunity if we haven't responded yet
+                        if not already_responded:
+                            # Simple heuristics for delegation
+                            if (
+                                "?" in latest_user_msg.content or  # Questions
+                                any(word in latest_user_msg.content.lower() for word in ["help", "how", "what", "explain"]) or  # Help requests
+                                len(latest_user_msg.content) < 200  # Short messages (likely conversational)
+                            ):
+                                delegation_opportunities.append({
+                                    "channel_id": channel_id,
+                                    "channel_name": channel.name,
+                                    "user_messages": len(recent_user_messages),
+                                    "latest_message": latest_user_msg.content[:100] + "..." if len(latest_user_msg.content) > 100 else latest_user_msg.content,
+                                    "latest_message_id": latest_user_msg.id,
+                                    "suggested_objective": f"Provide helpful responses and engage with users in {channel.name}",
+                                    "message_age_minutes": message_age_minutes
+                                })
+                        else:
+                            logger.debug(f"Skipping delegation for {channel_id} - already responded to latest message")
+                                "message_age_minutes": message_age_minutes
                             })
             
             logger.info(f"AdaptiveProcessor: Found {len(delegation_opportunities)} delegation opportunities")

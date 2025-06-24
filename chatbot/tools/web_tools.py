@@ -71,7 +71,7 @@ class WebSearchTool(ToolInterface):
                     headers={
                         "Authorization": f"Bearer {settings.openrouter_api_key}",
                         "HTTP-Referer": settings.your_site_url or "https://github.com/your-repo",
-                        "X-Title": settings.YOUR_SITE_NAME or "Chatbot Web Search",
+                        "X-Title": settings.your_site_nameor "Chatbot Web Search",
                     },
                     json={
                         "model": settings.WEB_SEARCH_MODEL,

@@ -181,7 +181,7 @@ class DescribeImageTool(ToolInterface):
             "Content-Type": "application/json",
             "HTTP-Referer": settings.your_site_url
             or "https://github.com/ratimics/chatbot",  # From config
-            "X-Title": settings.YOUR_SITE_NAME or "Ratimics Chatbot",  # From config
+            "X-Title": settings.your_site_nameor "Ratimics Chatbot",  # From config
         }
 
         try:
