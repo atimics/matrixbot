@@ -46,6 +46,10 @@ class PerformActionTool(ToolInterface):
         )
     
     @property
+    def access_level(self) -> str:
+        return 'conversational'  # Available to Sub-Agents and Commander
+
+    @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
             "type": "object",

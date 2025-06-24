@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 class WaitTool(ToolInterface):
     """
     Tool for waiting/observing without taking action.
+    Basic tool available to all agents.
     """
 
     @property
@@ -25,6 +26,10 @@ class WaitTool(ToolInterface):
     @property
     def description(self) -> str:
         return "Do nothing and wait until the next world update or observation cycle. Use this when no immediate action is needed or to see if new information becomes available."
+
+    @property
+    def access_level(self) -> str:
+        return 'core'  # Available to all agents
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
@@ -67,6 +72,7 @@ class SetMissionGoalTool(ToolInterface):
     
     This enables the AI to set persistent objectives that guide decision-making
     across multiple processing cycles, enabling complex task completion.
+    Strategic tool available only to Commander AI.
     """
 
     @property
@@ -76,6 +82,10 @@ class SetMissionGoalTool(ToolInterface):
     @property
     def description(self) -> str:
         return "Set a high-level mission or goal that will guide your actions across multiple cycles. Use this to establish persistent objectives for complex tasks that require sustained effort."
+
+    @property
+    def access_level(self) -> str:
+        return 'strategic'  # Only available to Commander AI
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:

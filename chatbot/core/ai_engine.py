@@ -613,21 +613,22 @@ Be thoughtful about when to act vs when to wait and observe. The `wait` tool mea
             f"{self.base_system_prompt}\n\n{self.dynamic_tool_prompt_part}"
         )
 
-    def update_system_prompt_with_tools(self, tool_registry):
+    def update_system_prompt_with_tools(self, tool_registry, access_level: str = 'strategic'):
         """
-        Update the system prompt with descriptions of available tools.
+        Update the system prompt with descriptions of available tools for the specified access level.
 
         Args:
             tool_registry: ToolRegistry instance containing available tools
+            access_level: Access level for tool filtering ('strategic' for Commander AI)
         """
         from ..tools.registry import (  # Import here to avoid circular imports
             ToolRegistry,
         )
 
-        self.dynamic_tool_prompt_part = tool_registry.get_tool_descriptions_for_ai()
+        self.dynamic_tool_prompt_part = tool_registry.get_tool_descriptions_for_ai(access_level)
         self._build_full_system_prompt()
         logger.info(
-            "AIDecisionEngine: System prompt updated with dynamic tool descriptions."
+            f"AIDecisionEngine: System prompt updated with tools for access level '{access_level}'."
         )
         logger.debug(f"Tool descriptions: {self.dynamic_tool_prompt_part}")
 

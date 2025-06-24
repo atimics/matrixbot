@@ -176,6 +176,10 @@ class ScratchpadWriteTool(ToolInterface):
         )
     
     @property
+    def access_level(self) -> str:
+        return 'strategic'
+    
+    @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
             "type": "object",
@@ -235,6 +239,10 @@ class ScratchpadAppendTool(ToolInterface):
             "Useful for adding progress updates, new insights, or additional "
             "steps to an existing plan without overwriting previous content."
         )
+    
+    @property
+    def access_level(self) -> str:
+        return 'strategic'
     
     @property
     def parameters_schema(self) -> Dict[str, Any]:
@@ -302,6 +310,10 @@ class ScratchpadReadTool(ToolInterface):
             "review previous analysis, check progress on tasks, or recall "
             "important insights from earlier processing cycles."
         )
+    
+    @property
+    def access_level(self) -> str:
+        return 'strategic'
     
     @property
     def parameters_schema(self) -> Dict[str, Any]:

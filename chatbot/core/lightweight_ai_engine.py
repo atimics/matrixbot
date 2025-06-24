@@ -29,20 +29,46 @@ class LightweightAIEngine:
     - Simple, goal-oriented tasks
     - Lower cost operation
     - Minimal context requirements
+    - Tool access limited to 'conversational' level
     """
     
-    def __init__(self, api_key: Optional[str] = None):
-        """Initialize with a lightweight model configuration."""
+    def __init__(self, api_key: Optional[str] = None, tool_registry=None):
+        """Initialize with a lightweight model configuration and access to conversational tools."""
         self.api_key = api_key or settings.openrouter_api_key
         self.base_url = "https://openrouter.ai/api/v1/chat/completions"
         self.model = settings.processing.lightweight_ai_model or "openai/gpt-4o-mini"
         self.max_tokens = settings.processing.lightweight_ai_max_tokens or 500
         self.temperature = settings.processing.lightweight_ai_temperature or 0.7
+        self.tool_registry = tool_registry
+        self.access_level = 'conversational'  # Sub-Agents have conversational access level
         
         if not self.api_key:
             logger.warning("LightweightAIEngine: No API key provided, AI functions will be limited")
         
-        logger.info(f"LightweightAIEngine initialized with model: {self.model}")
+        logger.info(f"LightweightAIEngine initialized with model: {self.model}, access level: {self.access_level}")
+    
+    def set_tool_registry(self, tool_registry):
+        """Set the tool registry for this engine."""
+        self.tool_registry = tool_registry
+        logger.info("LightweightAIEngine: Tool registry configured")
+    
+    def get_available_tools_description(self) -> str:
+        """Get descriptions of tools available to this engine's access level."""
+        if not self.tool_registry:
+            # Fallback descriptions for basic functionality
+            return """
+Available tools:
+- send_matrix_message: Send a message to a Matrix channel
+  Parameters:
+    - channel_id: string (Matrix room ID)
+    - content: string (message content)
+- send_farcaster_post: Post a message to Farcaster
+  Parameters:
+    - content: string (post content)
+    - parent_hash: string (optional, for replies)
+"""
+        
+        return self.tool_registry.get_tool_descriptions_for_ai(self.access_level)
     
     async def decide_mission_actions(
         self, 
@@ -91,65 +117,50 @@ class LightweightAIEngine:
         mission_id = mission_data.get("id", "unknown")
         channel_id = mission_data.get("channel_id", "unknown")
         
-        # Determine platform based on channel ID pattern
-        if channel_id.startswith("!") and ":" in channel_id:
-            # Matrix room ID pattern: !roomid:server.com
-            platform = "matrix"
-            send_tool = "send_matrix_message"
-        elif channel_id.startswith("fc_") or channel_id.isdigit():
-            # Farcaster channel pattern
-            platform = "farcaster"
-            send_tool = "send_farcaster_post"
-        else:
-            # Default to matrix
-            platform = "matrix"
-            send_tool = "send_matrix_message"
+        # Get available tools for this access level
+        tools_description = self.get_available_tools_description()
         
-        # Format recent messages for context
+        # Format recent messages
         message_context = ""
         if messages:
-            message_context = "\n".join([
-                f"[{msg.get('timestamp', 'unknown')}] {msg.get('author', 'User')}: {msg.get('content', '')}"
-                for msg in messages[-5:]  # Only last 5 messages
-            ])
-        else:
-            message_context = "No recent messages."
+            message_context = "Recent messages:\n"
+            for msg in messages[-5:]:  # Only show last 5 messages
+                sender = msg.get("sender", "unknown")
+                content = msg.get("content", "")[:200]  # Truncate long messages
+                message_context += f"- {sender}: {content}\n"
         
-        prompt = f"""You are a helpful AI assistant operating as a Sub-Agent for a specific mission.
+        prompt = f"""You are a focused AI assistant working on a specific mission.
 
-MISSION OBJECTIVE: {objective}
-MISSION ID: {mission_id}
-CHANNEL: {channel_id} (Platform: {platform})
+MISSION:
+ID: {mission_id}
+Objective: {objective}
+Channel: {channel_id}
 
-RECENT MESSAGES:
 {message_context}
 
-INSTRUCTIONS:
-1. Your primary goal is to fulfill the mission objective above
-2. Respond naturally and helpfully to user messages
-3. Stay focused on the mission scope - don't drift into unrelated topics
-4. If you complete the mission objective, indicate this clearly
-5. Keep responses concise and conversational
+Your role as a Sub-Agent:
+1. Focus ONLY on completing the mission objective
+2. Keep responses conversational and concise
+3. Use available tools to communicate or gather information
+4. Take simple, direct actions toward the mission goal
 
-AVAILABLE ACTIONS:
-- {send_tool}: Send a message to the {platform} channel
-- update_mission_status: Update mission progress or mark as complete
+{tools_description}
 
-Analyze the recent messages and decide what action to take. Respond with a JSON object containing your reasoning and selected actions.
+Analyze the recent messages and mission objective, then respond with a JSON containing your decision:
 
-Response format:
 {{
-    "reasoning": "Brief explanation of your decision",
+    "reasoning": "brief explanation of what you're doing",
     "actions": [
         {{
-            "action_type": "{send_tool}",
-            "parameters": {{
-                "channel_id": "{channel_id}",
-                "content": "Your message here"
-            }}
+            "action_type": "tool_name",
+            "parameters": {{"param": "value"}},
+            "reasoning": "why this action helps the mission",
+            "priority": 1-10
         }}
     ]
-}}"""
+}}
+
+Focus on simple, conversational actions that directly advance the mission. Avoid complex strategic planning."""
         
         return prompt
     
@@ -210,6 +221,8 @@ Response format:
             for action_data in actions_data:
                 action_type = action_data.get("action_type")
                 parameters = action_data.get("parameters", {})
+                action_reasoning = action_data.get("reasoning", reasoning)
+                priority = action_data.get("priority", 5)
                 
                 # Ensure channel_id is set for relevant actions
                 if action_type in ["send_matrix_message", "send_farcaster_post"] and "channel_id" not in parameters:
@@ -218,8 +231,8 @@ Response format:
                 action_plan = ActionPlan(
                     action_type=action_type,
                     parameters=parameters,
-                    priority=1,  # Sub-Agent actions are typically low priority
-                    reasoning=f"Mission Sub-Agent: {reasoning}"
+                    reasoning=action_reasoning,
+                    priority=priority
                 )
                 action_plans.append(action_plan)
             
@@ -227,7 +240,7 @@ Response format:
             
         except json.JSONDecodeError as e:
             logger.error(f"LightweightAI: Failed to parse JSON response: {e}")
-            logger.debug(f"LightweightAI: Raw response was: {response}")
+            logger.error(f"LightweightAI: Raw response: {response}")
             return []
         except Exception as e:
             logger.error(f"LightweightAI: Error parsing AI response: {e}")
@@ -238,6 +251,12 @@ Response format:
         return {
             "engine_type": "lightweight",
             "model": self.model,
+            "access_level": self.access_level,
+            "max_tokens": self.max_tokens,
+            "temperature": self.temperature,
+            "api_available": bool(self.api_key),
+            "tool_registry_available": bool(self.tool_registry)
+        }
             "max_tokens": self.max_tokens,
             "temperature": self.temperature,
             "api_key_available": self.api_key is not None

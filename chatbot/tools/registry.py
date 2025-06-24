@@ -64,12 +64,15 @@ class ToolRegistry:
         """
         return list(self._tools.keys())
 
-    def get_tool_descriptions_for_ai(self) -> str:
+    def get_tool_descriptions_for_ai(self, access_level: str = 'core') -> str:
         """
-        Generate a formatted string describing all enabled tools for AI prompts.
+        Generate a formatted string describing tools available for the specified access level.
+
+        Args:
+            access_level: Access level filter ('core', 'conversational', 'strategic', 'system')
 
         Returns:
-            Formatted string with tool descriptions and parameters
+            Formatted string with tool descriptions and parameters for the access level
         """
         if not self._tools:
             return "No tools currently available."
@@ -78,6 +81,11 @@ class ToolRegistry:
         for tool in self._tools.values():
             # Only include enabled tools
             if not self.is_tool_enabled(tool.name):
+                continue
+                
+            # Filter tools based on access level
+            tool_access_level = getattr(tool, 'access_level', 'core')
+            if not self._is_tool_accessible(tool_access_level, access_level):
                 continue
                 
             desc = f"- {tool.name}:\n"
@@ -94,13 +102,64 @@ class ToolRegistry:
             descriptions.append(desc)
 
         if not descriptions:
-            return "No enabled tools currently available."
+            return f"No enabled tools available for access level '{access_level}'."
 
-        return "\nAvailable tools:\n" + "\n".join(descriptions)
+        tool_count = len(descriptions)
+        return f"\nAvailable tools (access level: {access_level}, {tool_count} tools):\n" + "\n".join(descriptions)
+    
+    def _is_tool_accessible(self, tool_access_level: str, requested_access_level: str) -> bool:
+        """
+        Determine if a tool with a given access level is accessible to the requesting access level.
+        
+        Access level hierarchy:
+        - 'core': Available to all agents (basic functionality)
+        - 'conversational': Available to Sub-Agents and Commander (conversational tools)
+        - 'strategic': Available only to Commander (complex strategic tools)
+        - 'system': Available only to system-level processes (administrative tools)
+        
+        Args:
+            tool_access_level: The access level required by the tool
+            requested_access_level: The access level of the requesting agent
+            
+        Returns:
+            True if the tool is accessible, False otherwise
+        """
+        # Define access level hierarchy
+        access_hierarchy = {
+            'core': ['core', 'conversational', 'strategic', 'system'],
+            'conversational': ['conversational', 'strategic', 'system'],
+            'strategic': ['strategic', 'system'],
+            'system': ['system']
+        }
+        
+        # Tools are accessible if the requesting access level can access them
+        accessible_tools = access_hierarchy.get(tool_access_level, [])
+        return requested_access_level in accessible_tools
+    
+    def get_tools_for_access_level(self, access_level: str) -> List[ToolInterface]:
+        """
+        Get all tools accessible to the specified access level.
+        
+        Args:
+            access_level: Access level filter ('core', 'conversational', 'strategic', 'system')
+            
+        Returns:
+            List of tools accessible to the access level
+        """
+        accessible_tools = []
+        for tool in self._tools.values():
+            if not self.is_tool_enabled(tool.name):
+                continue
+                
+            tool_access_level = getattr(tool, 'access_level', 'core')
+            if self._is_tool_accessible(tool_access_level, access_level):
+                accessible_tools.append(tool)
+                
+        return accessible_tools
 
     def validate_tool_call(
-        self, tool_name: str, params: Dict[str, any]
-    ) -> Dict[str, any]:
+        self, tool_name: str, params: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Validate a tool call before execution.
 

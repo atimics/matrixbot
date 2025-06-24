@@ -1,7 +1,7 @@
 """
 Processing Hub - Commander/Sub-Agent Coordination Center
 
-Central hub for the new Commander/Sub-Agent architecture where the system:
+Central hub for the new Commander/Sub-        logger.info("ProcessingHub initialized with Commander/Sub-Agent architecture")architecture where the system:
 1. Routes channels with active missions to Sub-Agents (MissionProcessor)
 2. Routes complex analysis and delegation to the Commander AI (AdaptiveProcessor)
 3. Coordinates multiple concurrent processing streams
@@ -39,6 +39,13 @@ class ProcessingConfig:
     enable_sub_agent_processing: bool = True
     max_concurrent_missions: int = 10
     mission_timeout_hours: int = 24
+    
+    # Legacy compatibility settings (deprecated)
+    enable_node_based_processing: bool = True  # No longer used
+    force_traditional_fallback: bool = False  # No longer used  
+    max_traditional_payload_size: int = 80000  # No longer used
+    traditional_ai_model: str = "openai/gpt-4o-mini"  # No longer used
+    node_based_ai_model: str = "openai/gpt-4o-mini"  # No longer used
 
 
 class ProcessingHub:
@@ -89,7 +96,12 @@ class ProcessingHub:
         self.sub_agent_performance: Dict[str, Dict[str, Any]] = {}  # mission_id -> metrics
         
         # Processing metrics
-        self.processing_metrics: List[Dict[str, Any]] = []
+        self.payload_size_history: List[int] = []
+        
+        # Legacy compatibility tracking
+        self.traditional_processor = None  # Deprecated
+        self.node_processor = None  # Deprecated
+        self.current_processing_mode = "commander_sub_agent"  # New unified mode
         
         logger.info("ProcessingHub initialized with Commander/Sub-Agent architecture")
         
@@ -102,7 +114,7 @@ class ProcessingHub:
         """Set the lightweight AI engine for Sub-Agents."""
         self.lightweight_ai_engine = engine
         logger.info("Lightweight AI engine configured")
-
+        
     async def start_processing_loop(self) -> None:
         """Start the main processing event loop."""
         if self.running:
@@ -175,7 +187,7 @@ class ProcessingHub:
                     # Get active channels to determine primary focus
                     active_channels = self._get_active_channels(current_state)
 
-                    # Process using Commander/Sub-Agent strategy
+                    # Process using selected strategy
                     await self._process_world_state(active_channels)
 
                     # Update tracking
@@ -375,42 +387,116 @@ class ProcessingHub:
         try:
             start_time = time.time()
             
-            # Get channel data for this mission
-            channel_data = self.world_state.get_channel(channel_id)
-            if not channel_data:
-                logger.warning(f"Channel {channel_id} data not available for mission {mission_id}")
-                return
-                
-            # Process the mission
+            # Get mission-specific context
+            mission_context = self._get_mission_context(mission_id, channel_id)
+            
+            # Process with Sub-Agent
             result = await sub_agent.process_cycle(
                 cycle_id=f"mission_{mission_id}_{int(time.time())}",
                 primary_channel_id=channel_id,
-                context={"channel_data": channel_data}
+                context=mission_context
             )
             
             # Update performance metrics
             duration = time.time() - start_time
-            performance = self.sub_agent_performance.get(mission_id, {})
-            performance["tasks_completed"] = performance.get("tasks_completed", 0) + 1
-            performance["last_execution_duration"] = duration
+            self.sub_agent_performance[mission_id]["tasks_completed"] += 1
+            self.sub_agent_performance[mission_id]["last_duration"] = duration
             
-            if result.get("status") == "success":
-                logger.debug(f"Mission {mission_id} Sub-Agent completed task successfully")
-            else:
-                logger.warning(f"Mission {mission_id} Sub-Agent reported issues: {result.get('error', 'unknown')}")
-                performance["errors"] = performance.get("errors", 0) + 1
+            if result and len(result) > 0:
+                logger.info(f"Sub-Agent {mission_id} generated {len(result)} action plans")
                 
-            self.sub_agent_performance[mission_id] = performance
-            
         except Exception as e:
             logger.error(f"Error processing mission {mission_id}: {e}")
-            # Update error count
-            performance = self.sub_agent_performance.get(mission_id, {})
-            performance["errors"] = performance.get("errors", 0) + 1
-            self.sub_agent_performance[mission_id] = performance
+            if mission_id in self.sub_agent_performance:
+                self.sub_agent_performance[mission_id]["errors"] += 1
+
+    def _get_mission_context(self, mission_id: str, channel_id: str) -> Dict[str, Any]:
+        """Get lightweight context for mission processing."""
+        # Get mission data
+        world_state_data = self.world_state.get_state_data()
+        mission_data = world_state_data.missions.get(mission_id) if world_state_data.missions else None
+        
+        # Get channel data
+        channel_data = self.world_state.get_channel(channel_id)
+        
+        return {
+            "mission_id": mission_id,
+            "channel_id": channel_id,
+            "mission_data": mission_data.__dict__ if mission_data else None,
+            "channel_data": channel_data.__dict__ if channel_data else None,
+            "recent_messages": channel_data.recent_messages[-5:] if channel_data and channel_data.recent_messages else [],
+            "timestamp": time.time()
+        }
+
+    def _get_world_state_summary(self) -> Dict[str, Any]:
+        """Get high-level world state summary for strategic analysis."""
+        world_state_data = self.world_state.get_state_data()
+        
+        return {
+            "total_channels": len(world_state_data.channels),
+            "active_missions": len(world_state_data.missions) if world_state_data.missions else 0,
+            "recent_activity_count": sum(
+                len(channel.recent_messages) 
+                for channel in world_state_data.channels.values()
+            ),
+            "timestamp": time.time()
+        }
+
+    def _get_system_capacity_info(self) -> Dict[str, Any]:
+        """Get system capacity information for resource management."""
+        return {
+            "active_sub_agents": len(self.active_sub_agents),
+            "max_concurrent_missions": self.config.max_concurrent_missions,
+            "cycle_count": self.cycle_count,
+            "processing_mode": self.current_processing_mode
+        }
+
+    async def _cleanup_completed_missions(self) -> None:
+        """Clean up completed missions and their Sub-Agents."""
+        completed_missions = []
+        
+        for mission_id, sub_agent in self.active_sub_agents.items():
+            # Check if mission is completed
+            world_state_data = self.world_state.get_state_data()
+            mission_data = world_state_data.missions.get(mission_id) if world_state_data.missions else None
+            
+            if not mission_data or mission_data.status == "completed":
+                completed_missions.append(mission_id)
+                
+        # Clean up completed missions
+        for mission_id in completed_missions:
+            if mission_id in self.active_sub_agents:
+                del self.active_sub_agents[mission_id]
+            if mission_id in self.sub_agent_performance:
+                performance = self.sub_agent_performance.pop(mission_id)
+                logger.info(f"Cleaned up completed mission {mission_id} - completed {performance.get('tasks_completed', 0)} tasks")
+
+    async def _emergency_commander_processing(self, active_channels: List[str]) -> None:
+        """Emergency fallback processing using only the Commander AI."""
+        if not self.commander_processor:
+            logger.error("No Commander processor available for emergency processing")
+            return
+            
+        try:
+            emergency_context = {
+                "active_channels": active_channels,
+                "emergency_mode": True,
+                "world_state_summary": self._get_world_state_summary(),
+                "failed_sub_agents": list(self.active_sub_agents.keys())
+            }
+            
+            await self.commander_processor.process_cycle(
+                cycle_id=f"emergency_{int(time.time())}",
+                primary_channel_id=active_channels[0] if active_channels else None,
+                context=emergency_context
+            )
+            logger.info("Emergency Commander processing completed")
+            
+        except Exception as e:
+            logger.error(f"Emergency Commander processing failed: {e}")
 
     async def _detect_proactive_opportunities(self) -> None:
-        """Detect proactive engagement opportunities at the start of each cycle.""" 
+        """Detect proactive conversation opportunities and register them with the engine."""
         try:
             # Check if proactive engine is available via the dynamic attribute pattern
             if (hasattr(self.world_state, 'proactive_engine') and 
@@ -456,22 +542,113 @@ class ProcessingHub:
                 del self.active_sub_agents[mission_id]
             if mission_id in self.sub_agent_performance:
                 del self.sub_agent_performance[mission_id]
+        """
+        # Force traditional fallback if configured
+        if self.config.force_traditional_fallback:
+            return "traditional"
+        
+        # Use traditional if node processor is not available
+        if not self.config.enable_node_based_processing or not self.node_processor:
+            return "traditional"
+        
+        # Dynamic decision based on estimated payload size
+        try:
+            estimated_size = self.payload_builder.estimate_payload_size(
+                self.world_state.get_state_data()
+            )
+            
+            # Track payload size history
+            self.payload_size_history.append(estimated_size)
+            if len(self.payload_size_history) > 10:
+                self.payload_size_history.pop(0)
+            
+            # Use node-based if payload is likely to be too large
+            if estimated_size > self.config.max_traditional_payload_size:
+                logger.info(f"Switching to node-based processing (estimated size: {estimated_size} bytes)")
+                return "node_based"
+            
+            # Use traditional for smaller payloads
+            logger.debug(f"Using traditional processing (estimated size: {estimated_size} bytes)")
+            return "traditional"
+            
+        except Exception as e:
+            logger.error(f"Error estimating payload size: {e}")
+            # Default to traditional on estimation error
+            return "traditional"
 
-    async def _emergency_commander_processing(self, active_channels: List[str]) -> None:
-        """Emergency fallback: Commander-only processing for critical situations."""
-        if not self.commander_processor:
-            logger.error("Emergency processing failed: Commander processor not available")
+    async def _process_with_traditional_strategy(self, active_channels: List[str]) -> None:
+        """Process using the traditional full payload approach."""
+        self.current_processing_mode = "traditional"
+        
+        if not self.traditional_processor:
+            logger.error("Traditional processor not available")
             return
             
         try:
-            logger.warning("Executing emergency Commander-only processing")
-            await self.commander_processor.process_cycle(
-                cycle_id=f"emergency_{int(time.time())}",
-                primary_channel_id=active_channels[0] if active_channels else None,
-                context={"emergency_mode": True, "active_channels": active_channels}
+            # Determine primary channel
+            primary_channel_id = self._get_primary_channel(active_channels)
+            
+            # Build full payload with optimized configuration for smaller size
+            from ...config import settings
+            config = {
+                "optimize_for_size": True,
+                "include_detailed_user_info": settings.ai_include_detailed_user_info,
+                "max_messages_per_channel": settings.ai_conversation_history_length,
+                "max_action_history": settings.ai_action_history_length,
+                "max_thread_messages": settings.ai_thread_history_length,
+                "max_other_channels": settings.ai_other_channels_summary_count,
+                "message_snippet_length": settings.ai_other_channels_message_snippet_length,
+                "bot_fid": settings.farcaster.bot_fid,
+                "bot_username": settings.farcaster.bot_username,
+            }
+            
+            payload = self.payload_builder.build_full_payload(
+                world_state_data=self.world_state.get_state_data(),
+                primary_channel_id=primary_channel_id,
+                config=config
             )
+            
+            # Process with traditional approach
+            await self.traditional_processor.process_payload(payload, active_channels)
+            
+            logger.debug("Processed with traditional approach")
+            
         except Exception as e:
-            logger.error(f"Emergency processing failed: {e}")
+            logger.error(f"Error in traditional processing: {e}")
+            raise
+
+    async def _process_with_node_based_strategy(self, active_channels: List[str]) -> None:
+        """Process using the node-based interactive exploration approach."""
+        self.current_processing_mode = "node_based"
+        
+        if not self.node_processor:
+            logger.error("Node processor not available")
+            return
+            
+        try:
+            # Determine primary channel
+            primary_channel_id = self._get_primary_channel(active_channels)
+            
+            # Process with node-based approach
+            cycle_id = f"cycle_{self.cycle_count}"
+            result = await self.node_processor.process_cycle(
+                cycle_id=cycle_id,
+                primary_channel_id=primary_channel_id,
+                context={
+                    "active_channels": active_channels,
+                    "cycle_count": self.cycle_count,
+                    "processing_mode": "node_based"
+                }
+            )
+            
+            if result.get("actions_executed", 0) > 0:
+                logger.info(f"Node processor executed {result['actions_executed']} actions")
+            else:
+                logger.debug("Node processor found no actions to execute")
+                
+        except Exception as e:
+            logger.error(f"Error in node-based processing: {e}")
+            raise
 
     def _get_primary_channel(self, active_channels: List[str]) -> Optional[str]:
         """Get the primary (most recently active) channel."""
@@ -510,24 +687,6 @@ class ProcessingHub:
         
         return active_channels
 
-    def _get_world_state_summary(self) -> Dict[str, Any]:
-        """Get a summary of the current world state for strategic analysis."""
-        return {
-            "total_channels": len(self.world_state.get_state_data().channels),
-            "active_missions": len(self.active_sub_agents),
-            "system_uptime": time.time() - (self.last_cycle_time or time.time()),
-            "cycle_count": self.cycle_count
-        }
-        
-    def _get_system_capacity_info(self) -> Dict[str, Any]:
-        """Get information about current system capacity and performance."""
-        return {
-            "max_concurrent_missions": self.config.max_concurrent_missions,
-            "current_active_missions": len(self.active_sub_agents),
-            "mission_capacity_used": len(self.active_sub_agents) / self.config.max_concurrent_missions,
-            "recent_performance": self.processing_metrics[-5:] if self.processing_metrics else []
-        }
-
     def _hash_state(self, state_dict: Dict[str, Any]) -> str:
         """Generate a hash of the world state for change detection."""
         import hashlib
@@ -547,27 +706,19 @@ class ProcessingHub:
             logger.error(f"Error logging rate limit status: {e}")
 
     def get_processing_status(self) -> Dict[str, Any]:
-        """Get comprehensive processing status for the Commander/Sub-Agent architecture."""
+        """Get comprehensive processing status."""
         return {
             "running": self.running,
-            "processing_mode": "commander_sub_agent",
+            "current_mode": self.current_processing_mode,
             "cycle_count": self.cycle_count,
             "last_cycle_time": self.last_cycle_time,
-            "commander_available": self.commander_processor is not None,
-            "lightweight_ai_available": self.lightweight_ai_engine is not None,
-            "active_missions": len(self.active_sub_agents),
-            "mission_capacity_used": len(self.active_sub_agents) / self.config.max_concurrent_missions,
-            "sub_agent_performance": {
-                mission_id: {
-                    "tasks_completed": perf.get("tasks_completed", 0),
-                    "errors": perf.get("errors", 0),
-                    "uptime_hours": (time.time() - perf.get("created_at", time.time())) / 3600
-                } for mission_id, perf in self.sub_agent_performance.items()
-            },
+            "payload_size_history": self.payload_size_history[-5:],  # Last 5 estimates
+            "traditional_processor_available": self.traditional_processor is not None,
+            "node_processor_available": self.node_processor is not None,
             "config": {
-                "enable_sub_agent_processing": self.config.enable_sub_agent_processing,
-                "max_concurrent_missions": self.config.max_concurrent_missions,
-                "mission_timeout_hours": self.config.mission_timeout_hours,
+                "enable_node_based_processing": self.config.enable_node_based_processing,
+                "force_traditional_fallback": self.config.force_traditional_fallback,
+                "max_traditional_payload_size": self.config.max_traditional_payload_size,
                 "observation_interval": self.config.observation_interval,
             }
         }
@@ -576,3 +727,35 @@ class ProcessingHub:
         """Get current rate limiting status."""
         current_time = time.time()
         return self.rate_limiter.get_rate_limit_status(current_time)
+
+    async def force_processing_mode(self, mode: str) -> bool:
+        """
+        Force a specific processing mode.
+        
+        Args:
+            mode: "traditional" or "node_based"
+            
+        Returns:
+            bool: True if mode was set successfully
+        """
+        if mode not in ["traditional", "node_based"]:
+            logger.error(f"Invalid processing mode: {mode}")
+            return False
+        
+        if mode == "node_based" and not self.node_processor:
+            logger.error("Cannot force node-based mode: processor not available")
+            return False
+        
+        # Update configuration
+        if mode == "traditional":
+            self.config.force_traditional_fallback = True
+        else:
+            self.config.force_traditional_fallback = False
+        
+        logger.info(f"Forced processing mode to: {mode}")
+        return True
+
+    def reset_processing_mode(self):
+        """Reset to automatic processing mode selection."""
+        self.config.force_traditional_fallback = False
+        logger.info("Reset to automatic processing mode selection")
