@@ -183,6 +183,10 @@ class GenerateVideoTool(ToolInterface):
         )
 
     @property
+    def access_level(self) -> str:
+        return 'conversational'
+
+    @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
             "type": "object",

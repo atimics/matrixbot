@@ -27,6 +27,10 @@ class SendMatrixReplyTool(ToolInterface):
                 "Recently generated media (within 5 minutes) will be automatically attached as a separate image message if no explicit image_url is provided.")
 
     @property
+    def access_level(self) -> str:
+        return 'conversational'
+
+    @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
             "channel_id": "string (Matrix room ID) - The room where the reply should be sent",
@@ -296,6 +300,10 @@ class SendMatrixMessageTool(ToolInterface):
         return ("Send a message to a Matrix channel. Can be used for both new messages and replies. "
                 "If reply_to_id is provided, sends as a reply to that message. "
                 "Recently generated media (within 5 minutes) will be automatically attached as a separate image message if no explicit image_url is provided.")
+
+    @property
+    def access_level(self) -> str:
+        return 'conversational'
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
