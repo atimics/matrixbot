@@ -170,15 +170,6 @@ class WorldStateManager:
             return self.add_message(channel_id, message)
         # If called with (channel_id, message)
         return self.add_message(channel_id_or_dict, message)
-        # Thread management: group Farcaster messages by root cast
-        if message.channel_type == "farcaster":
-            thread_id = message.reply_to or message.id
-            self.state.threads.setdefault(thread_id, []).append(message)
-            logger.info(f"WorldStateManager: Added message to thread '{thread_id}'")
-
-        logger.info(
-            f"WorldState: New message in {channel.name}: {message.sender}: {message.content[:100]}..."
-        )
     
     def add_messages(self, messages: List[Message]) -> None:
         """Batch add multiple messages to the world state."""
@@ -969,9 +960,9 @@ class WorldStateManager:
             logger.warning(f"Turn validation failed: Thread '{thread_id}' does not exist.")
             return False
 
-        # Must be a real conversation, not a monologue
-        if len(thread.participants) <= 1 and thread.message_count < 2:
-            logger.debug(f"Turn validation failed: Thread '{thread_id}' is not a multi-participant conversation.")
+        # Must be a real conversation (allow bot to participate in any thread with activity)
+        if thread.message_count < 1:
+            logger.debug(f"Turn validation failed: Thread '{thread_id}' has no messages.")
             return False
 
         # Must have recent activity (within last 24 hours)
@@ -982,11 +973,12 @@ class WorldStateManager:
         # Import bot settings to get bot ID
         from ...config import settings
         
-        # Get bot ID based on platform
+        # Get bot ID based on platform - use consistent identifiers
         if thread.platform == 'matrix':
             bot_id = settings.matrix.user_id
         elif thread.platform == 'farcaster':
-            bot_id = str(settings.farcaster.bot_fid) if hasattr(settings.farcaster, 'bot_fid') else None
+            # For Farcaster, use username as the primary identifier
+            bot_id = settings.farcaster.bot_username
         else:
             logger.warning(f"Unknown platform for thread {thread_id}: {thread.platform}")
             return False
@@ -996,7 +988,7 @@ class WorldStateManager:
             return False
 
         # Core rule: Bot can only speak if it wasn't the last speaker
-        if thread.last_speaker_id == str(bot_id):
+        if thread.last_speaker_id == bot_id:
             logger.info(f"Turn validation failed: Bot was the last speaker in thread '{thread_id}'. Waiting for user response.")
             return False
         
@@ -1048,27 +1040,23 @@ class WorldStateManager:
         # CRITICAL: Update turn state with multi-user conversation handling
         from ...config import settings
         
-        # Determine bot ID for this platform
+        # Determine bot ID for this platform - use consistent identifiers
         if message.channel_type == 'matrix':
             bot_id = settings.matrix.user_id
         elif message.channel_type == 'farcaster':
-            # For Farcaster, we might use username or FID
-            bot_id = getattr(settings.farcaster, 'bot_fid', None)
-            if bot_id:
-                bot_id = str(bot_id)
-            else:
-                bot_id = getattr(settings.farcaster, 'username', None)
+            # For Farcaster, use username as the primary identifier
+            bot_id = settings.farcaster.bot_username
         else:
             bot_id = None
         
         # ENHANCEMENT: Handle "New Speaker" Turn Reset for multi-user conversations
-        if bot_id and message.sender != str(bot_id):
+        if bot_id and message.sender != bot_id:
             # A user spoke - check if this creates a new conversational turn
             
             # If bot was the last speaker and this is a different user than who spoke before bot's last message
-            if thread.last_speaker_id == str(bot_id) and len(thread.messages) >= 2:
+            if thread.last_speaker_id == bot_id and len(thread.messages) >= 2:
                 # Find the message before the bot's last message to see who was speaking then
-                bot_messages = [m for m in thread.messages if m.sender == str(bot_id)]
+                bot_messages = [m for m in thread.messages if m.sender == bot_id]
                 if bot_messages:
                     last_bot_message = bot_messages[-1]
                     # Find messages before the last bot message
@@ -1088,8 +1076,8 @@ class WorldStateManager:
             logger.debug(f"User {message.sender} spoke in thread {thread_id}, now bot's turn")
             
         # If the bot spoke, it's no longer the bot's turn
-        elif bot_id and message.sender == str(bot_id):
-            thread.last_speaker_id = str(bot_id)
+        elif bot_id and message.sender == bot_id:
+            thread.last_speaker_id = bot_id
             thread.bot_turn_timestamp = None
             logger.debug(f"Bot spoke in thread {thread_id}, waiting for user response")
     
