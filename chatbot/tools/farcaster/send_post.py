@@ -27,11 +27,12 @@ class SendFarcasterPostTool(ToolInterface):
 
     @property
     def description(self) -> str:
-        return ("Send a post (cast) to Farcaster. Can be used for both new posts and thread replies. "
-                "IMPORTANT: Replies are only allowed within established thread contexts - never reply directly to individual casts. "
-                "If reply_to_hash is provided, it must be part of an active thread conversation. "
-                "Use the 'embed_url' parameter to attach media or frames. "
-                "If no embed_url is provided, recently generated media (within 5 minutes) will be automatically attached.")
+        return ("Send a post (cast) to Farcaster using turn-based conversation logic. "
+                "CRITICAL: For replies, the bot can only respond when it's the bot's turn in the conversation. "
+                "The system automatically tracks whose turn it is to prevent spam and maintain natural conversation flow. "
+                "If reply_to_hash is provided, the system validates that it's the bot's turn before allowing the reply. "
+                "Use 'embed_url' parameter to attach media or frames. "
+                "Recently generated media (within 5 minutes) will be automatically attached if no embed_url is provided.")
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
@@ -89,96 +90,28 @@ class SendFarcasterPostTool(ToolInterface):
                 return create_error_response("Content is required for Farcaster replies")
 
             # CRITICAL: THREAD CONTEXT VALIDATION
-            # The bot should NEVER reply to individual casts outside of established thread contexts
+            # The bot should NEVER reply outside of active thread conversations
             # This prevents spam and ensures coherent conversation flow
             if not context.world_state_manager:
                 error_msg = "CRITICAL: Cannot validate thread context - world state manager not available. ABORTING reply."
                 logger.error(error_msg)
                 return create_error_response(error_msg)
             
-            # Check if this reply is happening within an established thread context
-            thread_id = f"farcaster:{reply_to_hash}"
-            is_active_thread = context.world_state_manager.is_thread_active(thread_id)
+            # Check if this is the bot's turn to speak in this thread
+            thread_id = reply_to_hash  # For Farcaster, the reply target becomes the thread ID
             
-            if not is_active_thread:
-                error_msg = f"THREAD CONTEXT VIOLATION: Bot attempted to reply to cast {reply_to_hash} outside of an established thread context. This is not allowed to prevent spam behavior."
+            if not context.world_state_manager.is_bot_turn_in_thread(thread_id):
+                error_msg = f"THREAD TURN VIOLATION: It is not the bot's turn to speak in thread {thread_id}. This prevents spam and maintains natural conversation flow."
                 logger.error(error_msg)
                 return {
                     "status": "blocked",
-                    "message": "Reply blocked: Not within active thread context",
-                    "reason": "thread_context_violation", 
+                    "message": "Reply blocked: Not the bot's turn in this conversation",
+                    "reason": "not_bot_turn", 
                     "reply_to_hash": reply_to_hash,
                     "timestamp": time.time()
                 }
                 
-            logger.info(f"Thread context validation PASSED: Reply to {reply_to_hash} is within active thread {thread_id}")
-                
-            # 1. INTERNAL STATE CHECK (Fast Path)
-            if context.world_state_manager.has_replied_to_cast(reply_to_hash):
-                error_msg = f"Internal state check failed: Already replied to cast {reply_to_hash}."
-                logger.warning(error_msg)
-                return {
-                    "status": "skipped", 
-                    "message": error_msg,
-                    "reason": "already_replied_internal",
-                    "reply_to_hash": reply_to_hash,
-                    "timestamp": time.time()
-                }
-
-            # 2. AUTHORITATIVE ON-CHAIN CHECK (Definitive Source of Truth)
-            # This is CRITICAL - we must verify against the live Farcaster data
-            if farcaster_observer and farcaster_observer.api_client:
-                bot_fid = farcaster_observer.bot_fid
-                if bot_fid:
-                    try:
-                        logger.info(f"CRITICAL: Performing authoritative duplicate check for cast {reply_to_hash} with bot FID {bot_fid}")
-                        conversation = await farcaster_observer.api_client.lookup_cast_conversation(reply_to_hash)
-                        
-                        if conversation and "result" in conversation and "conversation" in conversation["result"]:
-                            # Check direct replies to the target cast
-                            all_replies = conversation["result"]["conversation"].get("cast", {}).get("direct_replies", [])
-                            
-                            for reply in all_replies:
-                                if reply and "author" in reply and "fid" in reply["author"]:
-                                    if str(reply["author"]["fid"]) == str(bot_fid):
-                                        # DUPLICATE DETECTED - Bot has already replied on-chain
-                                        error_msg = f"AUTHORITATIVE CHECK FAILED: Bot (FID {bot_fid}) has already replied to cast {reply_to_hash} on-chain. Reply hash: {reply.get('hash', 'unknown')}"
-                                        logger.error(error_msg)
-                                        
-                                        # Correct internal state if there's a discrepancy
-                                        if context.world_state_manager:
-                                            context.world_state_manager.add_action_result(
-                                                action_type=self.name,
-                                                parameters={"content": "Correcting internal state", "reply_to_hash": reply_to_hash},
-                                                result="skipped_duplicate_on_chain",
-                                            )
-                                        
-                                        return {
-                                            "status": "skipped", 
-                                            "message": "DUPLICATE REPLY BLOCKED: Reply already exists in the Farcaster thread",
-                                            "reason": "already_replied_onchain",
-                                            "reply_to_hash": reply_to_hash,
-                                            "existing_reply_hash": reply.get("hash"),
-                                            "timestamp": time.time()
-                                        }
-                        
-                        logger.info(f"Authoritative check PASSED: No existing reply found for cast {reply_to_hash}")
-                        
-                    except Exception as e:
-                        # If the API check fails, we MUST NOT proceed - safer to fail than spam
-                        error_msg = f"CRITICAL: Authoritative duplicate check failed due to API error: {e}. ABORTING reply to prevent potential spam."
-                        logger.error(error_msg, exc_info=True)
-                        return create_error_response(error_msg)
-                else:
-                    # If we can't get bot_fid, we cannot do authoritative checking
-                    error_msg = "CRITICAL: Cannot perform authoritative duplicate check - bot_fid not available. ABORTING reply."
-                    logger.error(error_msg)
-                    return create_error_response(error_msg)
-            else:
-                # If we can't access the API client, we cannot do authoritative checking
-                error_msg = "CRITICAL: Cannot perform authoritative duplicate check - API client not available. ABORTING reply."
-                logger.error(error_msg)
-                return create_error_response(error_msg)
+            logger.info(f"Thread turn validation PASSED: Bot's turn to speak in thread {thread_id}")
 
         # For non-replies, validate content and embed requirements 
         elif not content and not embed_url:

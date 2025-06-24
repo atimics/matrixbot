@@ -315,6 +315,46 @@ class Channel:
 
 
 @dataclass
+class Thread:
+    """
+    Represents a conversation thread with turn-based state tracking.
+    
+    This is the fundamental unit for managing conversational flow and preventing
+    the bot from replying inappropriately. A thread tracks who spoke last and
+    whether it's the bot's turn to participate.
+    
+    Attributes:
+        thread_id: Unique thread identifier (typically the root message/cast ID)
+        platform: Platform type ('matrix' or 'farcaster')
+        messages: Chronologically ordered messages in this thread
+        participants: Set of user IDs who have participated
+        last_activity_timestamp: Timestamp of most recent message
+        message_count: Total number of messages in thread
+        last_speaker_id: ID of whoever spoke last (user or bot)
+        bot_turn_timestamp: When it became the bot's turn (None if not bot's turn)
+    """
+    thread_id: str
+    platform: str
+    messages: List[Message] = field(default_factory=list)
+    participants: set = field(default_factory=set)
+    last_activity_timestamp: float = field(default_factory=time.time)
+    message_count: int = 0
+    last_speaker_id: Optional[str] = None  # ID of last speaker (bot or user)
+    bot_turn_timestamp: Optional[float] = None  # When it became bot's turn
+    
+    def is_active(self, active_threshold_seconds: int = 86400) -> bool:
+        """Check if thread has recent activity and is a real conversation."""
+        is_recent = (time.time() - self.last_activity_timestamp) < active_threshold_seconds
+        is_conversation = self.message_count > 1 or len(self.participants) > 1
+        return is_recent and is_conversation
+    
+    def is_bot_turn(self, bot_id: str) -> bool:
+        """Check if it's the bot's turn to speak in this thread."""
+        # Bot can only speak if it wasn't the last one to speak
+        return self.last_speaker_id != str(bot_id)
+
+
+@dataclass
 class ActionHistory:
     """
     Represents a completed or scheduled action with comprehensive tracking.
@@ -831,10 +871,14 @@ class WorldStateData:
         self.channels: Dict[str, Channel] = {}
         self.action_history: List[ActionHistory] = []
         self.system_status: Dict[str, Any] = {}
-        self.threads: Dict[
-            str, List[Message]
-        ] = {}  # Map root cast id to thread messages
+        
+        # NEW: Thread-based conversation management with turn tracking
+        self.threads: Dict[str, Thread] = {}  # Map thread_id to Thread objects
+        
+        # DEPRECATED: Old thread tracking (kept for compatibility)
+        self.old_threads: Dict[str, List[Message]] = {}  # Map root cast id to thread messages
         self.thread_roots: Dict[str, Message] = {}  # Root message for each thread
+        
         self.seen_messages: set[str] = set()  # Deduplication of message IDs
 
         # Rate limiting and API management
@@ -956,10 +1000,34 @@ class WorldStateData:
         if len(ch.recent_messages) > 50:
             ch.recent_messages = ch.recent_messages[-50:]
         self.last_update = time.time()
-        # Thread management
-        if message.channel_type == "farcaster":
+        
+        # NEW Thread management with turn tracking
+        if message.channel_type in ["farcaster", "matrix"]:
             thread_id = message.reply_to or message.id
-            self.threads.setdefault(thread_id, []).append(message)
+            
+            # Create thread if it doesn't exist
+            if thread_id not in self.threads:
+                self.threads[thread_id] = Thread(
+                    thread_id=thread_id, 
+                    platform=message.channel_type
+                )
+            
+            thread = self.threads[thread_id]
+            
+            # Add message if not already present
+            if not any(m.id == message.id for m in thread.messages):
+                thread.messages.append(message)
+                thread.message_count += 1
+                thread.messages.sort(key=lambda m: m.timestamp)
+                if len(thread.messages) > 50:
+                    thread.messages = thread.messages[-50:]
+            
+            # Update thread state
+            thread.participants.add(message.sender)
+            thread.last_activity_timestamp = max(thread.last_activity_timestamp, message.timestamp)
+            
+            # DEPRECATED: Keep old thread structure for compatibility
+            self.old_threads.setdefault(thread_id, []).append(message)
 
     def get_recent_messages(self, channel_id: str, limit: int = 10) -> List[Message]:
         """Get up to `limit` most recent messages for a channel."""
@@ -1057,8 +1125,17 @@ class WorldStateData:
             "system_status": self.system_status,
             "last_update": self.last_update,
             "threads": {
-                thread_id: [asdict(msg) for msg in msgs]
-                for thread_id, msgs in self.threads.items()
+                thread_id: {
+                    "thread_id": thread.thread_id,
+                    "platform": thread.platform,
+                    "messages": [asdict(msg) for msg in thread.messages],
+                    "participants": list(thread.participants),
+                    "last_activity_timestamp": thread.last_activity_timestamp,
+                    "message_count": thread.message_count,
+                    "last_speaker_id": thread.last_speaker_id,
+                    "bot_turn_timestamp": thread.bot_turn_timestamp
+                }
+                for thread_id, thread in self.threads.items()
             },
             "rate_limits": self.rate_limits,
             "pending_invites": self.pending_matrix_invites,

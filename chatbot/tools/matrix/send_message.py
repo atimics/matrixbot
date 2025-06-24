@@ -38,8 +38,10 @@ class SendMatrixMessageTool(ToolInterface):
 
     @property
     def description(self) -> str:
-        return ("Send a message to a Matrix channel. Can be used for both new messages and replies. "
-                "If reply_to_id is provided, sends as a reply to that message. "
+        return ("Send a message to a Matrix channel using turn-based conversation logic. "
+                "CRITICAL: For replies, the bot can only respond when it's the bot's turn in the conversation. "
+                "The system automatically tracks whose turn it is to prevent feedback loops and maintain natural conversation flow. "
+                "If reply_to_id is provided, the system validates that it's the bot's turn before allowing the reply. "
                 "Recently generated media (within 5 minutes) will be automatically attached as a separate image message if no explicit image_url is provided.")
 
     @property
@@ -95,19 +97,24 @@ class SendMatrixMessageTool(ToolInterface):
         content = str(content)
         room_id = str(room_id)
 
-        # Deduplication check for replies: prevent replying to events we've already replied to
+        # Deduplication check for replies: prevent replying outside of turn-based conversations
         if reply_to_event_id and context.world_state_manager:
-            if context.world_state_manager.has_bot_replied_to_matrix_event(reply_to_event_id):
-                warning_msg = f"Bot has already replied to Matrix event {reply_to_event_id}, skipping to prevent feedback loop"
+            # Check if it's the bot's turn in this conversation thread
+            thread_id = reply_to_event_id  # For Matrix, the reply target becomes the thread ID
+            
+            if not context.world_state_manager.is_bot_turn_in_thread(thread_id):
+                warning_msg = f"Matrix reply blocked: Not the bot's turn in thread {thread_id}. Maintaining natural conversation flow."
                 logger.warning(warning_msg)
                 return {
-                    "status": "skipped",
+                    "status": "blocked",
                     "message": warning_msg,
                     "event_id": reply_to_event_id,
                     "room_id": room_id,
-                    "reason": "already_replied",
+                    "reason": "not_bot_turn",
                     "timestamp": time.time(),
                 }
+            
+            logger.info(f"Matrix thread turn validation PASSED: Bot's turn to speak in thread {thread_id}")
 
         # Auto-attachment: Check for recently generated media if no image_url provided
         if not image_url and context.world_state_manager:

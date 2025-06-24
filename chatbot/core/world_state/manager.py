@@ -19,6 +19,10 @@ moved to PayloadBuilder for better separation of concerns.
 
 import logging
 import time
+from typing import Any, Dict, List, Optional
+
+from ...config import settings
+import time
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -145,6 +149,9 @@ class WorldStateManager:
         if len(self.state.channels[channel_id].recent_messages) > 50:
             self.state.channels[channel_id].recent_messages = self.state.channels[channel_id].recent_messages[-50:]
         self.state.channels[channel_id].update_last_checked()
+        
+        # CRITICAL: Update thread state for turn-based conversation management
+        self._update_thread_on_new_message(message)
         
         # Notify AttentionEngine of new message (thread-centric architecture)
         if hasattr(self, 'attention_engine') and self.attention_engine:
@@ -277,10 +284,24 @@ class WorldStateManager:
             observation["channels"] = filtered_channels
         
         # Include thread context for AI to follow conversation threads
-        observation["threads"] = {
-            thread_id: [msg.__dict__ for msg in msgs]
-            for thread_id, msgs in self.state.threads.items()
-        }
+        observation["threads"] = {}
+        for thread_id, thread in self.state.threads.items():
+            # Get bot ID safely for this platform
+            if thread.platform == 'farcaster':
+                bot_id = str(getattr(settings.farcaster, 'bot_fid', '')) if hasattr(settings, 'farcaster') else ''
+            else:
+                bot_id = str(getattr(settings.matrix, 'user_id', '')) if hasattr(settings, 'matrix') else ''
+            
+            observation["threads"][thread_id] = {
+                "thread_id": thread.thread_id,
+                "platform": thread.platform,
+                "messages": [msg.__dict__ for msg in thread.messages],
+                "participants": list(thread.participants),
+                "last_activity_timestamp": thread.last_activity_timestamp,
+                "message_count": thread.message_count,
+                "last_speaker_id": thread.last_speaker_id,
+                "is_bot_turn": thread.is_bot_turn(bot_id) if bot_id else False
+            }
 
         # Increment observation cycle counter
         self.state.system_status["total_cycles"] += 1
@@ -922,50 +943,127 @@ class WorldStateManager:
 
     def is_thread_active(self, thread_id: str) -> bool:
         """
-        Check if a thread is currently active and valid for bot responses.
+        DEPRECATED: Use is_bot_turn_in_thread for proper turn-based validation.
         
-        A thread is considered active if:
-        1. It exists in our thread tracking
-        2. It has recent activity (within reasonable timeframe)
-        3. The bot is participating in the conversation context
+        This method is kept for compatibility but should be replaced with
+        the new turn-based conversation logic.
+        """
+        logger.warning("is_thread_active is deprecated. Use is_bot_turn_in_thread instead.")
+        return self.is_bot_turn_in_thread(thread_id)
+    
+    def is_bot_turn_in_thread(self, thread_id: str) -> bool:
+        """
+        Check if it's the bot's turn to speak in a thread.
+        
+        This is the core validation that prevents spam and inappropriate replies.
+        The bot can only act when it wasn't the last one to speak.
         
         Args:
             thread_id: The thread identifier to check
             
         Returns:
-            True if the thread is active and the bot should respond within it
+            True if the bot should participate in this thread
         """
-        # Check if thread exists in our active threads
-        if hasattr(self.state, 'active_threads') and thread_id in self.state.active_threads:
-            thread_info = self.state.active_threads[thread_id]
-            last_activity = thread_info.get('last_activity', 0)
+        thread = self.state.threads.get(thread_id)
+        if not thread:
+            logger.warning(f"Turn validation failed: Thread '{thread_id}' does not exist.")
+            return False
+
+        # Must be a real conversation, not a monologue
+        if len(thread.participants) <= 1 and thread.message_count < 2:
+            logger.debug(f"Turn validation failed: Thread '{thread_id}' is not a multi-participant conversation.")
+            return False
+
+        # Must have recent activity (within last 24 hours)
+        if not thread.is_active():
+            logger.debug(f"Turn validation failed: Thread '{thread_id}' is inactive.")
+            return False
+        
+        # Import bot settings to get bot ID
+        from ...config import settings
+        
+        # Get bot ID based on platform
+        if thread.platform == 'matrix':
+            bot_id = settings.matrix.user_id
+        elif thread.platform == 'farcaster':
+            bot_id = str(settings.farcaster.bot_fid) if hasattr(settings.farcaster, 'bot_fid') else None
+        else:
+            logger.warning(f"Unknown platform for thread {thread_id}: {thread.platform}")
+            return False
             
-            # Consider thread active if it has activity within the last 24 hours
-            current_time = time.time()
-            time_since_activity = current_time - last_activity
+        if not bot_id:
+            logger.warning(f"Bot ID not available for platform {thread.platform}")
+            return False
+
+        # Core rule: Bot can only speak if it wasn't the last speaker
+        if thread.last_speaker_id == str(bot_id):
+            logger.info(f"Turn validation failed: Bot was the last speaker in thread '{thread_id}'. Waiting for user response.")
+            return False
             
-            if time_since_activity <= 86400:  # 24 hours
-                logger.debug(f"Thread {thread_id} is active (last activity: {time_since_activity:.0f}s ago)")
-                return True
+        logger.info(f"Turn validation passed: It is the bot's turn in thread '{thread_id}'.")
+        return True
+
+    def _update_thread_on_new_message(self, message) -> None:
+        """
+        Update thread state when a new message arrives.
+        
+        This is critical for turn-based conversation management. It determines
+        whose turn it is to speak next in each conversation thread.
+        
+        Args:
+            message: The new message that was just added
+        """
+        if not message or message.channel_type not in ["farcaster", "matrix"]:
+            return
+            
+        thread_id = message.reply_to or message.id
+        
+        # Create thread if it doesn't exist
+        if thread_id not in self.state.threads:
+            from .structures import Thread
+            self.state.threads[thread_id] = Thread(
+                thread_id=thread_id,
+                platform=message.channel_type
+            )
+        
+        thread = self.state.threads[thread_id]
+        
+        # Add message if not already present
+        if not any(m.id == message.id for m in thread.messages):
+            thread.messages.append(message)
+            thread.message_count += 1
+            thread.messages.sort(key=lambda m: m.timestamp)
+            if len(thread.messages) > 50:
+                thread.messages = thread.messages[-50:]
+        
+        # Update thread participants and activity
+        thread.participants.add(message.sender)
+        thread.last_activity_timestamp = max(thread.last_activity_timestamp, message.timestamp)
+        
+        # CRITICAL: Update turn state
+        from ...config import settings
+        
+        # Determine bot ID for this platform
+        if message.channel_type == 'matrix':
+            bot_id = settings.matrix.user_id
+        elif message.channel_type == 'farcaster':
+            # For Farcaster, we might use username or FID
+            bot_id = getattr(settings.farcaster, 'bot_fid', None)
+            if bot_id:
+                bot_id = str(bot_id)
             else:
-                logger.debug(f"Thread {thread_id} is stale (last activity: {time_since_activity:.0f}s ago)")
-                return False
+                bot_id = getattr(settings.farcaster, 'username', None)
+        else:
+            bot_id = None
         
-        # Check if we have any recent actions related to this thread
-        # This covers cases where thread might not be in active_threads but we've interacted recently
-        for action in reversed(self.state.action_history[-50:]):  # Check last 50 actions
-            if action.action_type in ["send_farcaster_post", "search_casts"]:
-                params = action.parameters or {}
-                
-                # Check if this action was related to this thread
-                if (params.get("reply_to_hash") and f"farcaster:{params['reply_to_hash']}" == thread_id) or \
-                   (params.get("query") and thread_id in str(params.get("query", ""))):
-                    
-                    # If we found recent related activity, consider thread active
-                    action_age = time.time() - (action.timestamp or 0)
-                    if action_age <= 3600:  # 1 hour
-                        logger.debug(f"Thread {thread_id} considered active due to recent bot action")
-                        return True
+        # Update who spoke last
+        thread.last_speaker_id = message.sender
         
-        logger.debug(f"Thread {thread_id} is not active")
-        return False
+        # If a user spoke, it's now the bot's turn
+        if bot_id and message.sender != str(bot_id):
+            thread.bot_turn_timestamp = time.time()
+            logger.debug(f"User spoke in thread {thread_id}, now bot's turn")
+        # If the bot spoke, it's no longer the bot's turn
+        elif bot_id and message.sender == str(bot_id):
+            thread.bot_turn_timestamp = None
+            logger.debug(f"Bot spoke in thread {thread_id}, waiting for user response")
