@@ -10,11 +10,15 @@ if TYPE_CHECKING:
 
 class ActionContext:
     """
-    Provides context to tools during execution, including access to observers,
-    world state manager, and other shared resources.
+    Provides context to tools during execution through the ServiceRegistry abstraction.
     
-    NEW: ServiceRegistry provides clean abstraction layer for platform services.
-    Tools should prefer service_registry.get_messaging_service() over direct observer access.
+    This class enforces clean service abstraction by routing all platform interactions
+    through the ServiceRegistry. Tools should use:
+    - context.service_registry.get_messaging_service(platform) for messaging
+    - context.service_registry.get_storage_service(type) for storage
+    - context.service_registry.get_service(name) for other services
+    
+    Direct observer access has been removed to enforce proper abstraction.
     """
 
     def __init__(
@@ -22,7 +26,7 @@ class ActionContext:
         world_state_manager=None,
         context_manager=None,
         service_registry=None,
-        # Legacy direct access - deprecated, use service_registry instead
+        # Legacy parameters for backward compatibility during migration
         matrix_observer=None,
         farcaster_observer=None,
         arweave_client=None,
@@ -39,21 +43,12 @@ class ActionContext:
         # Node system access
         self.node_manager: Optional["NodeManager"] = None  # Will be set after node system initialization
         
-        # Legacy direct access (deprecated - use service_registry instead)
-        self.matrix_observer = matrix_observer
-        self.farcaster_observer = farcaster_observer
-        self.arweave_client = arweave_client
-        self.arweave_service = arweave_service
-        self.s3_service = s3_service
-        self.base_nft_service = base_nft_service
-        self.eligibility_service = eligibility_service
-        
         # Auto-populate service registry if not provided
         if not self.service_registry:
             from ..core.services import ServiceRegistry
             self.service_registry = ServiceRegistry()
             
-            # Register legacy services for compatibility
+            # Register legacy services for compatibility during migration
             if matrix_observer:
                 self.service_registry.register_service("matrix_observer", matrix_observer)
             if farcaster_observer:
@@ -62,6 +57,10 @@ class ActionContext:
                 self.service_registry.register_service("arweave_storage", arweave_service)
             if s3_service:
                 self.service_registry.register_service("s3_storage", s3_service)
+            if base_nft_service:
+                self.service_registry.register_service("base_nft_service", base_nft_service)
+            if eligibility_service:
+                self.service_registry.register_service("eligibility_service", eligibility_service)
 
 
 class ToolInterface(ABC):

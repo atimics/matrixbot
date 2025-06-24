@@ -44,13 +44,14 @@ class SendMatrixReplyTool(ToolInterface):
         self, params: Dict[str, Any], context: ActionContext
     ) -> Dict[str, Any]:
         """
-        Execute the Matrix reply action.
+        Execute the Matrix message action using ServiceRegistry.
         """
         logger.info(f"Executing tool '{self.name}' with params: {params}")
 
-        # Check if Matrix integration is available
-        if not context.matrix_observer:
-            error_msg = "Matrix integration (observer) not configured."
+        # Get Matrix messaging service from registry
+        matrix_service = context.service_registry.get_messaging_service("matrix")
+        if not matrix_service:
+            error_msg = "Matrix messaging service not available in ServiceRegistry."
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
