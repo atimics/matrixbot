@@ -107,9 +107,10 @@ class SendFarcasterPostTool(ToolInterface):
         """
         logger.info(f"Executing tool '{self.name}' with params: {params}")
 
-        # Check if Farcaster integration is available
-        if not context.farcaster_observer:
-            error_msg = "Farcaster integration (observer) not configured."
+        # Get Farcaster observer through ServiceRegistry
+        farcaster_observer = context.service_registry.get_service("farcaster_observer") if context.service_registry else None
+        if not farcaster_observer:
+            error_msg = "Farcaster integration (observer) not configured or ServiceRegistry not available."
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
@@ -139,12 +140,12 @@ class SendFarcasterPostTool(ToolInterface):
             # --- AUTHORITATIVE DUPLICATE CHECK ---
             # Check the actual Farcaster thread to see if we've already replied
             # This is the definitive source of truth and prevents duplicates even if internal state is lost
-            if context.farcaster_observer and context.farcaster_observer.api_client:
+            if farcaster_observer and farcaster_observer.api_client:
                 try:
-                    bot_fid = context.farcaster_observer.bot_fid
+                    bot_fid = farcaster_observer.bot_fid
                     if bot_fid:
                         logger.debug(f"Performing authoritative duplicate check for cast {reply_to_hash} with bot FID {bot_fid}")
-                        conversation = await context.farcaster_observer.api_client.lookup_cast_conversation(reply_to_hash)
+                        conversation = await farcaster_observer.api_client.lookup_cast_conversation(reply_to_hash)
                         
                         if conversation and "result" in conversation and "conversation" in conversation["result"]:
                             # Check both direct replies and nested conversation
@@ -239,9 +240,9 @@ class SendFarcasterPostTool(ToolInterface):
 
         # Choose appropriate queue based on whether this is a post or reply
         if reply_to_hash:
-            queue = getattr(context.farcaster_observer, "reply_queue", None)
+            queue = getattr(farcaster_observer, "reply_queue", None)
         else:
-            queue = getattr(context.farcaster_observer, "post_queue", None)
+            queue = getattr(farcaster_observer, "post_queue", None)
             
         if isinstance(queue, asyncio.Queue):
             try:
@@ -261,13 +262,13 @@ class SendFarcasterPostTool(ToolInterface):
 
                 # Schedule the appropriate action
                 if reply_to_hash:
-                    context.farcaster_observer.schedule_reply(
+                    farcaster_observer.schedule_reply(
                         content, reply_to_hash, action_id
                     )
                     success_msg = f"Scheduled Farcaster reply to cast {reply_to_hash}"
                 else:
                     # Note: The schedule_post method now handles embeds properly
-                    context.farcaster_observer.schedule_post(
+                    farcaster_observer.schedule_post(
                         content, channel, action_id, embeds
                     )
                     success_msg = "Scheduled Farcaster post via scheduler"
@@ -294,7 +295,7 @@ class SendFarcasterPostTool(ToolInterface):
         try:
             if reply_to_hash:
                 # Execute as reply
-                result = await context.farcaster_observer.reply_to_cast(
+                result = await farcaster_observer.reply_to_cast(
                     content, reply_to_hash
                 )
                 logger.info(f"Farcaster observer reply_to_cast returned: {result}")
@@ -303,7 +304,7 @@ class SendFarcasterPostTool(ToolInterface):
                 # Prepare embed URLs for the observer
                 embed_urls = [e['url'] for e in embeds if 'url' in e]
 
-                result = await context.farcaster_observer.post_cast(
+                result = await farcaster_observer.post_cast(
                     content=content,
                     channel=channel,
                     embed_urls=embed_urls if embed_urls else None
@@ -404,7 +405,7 @@ class SendFarcasterReplyTool(ToolInterface):
         logger.info(f"Executing tool '{self.name}' with params: {params}")
 
         # Check if Farcaster integration is available
-        if not context.farcaster_observer:
+        if not farcaster_observer:
             error_msg = "Farcaster integration (observer) not configured."
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
@@ -445,12 +446,12 @@ class SendFarcasterReplyTool(ToolInterface):
         # --- AUTHORITATIVE DUPLICATE CHECK ---
         # Check the actual Farcaster thread to see if we've already replied
         # This is the definitive source of truth and prevents duplicates even if internal state is lost
-        if context.farcaster_observer and context.farcaster_observer.api_client:
+        if farcaster_observer and farcaster_observer.api_client:
             try:
-                bot_fid = context.farcaster_observer.bot_fid
+                bot_fid = farcaster_observer.bot_fid
                 if bot_fid:
                     logger.debug(f"Performing authoritative duplicate check for cast {reply_to_hash} with bot FID {bot_fid}")
-                    conversation = await context.farcaster_observer.api_client.lookup_cast_conversation(reply_to_hash)
+                    conversation = await farcaster_observer.api_client.lookup_cast_conversation(reply_to_hash)
                     
                     if conversation and "result" in conversation and "conversation" in conversation["result"]:
                         # Check both direct replies and nested conversation
@@ -493,7 +494,7 @@ class SendFarcasterReplyTool(ToolInterface):
 
         import asyncio
 
-        reply_q = getattr(context.farcaster_observer, "reply_queue", None)
+        reply_q = getattr(farcaster_observer, "reply_queue", None)
         # If scheduling supported, enqueue
         if isinstance(reply_q, asyncio.Queue):
             try:
@@ -506,7 +507,7 @@ class SendFarcasterReplyTool(ToolInterface):
                         result="scheduled",
                     )
 
-                context.farcaster_observer.schedule_reply(
+                farcaster_observer.schedule_reply(
                     content, reply_to_hash, action_id
                 )
                 success_msg = f"Scheduled Farcaster reply to cast {reply_to_hash}"
@@ -529,7 +530,7 @@ class SendFarcasterReplyTool(ToolInterface):
                 }
         # Fallback immediate execution
         try:
-            result = await context.farcaster_observer.reply_to_cast(
+            result = await farcaster_observer.reply_to_cast(
                 content, reply_to_hash
             )
             logger.info(f"Farcaster observer reply_to_cast returned: {result}")
@@ -612,7 +613,7 @@ class LikeFarcasterPostTool(ToolInterface):
         logger.info(f"Executing tool '{self.name}' with params: {params}")
 
         # Check if Farcaster integration is available
-        if not context.farcaster_observer:
+        if not farcaster_observer:
             error_msg = "Farcaster integration (observer) not configured."
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
@@ -637,7 +638,7 @@ class LikeFarcasterPostTool(ToolInterface):
 
         try:
             # Use the observer's like_cast method
-            result = await context.farcaster_observer.like_cast(cast_hash)
+            result = await farcaster_observer.like_cast(cast_hash)
             logger.info(f"Farcaster observer like_cast returned: {result}")
 
             # Record this action in world state
@@ -732,7 +733,7 @@ class QuoteFarcasterPostTool(ToolInterface):
         logger.info(f"Executing tool '{self.name}' with params: {params}")
 
         # Check if Farcaster integration is available
-        if not context.farcaster_observer:
+        if not farcaster_observer:
             error_msg = "Farcaster integration (observer) not configured."
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
@@ -766,7 +767,7 @@ class QuoteFarcasterPostTool(ToolInterface):
 
         try:
             # First, get the details of the cast to be quoted to retrieve the author's FID
-            cast_details_result = await context.farcaster_observer.get_cast_details(quoted_cast_hash)
+            cast_details_result = await farcaster_observer.get_cast_details(quoted_cast_hash)
             if not cast_details_result.get("cast"):
                 error_msg = f"Could not retrieve details for cast to be quoted: {quoted_cast_hash}"
                 logger.error(error_msg)
@@ -779,7 +780,7 @@ class QuoteFarcasterPostTool(ToolInterface):
                 return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
             # Use the observer's quote_cast method
-            result = await context.farcaster_observer.quote_cast(
+            result = await farcaster_observer.quote_cast(
                 content, quoted_cast_hash, quoted_cast_author_fid, channel
             )
             logger.info(f"Farcaster observer quote_cast returned: {result}")
@@ -884,7 +885,7 @@ class FollowFarcasterUserTool(ToolInterface):
         self, params: Dict[str, Any], context: ActionContext
     ) -> Dict[str, Any]:
         logger.info(f"Executing tool '{self.name}' with params: {params}")
-        if not context.farcaster_observer:
+        if not farcaster_observer:
             err = "Farcaster integration not configured."
             logger.error(err)
             return {"status": "failure", "error": err, "timestamp": time.time()}
@@ -893,7 +894,7 @@ class FollowFarcasterUserTool(ToolInterface):
             err = "Missing required parameter: fid"
             logger.error(err)
             return {"status": "failure", "error": err, "timestamp": time.time()}
-        result = await context.farcaster_observer.follow_user(fid)
+        result = await farcaster_observer.follow_user(fid)
         if result.get("success"):
             return {"status": "success", "fid": fid, "timestamp": time.time()}
         return {
@@ -938,7 +939,7 @@ class DeleteFarcasterPostTool(ToolInterface):
         logger.info(f"Executing tool '{self.name}' with params: {params}")
 
         # Check if Farcaster integration is available
-        if not context.farcaster_observer:
+        if not farcaster_observer:
             error_msg = "Farcaster integration (observer) not configured."
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
@@ -953,7 +954,7 @@ class DeleteFarcasterPostTool(ToolInterface):
 
         try:
             # Use the observer's delete_cast method
-            result = await context.farcaster_observer.delete_cast(cast_hash)
+            result = await farcaster_observer.delete_cast(cast_hash)
             logger.info(f"Farcaster observer delete_cast returned: {result}")
 
             # Record this action in world state
@@ -1040,7 +1041,7 @@ class DeleteFarcasterReactionTool(ToolInterface):
         logger.info(f"Executing tool '{self.name}' with params: {params}")
 
         # Check if Farcaster integration is available
-        if not context.farcaster_observer:
+        if not farcaster_observer:
             error_msg = "Farcaster integration (observer) not configured."
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
@@ -1055,7 +1056,7 @@ class DeleteFarcasterReactionTool(ToolInterface):
 
         try:
             # Use the observer's delete_reaction method
-            result = await context.farcaster_observer.delete_reaction(cast_hash)
+            result = await farcaster_observer.delete_reaction(cast_hash)
             logger.info(f"Farcaster observer delete_reaction returned: {result}")
 
             # Record this action in world state
@@ -1137,7 +1138,7 @@ class UnfollowFarcasterUserTool(ToolInterface):
         self, params: Dict[str, Any], context: ActionContext
     ) -> Dict[str, Any]:
         logger.info(f"Executing tool '{self.name}' with params: {params}")
-        if not context.farcaster_observer:
+        if not farcaster_observer:
             err = "Farcaster integration not configured."
             logger.error(err)
             return {"status": "failure", "error": err, "timestamp": time.time()}
@@ -1146,7 +1147,7 @@ class UnfollowFarcasterUserTool(ToolInterface):
             err = "Missing required parameter: fid"
             logger.error(err)
             return {"status": "failure", "error": err, "timestamp": time.time()}
-        result = await context.farcaster_observer.unfollow_user(fid)
+        result = await farcaster_observer.unfollow_user(fid)
         if result.get("success"):
             return {"status": "success", "fid": fid, "timestamp": time.time()}
         return {
@@ -1237,7 +1238,7 @@ class GetUserTimelineTool(ToolInterface):
         logger.info(f"Executing tool '{self.name}' with params: {params}")
 
         # Check if Farcaster integration is available
-        if not context.farcaster_observer:
+        if not farcaster_observer:
             error_msg = "Farcaster integration (observer) not configured."
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
@@ -1259,7 +1260,7 @@ class GetUserTimelineTool(ToolInterface):
             limit = 10
 
         try:
-            result = await context.farcaster_observer.get_user_casts(
+            result = await farcaster_observer.get_user_casts(
                 user_identifier=user_identifier, limit=limit
             )
 
@@ -1359,7 +1360,7 @@ class CollectWorldStateTool(ToolInterface):
 
     async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
         """Execute world state collection."""
-        if not context.farcaster_observer:
+        if not farcaster_observer:
             return {
                 "status": "failure",
                 "error": "Farcaster observer not available",
@@ -1367,7 +1368,7 @@ class CollectWorldStateTool(ToolInterface):
             }
             
         try:
-            results = await context.farcaster_observer.collect_world_state_now()
+            results = await farcaster_observer.collect_world_state_now()
             
             if results.get("success"):
                 total = results.get("total_messages", 0)
@@ -1440,7 +1441,7 @@ class GetTrendingCastsTool(ToolInterface):
 
     async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
         """Execute the tool to get trending casts."""
-        if not context.farcaster_observer:
+        if not farcaster_observer:
             return {
                 "status": "failure",
                 "error": "Farcaster observer not available",
@@ -1451,19 +1452,19 @@ class GetTrendingCastsTool(ToolInterface):
             timeframe_hours = params.get("timeframe_hours", 24)
             limit = params.get("limit", 10)
             # Get trending casts using the observer (mocked in tests)
-            if hasattr(context.farcaster_observer, "get_trending_casts"):
-                result = await context.farcaster_observer.get_trending_casts(
+            if hasattr(farcaster_observer, "get_trending_casts"):
+                result = await farcaster_observer.get_trending_casts(
                     channel_id=channel_id, timeframe_hours=timeframe_hours, limit=limit
                 )
             else:
                 # Fallback to API client if method missing
-                if not context.farcaster_observer.api_client:
+                if not farcaster_observer.api_client:
                     return {
                         "status": "failure",
                         "error": "Farcaster API client not initialized",
                         "timestamp": time.time()
                     }
-                result = await context.farcaster_observer.api_client.get_trending_casts(
+                result = await farcaster_observer.api_client.get_trending_casts(
                     limit=limit, channel=channel_id
                 )
             if result.get("casts"):
@@ -1567,12 +1568,12 @@ class SearchCastsTool(ToolInterface):
         if not query:
             return {"status": "failure", "error": "Missing required parameter 'query'", "timestamp": time.time()}
             
-        if not context.farcaster_observer:
+        if not farcaster_observer:
             return {"status": "failure", "error": "Farcaster observer not available", "timestamp": time.time()}
             
         try:
             # Call the observer's search_casts method directly
-            result = await context.farcaster_observer.search_casts(
+            result = await farcaster_observer.search_casts(
                 query=query,
                 channel_id=channel_id,
                 limit=min(limit, 25)
@@ -1673,7 +1674,7 @@ class GetCastByUrlTool(ToolInterface):
 
     async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
         """Execute the tool to get cast details."""
-        if not context.farcaster_observer:
+        if not farcaster_observer:
             return {
                 "status": "failure",
                 "error": "Farcaster observer not available",
@@ -1691,7 +1692,7 @@ class GetCastByUrlTool(ToolInterface):
             
         try:
             # Call the observer's get_cast_by_url method directly
-            result = await context.farcaster_observer.get_cast_by_url(
+            result = await farcaster_observer.get_cast_by_url(
                 farcaster_url=farcaster_url
             )
             
@@ -1782,7 +1783,7 @@ class DeleteFarcasterPostTool(ToolInterface):
         logger.info(f"Executing tool '{self.name}' with params: {params}")
 
         # Check if Farcaster integration is available
-        if not context.farcaster_observer:
+        if not farcaster_observer:
             error_msg = "Farcaster integration (observer) not configured."
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
@@ -1797,7 +1798,7 @@ class DeleteFarcasterPostTool(ToolInterface):
 
         try:
             # Use the observer's delete_cast method
-            result = await context.farcaster_observer.delete_cast(cast_hash)
+            result = await farcaster_observer.delete_cast(cast_hash)
             logger.info(f"Farcaster observer delete_cast returned: {result}")
 
             # Record this action in world state
@@ -1884,7 +1885,7 @@ class DeleteFarcasterReactionTool(ToolInterface):
         logger.info(f"Executing tool '{self.name}' with params: {params}")
 
         # Check if Farcaster integration is available
-        if not context.farcaster_observer:
+        if not farcaster_observer:
             error_msg = "Farcaster integration (observer) not configured."
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
@@ -1899,7 +1900,7 @@ class DeleteFarcasterReactionTool(ToolInterface):
 
         try:
             # Use the observer's delete_reaction method
-            result = await context.farcaster_observer.delete_reaction(cast_hash)
+            result = await farcaster_observer.delete_reaction(cast_hash)
             logger.info(f"Farcaster observer delete_reaction returned: {result}")
 
             # Record this action in world state

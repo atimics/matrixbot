@@ -35,7 +35,7 @@ from ..world_state.payload_builder import PayloadBuilder
 from .processing_hub import ProcessingHub, ProcessingConfig
 from .rate_limiter import RateLimiter, RateLimitConfig
 from ..proactive import ProactiveConversationEngine
-from ..integrations.matrix.health_monitor import MatrixHealthMonitor
+from ...integrations.matrix.health_monitor import MatrixHealthMonitor
 
 logger = logging.getLogger(__name__)
 
