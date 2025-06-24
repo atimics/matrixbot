@@ -713,6 +713,15 @@ class MainOrchestrator:
         self.action_context.matrix_observer = self.matrix_observer
         self.action_context.farcaster_observer = self.farcaster_observer
         
+        # CRITICAL: Register observers with ServiceRegistry during initial setup
+        if self.matrix_observer and self.action_context and self.action_context.service_registry:
+            self.action_context.service_registry.register_service("matrix_observer", self.matrix_observer)
+            logger.info(f"✓ Matrix observer registered with ServiceRegistry during initialization")
+        
+        if self.farcaster_observer and self.action_context and self.action_context.service_registry:
+            self.action_context.service_registry.register_service("farcaster_observer", self.farcaster_observer)
+            logger.info(f"✓ Farcaster observer registered with ServiceRegistry during initialization")
+        
         # Configure critical node pinning based on active integrations
         self._configure_critical_node_pinning()
 
@@ -731,9 +740,29 @@ class MainOrchestrator:
             elif hasattr(integration, 'integration_type') and integration.integration_type == 'farcaster':
                 farcaster_integration = integration
         
-        # Update action context and maintain legacy properties
-        self.action_context.matrix_observer = matrix_integration or self.matrix_observer
-        self.action_context.farcaster_observer = farcaster_integration or self.farcaster_observer
+        # Determine which observers to use
+        matrix_observer = matrix_integration or self.matrix_observer
+        farcaster_observer = farcaster_integration or self.farcaster_observer
+        
+        # CRITICAL: Register observers with ServiceRegistry for service abstraction
+        if matrix_observer and self.action_context and self.action_context.service_registry:
+            self.action_context.service_registry.register_service("matrix_observer", matrix_observer)
+            logger.info(f"✓ Matrix observer registered with ServiceRegistry")
+        
+        if farcaster_observer and self.action_context and self.action_context.service_registry:
+            self.action_context.service_registry.register_service("farcaster_observer", farcaster_observer)
+            logger.info(f"✓ Farcaster observer registered with ServiceRegistry")
+        
+        # Also register storage services if available
+        if (self.action_context and self.action_context.service_registry and 
+            hasattr(self.action_context, 'arweave_service') and self.action_context.arweave_service):
+            self.action_context.service_registry.register_service("arweave_storage", self.action_context.arweave_service)
+            logger.debug("Arweave service registered with ServiceRegistry")
+        
+        if (self.action_context and self.action_context.service_registry and
+            hasattr(self.action_context, 's3_service') and self.action_context.s3_service):
+            self.action_context.service_registry.register_service("s3_storage", self.action_context.s3_service)
+            logger.debug("S3 service registered with ServiceRegistry")
         
         # Debug logging to track which observer is being used
         if farcaster_integration:
