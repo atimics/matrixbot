@@ -37,7 +37,7 @@ class EcosystemTokenService:
         self.neynar_api_client = neynar_api_client
         self.world_state_manager = world_state_manager
         self.token_contract = settings.ecosystem_token_contract_address
-        self.token_network = settings.ECOSYSTEM_TOKEN_NETWORK
+        self.token_network = settings.ecosystem_token_network
         self.num_top_holders = settings.NUM_TOP_HOLDERS_TO_TRACK
         self.cast_history_length = settings.HOLDER_CAST_HISTORY_LENGTH
         self.update_interval = settings.TOP_HOLDERS_UPDATE_INTERVAL_MINUTES * 60
