@@ -342,7 +342,7 @@ class TestMainOrchestratorCriticalPinning(unittest.TestCase):
     @patch('chatbot.config.settings')
     def test_configure_critical_pinning_matrix_only(self, mock_settings):
         """Test critical pinning configuration with Matrix only."""
-        mock_settings.MATRIX_ROOM_ID = "!test:matrix.org"
+        mock_matrix = Mock(); mock_matrix.room_id = "!test:matrix.org"; mock_settings.matrix = mock_matrix
         
         # Create orchestrator with config
         orchestrator = MainOrchestrator(self.config)
@@ -397,7 +397,7 @@ class TestMainOrchestratorCriticalPinning(unittest.TestCase):
     @patch('chatbot.config.settings')
     def test_configure_critical_pinning_both_platforms(self, mock_settings):
         """Test critical pinning configuration with both platforms."""
-        mock_settings.MATRIX_ROOM_ID = "!test:matrix.org"
+        mock_matrix = Mock(); mock_matrix.room_id = "!test:matrix.org"; mock_settings.matrix = mock_matrix
         
         orchestrator = MainOrchestrator(self.config)
         
