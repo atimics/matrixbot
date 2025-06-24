@@ -146,7 +146,7 @@ class ToolInterface(ABC):
         """
         A schema describing the parameters the tool accepts.
         Format: {"parameter_name": "type and description"}
-        Example: {"channel_id": "string (Matrix room ID)", "content": "string"}
+        Example: {"channel_id": "string - The unique identifier of the target channel", "content": "string - The message content"}
         """
         pass
     
