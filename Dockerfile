@@ -36,8 +36,6 @@ RUN poetry install --only=main --no-interaction --no-ansi --no-root && \
 
 # Copy source code AFTER dependencies are installed
 COPY chatbot/ ./chatbot/
-COPY scripts/ ./scripts/
-COPY README.md ./
 
 # Copy control panel from scripts to root for Docker service
 COPY control_panel.py ./control_panel.py
@@ -66,9 +64,6 @@ COPY --from=builder /app/.venv /app/.venv
 
 # Copy application code
 COPY --from=builder /app/chatbot /app/chatbot
-COPY --from=builder /app/scripts /app/scripts
-COPY --from=builder /app/control_panel.py /app/control_panel.py
-COPY --from=builder /app/README.md /app/README.md
 COPY --from=builder /app/pyproject.toml /app/pyproject.toml
 
 # Add Poetry venv to PATH
