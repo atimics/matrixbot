@@ -32,15 +32,9 @@ async def main() -> None:
 
     logger.info("Starting chatbot application...")
 
-    # Load configuration with node-based processing
+    # Load configuration
     config = OrchestratorConfig(
         db_path=settings.chatbot_db_path,
-        processing_config=ProcessingConfig(
-            enable_node_based_processing=True,  # Advanced node-based mode
-            observation_interval=settings.processing.observation_interval,
-            max_cycles_per_hour=settings.processing.max_cycles_per_hour,
-            traditional_ai_model=settings.processing.ai_model,
-        ),
         ai_model=settings.processing.ai_model,
     )
 

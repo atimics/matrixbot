@@ -876,7 +876,7 @@ class MainOrchestrator:
                 "integrations": integrations,
                 "config": {
                     "ai_model": self.config.ai_model,
-                    "processing_mode": "node_based" if self.config.processing_config.enable_node_based_processing else "traditional",
+                    "processing_mode": "sub_agent" if self.config.processing_config.enable_sub_agent_processing else "traditional",
                     "observation_interval": self.config.processing_config.observation_interval,
                     "max_cycles_per_hour": self.config.processing_config.max_cycles_per_hour
                 }
@@ -896,7 +896,7 @@ class MainOrchestrator:
             enable_node_based: True to force node-based processing, False for traditional
         """
         self.processing_hub.force_processing_mode(enable_node_based)
-        self.config.processing_config.enable_node_based_processing = enable_node_based
+        self.config.processing_config.enable_sub_agent_processing = enable_node_based
         logger.info(f"Processing mode forced to {'node-based' if enable_node_based else 'traditional'}")
 
     def reset_processing_mode(self) -> None:

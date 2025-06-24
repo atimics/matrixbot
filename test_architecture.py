@@ -46,12 +46,6 @@ async def test_architecture():
         # Create orchestrator config
         config = OrchestratorConfig(
             db_path=db_path,
-            processing_config=ProcessingConfig(
-                enable_node_based_processing=True,
-                observation_interval=30,
-                max_cycles_per_hour=120,
-                traditional_ai_model='anthropic/claude-sonnet-4',
-            ),
             ai_model='anthropic/claude-sonnet-4',
         )
         logger.info("✓ Created OrchestratorConfig")

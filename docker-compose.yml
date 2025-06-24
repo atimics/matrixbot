@@ -33,8 +33,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      arweave-service:
-        condition: service_healthy
     networks:
       - ratichat_network
     env_file:
@@ -43,35 +41,12 @@ services:
       # Additional runtime environment
       - PYTHONUNBUFFERED=1
       - RATICHAT_DB_PATH=/app/data/ratichat.db
-      - ARWEAVE_INTERNAL_UPLOADER_SERVICE_URL=http://arweave-service:8001
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
-
-  arweave-service:
-    build:
-      context: ./arweave-service
-      dockerfile: Dockerfile
-    container_name: arweave_service
-    ports:
-      - "8001:8001"  # Expose for testing and direct access
-    environment:
-      - ARWEAVE_WALLET_PATH=/data/arweave_wallet.json
-      - PYTHONUNBUFFERED=1
-    volumes:
-      # Mount the wallet file directly from host data directory
-      - ./data/arweave_wallet.json:/data/arweave_wallet.json:ro
-    networks:
-      - ratichat_network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health')\" || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
   ratichat_ui:
     build:

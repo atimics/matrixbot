@@ -52,7 +52,7 @@ async def get_world_state(orchestrator: MainOrchestrator = Depends(get_orchestra
         return {
             "traditional_state": state_dict,
             "node_state": node_info,
-            "processing_mode": "node_based" if orchestrator.config.processing_config.enable_node_based_processing else "traditional",
+            "processing_mode": "sub_agent" if orchestrator.config.processing_config.enable_sub_agent_processing else "traditional",
             "timestamp": datetime.now().isoformat()
         }
     except Exception as e:

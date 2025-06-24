@@ -95,6 +95,9 @@ class DependencyContainer:
             self._init_processing_hub()
             self._init_proactive_engine()
             
+            # 4. Validate startup requirements
+            await self._validate_startup_requirements()
+            
             self._initialized = True
             logger.info("DependencyContainer initialized successfully")
             
@@ -271,7 +274,7 @@ class DependencyContainer:
         processing_config = ProcessingConfig(
             observation_interval=settings.processing.observation_interval,
             max_cycles_per_hour=settings.processing.max_cycles_per_hour,
-            enable_node_based_processing=True  # Enable advanced processing by default
+            enable_sub_agent_processing=True  # Enable advanced processing by default
         )
         
         assert self._world_state_manager is not None, "WorldStateManager must be initialized first"
@@ -563,3 +566,32 @@ class DependencyContainer:
         
         logger.info("Created MainOrchestrator with injected dependencies")
         return orchestrator
+    
+    # Private validation methods
+    async def _validate_startup_requirements(self) -> None:
+        """Validate that all required services are properly initialized and registered."""
+        logger.info("Validating startup requirements...")
+        
+        # Check critical configuration
+        if not settings.processing.openrouter_api_key:
+            raise ValueError("OPENROUTER_API_KEY is required for system operation")
+        
+        # Ensure ActionContext has a ServiceRegistry
+        if not self._action_context or not self._action_context.service_registry:
+            raise RuntimeError("ActionContext must have a ServiceRegistry for proper service abstraction")
+        
+        # Validate that we can retrieve essential services
+        service_registry = self._action_context.service_registry
+        available_services = service_registry.list_services()
+        logger.info(f"Available services: {available_services}")
+        
+        # Check for at least one messaging service
+        has_messaging_service = any(
+            service_name.endswith('_messaging') or service_name.endswith('_observer')
+            for service_name in available_services.keys()
+        )
+        
+        if not has_messaging_service:
+            logger.warning("No messaging services registered - tools may not function properly")
+        
+        logger.info("✓ Startup validation completed successfully")

@@ -130,12 +130,14 @@ class PerformActionTool(ToolInterface):
                     "error": "Action type parameter is required",
                     "error_type": "missing_parameter"
                 }
-            
-            # Get the appropriate messaging service
-            if not hasattr(context, 'service_registry') or not context.service_registry:
-                # Fallback to direct observer access for backward compatibility
-                return await self._execute_legacy(platform, action_type, content, options, context)
-            
+             # Get the appropriate messaging service
+            if not context.service_registry:
+                return {
+                    "status": "error",
+                    "error": "ServiceRegistry not available - system not properly initialized",
+                    "error_type": "system_error"
+                }
+
             messaging_service = context.service_registry.get_messaging_service(platform)
             if not messaging_service:
                 return {
@@ -336,23 +338,3 @@ class PerformActionTool(ToolInterface):
                 "error": f"Failed to execute {action_type}: {str(e)}",
                 "error_type": "execution_error"
             }
-    
-    async def _execute_legacy(
-        self, 
-        platform: str, 
-        action_type: str, 
-        content: str, 
-        options: Dict[str, Any], 
-        context: ActionContext
-    ) -> Dict[str, Any]:
-        """
-        Legacy execution path for backward compatibility when service_registry is not available.
-        """
-        logger.warning("PerformActionTool: Using legacy execution path. Consider updating to service_registry.")
-        
-        # This is a simplified fallback - in production you'd want to access the observers directly
-        return {
-            "status": "error",
-            "error": "Legacy execution not fully implemented. Please use service_registry.",
-            "error_type": "legacy_not_implemented"
-        }

@@ -17,7 +17,7 @@ import uvicorn
 from chatbot.api_server import create_api_server
 from chatbot.config import settings
 from chatbot.core.container import DependencyContainer
-from chatbot.core.orchestration import MainOrchestrator, OrchestratorConfig, ProcessingConfig
+from chatbot.core.orchestration import MainOrchestrator, OrchestratorConfig
 
 logger = logging.getLogger(__name__)
 
@@ -50,12 +50,6 @@ class ChatbotWithUI:
         """Set up the main orchestrator with configuration using DependencyContainer."""
         config = OrchestratorConfig(
             db_path=settings.chatbot_db_path,
-            processing_config=ProcessingConfig(
-                enable_node_based_processing=True,  # Enable Commander/Sub-Agent architecture
-                observation_interval=settings.processing.observation_interval,
-                max_cycles_per_hour=settings.processing.max_cycles_per_hour,
-                traditional_ai_model=settings.processing.ai_model,
-            ),
             ai_model=settings.processing.ai_model,
         )
         

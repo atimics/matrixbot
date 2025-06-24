@@ -81,7 +81,7 @@ async def startup_event():
     from chatbot.core.orchestration import OrchestratorConfig, ProcessingConfig
     config = OrchestratorConfig(
         db_path="control_panel.db",
-        processing_config=ProcessingConfig(enable_node_based_processing=True)
+        processing_config=ProcessingConfig()
     )
     orchestrator = MainOrchestrator(config)
     logger.info("Control panel started")
@@ -111,7 +111,14 @@ async def get_system_status() -> SystemStatusResponse:
         world_state = orchestrator.world_state.to_dict()
         active_channels = list(world_state.get('channels', {}).keys())
     
-    total_state_changes = len(orchestrator.context_manager.state_changes)
+    # Use HistoryRecorder to get state changes count
+    try:
+        if orchestrator.context_manager and hasattr(orchestrator.context_manager, 'history_recorder'):
+            total_state_changes = len(orchestrator.context_manager.history_recorder.state_changes)
+        else:
+            total_state_changes = 0
+    except Exception:
+        total_state_changes = 0
     
     return SystemStatusResponse(
         running=orchestrator.running,
@@ -131,7 +138,11 @@ async def get_state_changes(
     if not orchestrator:
         raise HTTPException(status_code=500, detail="Orchestrator not initialized")
     
-    state_changes = await orchestrator.context_manager.get_state_changes(
+    if not orchestrator.context_manager or not hasattr(orchestrator.context_manager, 'history_recorder'):
+        raise HTTPException(status_code=500, detail="Context manager not properly initialized")
+    
+    # Use HistoryRecorder directly since ContextManager is deprecated
+    state_changes = await orchestrator.context_manager.history_recorder.get_recent_state_changes(
         channel_id=channel_id,
         change_type=change_type,
         limit=limit
@@ -157,20 +168,21 @@ async def get_all_contexts() -> List[ContextSummaryResponse]:
         raise HTTPException(status_code=500, detail="Orchestrator not initialized")
     
     contexts = []
-    for channel_id in orchestrator.context_manager.contexts.keys():
-        summary = await orchestrator.get_context_summary(channel_id)
-        contexts.append(
-            ContextSummaryResponse(
-                channel_id=channel_id,
-                user_message_count=summary.get("user_message_count", 0),
-                assistant_message_count=summary.get("assistant_message_count", 0),
-                last_update=summary.get("last_update", 0),
-                world_state_keys=summary.get("world_state_keys", []),
-                formatted_last_update=datetime.fromtimestamp(
-                    summary.get("last_update", 0)
-                ).strftime("%Y-%m-%d %H:%M:%S")
-            )
-        )
+    # Use world state to get channel IDs since ContextManager no longer stores contexts
+    if orchestrator.world_state and orchestrator.world_state.state:
+        for channel_id in orchestrator.world_state.state.channels.keys():
+            summary = await orchestrator.get_context_summary(channel_id)
+            if summary:
+                contexts.append(
+                    ContextSummaryResponse(
+                        channel_id=channel_id,
+                        user_message_count=summary.get("recent_state_changes", 0),
+                        assistant_message_count=0,  # HistoryRecorder doesn't separate by message type
+                        last_update=time.time(),
+                        world_state_keys=[],
+                        formatted_last_update=datetime.fromtimestamp(time.time()).strftime("%Y-%m-%d %H:%M:%S")
+                    )
+                )
     
     return contexts
 
@@ -182,12 +194,31 @@ async def get_context_details(channel_id: str):
     
     try:
         summary = await orchestrator.get_context_summary(channel_id)
-        messages = await orchestrator.context_manager.get_conversation_messages(channel_id, include_system=False)
+        
+        # Get recent state changes for this channel as a proxy for messages
+        if orchestrator.context_manager and hasattr(orchestrator.context_manager, 'history_recorder'):
+            state_changes = await orchestrator.context_manager.history_recorder.get_recent_state_changes(
+                channel_id=channel_id,
+                limit=20
+            )
+            
+            # Convert state changes to simplified message format
+            messages = []
+            for change in state_changes:
+                if change.change_type in ["user_input", "user_message"] and change.raw_content:
+                    messages.append({
+                        "type": "user",
+                        "content": change.raw_content.get("content", str(change.raw_content)),
+                        "sender": change.raw_content.get("sender", "unknown"),
+                        "timestamp": change.timestamp
+                    })
+        else:
+            messages = []
         
         return {
-            "summary": summary,
-            "messages": messages[-20:],  # Last 20 messages
-            "system_prompt_preview": summary.get("system_prompt", "")[:500] + "..." if len(summary.get("system_prompt", "")) > 500 else summary.get("system_prompt", "")
+            "summary": summary or {},
+            "messages": messages,
+            "system_prompt_preview": "Context management refactored - use PayloadBuilder for AI context construction"
         }
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Context not found: {str(e)}")
@@ -206,7 +237,8 @@ async def send_message(message: MessageRequest):
         "room_id": message.channel_id
     }
     
-    await orchestrator.context_manager.add_user_message(message.channel_id, user_message)
+    # Use the corrected method from MainOrchestrator
+    await orchestrator.add_user_message(message.channel_id, user_message)
     
     return {"status": "success", "message": "Message added to context"}
 
@@ -246,9 +278,15 @@ async def export_training_data():
     timestamp = int(time.time())
     output_path = f"training_data_{timestamp}.jsonl"
     
-    exported_file = await orchestrator.export_training_data(output_path)
-    
-    return {"status": "success", "file": exported_file}
+    # Use HistoryRecorder directly to export training data
+    try:
+        exported_file = await orchestrator.context_manager.history_recorder.export_state_changes_for_training(
+            output_path=output_path,
+            format="jsonl"
+        )
+        return {"status": "success", "file": output_path, "message": exported_file}
+    except Exception as e:
+        return {"status": "error", "message": f"Export failed: {str(e)}"}
 
 @app.delete("/api/context/{channel_id}")
 async def clear_context(channel_id: str):
