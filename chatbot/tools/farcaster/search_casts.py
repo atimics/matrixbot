@@ -21,7 +21,7 @@ class SearchCastsTool(ToolInterface):
     
     @property
     def description(self) -> str:
-        return "Search for casts on Farcaster by query text"
+        return "Search for casts on Farcaster with enhanced semantic capabilities and filtering options"
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
@@ -31,26 +31,59 @@ class SearchCastsTool(ToolInterface):
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "Search query to find relevant casts"
+                    "description": "Search query with support for operators like +, |, *, \", -, before:, after:, etc. Examples: 'star wars', 'crypto + defi', 'after:2024-12-01'"
                 },
                 "channel_id": {
                     "type": "string",
-                    "description": "Optional Farcaster channel ID to scope the search"
+                    "description": "Optional Farcaster channel ID to scope the search (e.g., 'degen', 'base')"
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "Maximum number of results to return",
-                    "default": 10
+                    "description": "Maximum number of results to return (1-100)",
+                    "default": 10,
+                    "minimum": 1,
+                    "maximum": 100
+                },
+                "mode": {
+                    "type": "string",
+                    "description": "Search mode: 'literal' (exact words), 'semantic' (meaning-based), 'hybrid' (combines both, default)",
+                    "enum": ["literal", "semantic", "hybrid"],
+                    "default": "hybrid"
+                },
+                "sort_type": {
+                    "type": "string",
+                    "description": "Sort results by: 'desc_chron' (newest first), 'algorithmic' (engagement + time, default)",
+                    "enum": ["desc_chron", "algorithmic"],
+                    "default": "algorithmic"
+                },
+                "author_fid": {
+                    "type": "integer",
+                    "description": "Search only casts by this specific Farcaster user ID",
+                    "minimum": 1
+                },
+                "viewer_fid": {
+                    "type": "integer", 
+                    "description": "Personalize results for this viewer (respects their mutes/blocks)",
+                    "minimum": 1
+                },
+                "parent_url": {
+                    "type": "string",
+                    "description": "Search within specific parent URL context (for conversations)"
                 }
             },
             "required": ["query"]
         }
 
     async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
-        """Execute the tool to search for casts with given parameters."""
+        """Execute the tool to search for casts with enhanced parameters."""
         query = params.get("query")
         limit = params.get("limit", 10)
         channel_id = params.get("channel_id")
+        mode = params.get("mode", "hybrid")
+        sort_type = params.get("sort_type", "algorithmic") 
+        author_fid = params.get("author_fid")
+        viewer_fid = params.get("viewer_fid")
+        parent_url = params.get("parent_url")
         
         if not query:
             return create_error_response("Missing required parameter 'query'")
@@ -60,11 +93,16 @@ class SearchCastsTool(ToolInterface):
             return create_error_response("Farcaster observer not available")
             
         try:
-            # Call the observer's search_casts method directly
+            # Call the observer's search_casts method with enhanced parameters
             result = await farcaster_observer.search_casts(
                 query=query,
                 channel_id=channel_id,
-                limit=min(limit, 25)
+                limit=min(limit, 25),
+                mode=mode,
+                sort_type=sort_type,
+                author_fid=author_fid,
+                viewer_fid=viewer_fid,
+                parent_url=parent_url
             )
             
             if result.get("success") and result.get("casts"):
@@ -75,21 +113,47 @@ class SearchCastsTool(ToolInterface):
                 
                 # Record action in world state and cache results
                 if context.world_state_manager:
+                    # Updated to include all search parameters for better caching
+                    search_params = {
+                        "query": query, 
+                        "limit": limit, 
+                        "channel_id": channel_id,
+                        "mode": mode,
+                        "sort_type": sort_type,
+                        "author_fid": author_fid,
+                        "viewer_fid": viewer_fid,
+                        "parent_url": parent_url
+                    }
                     context.world_state_manager.add_action_result(
                         action_type="search_casts",
-                        parameters={"query": query, "limit": limit, "channel_id": channel_id},
+                        parameters=search_params,
                         result="success",
                     )
                     
-                    # Cache search results for future reference
-                    query_hash = hashlib.md5(f"{query}_{channel_id or 'all'}_{limit}".encode()).hexdigest()[:12]
+                    # Cache search results for future reference with enhanced parameters
+                    cache_key_parts = [
+                        query,
+                        channel_id or 'all',
+                        str(limit),
+                        mode,
+                        sort_type,
+                        str(author_fid) if author_fid else 'any_author',
+                        str(viewer_fid) if viewer_fid else 'no_viewer',
+                        parent_url or 'no_parent'
+                    ]
+                    query_hash = hashlib.md5("_".join(cache_key_parts).encode()).hexdigest()[:12]
                     search_cache_data = {
                         "query": query,
                         "channel_id": channel_id,
+                        "mode": mode,
+                        "sort_type": sort_type,
+                        "author_fid": author_fid,
+                        "viewer_fid": viewer_fid,
+                        "parent_url": parent_url,
                         "casts": cast_summaries,
                         "result_count": len(cast_summaries),
                         "timestamp": time.time(),
-                        "fetched_by_tool": "search_casts"
+                        "fetched_by_tool": "search_casts_enhanced"
                     }
                     
                     # Store in search cache
@@ -99,20 +163,28 @@ class SearchCastsTool(ToolInterface):
                         context.world_state_manager.state.search_cache[query_hash] = search_cache_data
                     
                     # Also cache as general tool result
-                    params_key = f"{query}_{channel_id or 'all'}_{limit}"
+                    params_key = "_".join(cache_key_parts)
                     context.world_state_manager.cache_tool_result(
                         "search_casts", params_key, {
                             "casts": cast_summaries,
-                            "query": query,
-                            "channel_id": channel_id,
+                            "search_params": search_params,
                             "timestamp": time.time()
                         }
                     )
                     
-                    logger.info(f"Cached search results for query: {query} (hash: {query_hash})")
+                    logger.info(f"Cached enhanced search results for query: {query} (hash: {query_hash})")
                 
+                # Enhanced success message with search parameters used
+                search_details = f"mode={mode}, sort={sort_type}"
+                if author_fid:
+                    search_details += f", author_fid={author_fid}"
+                if viewer_fid:
+                    search_details += f", viewer_fid={viewer_fid}"
+                if channel_id:
+                    search_details += f", channel={channel_id}"
+                    
                 return create_success_response(
-                    f"Found {len(cast_summaries)} casts for query: {query}",
+                    f"Found {len(cast_summaries)} casts for query: {query} ({search_details})",
                     query=query,
                     channel_id=channel_id,
                     casts=cast_summaries

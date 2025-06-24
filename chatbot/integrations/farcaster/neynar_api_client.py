@@ -55,7 +55,7 @@ class NeynarAPIClient:
         self,
         method: str,
         endpoint: str,
-        params: Optional[Dict[str, Union[str, int]]] = None,
+        params: Optional[Dict[str, Any]] = None,
         json_data: Optional[Dict[str, Any]] = None,
     ) -> httpx.Response:
         url = f"{self.base_url}{endpoint}"
@@ -284,7 +284,7 @@ class NeynarAPIClient:
             parent_url: Search within specific parent URL context
         """
         # Build parameters with enhanced options
-        params: Dict[str, Union[str, int]] = {
+        params: Dict[str, Any] = {
             "q": query.strip(), 
             "limit": min(max(limit, 1), 100),  # Ensure limit is within valid range
             "mode": mode,

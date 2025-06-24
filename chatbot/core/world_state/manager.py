@@ -919,3 +919,53 @@ class WorldStateManager:
         except Exception as e:
             logger.warning(f"Error getting channel {channel_id}: {e}")
             return None
+
+    def is_thread_active(self, thread_id: str) -> bool:
+        """
+        Check if a thread is currently active and valid for bot responses.
+        
+        A thread is considered active if:
+        1. It exists in our thread tracking
+        2. It has recent activity (within reasonable timeframe)
+        3. The bot is participating in the conversation context
+        
+        Args:
+            thread_id: The thread identifier to check
+            
+        Returns:
+            True if the thread is active and the bot should respond within it
+        """
+        # Check if thread exists in our active threads
+        if hasattr(self.state, 'active_threads') and thread_id in self.state.active_threads:
+            thread_info = self.state.active_threads[thread_id]
+            last_activity = thread_info.get('last_activity', 0)
+            
+            # Consider thread active if it has activity within the last 24 hours
+            current_time = time.time()
+            time_since_activity = current_time - last_activity
+            
+            if time_since_activity <= 86400:  # 24 hours
+                logger.debug(f"Thread {thread_id} is active (last activity: {time_since_activity:.0f}s ago)")
+                return True
+            else:
+                logger.debug(f"Thread {thread_id} is stale (last activity: {time_since_activity:.0f}s ago)")
+                return False
+        
+        # Check if we have any recent actions related to this thread
+        # This covers cases where thread might not be in active_threads but we've interacted recently
+        for action in reversed(self.state.action_history[-50:]):  # Check last 50 actions
+            if action.action_type in ["send_farcaster_post", "search_casts"]:
+                params = action.parameters or {}
+                
+                # Check if this action was related to this thread
+                if (params.get("reply_to_hash") and f"farcaster:{params['reply_to_hash']}" == thread_id) or \
+                   (params.get("query") and thread_id in str(params.get("query", ""))):
+                    
+                    # If we found recent related activity, consider thread active
+                    action_age = time.time() - (action.timestamp or 0)
+                    if action_age <= 3600:  # 1 hour
+                        logger.debug(f"Thread {thread_id} considered active due to recent bot action")
+                        return True
+        
+        logger.debug(f"Thread {thread_id} is not active")
+        return False

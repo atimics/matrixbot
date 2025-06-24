@@ -733,9 +733,17 @@ class FarcasterObserver(Integration):
             return {"success": False, "casts": [], "error": str(e)}
 
     async def search_casts(
-        self, query: str, channel_id: Optional[str] = None, limit: int = 10
+        self, 
+        query: str, 
+        channel_id: Optional[str] = None, 
+        limit: int = 10,
+        mode: str = "hybrid",
+        sort_type: str = "algorithmic",
+        author_fid: Optional[int] = None,
+        viewer_fid: Optional[int] = None,
+        parent_url: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Search for casts."""
+        """Search for casts with enhanced semantic capabilities."""
         if not self.api_client:
             return {
                 "success": False,
@@ -744,7 +752,16 @@ class FarcasterObserver(Integration):
             }
 
         try:
-            data = await self.api_client.search_casts(query, channel_id, limit)
+            data = await self.api_client.search_casts(
+                query=query,
+                channel_id=channel_id,
+                limit=limit,
+                mode=mode,
+                sort_type=sort_type,
+                author_fid=author_fid,
+                viewer_fid=viewer_fid,
+                parent_url=parent_url
+            )
             messages = await convert_api_casts_to_messages(
                 data.get("casts", []),
                 channel_id_prefix=f"farcaster:search_{query}",
