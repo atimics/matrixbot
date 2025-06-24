@@ -100,31 +100,35 @@ class TraditionalProcessor:
             # Execute the tool with parameters and context
             result = await tool.execute(action.parameters, self.action_context)
             
-            # Log the action result
-            await self.context_manager.add_tool_result(
-                channel_id="system",  # Use system channel for orchestrator actions
-                tool_name=action.action_type,
-                result={
-                    "status": result.get("status", "unknown"),
-                    "message": result.get("message", str(result)),
-                    "reasoning": action.reasoning,
-                    "parameters": action.parameters
-                }
-            )
+            # Log the action result using HistoryRecorder directly
+            from ...core.history_recorder import StateChangeBlock
+            await self.history_recorder.record_state_change(StateChangeBlock(
+                timestamp=time.time(),
+                change_type="tool_result",
+                source="tool",
+                channel_id="system",
+                observations=None,
+                potential_actions=None,
+                selected_actions=[{"tool": action.action_type, "result": str(result)[:1000]}],
+                reasoning=f"Tool {action.action_type} executed: {action.reasoning}",
+                raw_content={"tool": action.action_type, "result": result, "parameters": action.parameters},
+            ))
             
         except Exception as e:
             logger.error(f"Error executing action {action.action_type}: {e}")
-            # Log the failed action
-            await self.context_manager.add_tool_result(
+            # Log the failed action using HistoryRecorder directly
+            from ...core.history_recorder import StateChangeBlock
+            await self.history_recorder.record_state_change(StateChangeBlock(
+                timestamp=time.time(),
+                change_type="tool_result",
+                source="tool",
                 channel_id="system",
-                tool_name=action.action_type,
-                result={
-                    "status": "error",
-                    "message": f"Error: {str(e)}",
-                    "reasoning": action.reasoning,
-                    "parameters": action.parameters
-                }
-            )
+                observations=None,
+                potential_actions=None,
+                selected_actions=[{"tool": action.action_type, "error": str(e)[:1000]}],
+                reasoning=f"Tool {action.action_type} failed: {action.reasoning}",
+                raw_content={"tool": action.action_type, "error": str(e), "parameters": action.parameters},
+            ))
 
     async def _execute_actions(self, actions: list) -> None:
         """
@@ -170,33 +174,37 @@ class TraditionalProcessor:
             # Execute the tool with parameters and context
             result = await tool.execute(action.parameters, self.action_context)
             
-            # Log the action result
-            await self.context_manager.add_tool_result(
-                channel_id="system",  # Use system channel for orchestrator actions
-                tool_name=action.action_type,
-                result={
-                    "status": result.get("status", "unknown"),
-                    "message": result.get("message", str(result)),
-                    "reasoning": action.reasoning,
-                    "parameters": action.parameters
-                }
-            )
+            # Log the action result using HistoryRecorder directly
+            from ...core.history_recorder import StateChangeBlock
+            await self.history_recorder.record_state_change(StateChangeBlock(
+                timestamp=time.time(),
+                change_type="tool_result",
+                source="tool",
+                channel_id="system",
+                observations=None,
+                potential_actions=None,
+                selected_actions=[{"tool": action.action_type, "result": str(result)[:1000]}],
+                reasoning=f"Tool {action.action_type} executed and returned: {action.reasoning}",
+                raw_content={"tool": action.action_type, "result": result, "parameters": action.parameters},
+            ))
             
             return result
             
         except Exception as e:
             logger.error(f"Error executing action {action.action_type}: {e}")
-            # Log the failed action
-            await self.context_manager.add_tool_result(
+            # Log the failed action using HistoryRecorder directly
+            from ...core.history_recorder import StateChangeBlock
+            await self.history_recorder.record_state_change(StateChangeBlock(
+                timestamp=time.time(),
+                change_type="tool_result",
+                source="tool",
                 channel_id="system",
-                tool_name=action.action_type,
-                result={
-                    "status": "error",
-                    "message": f"Error: {str(e)}",
-                    "reasoning": action.reasoning,
-                    "parameters": action.parameters
-                }
-            )
+                observations=None,
+                potential_actions=None,
+                selected_actions=[{"tool": action.action_type, "error": str(e)[:1000]}],
+                reasoning=f"Tool {action.action_type} failed and returned error: {action.reasoning}",
+                raw_content={"tool": action.action_type, "error": str(e), "parameters": action.parameters},
+            ))
             return {"status": "error", "error": str(e)}
 
 @dataclass
