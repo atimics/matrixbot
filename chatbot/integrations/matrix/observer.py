@@ -814,6 +814,8 @@ class MatrixObserver(Integration):
                 logger.info(
                     f"MatrixObserver: Sent message to {room_id} (event: {response.event_id})"
                 )
+                # PHASE 1B: Record sent event to prevent echoback
+                self.record_sent_event(response.event_id)
                 return {
                     "success": True,
                     "event_id": response.event_id,
@@ -871,6 +873,8 @@ class MatrixObserver(Integration):
                     logger.info(
                         f"MatrixObserver: Sent reply to {room_id} (event: {response.event_id}, reply_to: {reply_to_event_id})"
                     )
+                    # PHASE 1B: Record sent event to prevent echoback
+                    self.record_sent_event(response.event_id)
                     return {
                         "success": True,
                         "event_id": response.event_id,
@@ -977,6 +981,8 @@ class MatrixObserver(Integration):
                     logger.info(
                         f"MatrixObserver: Successfully sent formatted message to {room_id} (event: {response.event_id})"
                     )
+                    # PHASE 1B: Record sent event to prevent echoback
+                    self.record_sent_event(response.event_id)
                     return {
                         "success": True,
                         "event_id": response.event_id,
@@ -1087,6 +1093,8 @@ class MatrixObserver(Integration):
                     logger.info(
                         f"MatrixObserver: Successfully sent formatted reply to {room_id} (event: {response.event_id}, reply_to: {reply_to_event_id})"
                     )
+                    # PHASE 1B: Record sent event to prevent echoback
+                    self.record_sent_event(response.event_id)
                     return {
                         "success": True,
                         "event_id": response.event_id,

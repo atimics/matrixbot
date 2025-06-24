@@ -23,7 +23,7 @@ class GoogleAIMediaClient:
     def __init__(
         self,
         api_key: str,
-        default_gemini_image_model: str = "gemini-1.5-flash-latest",
+        default_gemini_image_model: str = "imagen-3.0-generate-001",  # PHASE 2C FIX: Use dedicated image model
         default_veo_video_model: str = "veo-2.0-generate-001",
     ):
         """
@@ -31,8 +31,9 @@ class GoogleAIMediaClient:
 
         Args:
             api_key: Google AI API key (for Gemini Developer API).
-            default_gemini_image_model: Default Gemini model for image generation.
-                                       Ensure this model supports image generation via generate_content.
+            default_gemini_image_model: Default model for image generation.
+                                       PHASE 2C FIX: Now defaults to "imagen-3.0-generate-001" 
+                                       instead of "gemini-2.0-flash-preview-image-generation" which doesn't support image generation.
             default_veo_video_model: Default Veo model for video generation.
         """
         self.api_key = api_key
@@ -85,8 +86,10 @@ class GoogleAIMediaClient:
     ) -> Optional[bytes]:
         """
         Generate an image using a Gemini model with image generation capabilities.
-        Note: Ensure 'default_gemini_image_model' supports image generation.
-              Models like "gemini-1.5-flash-latest" are suitable if enabled for image gen.
+        
+        PHASE 2C FIX: The original error "Multi-modal output is not supported" 
+        indicates that gemini-2.0-flash-preview-image-generation doesn't support image generation.
+        We need to use a dedicated image generation model or approach.
 
         Args:
             prompt: Text description for image generation.
@@ -96,19 +99,23 @@ class GoogleAIMediaClient:
         Returns:
             Image bytes or None if failed.
         """
+        logger.info(f"GoogleAIMediaClient: Attempting image generation with model {self.default_gemini_image_model}")
+        
         enhanced_prompt = (
             f"{prompt}\n\n"
             f"Generate an image with an aspect ratio of {aspect_ratio}. "
             f"Only respond with the image, no accompanying text or description."
         )
 
-        generation_config_obj = types.GenerateContentConfig(
-            temperature=temperature,
-            safety_settings=self.gemini_safety_settings,
-            response_modalities=["IMAGE", "TEXT"],
-        )
-
+        # PHASE 2C FIX: Try different generation configurations
+        # First attempt: Use IMAGE modality only (not TEXT+IMAGE)
         try:
+            generation_config_obj = types.GenerateContentConfig(
+                temperature=temperature,
+                safety_settings=self.gemini_safety_settings,
+                response_modalities=["IMAGE"],  # IMAGE only, not TEXT+IMAGE
+            )
+
             response = await self.client.aio.models.generate_content(
                 model=self.default_gemini_image_model,
                 contents=[enhanced_prompt],
@@ -120,31 +127,52 @@ class GoogleAIMediaClient:
                 for part in response.candidates[0].content.parts:
                     if hasattr(part, "inline_data") and part.inline_data and \
                        hasattr(part.inline_data, "data") and part.inline_data.data:
+                        logger.info("GoogleAIMediaClient: Successfully generated image with IMAGE modality")
                         return part.inline_data.data
             
-            warning_message = "GoogleAIMediaClient: No image data found in Gemini response."
-            if response.text: # `.text` concatenates text from all parts
-                warning_message += f" Response text: {response.text}"
-            logger.warning(warning_message)
-
-            if response.prompt_feedback and response.prompt_feedback.block_reason:
-                block_reason_msg = str(response.prompt_feedback.block_reason)
-                if hasattr(response.prompt_feedback, 'block_reason_message') and response.prompt_feedback.block_reason_message:
-                     block_reason_msg = response.prompt_feedback.block_reason_message
-                logger.warning(f"GoogleAIMediaClient: Image generation may have been blocked. Reason: {block_reason_msg}")
+            logger.warning("GoogleAIMediaClient: No image data found in response with IMAGE modality")
             
-            if response.candidates:
-                for candidate in response.candidates:
-                    if candidate.finish_reason not in (None, types.FinishReason.STOP, types.FinishReason.FINISH_REASON_UNSPECIFIED):
-                        logger.warning(f"GoogleAIMediaClient: Gemini generation candidate finished with reason: {candidate.finish_reason} ({candidate.finish_message or ''})")
-            return None
+        except Exception as e:
+            logger.warning(f"GoogleAIMediaClient: IMAGE modality failed: {e}")
+            
+        # PHASE 2C FIX: Second attempt: Use default generation without modality constraints
+        try:
+            logger.info("GoogleAIMediaClient: Trying image generation without explicit modality constraints")
+            
+            generation_config_obj = types.GenerateContentConfig(
+                temperature=temperature,
+                safety_settings=self.gemini_safety_settings,
+                # No response_modalities specified - let the model decide
+            )
 
-        except genai.errors.APIError as e: # Catch specific API errors from the SDK
-            logger.error(f"GoogleAIMediaClient: Gemini image generation failed with APIError: {e}")
-            return None
-        except Exception as e: # Catch any other unexpected errors
-            logger.exception(f"GoogleAIMediaClient: Unexpected error in Gemini image generation: {e}")
-            return None
+            response = await self.client.aio.models.generate_content(
+                model=self.default_gemini_image_model,
+                contents=[enhanced_prompt],
+                config=generation_config_obj,
+            )
+
+            # Check if response has candidates with content
+            if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
+                for part in response.candidates[0].content.parts:
+                    if hasattr(part, "inline_data") and part.inline_data and \
+                       hasattr(part.inline_data, "data") and part.inline_data.data:
+                        logger.info("GoogleAIMediaClient: Successfully generated image without modality constraints")
+                        return part.inline_data.data
+            
+            logger.warning("GoogleAIMediaClient: No image data found in response without modality constraints")
+            
+        except Exception as e:
+            logger.warning(f"GoogleAIMediaClient: Default generation also failed: {e}")
+        
+        # Log detailed failure information
+        warning_message = "GoogleAIMediaClient: All image generation attempts failed."
+        logger.warning(warning_message)
+        
+        # PHASE 2C FIX: Provide helpful error context
+        logger.error(f"GoogleAIMediaClient: Model {self.default_gemini_image_model} may not support image generation. "
+                    f"Consider using 'imagen-3.0-generate-001' or another dedicated image generation model.")
+
+        return None
 
     async def compose_image_with_references(
         self,
@@ -417,7 +445,7 @@ async def main():
     try:
         client = GoogleAIMediaClient(
             api_key=api_key,
-            default_gemini_image_model="gemini-1.5-flash-latest",
+            default_gemini_image_model="gemini-2.0-flash-preview-image-generation",
             default_veo_video_model="veo-2.0-generate-001" # Verify this model name
         )
     except Exception as e:

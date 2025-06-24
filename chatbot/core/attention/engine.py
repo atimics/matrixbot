@@ -177,8 +177,10 @@ class AttentionEngine:
         """
         Check if a message is within the conversation cooldown period.
         
-        This prevents the bot from responding too quickly in active conversations,
-        allowing users time to continue their thoughts or other users to respond.
+        PHASE 1C: Enhanced to check for bot activity in the entire channel,
+        not just the specific thread. This prevents the bot from immediately 
+        jumping into another conversation in the same room right after it 
+        has finished speaking, creating more natural "room-wide" pacing.
         
         Args:
             message: Message to check
@@ -186,21 +188,53 @@ class AttentionEngine:
         Returns:
             True if the message should be skipped due to cooldown, False otherwise
         """
-        thread_id = message.reply_to or message.id
-        
-        # Check if we have recent bot activity in this thread
+        # Check if we have recent bot activity in this ENTIRE CHANNEL
         if message.channel_id is None:
             logger.warning("Message has no channel_id, skipping cooldown check")
             return False
             
-        last_bot_activity = self._get_last_bot_activity_in_thread(thread_id, message.channel_id)
+        last_bot_activity = self._get_last_bot_activity_in_channel(message.channel_id)
         
         if last_bot_activity:
             time_since_activity = time.time() - last_bot_activity
             if time_since_activity < self.conversation_cooldown:
+                logger.debug(f"AttentionEngine: Skipping message due to channel-wide cooldown. "
+                           f"Last bot activity: {time_since_activity:.1f}s ago (cooldown: {self.conversation_cooldown}s)")
                 return True
         
         return False
+    
+    def _get_last_bot_activity_in_channel(self, channel_id: str) -> Optional[float]:
+        """
+        Get the timestamp of the last bot activity in the entire channel.
+        
+        PHASE 1C: This method checks for bot activity across the entire channel,
+        not just a specific thread. This creates channel-wide conversational pacing.
+        
+        Args:
+            channel_id: Channel identifier
+            
+        Returns:
+            Timestamp of last bot activity or None if no recent activity
+        """
+        try:
+            # Get recent messages in the channel
+            state_data = self.world_state.get_state_data()
+            channel = state_data.channels.get(channel_id)
+            
+            if not channel:
+                return None
+            
+            # Look for the most recent bot message in the entire channel
+            for message in reversed(channel.recent_messages):
+                if self._is_self_message(message):
+                    return message.timestamp
+            
+            return None
+            
+        except Exception as e:
+            logger.warning(f"Error checking last bot activity in channel: {e}")
+            return None
     
     def _get_last_bot_activity_in_thread(self, thread_id: str, channel_id: str) -> Optional[float]:
         """
