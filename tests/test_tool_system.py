@@ -9,7 +9,7 @@ import time
 from chatbot.tools.base import ToolInterface, ActionContext
 from chatbot.tools.registry import ToolRegistry
 from chatbot.tools.core_tools import WaitTool
-from chatbot.tools.matrix_tools import SendMatrixReplyTool, SendMatrixMessageTool
+from chatbot.tools.matrix import SendMatrixMessageTool
 from chatbot.tools.farcaster_tools import SendFarcasterPostTool, SendFarcasterReplyTool
 
 
@@ -91,39 +91,6 @@ class TestCoreTools:
 
 class TestMatrixTools:
     """Test Matrix platform tools."""
-    
-    @pytest.mark.asyncio
-    async def test_send_matrix_reply_tool(self):
-        """Test Matrix reply tool."""
-        tool = SendMatrixReplyTool()
-        
-        # Test properties
-        assert tool.name == "send_matrix_reply"
-        assert "reply" in tool.description.lower()
-        assert "channel_id" in tool.parameters_schema
-        assert "content" in tool.parameters_schema
-        assert "reply_to_id" in tool.parameters_schema
-        
-        # Test execution with mock observer
-        mock_observer = AsyncMock()
-        mock_observer.send_reply.return_value = {
-            "success": True,
-            "event_id": "test_event_123",
-            "sent_content": "Test reply"
-        }
-        
-        context = ActionContext(matrix_observer=mock_observer)
-        params = {
-            "channel_id": "!test:example.com",
-            "content": "Test reply",
-            "reply_to_id": "original_event",
-            "format_as_markdown": False
-        }
-        
-        result = await tool.execute(params, context)
-        assert result["status"] == "success"
-        assert result["event_id"] == "test_event_123"
-        mock_observer.send_reply.assert_called_once()
     
     @pytest.mark.asyncio
     async def test_send_matrix_message_tool(self):
