@@ -574,10 +574,6 @@ class MainOrchestrator:
             # Initialize NFT and blockchain services
             await self._initialize_nft_services()
             
-            # Set up processing hub with traditional processor (only in legacy mode)
-            if not self._is_di_mode:
-                self._setup_processing_components()
-            
             # Start the proactive conversation engine
             await self.proactive_engine.start()
             
@@ -623,22 +619,6 @@ class MainOrchestrator:
             await self.farcaster_observer.stop()
 
         logger.info("Main orchestrator system stopped")
-
-    def _setup_processing_components(self):
-        """Set up processing components for the processing hub."""
-        # Create traditional processor wrapper
-        traditional_processor = TraditionalProcessor(
-            ai_engine=self.ai_engine,
-            tool_registry=self.tool_registry,
-            rate_limiter=self.rate_limiter,
-            context_manager=self.context_manager,
-            action_context=self.action_context
-        )
-        
-        self.processing_hub.set_traditional_processor(traditional_processor)
-        
-        # Note: Node processor would be set up here when implementing
-        # the JSON Observer integration
 
     async def _initialize_nft_services(self) -> None:
         """Initialize NFT and blockchain services if credentials are available."""
@@ -887,22 +867,6 @@ class MainOrchestrator:
                 "system_running": self.running,
                 "error": str(e)
             }
-
-    def force_processing_mode(self, enable_node_based: bool) -> None:
-        """
-        Force the processing mode to a specific type.
-        
-        Args:
-            enable_node_based: True to force node-based processing, False for traditional
-        """
-        self.processing_hub.force_processing_mode(enable_node_based)
-        self.config.processing_config.enable_sub_agent_processing = enable_node_based
-        logger.info(f"Processing mode forced to {'node-based' if enable_node_based else 'traditional'}")
-
-    def reset_processing_mode(self) -> None:
-        """Reset processing mode to automatic determination."""
-        self.processing_hub.reset_processing_mode()
-        logger.info("Processing mode reset to automatic determination")
 
     def get_tool_registry(self) -> ToolRegistry:
         """Get the tool registry instance."""
