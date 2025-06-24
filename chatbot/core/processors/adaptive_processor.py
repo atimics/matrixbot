@@ -7,6 +7,7 @@ while Sub-Agents handle simple conversational tasks.
 
 The AdaptiveProcessor:
 - Analyzes the full world state using node-based compression
+- Processes rich ContextualThread objects from the AttentionEngine
 - Identifies opportunities for mission delegation
 - Handles complex multi-step tasks
 - Maintains strategic awareness across all channels
@@ -15,7 +16,7 @@ The AdaptiveProcessor:
 
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from .base import Processor
 from ..ai_engine import AIDecisionEngine, ActionPlan
@@ -26,6 +27,9 @@ from ..world_state.payload_builder import PayloadBuilder
 from ...tools.registry import ToolRegistry
 from ...tools.base import ActionContext
 from ...config import settings
+
+if TYPE_CHECKING:
+    from ..attention.structures import ContextualThread
 
 logger = logging.getLogger(__name__)
 
@@ -474,6 +478,188 @@ class AdaptiveProcessor(Processor):
             logger.error(f"AdaptiveProcessor: Error executing action {action.action_type}: {e}")
             return False
     
+    async def process_contextual_thread(
+        self,
+        thread: "ContextualThread",
+        cycle_id: str
+    ) -> Dict[str, Any]:
+        """
+        Process a ContextualThread with the Commander AI.
+        
+        This method focuses the Commander's full analytical power on a single
+        rich thread context, making intelligent decisions based on the complete
+        context provided by the AttentionEngine.
+        
+        Args:
+            thread: ContextualThread containing rich context
+            cycle_id: Unique identifier for this processing cycle
+            
+        Returns:
+            Processing result with action count and insights
+        """
+        logger.info(f"AdaptiveProcessor (Commander): Processing ContextualThread {thread.thread_id}")
+        
+        try:
+            # Build thread-centric payload for Commander AI
+            payload = await self._build_thread_centric_payload(thread, cycle_id)
+            
+            # Get Commander decision focused on this specific thread
+            decision_result = await self.ai_engine.make_decision(payload, cycle_id)
+            
+            # Execute Commander actions
+            actions_executed = 0
+            if decision_result.selected_actions:
+                for action in decision_result.selected_actions:
+                    try:
+                        success = await self._execute_action(action, cycle_id)
+                        if success:
+                            actions_executed += 1
+                    except Exception as e:
+                        logger.error(f"AdaptiveProcessor: Error executing thread action {action.action_type}: {e}")
+            
+            return {
+                "thread_id": thread.thread_id,
+                "cycle_id": cycle_id,
+                "success": True,
+                "mode": "thread_centric_commander",
+                "actions_executed": actions_executed,
+                "context_score": thread.calculate_context_score(),
+                "thread_priority": thread.priority.name,
+                "reasoning": decision_result.reasoning,
+                "observations": decision_result.observations
+            }
+            
+        except Exception as e:
+            logger.error(f"AdaptiveProcessor (Commander): Error processing thread {thread.thread_id}: {e}")
+            return {
+                "thread_id": thread.thread_id,
+                "cycle_id": cycle_id,
+                "success": False,
+                "error": str(e),
+                "actions_executed": 0,
+                "mode": "thread_centric_commander"
+            }
+    
+    async def _build_thread_centric_payload(
+        self,
+        thread: "ContextualThread",
+        cycle_id: str
+    ) -> Dict[str, Any]:
+        """
+        Build a focused payload for thread-centric Commander processing.
+        
+        This creates a highly focused context that gives the Commander AI
+        everything it needs to make intelligent decisions about this specific
+        conversation thread.
+        
+        Args:
+            thread: The ContextualThread to build payload for
+            cycle_id: Cycle identifier
+            
+        Returns:
+            Payload dictionary optimized for thread-centric processing
+        """
+        try:
+            # Get world state for additional context
+            world_state_data = self.world_state_manager.get_world_state_data()
+            
+            # Build focused payload
+            payload = {
+                "processing_mode": "thread_centric_commander",
+                "cycle_id": cycle_id,
+                "thread_context": {
+                    "thread_id": thread.thread_id,
+                    "priority": thread.priority.name,
+                    "reason": thread.reason,
+                    "context_score": thread.calculate_context_score(),
+                    "age_minutes": thread.get_age_minutes()
+                },
+                "triggering_message": thread.triggering_message.to_ai_summary_dict(),
+                "conversation_history": [msg.to_ai_summary_dict() for msg in thread.conversation_history],
+                "author_context": self._serialize_author_context(thread.author_context),
+                "channel_context": self._serialize_channel_context(thread.channel_context),
+                "system_context": {
+                    "timestamp": world_state_data.last_update,
+                    "active_missions": len(world_state_data.missions),
+                    "total_channels": len(world_state_data.channels)
+                },
+                "instructions": (
+                    "THREAD-CENTRIC COMMANDER MODE: You are processing a specific conversation thread "
+                    "that has been identified as requiring your attention. The AttentionEngine has already "
+                    "filtered out noise and provided you with rich context. Analyze this specific conversation "
+                    "and determine the most appropriate response. You can: "
+                    "1) Take direct action (reply, react, share media) "
+                    "2) Delegate to a Sub-Agent using assign_mission_to_channel "
+                    "3) Use strategic tools for complex analysis "
+                    "4) Wait if no action is needed. "
+                    "Focus on this specific thread - you have complete context."
+                )
+            }
+            
+            # Provide full tool access for Commander decisions
+            payload["available_tools"] = self.tool_registry.get_tool_descriptions_for_ai()
+            
+            return payload
+            
+        except Exception as e:
+            logger.error(f"Error building thread-centric payload: {e}")
+            # Return minimal payload to prevent complete failure
+            return {
+                "processing_mode": "thread_centric_commander_error",
+                "cycle_id": cycle_id,
+                "error": str(e),
+                "thread_id": thread.thread_id,
+                "instructions": "Error building thread context. Please use wait tool.",
+                "available_tools": [{"name": "wait", "description": "Wait and observe without taking action"}]
+            }
+    
+    def _serialize_author_context(self, author_context) -> Optional[Dict[str, Any]]:
+        """Serialize author context for AI consumption."""
+        if not author_context:
+            return None
+        
+        try:
+            from ..world_state.structures import FarcasterUserDetails, MatrixUserDetails
+            
+            if isinstance(author_context, FarcasterUserDetails):
+                return {
+                    "platform": "farcaster",
+                    "fid": author_context.fid,
+                    "username": author_context.username,
+                    "display_name": author_context.display_name,
+                    "bio": author_context.bio,
+                    "follower_count": author_context.follower_count,
+                    "power_badge": author_context.power_badge
+                }
+            elif isinstance(author_context, MatrixUserDetails):
+                return {
+                    "platform": "matrix",
+                    "user_id": author_context.user_id,
+                    "display_name": author_context.display_name
+                }
+        except Exception as e:
+            logger.warning(f"Error serializing author context: {e}")
+        
+        return None
+    
+    def _serialize_channel_context(self, channel_context) -> Optional[Dict[str, Any]]:
+        """Serialize channel context for AI consumption."""
+        if not channel_context:
+            return None
+        
+        try:
+            return {
+                "id": channel_context.id,
+                "name": channel_context.name,
+                "type": channel_context.type,
+                "recent_message_count": len(channel_context.recent_messages),
+                "has_active_mission": bool(channel_context.current_mission_id),
+                "member_count": getattr(channel_context, 'member_count', None)
+            }
+        except Exception as e:
+            logger.warning(f"Error serializing channel context: {e}")
+            return None
+
     def get_status(self) -> Dict[str, Any]:
         """Get current Commander AI status."""
         return {

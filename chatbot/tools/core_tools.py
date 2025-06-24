@@ -328,6 +328,12 @@ class AssignMissionTool(ToolInterface):
                     "type": "string", 
                     "description": "A clear, concise instruction for the Sub-Agent (e.g., 'Answer user questions about the new pricing model')"
                 },
+                "tool_scope": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of tool names the Sub-Agent is allowed to use (e.g., ['send_matrix_message', 'react_to_message'])",
+                    "default": ["send_matrix_message", "react_to_message", "wait"]
+                },
                 "mission_duration_hours": {
                     "type": "integer",
                     "description": "How long the mission should be active (default: 1 hour)",
@@ -356,6 +362,7 @@ class AssignMissionTool(ToolInterface):
         try:
             channel_id = params["channel_id"]
             objective = params["objective"]
+            tool_scope = params.get("tool_scope", ["send_matrix_message", "react_to_message", "wait"])
             duration_hours = params.get("mission_duration_hours", 1)
             priority = params.get("priority", 5)
 
@@ -392,6 +399,7 @@ class AssignMissionTool(ToolInterface):
                 objective=objective,
                 channel_id=channel_id,
                 priority=priority,
+                tool_scope=tool_scope,
                 context={
                     "duration_hours": duration_hours,
                     "created_by": "commander_ai",

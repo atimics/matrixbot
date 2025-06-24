@@ -749,6 +749,7 @@ class Mission:
         priority: Priority level (1-10, higher = more important)
         context: Additional context data for the mission
         channel_id: The channel this mission is assigned to (for Sub-Agent processing)
+        tool_scope: List of tool names the Sub-Agent is allowed to use for this mission
     """
     id: str
     objective: str
@@ -760,6 +761,7 @@ class Mission:
     priority: int = 5  # 1-10, higher = more important
     context: Dict[str, Any] = field(default_factory=dict)
     channel_id: Optional[str] = None  # The channel this mission is assigned to
+    tool_scope: List[str] = field(default_factory=list)  # Tools the Sub-Agent can use
     
     def update_status(self, new_status: str) -> None:
         """Update the mission status and timestamp."""

@@ -267,7 +267,7 @@ class DependencyContainer:
         logger.debug("RateLimiter initialized")
     
     def _init_processing_hub(self) -> None:
-        """Initialize the processing hub."""
+        """Initialize the processing hub with attention-driven architecture."""
         processing_config = ProcessingConfig(
             observation_interval=settings.processing.observation_interval,
             max_cycles_per_hour=settings.processing.max_cycles_per_hour,
@@ -279,10 +279,18 @@ class DependencyContainer:
         assert self._rate_limiter is not None, "RateLimiter must be initialized first"
         assert self._action_context is not None, "ActionContext must be initialized first"
         
+        # Initialize AttentionQueue for thread-centric processing
+        import asyncio
+        self._attention_queue = asyncio.Queue(maxsize=100)  # Reasonable queue size
+        
+        # Initialize AttentionEngine
+        self._init_attention_engine()
+        
         self._processing_hub = ProcessingHub(
             world_state_manager=self._world_state_manager,
             payload_builder=self._payload_builder,
             rate_limiter=self._rate_limiter,
+            attention_queue=self._attention_queue,
             config=processing_config,
             tool_registry=self._tool_registry,
             action_context=self._action_context
@@ -291,7 +299,34 @@ class DependencyContainer:
         # Configure Commander/Sub-Agent architecture
         self._configure_commander_sub_agent_architecture()
         
-        logger.debug("ProcessingHub initialized")
+        logger.debug("ProcessingHub initialized with attention-driven architecture")
+    
+    def _init_attention_engine(self) -> None:
+        """Initialize the AttentionEngine for intelligent message filtering."""
+        from .attention.engine import AttentionEngine
+        
+        # Configuration for attention engine
+        attention_config = {
+            'bot_fid': settings.farcaster.bot_fid,
+            'bot_user_id': settings.matrix.user_id,
+            'bot_username': settings.farcaster.bot_username,
+            'conversation_cooldown': 180,  # 3 minutes
+            'max_thread_age': 3600,  # 1 hour
+            'priority_boost_keywords': ['help', 'error', 'problem', 'urgent', 'issue']
+        }
+        
+        assert self._world_state_manager is not None, "WorldStateManager must be initialized first"
+        
+        self._attention_engine = AttentionEngine(
+            world_state=self._world_state_manager,
+            attention_queue=self._attention_queue,
+            config=attention_config
+        )
+        
+        # Connect AttentionEngine to WorldStateManager for message notifications
+        self._world_state_manager.set_attention_engine(self._attention_engine)
+        
+        logger.debug("AttentionEngine initialized")
     
     def _configure_commander_sub_agent_architecture(self) -> None:
         """Configure the Commander AI and Sub-Agent components."""

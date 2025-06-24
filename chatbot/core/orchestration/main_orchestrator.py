@@ -331,11 +331,38 @@ class MainOrchestrator:
             world_state_manager=self.world_state
         )
         
-        # Processing hub
+        # Initialize AttentionQueue for thread-centric processing
+        import asyncio
+        self.attention_queue = asyncio.Queue(maxsize=100)
+        
+        # Initialize AttentionEngine
+        from ..attention.engine import AttentionEngine
+        
+        # Configuration for attention engine
+        attention_config = {
+            'bot_fid': settings.farcaster.bot_fid,
+            'bot_user_id': settings.matrix.user_id,
+            'bot_username': settings.farcaster.bot_username,
+            'conversation_cooldown': 180,  # 3 minutes
+            'max_thread_age': 3600,  # 1 hour
+            'priority_boost_keywords': ['help', 'error', 'problem', 'urgent', 'issue']
+        }
+        
+        self.attention_engine = AttentionEngine(
+            world_state=self.world_state,
+            attention_queue=self.attention_queue,
+            config=attention_config
+        )
+        
+        # Connect AttentionEngine to WorldStateManager for message notifications
+        self.world_state.set_attention_engine(self.attention_engine)
+        
+        # Processing hub with thread-centric architecture
         self.processing_hub = ProcessingHub(
             world_state_manager=self.world_state,
             payload_builder=self.payload_builder,
             rate_limiter=self.rate_limiter,
+            attention_queue=self.attention_queue,
             config=self.config.processing_config
         )
         
@@ -1330,3 +1357,5 @@ class MainOrchestrator:
             logger.info("ActionContext updated with node_manager")
         else:
             logger.warning("Could not update ActionContext with node_manager - missing dependencies")
+
+

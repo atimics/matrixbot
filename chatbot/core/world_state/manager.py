@@ -106,7 +106,7 @@ class WorldStateManager:
     def add_message(self, *args, **kwargs):
         """Add a new message to a channel. Accepts (channel_id, message), (message_data, message), or (dict) for test compatibility."""
         from .structures import Message
-        # Accept (channel_id, message), (message_data, message), or (dict) with keys 'channel_id' and 'message'
+        # Accept (channel_id, message), (message_data, message), or (dict with keys 'channel_id' and 'message'
         if len(args) == 2:
             channel_id, message = args
             if isinstance(channel_id, dict):
@@ -145,6 +145,15 @@ class WorldStateManager:
         if len(self.state.channels[channel_id].recent_messages) > 50:
             self.state.channels[channel_id].recent_messages = self.state.channels[channel_id].recent_messages[-50:]
         self.state.channels[channel_id].update_last_checked()
+        
+        # Notify AttentionEngine of new message (thread-centric architecture)
+        if hasattr(self, 'attention_engine') and self.attention_engine:
+            try:
+                import asyncio
+                # Schedule the attention processing without blocking
+                asyncio.create_task(self.attention_engine.process_new_message(message))
+            except Exception as e:
+                logger.warning(f"Error notifying AttentionEngine: {e}")
 
     def add_message_compat(self, channel_id_or_dict, message=None):
         """Compatibility wrapper for tests that call add_message with (dict, message) or (message_data, message)."""
@@ -793,3 +802,120 @@ class WorldStateManager:
                         logger.debug(f"Bot reply found in messages for event {original_event_id}: message_id {msg.id}")
                         return True
         return False
+
+    def set_attention_engine(self, attention_engine) -> None:
+        """
+        Set the AttentionEngine for this WorldStateManager.
+        
+        This allows the WorldStateManager to notify the AttentionEngine
+        when new messages are added, enabling the attention-driven architecture.
+        
+        Args:
+            attention_engine: The AttentionEngine instance to notify on new messages
+        """
+        self.attention_engine = attention_engine
+        logger.info("AttentionEngine connected to WorldStateManager")
+
+    def get_last_bot_activity_in_thread(self, thread_id: str, channel_id: Optional[str] = None) -> Optional[float]:
+        """
+        Get the timestamp of the last bot activity in a specific thread.
+        
+        Args:
+            thread_id: Thread identifier
+            channel_id: Optional channel identifier for more specific lookup
+            
+        Returns:
+            Timestamp of last bot activity or None if no recent activity
+        """
+        try:
+            # If channel_id is provided, search that specific channel
+            if channel_id and channel_id in self.state.channels:
+                channel = self.state.channels[channel_id]
+                for message in reversed(channel.recent_messages):
+                    if message.is_from_bot():
+                        # Check if this message is in the same thread
+                        if message.reply_to == thread_id or message.id == thread_id:
+                            return message.timestamp
+                        # For messages without explicit threading, use time proximity
+                        elif not message.reply_to and abs(message.timestamp - time.time()) < 300:  # 5 minutes
+                            return message.timestamp
+            else:
+                # Search all channels if no specific channel provided
+                for channel in self.state.channels.values():
+                    for message in reversed(channel.recent_messages):
+                        if message.is_from_bot():
+                            if message.reply_to == thread_id or message.id == thread_id:
+                                return message.timestamp
+            
+            return None
+            
+        except Exception as e:
+            logger.warning(f"Error getting last bot activity in thread {thread_id}: {e}")
+            return None
+    
+    def get_conversation_history(self, message_id: str, channel_id: Optional[str] = None) -> List:
+        """
+        Get the conversation history for a message thread.
+        
+        Args:
+            message_id: Message ID to get history for
+            channel_id: Optional channel ID to limit search
+            
+        Returns:
+            List of messages in the conversation thread
+        """
+        try:
+            history = []
+            
+            # Search channels for the conversation thread
+            channels_to_search = [self.state.channels[channel_id]] if channel_id and channel_id in self.state.channels else self.state.channels.values()
+            
+            for channel in channels_to_search:
+                for message in channel.recent_messages:
+                    if message.id == message_id or message.reply_to == message_id:
+                        history.append(message)
+            
+            # Sort by timestamp
+            history.sort(key=lambda x: x.timestamp)
+            return history[-10:]  # Last 10 messages max
+            
+        except Exception as e:
+            logger.warning(f"Error getting conversation history for {message_id}: {e}")
+            return []
+    
+    def get_user_profile(self, platform: str, user_identifier: str):
+        """
+        Get user profile information for a given platform and identifier.
+        
+        Args:
+            platform: Platform type ('farcaster' or 'matrix')
+            user_identifier: User identifier (FID for Farcaster, user_id for Matrix)
+            
+        Returns:
+            User profile object or None if not found
+        """
+        try:
+            if platform == 'farcaster':
+                return self.state.farcaster_users.get(user_identifier)
+            elif platform == 'matrix':
+                return self.state.matrix_users.get(user_identifier)
+            return None
+        except Exception as e:
+            logger.warning(f"Error getting user profile for {platform}:{user_identifier}: {e}")
+            return None
+    
+    def get_channel_by_id(self, channel_id: str):
+        """
+        Get channel information by ID.
+        
+        Args:
+            channel_id: Channel identifier
+            
+        Returns:
+            Channel object or None if not found
+        """
+        try:
+            return self.state.channels.get(channel_id)
+        except Exception as e:
+            logger.warning(f"Error getting channel {channel_id}: {e}")
+            return None

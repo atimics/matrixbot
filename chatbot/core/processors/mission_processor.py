@@ -39,7 +39,7 @@ class MissionProcessor(Processor):
         mission: Mission,
         lightweight_ai_engine: LightweightAIEngine,
         world_state_data: WorldStateData,
-        tool_registry: ToolRegistry,
+        main_tool_registry: ToolRegistry,
         action_context: Optional[ActionContext] = None
     ):
         """
@@ -49,16 +49,46 @@ class MissionProcessor(Processor):
             mission: The mission this processor is responsible for
             lightweight_ai_engine: Fast, cheap AI engine for conversations
             world_state_data: Snapshot of world state (not the full manager)
-            tool_registry: Access to available tools
+            main_tool_registry: Main tool registry to create scoped version from
             action_context: Context for executing actions
         """
         self.mission = mission
         self.ai_engine = lightweight_ai_engine
         self.world_state = world_state_data
-        self.tool_registry = tool_registry
         self.action_context = action_context
         
+        # Create scoped tool registry based on mission's tool_scope
+        self.tool_registry = self._create_scoped_tool_registry(main_tool_registry, mission.tool_scope)
+        
         logger.info(f"MissionProcessor initialized for mission: {mission.id} in channel: {mission.channel_id}")
+        logger.info(f"Tool scope: {mission.tool_scope}")
+    
+    def _create_scoped_tool_registry(self, main_registry: ToolRegistry, tool_scope: List[str]) -> ToolRegistry:
+        """
+        Create a new, local ToolRegistry containing only the tools specified in tool_scope.
+        
+        This ensures that Sub-Agents are "blind" to tools they shouldn't have access to,
+        enhancing security and focus.
+        
+        Args:
+            main_registry: The main tool registry with all tools
+            tool_scope: List of tool names this Sub-Agent is allowed to use
+            
+        Returns:
+            New ToolRegistry with only scoped tools
+        """
+        scoped_registry = ToolRegistry()
+        
+        for tool_name in tool_scope:
+            tool = main_registry.get_tool(tool_name)
+            if tool:
+                scoped_registry.register_tool(tool)
+                logger.debug(f"Registered scoped tool: {tool_name}")
+            else:
+                logger.warning(f"Tool '{tool_name}' in mission scope not found in main registry")
+        
+        logger.info(f"Created scoped tool registry with {len(tool_scope)} tools")
+        return scoped_registry
     
     async def process_cycle(
         self,
@@ -125,6 +155,8 @@ class MissionProcessor(Processor):
         Build a minimal, focused payload with only mission context and recent messages.
         
         This is much smaller than the full world state payload used by the Commander AI.
+        The payload only includes tools that are in the mission's scope, ensuring
+        the Sub-Agent is focused and secure.
         """
         # Get channel data
         channel_data = self.world_state.channels.get(channel_id)
@@ -134,7 +166,8 @@ class MissionProcessor(Processor):
                 "mission": self._mission_to_dict(),
                 "messages": [],
                 "channel_id": channel_id,
-                "error": "Channel not found"
+                "error": "Channel not found",
+                "available_tools": "wait: Wait and observe without taking action"
             }
         
         # Get only the most recent, relevant messages
@@ -152,12 +185,22 @@ class MissionProcessor(Processor):
                 "is_from_bot": msg.is_from_bot()
             })
         
+        # Include only scoped tools in the payload
+        scoped_tool_descriptions = self.tool_registry.get_tool_descriptions_for_ai()
+        
         return {
             "mission": self._mission_to_dict(),
             "messages": message_summaries,
             "channel_id": channel_id,
             "channel_name": channel_data.name,
-            "cycle_timestamp": self.world_state.last_update
+            "cycle_timestamp": self.world_state.last_update,
+            "available_tools": scoped_tool_descriptions,
+            "instructions": (
+                f"SUB-AGENT MODE: You are a focused Sub-Agent responsible for the mission: '{self.mission.objective}'. "
+                f"You have access to only the tools specified for this mission: {self.mission.tool_scope}. "
+                f"Focus solely on accomplishing this mission in channel {channel_data.name}. "
+                f"Be helpful, conversational, and mission-oriented."
+            )
         }
     
     def _mission_to_dict(self) -> Dict[str, Any]:
@@ -171,7 +214,8 @@ class MissionProcessor(Processor):
             "updated_at": self.mission.updated_at,
             "priority": self.mission.priority,
             "context": self.mission.context,
-            "channel_id": self.mission.channel_id
+            "channel_id": self.mission.channel_id,
+            "tool_scope": self.mission.tool_scope
         }
     
     async def _execute_action(self, action: ActionPlan, cycle_id: str) -> bool:

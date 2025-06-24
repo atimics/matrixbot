@@ -2,10 +2,11 @@
 Processing Hub - Commander/Sub-Agent Coordination Center
 
 Central hub for the new Commander/Sub-Agent architecture where the system:
-1. Routes channels with active missions to Sub-Agents (MissionProcessor)
-2. Routes complex analysis and delegation to the Commander AI (AdaptiveProcessor)
-3. Coordinates multiple concurrent processing streams
-4. Manages mission lifecycle and Sub-Agent coordination
+1. Routes ContextualThreads from AttentionQueue to appropriate processors
+2. Routes channels with active missions to Sub-Agents (MissionProcessor)
+3. Routes complex analysis and delegation to the Commander AI (AdaptiveProcessor)
+4. Coordinates multiple concurrent processing streams
+5. Manages mission lifecycle and Sub-Agent coordination
 """
 
 import asyncio
@@ -23,6 +24,8 @@ if TYPE_CHECKING:
     from ..lightweight_ai_engine import LightweightAIEngine
     from ...tools.registry import ToolRegistry
     from ...tools.base import ActionContext
+    from ..attention.engine import AttentionEngine
+    from ..attention.structures import ContextualThread
 
 logger = logging.getLogger(__name__)
 
@@ -46,14 +49,15 @@ class ProcessingHub:
     Central coordination hub for the Commander/Sub-Agent architecture.
     
     This hub revolutionizes processing by:
-    1. Identifying channels with active missions and routing them to Sub-Agents
-    2. Routing remaining channels to the Commander AI for strategic analysis
-    3. Coordinating concurrent processing streams
-    4. Managing mission lifecycle and Sub-Agent health
-    5. Providing unified metrics and monitoring
+    1. Processing ContextualThreads from the AttentionQueue instead of raw events
+    2. Identifying channels with active missions and routing them to Sub-Agents
+    3. Routing remaining channels to the Commander AI for strategic analysis
+    4. Coordinating concurrent processing streams
+    5. Managing mission lifecycle and Sub-Agent health
+    6. Providing unified metrics and monitoring
     
     The new architecture eliminates the binary traditional/node-based choice,
-    replacing it with intelligent per-channel routing.
+    replacing it with intelligent per-thread routing based on rich context.
     """
     
     def __init__(
@@ -61,6 +65,7 @@ class ProcessingHub:
         world_state_manager: "WorldStateManager",
         payload_builder: "PayloadBuilder", 
         rate_limiter: "RateLimiter",
+        attention_queue: asyncio.Queue,
         config: Optional[ProcessingConfig] = None,
         tool_registry: Optional["ToolRegistry"] = None,
         action_context: Optional["ActionContext"] = None
@@ -68,6 +73,7 @@ class ProcessingHub:
         self.world_state = world_state_manager
         self.payload_builder = payload_builder
         self.rate_limiter = rate_limiter
+        self.attention_queue = attention_queue
         self.config = config or ProcessingConfig()
         self.tool_registry = tool_registry
         self.action_context = action_context
@@ -91,7 +97,7 @@ class ProcessingHub:
         # Processing metrics
         self.processing_metrics: List[Dict[str, Any]] = []
         
-        logger.info("ProcessingHub initialized with Commander/Sub-Agent architecture")
+        logger.info("ProcessingHub initialized with thread-centric Commander/Sub-Agent architecture")
         
     def set_commander_processor(self, processor: "AdaptiveProcessor"):
         """Set the Commander AI processor."""
@@ -132,23 +138,22 @@ class ProcessingHub:
             logger.debug("State change event triggered")
 
     async def _main_event_loop(self) -> None:
-        """Main event loop for processing world state changes."""
-        logger.info("Starting main event loop...")
-        last_state_hash = None
+        """Main event loop for processing ContextualThreads from the AttentionQueue."""
+        logger.info("Starting thread-centric event loop...")
 
         while self.running:
             try:
-                # Wait for state change event or timeout
+                # Wait for ContextualThread from AttentionQueue or timeout
                 try:
-                    await asyncio.wait_for(
-                        self.state_changed_event.wait(),
+                    thread = await asyncio.wait_for(
+                        self.attention_queue.get(),
                         timeout=self.config.observation_interval,
                     )
-                    self.state_changed_event.clear()
-                    logger.info("State change event triggered")
+                    logger.info(f"Received ContextualThread: {thread.thread_id}")
                 except asyncio.TimeoutError:
-                    # Periodic check even if no events
-                    pass
+                    # Periodic maintenance even if no threads
+                    await self._periodic_maintenance()
+                    continue
 
                 cycle_start = time.time()
 
@@ -157,38 +162,28 @@ class ProcessingHub:
 
                 if not can_process:
                     if wait_time > 0:
-                        logger.debug(f"Rate limiting: waiting {wait_time:.2f}s before next cycle")
+                        logger.debug(f"Rate limiting: waiting {wait_time:.2f}s before processing thread")
                         await asyncio.sleep(min(wait_time, self.config.observation_interval))
+                        # Put the thread back in the queue for later processing
+                        await self.attention_queue.put(thread)
                     continue
 
                 # Record the cycle for rate limiting
                 self.rate_limiter.record_cycle(cycle_start)
 
-                # Get current world state
-                current_state = self.world_state.to_dict()
-                current_hash = self._hash_state(current_state)
+                # Process the ContextualThread
+                await self._process_contextual_thread(thread)
 
-                # Check if state has changed
-                if current_hash != last_state_hash:
-                    logger.info(f"World state changed, processing cycle {self.cycle_count}")
+                # Update tracking
+                self.cycle_count += 1
+                self.last_cycle_time = cycle_start
 
-                    # Get active channels to determine primary focus
-                    active_channels = self._get_active_channels(current_state)
+                cycle_duration = time.time() - cycle_start
+                logger.info(f"Thread {thread.thread_id} processed in {cycle_duration:.2f}s")
 
-                    # Process using Commander/Sub-Agent strategy
-                    await self._process_world_state(active_channels)
-
-                    # Update tracking
-                    last_state_hash = current_hash
-                    self.cycle_count += 1
-                    self.last_cycle_time = cycle_start
-
-                    cycle_duration = time.time() - cycle_start
-                    logger.info(f"Cycle {self.cycle_count} completed in {cycle_duration:.2f}s")
-
-                    # Log rate limiting status every 10 cycles for monitoring
-                    if self.cycle_count % 10 == 0:
-                        self._log_rate_limit_status()
+                # Log rate limiting status every 10 cycles for monitoring
+                if self.cycle_count % 10 == 0:
+                    self._log_rate_limit_status()
 
             except Exception as e:
                 logger.error(f"Error in event loop cycle {self.cycle_count}: {e}")
@@ -351,7 +346,7 @@ class ProcessingHub:
                 mission=mission_data,
                 lightweight_ai_engine=self.lightweight_ai_engine,
                 world_state_data=world_state_data,
-                tool_registry=self.tool_registry,
+                main_tool_registry=self.tool_registry,
                 action_context=self.action_context
             )
             
@@ -586,3 +581,119 @@ class ProcessingHub:
         """Get current rate limiting status."""
         current_time = time.time()
         return self.rate_limiter.get_rate_limit_status(current_time)
+
+    async def _periodic_maintenance(self) -> None:
+        """Perform periodic maintenance tasks when no threads are available."""
+        try:
+            # Clean up completed missions and Sub-Agents
+            await self._cleanup_completed_missions()
+            
+            # Check for proactive opportunities
+            await self._detect_proactive_opportunities()
+            
+            logger.debug("Periodic maintenance completed")
+            
+        except Exception as e:
+            logger.warning(f"Error in periodic maintenance: {e}")
+    
+    async def _process_contextual_thread(self, thread: "ContextualThread") -> None:
+        """
+        Process a ContextualThread using the appropriate processor.
+        
+        This method determines whether the thread should be handled by:
+        1. An existing Sub-Agent (if the channel has an active mission)
+        2. The Commander AI (for strategic analysis and complex tasks)
+        
+        Args:
+            thread: The ContextualThread to process
+        """
+        try:
+            channel_id = thread.triggering_message.channel_id
+            
+            if not channel_id:
+                logger.warning(f"Thread {thread.thread_id} has no channel_id, routing to Commander")
+                await self._route_to_commander(thread)
+                return
+            
+            # Check if this channel has an active mission (Sub-Agent territory)
+            world_state_data = self.world_state.get_state_data()
+            channel = world_state_data.channels.get(channel_id)
+            
+            if channel and channel.current_mission_id:
+                # Route to Sub-Agent
+                await self._route_to_sub_agent(thread, channel.current_mission_id)
+            else:
+                # Route to Commander AI for strategic analysis
+                await self._route_to_commander(thread)
+                
+        except Exception as e:
+            logger.error(f"Error processing ContextualThread {thread.thread_id}: {e}")
+    
+    async def _route_to_sub_agent(self, thread: "ContextualThread", mission_id: str) -> None:
+        """
+        Route a ContextualThread to the appropriate Sub-Agent.
+        
+        Args:
+            thread: The thread to process
+            mission_id: The mission ID for the Sub-Agent
+        """
+        try:
+            channel_id = thread.triggering_message.channel_id
+            if not channel_id:
+                logger.warning(f"Thread {thread.thread_id} has no channel_id, cannot route to Sub-Agent")
+                await self._route_to_commander(thread)
+                return
+            
+            # Get or create Sub-Agent for this mission
+            sub_agent = await self._get_or_create_sub_agent(mission_id, channel_id)
+            
+            if sub_agent:
+                logger.info(f"Routing thread {thread.thread_id} to Sub-Agent for mission {mission_id}")
+                
+                # Convert ContextualThread to mission processing context
+                mission_context = {
+                    "thread": thread,
+                    "triggering_message": thread.triggering_message,
+                    "conversation_history": thread.conversation_history,
+                    "author_context": thread.author_context,
+                    "channel_context": thread.channel_context
+                }
+                
+                # Process with Sub-Agent
+                await self._process_single_mission(sub_agent, mission_id, channel_id)
+            else:
+                logger.warning(f"Could not create Sub-Agent for mission {mission_id}, routing to Commander")
+                await self._route_to_commander(thread)
+                
+        except Exception as e:
+            logger.error(f"Error routing thread to Sub-Agent: {e}")
+            # Fallback to Commander
+            await self._route_to_commander(thread)
+    
+    async def _route_to_commander(self, thread: "ContextualThread") -> None:
+        """
+        Route a ContextualThread to the Commander AI for strategic processing.
+        
+        Args:
+            thread: The thread to process with the Commander
+        """
+        try:
+            if not self.commander_processor:
+                logger.error("No Commander processor available for thread processing")
+                return
+            
+            logger.info(f"Routing thread {thread.thread_id} to Commander AI")
+            
+            # Process with Commander AI using thread-centric method
+            result = await self.commander_processor.process_contextual_thread(
+                thread=thread,
+                cycle_id=f"thread_{thread.thread_id}"
+            )
+            
+            if result and result.get("success"):
+                logger.info(f"Commander processed thread {thread.thread_id} successfully")
+            else:
+                logger.warning(f"Commander processing failed for thread {thread.thread_id}: {result.get('error', 'Unknown error')}")
+                
+        except Exception as e:
+            logger.error(f"Error routing thread to Commander: {e}")
