@@ -37,6 +37,10 @@ class WebSearchTool(ToolInterface):
         The tool will use an AI model with web access to provide comprehensive, current information."""
 
     @property
+    def access_level(self) -> str:
+        return 'strategic'
+
+    @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
             "query": "string (the search query or question to research online)",
@@ -74,7 +78,7 @@ class WebSearchTool(ToolInterface):
                         "X-Title": settings.your_site_name or "Chatbot Web Search",
                     },
                     json={
-                        "model": settings.WEB_SEARCH_MODEL,
+                        "model": settings.processing.web_search_model,
                         "messages": [
                             {
                                 "role": "user",
@@ -100,7 +104,7 @@ class WebSearchTool(ToolInterface):
                         "query": query,
                         "focus": focus,
                         "result": search_result,
-                        "model_used": settings.WEB_SEARCH_MODEL,
+                        "model_used": settings.processing.web_search_model,
                     }
                 else:
                     logger.error(f"OpenRouter API error: {response.status_code} - {response.text}")

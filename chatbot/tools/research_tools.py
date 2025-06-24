@@ -39,6 +39,10 @@ class UpdateResearchTool(ToolInterface):
         improves accuracy of responses over time."""
 
     @property
+    def access_level(self) -> str:
+        return 'strategic'
+
+    @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
             "topic": "string (the main topic or subject, will be normalized)",
@@ -175,6 +179,10 @@ class QueryResearchTool(ToolInterface):
         
         This helps provide consistent, well-sourced answers and avoids unnecessary
         re-research of topics already covered."""
+
+    @property
+    def access_level(self) -> str:
+        return 'strategic'
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:

@@ -367,6 +367,10 @@ class ScratchpadListTool(ToolInterface):
         )
     
     @property
+    def access_level(self) -> str:
+        return 'strategic'
+    
+    @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
             "type": "object",
@@ -404,6 +408,10 @@ class ScratchpadClearTool(ToolInterface):
         )
     
     @property
+    def access_level(self) -> str:
+        return 'strategic'
+    
+    @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
             "type": "object",
@@ -439,6 +447,10 @@ class ScratchpadDeleteTool(ToolInterface):
             "remove outdated analysis, completed tasks, or incorrect reasoning "
             "that is no longer relevant."
         )
+    
+    @property
+    def access_level(self) -> str:
+        return 'strategic'
     
     @property
     def parameters_schema(self) -> Dict[str, Any]:

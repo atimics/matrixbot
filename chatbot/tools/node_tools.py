@@ -40,6 +40,10 @@ class ExpandNodeTool(ToolInterface):
         )
 
     @property
+    def access_level(self) -> str:
+        return 'strategic'
+
+    @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
             "node_path": (
@@ -128,6 +132,10 @@ class CollapseNodeTool(ToolInterface):
         )
 
     @property
+    def access_level(self) -> str:
+        return 'strategic'
+
+    @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
             "node_path": "string - The path identifier of the currently expanded node to collapse"
@@ -188,6 +196,10 @@ class PinNodeTool(ToolInterface):
             "when the expansion limit is reached. Use for nodes you want to keep "
             "in detailed view for an extended period across multiple decision cycles."
         )
+
+    @property
+    def access_level(self) -> str:
+        return 'strategic'
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
@@ -253,6 +265,10 @@ class UnpinNodeTool(ToolInterface):
         )
 
     @property
+    def access_level(self) -> str:
+        return 'strategic'
+
+    @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
             "node_path": "string - The path identifier of the node to unpin"
@@ -313,6 +329,10 @@ class RefreshSummaryTool(ToolInterface):
             "usually if its content has changed significantly or the current "
             "summary is insufficient for understanding the node's relevance."
         )
+
+    @property
+    def access_level(self) -> str:
+        return 'strategic'
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
@@ -376,6 +396,10 @@ class GetExpansionStatusTool(ToolInterface):
             "which nodes are expanded, pinned, and how close to the "
             "expansion limit you are. Useful for understanding context management."
         )
+
+    @property
+    def access_level(self) -> str:
+        return 'strategic'
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:

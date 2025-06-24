@@ -77,6 +77,10 @@ class GenerateImageTool(ToolInterface):
         )
 
     @property
+    def access_level(self) -> str:
+        return 'conversational'
+
+    @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
             "type": "object",
@@ -110,9 +114,9 @@ class GenerateImageTool(ToolInterface):
             service_used = "unknown"
 
             # Try Google Gemini first
-            if settings.GOOGLE_API_KEY:
+            if settings.media_generation.google_api_key:
                 try:
-                    google_client = GoogleAIMediaClient(api_key=settings.GOOGLE_API_KEY)
+                    google_client = GoogleAIMediaClient(api_key=settings.media_generation.google_api_key)
                     image_data = await google_client.generate_image_gemini(prompt, aspect_ratio)
                     if image_data:
                         service_used = "google_gemini"
@@ -121,9 +125,9 @@ class GenerateImageTool(ToolInterface):
                     logger.warning(f"Google Gemini image generation failed: {e}")
 
             # Fallback to Replicate if Gemini failed or was not used
-            if not image_data and settings.REPLICATE_API_TOKEN:
+            if not image_data and settings.media_generation.replicate_api_token:
                 try:
-                    replicate_client = ReplicateClient(api_token=settings.REPLICATE_API_TOKEN)
+                    replicate_client = ReplicateClient(api_token=settings.media_generation.replicate_api_token)
                     replicate_image_url = await replicate_client.generate_image(prompt, aspect_ratio=aspect_ratio)
                     if replicate_image_url:
                         async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
@@ -205,11 +209,11 @@ class GenerateVideoTool(ToolInterface):
             return {"status": "error", "message": "Prompt cannot be empty"}
         if not context.s3_service or not context.s3_service.is_configured():
             return {"status": "error", "message": "S3 service is not configured."}
-        if not settings.GOOGLE_API_KEY:
+        if not settings.media_generation.google_api_key:
             return {"status": "error", "message": "Google AI API key not configured for video generation."}
 
         try:
-            google_client = GoogleAIMediaClient(api_key=settings.GOOGLE_API_KEY)
+            google_client = GoogleAIMediaClient(api_key=settings.media_generation.google_api_key)
             video_list = await google_client.generate_video_veo(prompt=prompt, aspect_ratio=aspect_ratio)
 
             if not video_list:
