@@ -709,11 +709,7 @@ class MainOrchestrator:
                 logger.error(f"Failed to initialize Farcaster observer: {e}")
                 logger.info("Continuing without Farcaster integration")
         
-        # Update action context with initialized observers
-        self.action_context.matrix_observer = self.matrix_observer
-        self.action_context.farcaster_observer = self.farcaster_observer
-        
-        # CRITICAL: Register observers with ServiceRegistry during initial setup
+        # Register observers with ServiceRegistry during initial setup (no direct assignment needed)
         if self.matrix_observer and self.action_context and self.action_context.service_registry:
             self.action_context.service_registry.register_service("matrix_observer", self.matrix_observer)
             logger.info(f"✓ Matrix observer registered with ServiceRegistry during initialization")
