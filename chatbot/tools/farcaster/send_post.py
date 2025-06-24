@@ -179,10 +179,13 @@ class SendFarcasterPostTool(ToolInterface):
                     media_library = context.world_state_manager.state.generated_media_library
                     if media_library:
                         last_media = media_library[-1]
-                        media_age = time.time() - last_media.get('timestamp', 0)
-                        if media_age <= 300:  # 5 minutes
-                            embed_url = recent_media_url
-                            logger.info(f"Auto-attaching recently generated media to Farcaster post: {embed_url}")
+                        timestamp = last_media.get('timestamp', 0)
+                        # Ensure timestamp is a number, not a mock
+                        if isinstance(timestamp, (int, float)) and timestamp > 0:
+                            media_age = time.time() - timestamp
+                            if media_age <= 300:  # 5 minutes
+                                embed_url = recent_media_url
+                                logger.info(f"Auto-attaching recently generated media to Farcaster post: {embed_url}")
 
         # Prepare embeds
         embeds = []
