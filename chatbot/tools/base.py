@@ -96,6 +96,21 @@ class ToolInterface(ABC):
         Example: {"channel_id": "string (Matrix room ID)", "content": "string"}
         """
         pass
+    
+    @property
+    def access_level(self) -> str:
+        """
+        Access level for this tool, determining which agents can use it.
+        
+        Levels:
+        - 'conversational': Basic tools for simple conversations (Sub-Agents)
+        - 'strategic': Advanced tools for strategic planning (Commander AI)
+        - 'system': System-level tools for administration
+        - 'core': Core tools available to all agents
+        
+        Default is 'core' for backward compatibility.
+        """
+        return 'core'
 
     @abstractmethod
     async def execute(

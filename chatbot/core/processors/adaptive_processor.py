@@ -317,8 +317,7 @@ class AdaptiveProcessor(Processor):
                         if bot_messages_after_user:
                             already_responded = True
                             logger.debug(f"Already responded to message {latest_user_msg.id} in {channel_id}")
-                        
-                        # Double-check using world state manager if available
+                         # Double-check using world state manager if available
                         if (not already_responded and 
                             self.world_state_manager and 
                             hasattr(self.world_state_manager, 'has_bot_replied_to_matrix_event')):
@@ -343,8 +342,6 @@ class AdaptiveProcessor(Processor):
                                 })
                         else:
                             logger.debug(f"Skipping delegation for {channel_id} - already responded to latest message")
-                                "message_age_minutes": message_age_minutes
-                            })
             
             logger.info(f"AdaptiveProcessor: Found {len(delegation_opportunities)} delegation opportunities")
             
