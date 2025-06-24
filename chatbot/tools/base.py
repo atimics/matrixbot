@@ -48,19 +48,73 @@ class ActionContext:
             from ..core.services import ServiceRegistry
             self.service_registry = ServiceRegistry()
             
-            # Register legacy services for compatibility during migration
-            if matrix_observer:
-                self.service_registry.register_service("matrix_observer", matrix_observer)
-            if farcaster_observer:
-                self.service_registry.register_service("farcaster_observer", farcaster_observer)
-            if arweave_service:
-                self.service_registry.register_service("arweave_storage", arweave_service)
-            if s3_service:
-                self.service_registry.register_service("s3_storage", s3_service)
-            if base_nft_service:
-                self.service_registry.register_service("base_nft_service", base_nft_service)
-            if eligibility_service:
-                self.service_registry.register_service("eligibility_service", eligibility_service)
+        # Register legacy services for compatibility during migration
+        if matrix_observer:
+            self.service_registry.register_service("matrix_observer", matrix_observer)
+        if farcaster_observer:
+            self.service_registry.register_service("farcaster_observer", farcaster_observer)
+        if arweave_service:
+            self.service_registry.register_service("arweave_storage", arweave_service)
+        if s3_service:
+            self.service_registry.register_service("s3_storage", s3_service)
+        if base_nft_service:
+            self.service_registry.register_service("base_nft_service", base_nft_service)
+        if eligibility_service:
+            self.service_registry.register_service("eligibility_service", eligibility_service)
+
+    # Legacy property accessors for backward compatibility
+    # These will raise deprecation warnings to encourage migration to service registry
+    @property
+    def matrix_observer(self):
+        """DEPRECATED: Use service_registry.get_messaging_service('matrix') instead."""
+        import warnings
+        warnings.warn(
+            "Direct access to matrix_observer is deprecated. Use context.service_registry.get_messaging_service('matrix') instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        if self.service_registry:
+            return self.service_registry.get_service("matrix_observer")
+        return None
+    
+    @property
+    def farcaster_observer(self):
+        """DEPRECATED: Use service_registry.get_messaging_service('farcaster') instead."""
+        import warnings
+        warnings.warn(
+            "Direct access to farcaster_observer is deprecated. Use context.service_registry.get_messaging_service('farcaster') instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        if self.service_registry:
+            return self.service_registry.get_service("farcaster_observer")
+        return None
+    
+    @property
+    def arweave_service(self):
+        """DEPRECATED: Use service_registry.get_storage_service() instead."""
+        import warnings
+        warnings.warn(
+            "Direct access to arweave_service is deprecated. Use context.service_registry.get_storage_service() instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        if self.service_registry:
+            return self.service_registry.get_service("arweave_storage")
+        return None
+    
+    @property
+    def s3_service(self):
+        """DEPRECATED: Use service_registry.get_storage_service() instead."""
+        import warnings
+        warnings.warn(
+            "Direct access to s3_service is deprecated. Use context.service_registry.get_storage_service() instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        if self.service_registry:
+            return self.service_registry.get_service("s3_storage")
+        return None
 
 
 class ToolInterface(ABC):

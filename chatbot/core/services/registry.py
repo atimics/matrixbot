@@ -9,6 +9,7 @@ accessing observers or clients, promoting loose coupling and testability.
 """
 
 import logging
+import os
 from typing import Any, Dict, Optional, Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,118 @@ class StorageService(Protocol):
     async def retrieve(self, key: str, **kwargs) -> Dict[str, Any]:
         """Retrieve data by key."""
         ...
+
+
+class PrimaryStorageService:
+    """
+    Unified storage service that abstracts away the choice between S3 and Arweave.
+    
+    This service automatically selects the appropriate backend based on configuration,
+    allowing tools to use a single storage interface without needing to know about
+    the underlying implementation.
+    """
+    
+    def __init__(self, arweave_service=None, s3_service=None):
+        self.arweave_service = arweave_service
+        self.s3_service = s3_service
+        
+        # Determine primary backend from environment
+        self.primary_backend = os.getenv("PRIMARY_STORAGE_BACKEND", "arweave").lower()
+        
+        logger.info(f"PrimaryStorageService initialized with backend: {self.primary_backend}")
+    
+    async def store(self, key: str, data: Any, **kwargs) -> Dict[str, Any]:
+        """Store data using the configured primary backend."""
+        storage_type = kwargs.get("storage_type", self.primary_backend)
+        
+        if storage_type == "arweave" and self.arweave_service:
+            return await self._store_arweave(key, data, **kwargs)
+        elif storage_type == "s3" and self.s3_service:
+            return await self._store_s3(key, data, **kwargs)
+        else:
+            # Fallback to available service
+            if self.arweave_service:
+                return await self._store_arweave(key, data, **kwargs)
+            elif self.s3_service:
+                return await self._store_s3(key, data, **kwargs)
+            else:
+                return {
+                    "status": "error",
+                    "error": "No storage backend available"
+                }
+    
+    async def retrieve(self, key: str, **kwargs) -> Dict[str, Any]:
+        """Retrieve data using the configured primary backend."""
+        storage_type = kwargs.get("storage_type", self.primary_backend)
+        
+        if storage_type == "arweave" and self.arweave_service:
+            return await self._retrieve_arweave(key, **kwargs)
+        elif storage_type == "s3" and self.s3_service:
+            return await self._retrieve_s3(key, **kwargs)
+        else:
+            # Try both backends
+            if self.arweave_service:
+                result = await self._retrieve_arweave(key, **kwargs)
+                if result.get("status") == "success":
+                    return result
+            
+            if self.s3_service:
+                return await self._retrieve_s3(key, **kwargs)
+            
+            return {
+                "status": "error",
+                "error": "No storage backend available"
+            }
+    
+    async def _store_arweave(self, key: str, data: Any, **kwargs) -> Dict[str, Any]:
+        """Store data via Arweave service."""
+        try:
+            if hasattr(data, 'read'):  # File-like object
+                return await self.arweave_service.upload_file(data, key, **kwargs)
+            else:  # String or other data
+                return await self.arweave_service.upload_data(str(data), key, **kwargs)
+        except Exception as e:
+            logger.error(f"Arweave storage error: {e}")
+            return {
+                "status": "error",
+                "error": f"Arweave storage failed: {str(e)}"
+            }
+    
+    async def _store_s3(self, key: str, data: Any, **kwargs) -> Dict[str, Any]:
+        """Store data via S3 service."""
+        try:
+            if hasattr(data, 'read'):  # File-like object
+                return await self.s3_service.upload_file(data, key, **kwargs)
+            else:  # String or other data
+                return await self.s3_service.upload_data(str(data), key, **kwargs)
+        except Exception as e:
+            logger.error(f"S3 storage error: {e}")
+            return {
+                "status": "error",
+                "error": f"S3 storage failed: {str(e)}"
+            }
+    
+    async def _retrieve_arweave(self, key: str, **kwargs) -> Dict[str, Any]:
+        """Retrieve data via Arweave service."""
+        try:
+            return await self.arweave_service.get_data(key, **kwargs)
+        except Exception as e:
+            logger.error(f"Arweave retrieval error: {e}")
+            return {
+                "status": "error",
+                "error": f"Arweave retrieval failed: {str(e)}"
+            }
+    
+    async def _retrieve_s3(self, key: str, **kwargs) -> Dict[str, Any]:
+        """Retrieve data via S3 service."""
+        try:
+            return await self.s3_service.get_data(key, **kwargs)
+        except Exception as e:
+            logger.error(f"S3 retrieval error: {e}")
+            return {
+                "status": "error",
+                "error": f"S3 retrieval failed: {str(e)}"
+            }
 
 
 class ServiceRegistry:
@@ -79,10 +192,23 @@ class ServiceRegistry:
         
         return service
     
-    def get_storage_service(self, storage_type: str) -> Optional[StorageService]:
+    def get_storage_service(self, storage_type: str = "primary") -> Optional[StorageService]:
         """Get a storage service by type."""
-        service_name = f"{storage_type}_storage"
-        return self.get_service(service_name)
+        if storage_type == "primary":
+            # Return the unified primary storage service
+            service = self.get_service("primary_storage")
+            if not service:
+                # Create primary storage service if not exists
+                arweave_service = self.get_service("arweave_storage")
+                s3_service = self.get_service("s3_storage")
+                if arweave_service or s3_service:
+                    service = PrimaryStorageService(arweave_service, s3_service)
+                    self.register_service("primary_storage", service)
+            return service
+        else:
+            # Return specific storage service
+            service_name = f"{storage_type}_storage"
+            return self.get_service(service_name)
     
     def list_services(self) -> Dict[str, str]:
         """List all registered services."""
