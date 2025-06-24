@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from chatbot.tools.base import ActionContext
 from chatbot.tools.farcaster import SendFarcasterPostTool
+from chatbot.core.service_registry import ServiceRegistry
 
 
 @pytest.mark.asyncio
@@ -18,9 +19,22 @@ async def test_farcaster_empty_content_with_image():
     # Setup logging
     logging.basicConfig(level=logging.INFO)
     
+    # Create mock Farcaster observer
+    mock_farcaster_observer = AsyncMock()
+    # Ensure no post_queue attribute to avoid scheduling path
+    if hasattr(mock_farcaster_observer, 'post_queue'):
+        delattr(mock_farcaster_observer, 'post_queue')
+    mock_farcaster_observer.post_cast = AsyncMock(return_value={
+        "success": True,
+        "cast": {"hash": "0x123456"}
+    })
+    
+    # Create service registry and register the observer
+    service_registry = ServiceRegistry()
+    service_registry.register_service("farcaster_observer", mock_farcaster_observer)
+    
     # Create mock context
-    context = ActionContext()
-    context.farcaster_observer = AsyncMock()
+    context = ActionContext(service_registry=service_registry)
     # Ensure no post_queue attribute to avoid scheduling path
     if hasattr(context.farcaster_observer, 'post_queue'):
         delattr(context.farcaster_observer, 'post_queue')
