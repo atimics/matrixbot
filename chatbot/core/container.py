@@ -120,7 +120,7 @@ class DependencyContainer:
         # Reset all references
         self._database_manager = None
         self._world_state_manager = None
-        self._context_manager = None
+        self._history_recorder = None
         self._integration_manager = None
         self._ai_engine = None
         self._payload_builder = None
