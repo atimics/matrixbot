@@ -29,36 +29,36 @@ async def get_configuration(orchestrator: MainOrchestrator = Depends(get_orchest
         # Get current configuration from settings
         config = {
             "ai": {
-                "model": settings.AI_MODEL,
+                "model": settings.processing.ai_model,
                 "max_actions_per_cycle": 3,
                 "temperature": getattr(settings, 'AI_TEMPERATURE', 0.7)
             },
             "processing": {
-                "node_based_enabled": orchestrator.processing_hub.get_processing_status().get("node_based_enabled", True),
-                "max_expanded_nodes": getattr(settings.processing, 'max_expanded_nodes', 3),
+                "node_based_enabled": orchestrator.processing_hub.get_processing_status().get("node_based_enabled", True) if orchestrator.processing_hub else True,
+                "max_expanded_nodes": settings.processing.max_expanded_nodes,
                 "auto_collapse_threshold": getattr(settings, 'AUTO_COLLAPSE_THRESHOLD', 10)
             },
             "rate_limits": {
-                "max_cycles_per_hour": settings.MAX_CYCLES_PER_HOUR,
-                "max_actions_per_hour": getattr(settings, 'MAX_ACTIONS_PER_HOUR', 600),
-                "image_generation_cooldown": settings.IMAGE_GENERATION_COOLDOWN_SECONDS,
-                "video_generation_cooldown": settings.VIDEO_GENERATION_COOLDOWN_SECONDS,
-                "farcaster_post_cooldown": settings.FARCASTER_POST_COOLDOWN_SECONDS
+                "max_cycles_per_hour": settings.processing.max_cycles_per_hour,
+                "max_actions_per_hour": settings.processing.max_actions_per_hour,
+                "image_generation_cooldown": settings.media_generation.image_generation_cooldown_seconds,
+                "video_generation_cooldown": settings.media_generation.video_generation_cooldown_seconds,
+                "farcaster_post_cooldown": settings.farcaster.post_cooldown_seconds
             },
             "integrations": {
                 "matrix_enabled": bool(settings.matrix.user_id and settings.matrix.password),
                 "farcaster_enabled": bool(settings.farcaster.neynar_api_key),
-                "arweave_enabled": bool(settings.storage.arweave_wallet_path),
+                "arweave_enabled": bool(settings.storage.arweave_internal_uploader_service_url),
                 "replicate_enabled": bool(settings.media_generation.replicate_api_token),
                 "google_ai_enabled": bool(settings.media_generation.google_api_key)
             },
             "storage": {
-                "db_path": settings.DB_PATH,
+                "db_path": settings.chatbot_db_path,
                 "context_storage_enabled": True,
                 "history_retention_days": getattr(settings, 'HISTORY_RETENTION_DAYS', 30)
             },
             "logging": {
-                "level": settings.LOG_LEVEL,
+                "level": settings.log_level,
                 "file_enabled": True
             }
         }
@@ -137,10 +137,12 @@ async def update_configuration(
         # For some updates, we might need to notify other components
         if key.startswith("processing."):
             # Notify the processing hub of configuration changes
-            orchestrator.processing_hub.update_configuration()
+            if orchestrator.processing_hub and hasattr(orchestrator.processing_hub, 'update_configuration'):
+                orchestrator.processing_hub.update_configuration()
         elif key.startswith("rate_limits."):
             # Update rate limiter configuration
-            orchestrator.rate_limiter.update_configuration()
+            if orchestrator.rate_limiter and hasattr(orchestrator.rate_limiter, 'update_configuration'):
+                orchestrator.rate_limiter.update_configuration()
         
         return StatusResponse(
             status="success",

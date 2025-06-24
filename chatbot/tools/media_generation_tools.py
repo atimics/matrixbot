@@ -30,7 +30,7 @@ async def _auto_post_to_gallery(
     Best-effort attempt to auto-post generated media to the configured Matrix gallery.
     Failures are logged as warnings and do not fail the parent tool.
     """
-    if not settings.MATRIX_MEDIA_GALLERY_ROOM_ID:
+    if not settings.matrix.media_gallery_room_id:
         logger.debug("MATRIX_MEDIA_GALLERY_ROOM_ID not set, skipping auto-post to gallery.")
         return
 
@@ -44,10 +44,10 @@ async def _auto_post_to_gallery(
 
         if media_type == "image":
             tool = SendMatrixImageTool()
-            params = {"channel_id": settings.MATRIX_MEDIA_GALLERY_ROOM_ID, "image_url": media_url, "caption": caption}
+            params = {"channel_id": settings.matrix.media_gallery_room_id, "image_url": media_url, "caption": caption}
         elif media_type == "video":
             tool = SendMatrixVideoTool()
-            params = {"channel_id": settings.MATRIX_MEDIA_GALLERY_ROOM_ID, "video_url": media_url, "caption": caption}
+            params = {"channel_id": settings.matrix.media_gallery_room_id, "video_url": media_url, "caption": caption}
         else:
             return
 

@@ -65,7 +65,9 @@ class TestFeedbackLoopPrevention:
         
         # Execute reply
         with patch('chatbot.config.settings') as mock_settings:
-            mock_settings.matrix_user_id = "@bot:example.com"
+            mock_matrix = Mock()
+            mock_matrix.user_id = "@bot:example.com"
+            mock_settings.matrix = mock_matrix
             
             result = await self.reply_tool.execute({
                 "channel_id": "!test:example.com",

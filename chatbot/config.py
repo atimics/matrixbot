@@ -104,6 +104,7 @@ class FarcasterConfig(BaseSettings):
     bot_fid: Optional[str] = Field(default=None, alias="FARCASTER_BOT_FID")
     bot_signer_uuid: Optional[str] = Field(default=None, alias="FARCASTER_BOT_SIGNER_UUID")
     bot_username: Optional[str] = Field(default=None, alias="FARCASTER_BOT_USERNAME")
+    post_cooldown_seconds: int = Field(default=300, alias="FARCASTER_POST_COOLDOWN_SECONDS")
     
     @model_validator(mode='after')
     def validate_farcaster_dependencies(self):
@@ -304,6 +305,131 @@ class AppConfig(BaseSettings):
             )
             
         return self
+
+    # Backward Compatibility Properties
+    # These properties maintain compatibility with old flat configuration access patterns
+    # while delegating to the new nested structure
+    
+    @property
+    def matrix_user_id(self) -> Optional[str]:
+        """Backward compatibility for MATRIX_USER_ID access."""
+        return self.matrix.user_id
+    
+    @property
+    def matrix_password(self) -> Optional[str]:
+        """Backward compatibility for MATRIX_PASSWORD access."""
+        return self.matrix.password
+    
+    @property
+    def matrix_homeserver(self) -> Optional[str]:
+        """Backward compatibility for MATRIX_HOMESERVER access."""
+        return self.matrix.homeserver
+    
+    @property
+    def MATRIX_PASSWORD(self) -> Optional[str]:
+        """Backward compatibility for MATRIX_PASSWORD access."""
+        return self.matrix.password
+    
+    @property
+    def MATRIX_HOMESERVER(self) -> Optional[str]:
+        """Backward compatibility for MATRIX_HOMESERVER access."""
+        return self.matrix.homeserver
+    
+    @property
+    def MATRIX_USER_ID(self) -> Optional[str]:
+        """Backward compatibility for MATRIX_USER_ID access."""
+        return self.matrix.user_id
+    
+    @property
+    def MATRIX_ROOM_ID(self) -> str:
+        """Backward compatibility for MATRIX_ROOM_ID access."""
+        return self.matrix.room_id
+    
+    @property
+    def MATRIX_MEDIA_GALLERY_ROOM_ID(self) -> Optional[str]:
+        """Backward compatibility for MATRIX_MEDIA_GALLERY_ROOM_ID access."""
+        return self.matrix.media_gallery_room_id
+    
+    @property
+    def AI_MODEL(self) -> str:
+        """Backward compatibility for AI_MODEL access."""
+        return self.processing.ai_model
+    
+    @property
+    def WEB_SEARCH_MODEL(self) -> str:
+        """Backward compatibility for WEB_SEARCH_MODEL access."""
+        return self.processing.web_search_model
+    
+    @property
+    def AI_SUMMARY_MODEL(self) -> str:
+        """Backward compatibility for AI_SUMMARY_MODEL access."""
+        return self.processing.ai_summary_model
+    
+    @property
+    def AI_MULTIMODAL_MODEL(self) -> str:
+        """Backward compatibility for AI_MULTIMODAL_MODEL access."""
+        return self.processing.ai_multimodal_model
+    
+    @property
+    def MAX_CYCLES_PER_HOUR(self) -> int:
+        """Backward compatibility for MAX_CYCLES_PER_HOUR access."""
+        return self.processing.max_cycles_per_hour
+    
+    @property
+    def MAX_ACTIONS_PER_HOUR(self) -> int:
+        """Backward compatibility for MAX_ACTIONS_PER_HOUR access."""
+        return self.processing.max_actions_per_hour
+    
+    @property
+    def IMAGE_GENERATION_COOLDOWN_SECONDS(self) -> int:
+        """Backward compatibility for IMAGE_GENERATION_COOLDOWN_SECONDS access."""
+        return self.media_generation.image_generation_cooldown_seconds
+    
+    @property
+    def VIDEO_GENERATION_COOLDOWN_SECONDS(self) -> int:
+        """Backward compatibility for VIDEO_GENERATION_COOLDOWN_SECONDS access."""
+        return self.media_generation.video_generation_cooldown_seconds
+    
+    @property
+    def REPLICATE_API_TOKEN(self) -> Optional[str]:
+        """Backward compatibility for REPLICATE_API_TOKEN access."""
+        return self.media_generation.replicate_api_token
+    
+    @property
+    def GOOGLE_API_KEY(self) -> Optional[str]:
+        """Backward compatibility for GOOGLE_API_KEY access."""
+        return self.media_generation.google_api_key
+    
+    @property
+    def NEYNAR_API_KEY(self) -> Optional[str]:
+        """Backward compatibility for NEYNAR_API_KEY access."""
+        return self.farcaster.neynar_api_key
+    
+    @property
+    def FARCASTER_BOT_FID(self) -> Optional[str]:
+        """Backward compatibility for FARCASTER_BOT_FID access."""
+        return self.farcaster.bot_fid
+    
+    @property
+    def FARCASTER_POST_COOLDOWN_SECONDS(self) -> int:
+        """Backward compatibility for FARCASTER_POST_COOLDOWN_SECONDS access."""
+        return self.farcaster.post_cooldown_seconds
+    
+    @property
+    def ARWEAVE_WALLET_PATH(self) -> Optional[str]:
+        """Backward compatibility for ARWEAVE_WALLET_PATH access."""
+        # This should map to storage configuration when implemented
+        return None  # TODO: Map to actual storage config
+    
+    @property
+    def DB_PATH(self) -> str:
+        """Backward compatibility for DB_PATH access."""
+        return self.chatbot_db_path
+    
+    @property
+    def LOG_LEVEL(self) -> str:
+        """Backward compatibility for LOG_LEVEL access."""
+        return self.log_level
 
 
 # Global settings instance
