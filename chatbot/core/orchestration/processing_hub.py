@@ -394,10 +394,20 @@ class ProcessingHub:
             performance["tasks_completed"] = performance.get("tasks_completed", 0) + 1
             performance["last_execution_duration"] = duration
             
-            if result.get("status") == "success":
+            # Handle result properly - MissionProcessor returns List[ActionPlan], not dict
+            if isinstance(result, list):
+                # Success if we got results without exceptions
+                if result:
+                    logger.debug(f"Mission {mission_id} Sub-Agent completed {len(result)} actions successfully")
+                else:
+                    logger.debug(f"Mission {mission_id} Sub-Agent cycle completed with no actions")
+            elif isinstance(result, dict) and result.get("status") == "success":
                 logger.debug(f"Mission {mission_id} Sub-Agent completed task successfully")
-            else:
+            elif isinstance(result, dict):
                 logger.warning(f"Mission {mission_id} Sub-Agent reported issues: {result.get('error', 'unknown')}")
+                performance["errors"] = performance.get("errors", 0) + 1
+            else:
+                logger.warning(f"Mission {mission_id} Sub-Agent returned unexpected result type: {type(result)}")
                 performance["errors"] = performance.get("errors", 0) + 1
                 
             self.sub_agent_performance[mission_id] = performance
