@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from .orchestration.main_orchestrator import OrchestratorConfig
 
 from ..config import settings
+from ..utils.logging_utils import get_colored_logger
 from .persistence import DatabaseManager
 from .ai_engine import AIDecisionEngine
 from .context import ContextManager
@@ -29,7 +30,7 @@ from ..tools.arweave_service import ArweaveService
 from ..tools.s3_service import S3Service
 from ..integrations.arweave_uploader_client import ArweaveUploaderClient
 
-logger = logging.getLogger(__name__)
+logger = get_colored_logger(__name__)
 
 
 class DependencyContainer:
@@ -276,13 +277,15 @@ class DependencyContainer:
         assert self._world_state_manager is not None, "WorldStateManager must be initialized first"
         assert self._payload_builder is not None, "PayloadBuilder must be initialized first"
         assert self._rate_limiter is not None, "RateLimiter must be initialized first"
+        assert self._action_context is not None, "ActionContext must be initialized first"
         
         self._processing_hub = ProcessingHub(
             world_state_manager=self._world_state_manager,
             payload_builder=self._payload_builder,
             rate_limiter=self._rate_limiter,
             config=processing_config,
-            tool_registry=self._tool_registry
+            tool_registry=self._tool_registry,
+            action_context=self._action_context
         )
         
         # Configure Commander/Sub-Agent architecture
@@ -301,9 +304,13 @@ class DependencyContainer:
             assert self._tool_registry is not None, "ToolRegistry must be initialized first"
             assert self._action_context is not None, "ActionContext must be initialized first"
             
+            # Check for required API key
+            if not settings.openrouter_api_key:
+                raise ValueError("OPENROUTER_API_KEY is required for Commander/Sub-Agent architecture")
+            
             # Initialize Lightweight AI Engine for Sub-Agents
             from .lightweight_ai_engine import LightweightAIEngine
-            lightweight_ai = LightweightAIEngine()  # Uses default openai_client=None
+            lightweight_ai = LightweightAIEngine(api_key=settings.openrouter_api_key)
             self._processing_hub.set_lightweight_ai_engine(lightweight_ai)
             
             # Initialize Commander AI (AdaptiveProcessor)
@@ -312,9 +319,6 @@ class DependencyContainer:
             from .node_system.summary_service import NodeSummaryService
             
             # Create node system components for Commander AI
-            if not settings.openrouter_api_key:
-                raise ValueError("OPENROUTER_API_KEY is required for Commander/Sub-Agent architecture")
-                
             node_manager = NodeManager()
             summary_service = NodeSummaryService(
                 api_key=settings.openrouter_api_key,

@@ -13,17 +13,15 @@ from pathlib import Path
 from chatbot.config import settings
 from chatbot.core.container import DependencyContainer
 from chatbot.core.orchestration import OrchestratorConfig, ProcessingConfig
+from chatbot.utils.logging_utils import setup_colorized_logging
 
 
 def setup_logging() -> None:
-    """Set up logging configuration."""
-    logging.basicConfig(
+    """Set up logging configuration with colorized output for VS Code terminal."""
+    setup_colorized_logging(
         level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler("chatbot.log"),
-        ],
+        log_file="chatbot.log",
+        enable_colors=True
     )
 
 

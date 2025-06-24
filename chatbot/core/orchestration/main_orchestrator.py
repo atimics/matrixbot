@@ -1094,6 +1094,12 @@ class MainOrchestrator:
         # Get existing integrations
         existing_integrations = await self.integration_manager.list_integrations()
         
+        # Debug log the Farcaster settings
+        logger.info(f"Farcaster settings check:")
+        logger.info(f"  neynar_api_key: {'SET' if settings.farcaster.neynar_api_key else 'NOT SET'}")
+        logger.info(f"  bot_fid: {'SET' if settings.farcaster.bot_fid else 'NOT SET'}")
+        logger.info(f"  bot_signer_uuid: {'SET' if settings.farcaster.bot_signer_uuid else 'NOT SET'}")
+        
         # Check for Farcaster integration
         if (settings.farcaster.neynar_api_key and 
             settings.farcaster.bot_fid and 

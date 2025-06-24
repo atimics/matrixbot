@@ -15,10 +15,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+from logging_utils import setup_colored_logging
+setup_colored_logging()
 logger = logging.getLogger(__name__)
 
 class ArweaveWalletManager:

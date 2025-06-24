@@ -33,15 +33,15 @@ class TestCommanderSubAgentArchitecture:
         container = DependencyContainer(db_path=db_path)
         
         # Mock settings to avoid API dependencies
-        original_api_key = settings.OPENROUTER_API_KEY
-        settings.OPENROUTER_API_KEY = "test_api_key"
+        original_api_key = settings.openrouter_api_key
+        settings.openrouter_api_key = "test_api_key"
         
         try:
             await container.initialize()
             yield container
         finally:
             await container.cleanup()
-            settings.OPENROUTER_API_KEY = original_api_key
+            settings.openrouter_api_key = original_api_key
 
     @pytest.mark.asyncio
     async def test_container_initialization(self, container):

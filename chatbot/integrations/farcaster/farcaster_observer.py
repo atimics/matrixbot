@@ -152,7 +152,7 @@ class FarcasterObserver(Integration):
             
         # Initialize and start ecosystem token service if configured
         from ...config import settings
-        if settings.ECOSYSTEM_TOKEN_CONTRACT_ADDRESS and self.api_client and self.world_state_manager:
+        if settings.ecosystem_token_contract_address and self.api_client and self.world_state_manager:
             from ...integrations.ecosystem_token_service import EcosystemTokenService
             self.ecosystem_token_service = EcosystemTokenService(self.api_client, self.world_state_manager)
             await self.ecosystem_token_service.start()

@@ -62,8 +62,14 @@ class ProcessingConfig(BaseModel):
     max_exploration_rounds: int = Field(default=3, alias="MAX_EXPLORATION_ROUNDS")
 
 
-class MatrixConfig(BaseModel):
+class MatrixConfig(BaseSettings):
     """Matrix platform configuration."""
+    
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
     
     homeserver: Optional[str] = Field(default=None, alias="MATRIX_HOMESERVER")
     user_id: Optional[str] = Field(default=None, alias="MATRIX_USER_ID")
@@ -80,13 +86,19 @@ class MatrixConfig(BaseModel):
         if any(field is not None for field in matrix_fields):
             if not all(field is not None for field in matrix_fields):
                 raise ValueError(
-                    "If Matrix is configured, MATRIX_HOMESERVER, MATRIX_USER_ID, and MATRIX_PASSWORD are all required"
+                    "If Matrix is configured, MATRIX_HOMESERVER,.matrix_user_id, and MATRIX_PASSWORD are all required"
                 )
         return self
 
 
-class FarcasterConfig(BaseModel):
+class FarcasterConfig(BaseSettings):
     """Farcaster platform configuration."""
+    
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
     
     neynar_api_key: Optional[str] = Field(default=None, alias="NEYNAR_API_KEY")
     bot_fid: Optional[str] = Field(default=None, alias="FARCASTER_BOT_FID")

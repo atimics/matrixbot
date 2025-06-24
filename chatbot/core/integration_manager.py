@@ -246,8 +246,13 @@ class IntegrationManager:
         integration_class = self.integration_types[integration_data['integration_type']]
         config = json.loads(integration_data['config'])
         
-        # Load credentials for this integration
+        # Load credentials for this integration (with environment fallback)
         credentials = await self._load_credentials(integration_id)
+        
+        # Check if we have minimum required credentials after fallback
+        if not self._validate_credentials(integration_data['integration_type'], credentials):
+            logger.error(f"Integration {integration_id} missing required credentials even after environment fallback")
+            return False
         
         # Create integration with appropriate constructor
         if integration_data['integration_type'] == 'matrix':
@@ -287,6 +292,29 @@ class IntegrationManager:
             return True
         except Exception as e:
             logger.error(f"Error connecting integration {integration_id}: {e}")
+            
+            # If connection fails, check if we have environment fallback credentials and retry
+            if self._has_env_fallback_credentials(integration_data['integration_type']):
+                logger.info(f"Connection failed - trying to update credentials from environment and retry for {integration_id}")
+                try:
+                    # Force reload credentials from environment
+                    env_credentials = await self._get_env_credentials(integration_data['integration_type'])
+                    if env_credentials and self._validate_credentials(integration_data['integration_type'], env_credentials):
+                        # Update stored credentials
+                        await self.update_credentials(integration_id, env_credentials)
+                        
+                        # Update integration credentials and retry connection
+                        if hasattr(integration, 'set_credentials'):
+                            await integration.set_credentials(env_credentials)
+                        
+                        # Retry connection
+                        await integration.connect()
+                        self.active_integrations[integration_id] = integration
+                        logger.info(f"Successfully connected integration {integration_id} after updating credentials from environment")
+                        return True
+                except Exception as retry_e:
+                    logger.error(f"Failed to connect integration {integration_id} even after environment credential update: {retry_e}")
+            
             return False
             
     async def disconnect_integration(self, integration_id: str) -> None:
@@ -427,7 +455,7 @@ class IntegrationManager:
         return None
         
     async def _load_credentials(self, integration_id: str) -> Dict[str, str]:
-        """Load and decrypt credentials for an integration"""
+        """Load and decrypt credentials for an integration, with environment fallback"""
         credentials = {}
         
         async def db_operation(db):
@@ -438,6 +466,10 @@ class IntegrationManager:
             return await cursor.fetchall()
             
         rows = await self._execute_db_operation(db_operation)
+        
+        # Track invalid credentials for cleanup
+        invalid_credentials = []
+        encryption_failed = False
             
         for row in rows:
             cred_key, encrypted_value = row
@@ -446,8 +478,31 @@ class IntegrationManager:
                 credentials[cred_key] = decrypted_value
             except Exception as e:
                 logger.warning(f"Failed to decrypt credential '{cred_key}' for integration '{integration_id}': {e}")
-                logger.warning(f"This usually happens when the encryption key has changed. Credential will be skipped.")
-                # Skip this credential - it will need to be re-added with the new key
+                logger.warning(f"This usually happens when the encryption key has changed. Will fall back to environment variables.")
+                invalid_credentials.append(cred_key)
+                encryption_failed = True
+        
+        # Get integration type to determine environment fallback
+        integration_data = await self._load_integration_data(integration_id)
+        if integration_data:
+            integration_type = integration_data['integration_type']
+            
+            # Apply environment variable fallbacks
+            credentials = await self._apply_env_fallbacks(integration_type, credentials)
+            
+            # If encryption failed and we got valid credentials from environment, update stored credentials
+            if encryption_failed and self._validate_credentials(integration_type, credentials):
+                logger.info(f"Encryption key changed - updating stored credentials for integration '{integration_id}' from environment variables")
+                try:
+                    await self.update_credentials(integration_id, credentials)
+                    logger.info(f"Successfully updated stored credentials for integration '{integration_id}'")
+                except Exception as e:
+                    logger.error(f"Failed to update stored credentials for integration '{integration_id}': {e}")
+        
+        # Clean up invalid credentials after we've potentially updated them
+        if invalid_credentials:
+            logger.info(f"Cleaning up {len(invalid_credentials)} invalid credentials for integration '{integration_id}'")
+            await self.clean_invalid_credentials(integration_id)
             
         return credentials
         
@@ -533,3 +588,187 @@ class IntegrationManager:
     def get_available_integration_types(self) -> List[str]:
         """Get list of available integration types"""
         return list(self.integration_types.keys())
+    
+    async def _apply_env_fallbacks(self, integration_type: str, credentials: Dict[str, str]) -> Dict[str, str]:
+        """Apply environment variable fallbacks for missing or invalid credentials"""
+        from ..config import settings
+        
+        if integration_type == 'farcaster':
+            # Check if we have any valid credentials, if not fall back to environment
+            # Also apply fallback if credentials are empty strings or invalid
+            if (not credentials.get('api_key') or not credentials['api_key'].strip()) and settings.farcaster.neynar_api_key:
+                logger.info("Falling back to environment variables for Farcaster credentials")
+                credentials['api_key'] = settings.farcaster.neynar_api_key
+                
+            if (not credentials.get('signer_uuid') or not credentials['signer_uuid'].strip()) and settings.farcaster.bot_signer_uuid:
+                credentials['signer_uuid'] = settings.farcaster.bot_signer_uuid
+                
+            if (not credentials.get('bot_fid') or not credentials['bot_fid'].strip()) and settings.farcaster.bot_fid:
+                credentials['bot_fid'] = settings.farcaster.bot_fid
+                
+        elif integration_type == 'matrix':
+            # Check if we have any valid credentials, if not fall back to environment
+            # Also apply fallback if credentials are empty strings or invalid
+            if (not credentials.get('homeserver') or not credentials['homeserver'].strip()) and settings.matrix.homeserver:
+                logger.info("Falling back to environment variables for Matrix credentials")
+                credentials['homeserver'] = settings.matrix.homeserver
+                
+            if (not credentials.get('user_id') or not credentials['user_id'].strip()) and settings.matrix.user_id:
+                credentials['user_id'] = settings.matrix.user_id
+                
+            if (not credentials.get('password') or not credentials['password'].strip()) and settings.matrix.password:
+                credentials['password'] = settings.matrix.password
+        
+        return credentials
+    
+    def _validate_credentials(self, integration_type: str, credentials: Dict[str, str]) -> bool:
+        """Validate that required credentials are present for the integration type"""
+        if integration_type == 'farcaster':
+            return bool(credentials.get('api_key'))  # Minimum requirement
+        elif integration_type == 'matrix':
+            return bool(credentials.get('homeserver') and 
+                       credentials.get('user_id') and 
+                       credentials.get('password'))
+        return True  # For unknown types, assume valid
+    
+    def _has_env_fallback_credentials(self, integration_type: str) -> bool:
+        """Check if environment variables are available for fallback"""
+        from ..config import settings
+        
+        if integration_type == 'farcaster':
+            return bool(settings.farcaster.neynar_api_key)
+        elif integration_type == 'matrix':
+            return bool(settings.matrix.homeserver and 
+                       settings.matrix.user_id and 
+                       settings.matrix.password)
+        return False
+    
+    async def remove_integration(self, integration_id: str) -> bool:
+        """
+        Remove an integration configuration completely.
+        
+        Args:
+            integration_id: The integration ID to remove
+            
+        Returns:
+            bool: True if removal was successful
+        """
+        try:
+            # First disconnect if it's currently active
+            if integration_id in self.active_integrations:
+                await self.disconnect_integration(integration_id)
+            
+            # Remove from database (credentials will be removed due to CASCADE)
+            async def db_operation(db):
+                cursor = await db.execute("""
+                    DELETE FROM integrations WHERE id = ?
+                """, (integration_id,))
+                await db.commit()
+                return cursor.rowcount > 0
+            
+            removed = await self._execute_db_operation(db_operation)
+            
+            if removed:
+                logger.info(f"Successfully removed integration {integration_id}")
+                return True
+            else:
+                logger.warning(f"Integration {integration_id} not found for removal")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error removing integration {integration_id}: {e}")
+            return False
+        
+    async def update_integration_config(
+        self,
+        integration_id: str,
+        display_name: Optional[str] = None,
+        config: Optional[Dict[str, Any]] = None,
+        is_active: Optional[bool] = None
+    ) -> bool:
+        """
+        Update an integration's configuration.
+        
+        Args:
+            integration_id: The integration ID to update
+            display_name: New display name (optional)
+            config: New configuration data (optional)
+            is_active: New active status (optional)
+            
+        Returns:
+            bool: True if update was successful
+        """
+        try:
+            updates = []
+            params = []
+            
+            if display_name is not None:
+                updates.append("display_name = ?")
+                params.append(display_name)
+                
+            if config is not None:
+                updates.append("config = ?")
+                params.append(json.dumps(config))
+                
+            if is_active is not None:
+                updates.append("is_active = ?")
+                params.append(is_active)
+                
+            if not updates:
+                logger.warning(f"No updates provided for integration {integration_id}")
+                return False
+                
+            updates.append("updated_at = ?")
+            params.append(time.time())
+            params.append(integration_id)
+            
+            async def db_operation(db):
+                cursor = await db.execute(f"""
+                    UPDATE integrations 
+                    SET {', '.join(updates)}
+                    WHERE id = ?
+                """, params)
+                await db.commit()
+                return cursor.rowcount > 0
+            
+            updated = await self._execute_db_operation(db_operation)
+            
+            if updated:
+                logger.info(f"Successfully updated integration {integration_id}")
+                
+                # If the integration is currently active and we're deactivating it, disconnect
+                if is_active is False and integration_id in self.active_integrations:
+                    await self.disconnect_integration(integration_id)
+                    
+                return True
+            else:
+                logger.warning(f"Integration {integration_id} not found for update")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error updating integration {integration_id}: {e}")
+            return False
+    
+    async def _get_env_credentials(self, integration_type: str) -> Dict[str, str]:
+        """Get credentials from environment variables for the specified integration type"""
+        from ..config import settings
+        
+        credentials = {}
+        
+        if integration_type == 'farcaster':
+            if settings.farcaster.neynar_api_key:
+                credentials['api_key'] = settings.farcaster.neynar_api_key
+            if settings.farcaster.bot_signer_uuid:
+                credentials['signer_uuid'] = settings.farcaster.bot_signer_uuid
+            if settings.farcaster.bot_fid:
+                credentials['bot_fid'] = settings.farcaster.bot_fid
+                
+        elif integration_type == 'matrix':
+            if settings.matrix.homeserver:
+                credentials['homeserver'] = settings.matrix.homeserver
+            if settings.matrix.user_id:
+                credentials['user_id'] = settings.matrix.user_id
+            if settings.matrix.password:
+                credentials['password'] = settings.matrix.password
+        
+        return credentials

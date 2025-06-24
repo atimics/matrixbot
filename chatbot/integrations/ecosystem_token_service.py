@@ -36,7 +36,7 @@ class EcosystemTokenService:
     def __init__(self, neynar_api_client: NeynarAPIClient, world_state_manager: WorldStateManager):
         self.neynar_api_client = neynar_api_client
         self.world_state_manager = world_state_manager
-        self.token_contract = settings.ECOSYSTEM_TOKEN_CONTRACT_ADDRESS
+        self.token_contract = settings.ecosystem_token_contract_address
         self.token_network = settings.ECOSYSTEM_TOKEN_NETWORK
         self.num_top_holders = settings.NUM_TOP_HOLDERS_TO_TRACK
         self.cast_history_length = settings.HOLDER_CAST_HISTORY_LENGTH

@@ -11,6 +11,8 @@ import logging
 from typing import Dict, List, Any, Optional
 from dataclasses import asdict
 
+import httpx
+
 from chatbot.config import settings
 from .ai_engine import ActionPlan
 from .world_state.structures import Mission
@@ -29,12 +31,16 @@ class LightweightAIEngine:
     - Minimal context requirements
     """
     
-    def __init__(self, openai_client=None):
+    def __init__(self, api_key: Optional[str] = None):
         """Initialize with a lightweight model configuration."""
-        self.openai_client = openai_client
-        self.model = settings.processing.lightweight_ai_model or "gpt-4o-mini"
+        self.api_key = api_key or settings.openrouter_api_key
+        self.base_url = "https://openrouter.ai/api/v1/chat/completions"
+        self.model = settings.processing.lightweight_ai_model or "openai/gpt-4o-mini"
         self.max_tokens = settings.processing.lightweight_ai_max_tokens or 500
         self.temperature = settings.processing.lightweight_ai_temperature or 0.7
+        
+        if not self.api_key:
+            logger.warning("LightweightAIEngine: No API key provided, AI functions will be limited")
         
         logger.info(f"LightweightAIEngine initialized with model: {self.model}")
     
@@ -85,6 +91,20 @@ class LightweightAIEngine:
         mission_id = mission_data.get("id", "unknown")
         channel_id = mission_data.get("channel_id", "unknown")
         
+        # Determine platform based on channel ID pattern
+        if channel_id.startswith("!") and ":" in channel_id:
+            # Matrix room ID pattern: !roomid:server.com
+            platform = "matrix"
+            send_tool = "send_matrix_message"
+        elif channel_id.startswith("fc_") or channel_id.isdigit():
+            # Farcaster channel pattern
+            platform = "farcaster"
+            send_tool = "send_farcaster_post"
+        else:
+            # Default to matrix
+            platform = "matrix"
+            send_tool = "send_matrix_message"
+        
         # Format recent messages for context
         message_context = ""
         if messages:
@@ -99,7 +119,7 @@ class LightweightAIEngine:
 
 MISSION OBJECTIVE: {objective}
 MISSION ID: {mission_id}
-CHANNEL: {channel_id}
+CHANNEL: {channel_id} (Platform: {platform})
 
 RECENT MESSAGES:
 {message_context}
@@ -112,9 +132,8 @@ INSTRUCTIONS:
 5. Keep responses concise and conversational
 
 AVAILABLE ACTIONS:
-- send_message: Send a message to the channel
+- {send_tool}: Send a message to the {platform} channel
 - update_mission_status: Update mission progress or mark as complete
-- request_commander_assistance: Ask the main AI for help with complex issues
 
 Analyze the recent messages and decide what action to take. Respond with a JSON object containing your reasoning and selected actions.
 
@@ -123,7 +142,7 @@ Response format:
     "reasoning": "Brief explanation of your decision",
     "actions": [
         {{
-            "action_type": "send_message",
+            "action_type": "{send_tool}",
             "parameters": {{
                 "channel_id": "{channel_id}",
                 "content": "Your message here"
@@ -135,27 +154,46 @@ Response format:
         return prompt
     
     async def _get_ai_response(self, prompt: str) -> str:
-        """Get response from the lightweight AI model."""
-        if not self.openai_client:
-            logger.warning("LightweightAI: No OpenAI client available, returning default response")
-            return '{"reasoning": "No AI client available", "actions": []}'
+        """Get response from the lightweight AI model using OpenRouter."""
+        if not self.api_key:
+            logger.warning("LightweightAI: No API key available, returning default response")
+            return '{"reasoning": "No API key available", "actions": []}'
         
         try:
-            response = await self.openai_client.chat.completions.create(
-                model=self.model,
-                messages=[
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://github.com/ratimics/matrixbot",
+                "X-Title": "MatrixBot Lightweight AI"
+            }
+            
+            payload = {
+                "model": self.model,
+                "messages": [
                     {
                         "role": "system", 
                         "content": "You are a helpful AI assistant. Always respond with valid JSON."
                     },
                     {"role": "user", "content": prompt}
                 ],
-                max_tokens=self.max_tokens,
-                temperature=self.temperature
-            )
+                "max_tokens": self.max_tokens,
+                "temperature": self.temperature
+            }
             
-            return response.choices[0].message.content.strip()
-            
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    self.base_url,
+                    headers=headers,
+                    json=payload
+                )
+                response.raise_for_status()
+                
+                result = response.json()
+                content = result["choices"][0]["message"]["content"]
+                
+                logger.debug(f"LightweightAI: Received response from {self.model}")
+                return content.strip()
+                
         except Exception as e:
             logger.error(f"LightweightAI: Error getting AI response: {e}")
             return '{"reasoning": "AI request failed", "actions": []}'
@@ -174,7 +212,7 @@ Response format:
                 parameters = action_data.get("parameters", {})
                 
                 # Ensure channel_id is set for relevant actions
-                if action_type in ["send_message", "send_dm"] and "channel_id" not in parameters:
+                if action_type in ["send_matrix_message", "send_farcaster_post"] and "channel_id" not in parameters:
                     parameters["channel_id"] = channel_id
                 
                 action_plan = ActionPlan(
@@ -202,5 +240,5 @@ Response format:
             "model": self.model,
             "max_tokens": self.max_tokens,
             "temperature": self.temperature,
-            "client_available": self.openai_client is not None
+            "api_key_available": self.api_key is not None
         }

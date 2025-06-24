@@ -104,7 +104,7 @@ class SendMatrixReplyTool(ToolInterface):
             try:
                 # Format content if markdown is enabled
                 if format_as_markdown:
-                    formatted = format_for_matrix(content)
+                    formatted = format_for_matrix(content or "")
                     result = await context.matrix_observer.send_formatted_message(
                         room_id, formatted["plain"], formatted["html"]
                     )
@@ -127,8 +127,8 @@ class SendMatrixReplyTool(ToolInterface):
                             id=event_id,
                             channel_id=room_id,
                             channel_type="matrix",
-                            sender=settings.MATRIX_USER_ID,
-                            content=content,
+                            sender=settings.matrix.user_id or "unknown",
+                            content=content or "",
                             timestamp=time.time(),
                             reply_to=None  # This is a fallback message, not a reply
                         )
@@ -139,7 +139,7 @@ class SendMatrixReplyTool(ToolInterface):
                     if context.context_manager:
                         assistant_message = {
                             "event_id": event_id,
-                            "sender": settings.MATRIX_USER_ID,
+                            "sender": settings.matrix.user_id,
                             "content": content,
                             "timestamp": time.time(),
                             "type": "assistant"
@@ -196,13 +196,13 @@ class SendMatrixReplyTool(ToolInterface):
         try:
             # Format content if markdown is enabled
             if format_as_markdown:
-                formatted = format_for_matrix(content)
+                formatted = format_for_matrix(content or "")
                 result = await context.matrix_observer.send_formatted_reply(
                     room_id, formatted["plain"], formatted["html"], reply_to_event_id
                 )
             else:
                 result = await context.matrix_observer.send_reply(
-                    room_id, content, reply_to_event_id
+                    room_id, content or "", reply_to_event_id
                 )
             logger.info(f"Matrix observer send_reply returned: {result}")
 
@@ -218,8 +218,8 @@ class SendMatrixReplyTool(ToolInterface):
                         id=event_id,
                         channel_id=room_id,
                         channel_type="matrix",
-                        sender=settings.MATRIX_USER_ID,  # Use bot user ID from settings
-                        content=content,
+                        sender=settings.matrix.user_id or "unknown",  # Use bot user ID from settings
+                        content=content or "",
                         timestamp=time.time(),
                         reply_to=reply_to_event_id
                     )
@@ -230,7 +230,7 @@ class SendMatrixReplyTool(ToolInterface):
                 if context.context_manager:
                     assistant_message = {
                         "event_id": event_id,
-                        "sender": settings.MATRIX_USER_ID,
+                        "sender": settings.matrix.user_id,
                         "content": content,
                         "timestamp": time.time(),
                         "type": "assistant"
@@ -409,7 +409,7 @@ class SendMatrixMessageTool(ToolInterface):
                         id=event_id,
                         channel_id=room_id,
                         channel_type="matrix",
-                        sender=settings.MATRIX_USER_ID or "unknown",
+                        sender=settings.matrix.user_id or "unknown",
                         content=content,
                         timestamp=time.time(),
                         reply_to=reply_to_event_id  # Set if this is a reply
@@ -421,7 +421,7 @@ class SendMatrixMessageTool(ToolInterface):
                 if context.context_manager:
                     assistant_message = {
                         "content": content,
-                        "sender": settings.MATRIX_USER_ID or "unknown",
+                        "sender": settings.matrix.user_id or "unknown",
                         "timestamp": time.time(),
                         "event_id": event_id,
                         "channel_type": "matrix",

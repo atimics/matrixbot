@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from ..processors.mission_processor import MissionProcessor
     from ..lightweight_ai_engine import LightweightAIEngine
     from ...tools.registry import ToolRegistry
+    from ...tools.base import ActionContext
 
 logger = logging.getLogger(__name__)
 
@@ -68,13 +69,15 @@ class ProcessingHub:
         payload_builder: "PayloadBuilder", 
         rate_limiter: "RateLimiter",
         config: Optional[ProcessingConfig] = None,
-        tool_registry: Optional["ToolRegistry"] = None
+        tool_registry: Optional["ToolRegistry"] = None,
+        action_context: Optional["ActionContext"] = None
     ):
         self.world_state = world_state_manager
         self.payload_builder = payload_builder
         self.rate_limiter = rate_limiter
         self.config = config or ProcessingConfig()
         self.tool_registry = tool_registry
+        self.action_context = action_context
         
         # Processing state
         self.running = False
@@ -372,7 +375,8 @@ class ProcessingHub:
                 mission=mission_data,
                 lightweight_ai_engine=self.lightweight_ai_engine,
                 world_state_data=world_state_data,
-                tool_registry=self.tool_registry
+                tool_registry=self.tool_registry,
+                action_context=self.action_context
             )
             
             self.active_sub_agents[mission_id] = sub_agent

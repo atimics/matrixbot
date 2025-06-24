@@ -46,11 +46,11 @@ async def get_configuration(orchestrator: MainOrchestrator = Depends(get_orchest
                 "farcaster_post_cooldown": settings.FARCASTER_POST_COOLDOWN_SECONDS
             },
             "integrations": {
-                "matrix_enabled": bool(settings.MATRIX_USER_ID and settings.MATRIX_PASSWORD),
-                "farcaster_enabled": bool(settings.NEYNAR_API_KEY),
-                "arweave_enabled": bool(settings.ARWEAVE_WALLET_PATH),
-                "replicate_enabled": bool(settings.REPLICATE_API_TOKEN),
-                "google_ai_enabled": bool(settings.GOOGLE_API_KEY)
+                "matrix_enabled": bool(settings.matrix.user_id and settings.matrix.password),
+                "farcaster_enabled": bool(settings.farcaster.neynar_api_key),
+                "arweave_enabled": bool(settings.storage.arweave_wallet_path),
+                "replicate_enabled": bool(settings.media_generation.replicate_api_token),
+                "google_ai_enabled": bool(settings.media_generation.google_api_key)
             },
             "storage": {
                 "db_path": settings.DB_PATH,

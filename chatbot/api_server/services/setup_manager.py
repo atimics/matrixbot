@@ -139,7 +139,7 @@ class SetupManager:
         step_to_env = {
             "openrouter_api_key": "OPENROUTER_API_KEY",
             "matrix_homeserver": "MATRIX_HOMESERVER",
-            "matrix_user_id": "MATRIX_USER_ID", 
+            "matrix_user_id":  "MATRIX_USER_ID", 
             "matrix_password": "MATRIX_PASSWORD",
             "matrix_room_id": "MATRIX_ROOM_ID"
         }

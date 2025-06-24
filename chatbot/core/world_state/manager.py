@@ -788,7 +788,7 @@ class WorldStateManager:
         for channel in self.state.channels.values():
             if channel.type == "matrix":
                 for msg in channel.recent_messages:
-                    if (msg.sender == settings.MATRIX_USER_ID and 
+                    if (msg.sender == settings.matrix.user_id and 
                         msg.reply_to == original_event_id):
                         logger.debug(f"Bot reply found in messages for event {original_event_id}: message_id {msg.id}")
                         return True
