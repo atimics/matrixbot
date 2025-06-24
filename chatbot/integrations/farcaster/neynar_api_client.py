@@ -71,9 +71,17 @@ class NeynarAPIClient:
             response.raise_for_status()
             return response
         except httpx.HTTPStatusError as e:
+            # Provide more specific error context for debugging
+            response_text = e.response.text if hasattr(e.response, 'text') else 'No response text'
             logger.error(
-                f"HTTP error for {method.upper()} {url}: {e.response.status_code} - {e.response.text}"
+                f"HTTP error for {method.upper()} {url}: {e.response.status_code} - {response_text}"
             )
+            # For 404 errors on cast operations, provide specific guidance
+            if e.response.status_code == 404 and ("/farcaster/cast" in url):
+                if "conversation" in url:
+                    logger.error(f"Cast conversation not found - the cast may have been deleted or the hash is invalid")
+                elif method.upper() == "POST":
+                    logger.error(f"Cannot post/reply - parent cast not found or invalid")
             raise
         except httpx.RequestError as e:
             logger.error(f"Request error for {method.upper()} {url}: {e}")

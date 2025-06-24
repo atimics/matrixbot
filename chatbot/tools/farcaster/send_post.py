@@ -137,7 +137,14 @@ class SendFarcasterPostTool(ToolInterface):
                         
                 except Exception as e:
                     # Log the error but proceed - we don't want API failures to completely block replies
-                    logger.error(f"Failed to perform authoritative duplicate check for cast {reply_to_hash}: {e}. Proceeding with caution.")
+                    # However, if it's a 404 error, the cast likely doesn't exist, so we should abort
+                    error_str = str(e)
+                    if "404" in error_str and "Not Found" in error_str:
+                        error_msg = f"Cannot reply to cast {reply_to_hash}: Cast not found (404). The cast may have been deleted or the hash is invalid."
+                        logger.error(error_msg)
+                        return create_error_response(error_msg)
+                    else:
+                        logger.error(f"Failed to perform authoritative duplicate check for cast {reply_to_hash}: {e}. Proceeding with caution.")
                     # Internal check already passed, so we'll proceed
 
         # For non-replies, validate content and embed requirements 
@@ -305,3 +312,25 @@ class SendFarcasterPostTool(ToolInterface):
                 )
 
             return create_error_response(error_msg)
+
+    @staticmethod
+    def _is_valid_cast_hash(cast_hash: str) -> bool:
+        """
+        Validate if a cast hash has the expected format.
+        Farcaster cast hashes are typically 32-byte hashes encoded as 0x-prefixed hex strings.
+        """
+        if not cast_hash:
+            return False
+        
+        # Remove 0x prefix if present
+        hash_without_prefix = cast_hash.lower().replace('0x', '')
+        
+        # Check if it's a valid hex string of expected length (64 characters for 32 bytes)
+        if len(hash_without_prefix) != 64:
+            return False
+        
+        try:
+            int(hash_without_prefix, 16)
+            return True
+        except ValueError:
+            return False
