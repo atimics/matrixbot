@@ -12,7 +12,7 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING, Callable
 
 import httpx
 from dotenv import load_dotenv
@@ -60,6 +60,12 @@ class MatrixObserver(Integration):
         self.client: Optional[AsyncClient] = None
         self.sync_task: Optional[asyncio.Task] = None
         self.channels_to_monitor = []
+        
+        # Track seen message events to prevent duplicate processing
+        self.seen_message_events = set()
+        
+        # State change notification callback
+        self.on_state_change: Optional[Callable] = None
 
         # Create store directory for Matrix client data
         self.store_path = Path("matrix_store")
@@ -257,6 +263,12 @@ class MatrixObserver(Integration):
 
     async def _on_message(self, room: MatrixRoom, event):
         """Handle incoming Matrix messages and update room details"""
+        # Deduplicate at the observer level to prevent double processing
+        if event.event_id in self.seen_message_events:
+            logger.debug(f"MatrixObserver: Deduplicated message event {event.event_id}")
+            return
+        self.seen_message_events.add(event.event_id)
+        
         # Ensure world_state is available
         if self.world_state is None:
             # Fallback to default WorldStateManager if not provided
@@ -400,6 +412,14 @@ class MatrixObserver(Integration):
             f"MatrixObserver: New message in {room.display_name or room.room_id}: "
             f"{event.sender}: {log_content}"
         )
+        
+        # Trigger state change notification if callback is set
+        if hasattr(self, 'on_state_change') and self.on_state_change:
+            try:
+                self.on_state_change()
+                logger.debug("MatrixObserver: Triggered state change notification after message")
+            except Exception as e:
+                logger.error(f"MatrixObserver: Error triggering state change: {e}", exc_info=True)
 
     async def _on_invite(self, room, event):
         """Handle incoming Matrix room invites"""

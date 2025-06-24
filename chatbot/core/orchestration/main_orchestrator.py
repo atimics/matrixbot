@@ -683,11 +683,22 @@ class MainOrchestrator:
                 self.matrix_observer.add_channel(room_id, "Robot Laboratory")
                 await self.matrix_observer.start()
                 
-                # Connect state change notifications
-                self.matrix_observer.on_state_change = self.processing_hub.trigger_state_change
+                # Connect state change notifications - create a combined callback
+                def combined_state_change():
+                    """Combined callback for both processing hub and proactive engine."""
+                    try:
+                        # Trigger processing hub state change
+                        self.processing_hub.trigger_state_change()
+                    except Exception as e:
+                        logger.error(f"Error in processing hub state change: {e}", exc_info=True)
+                    
+                    try:
+                        # Trigger proactive conversation engine
+                        self._on_world_state_change()
+                    except Exception as e:
+                        logger.error(f"Error in proactive engine state change: {e}", exc_info=True)
                 
-                # Connect proactive conversation engine to state changes
-                self.matrix_observer.on_state_change = self._on_world_state_change
+                self.matrix_observer.on_state_change = combined_state_change
                 
                 logger.info("Matrix observer initialized and started")
             except Exception as e:
@@ -705,11 +716,22 @@ class MainOrchestrator:
                 )
                 await self.farcaster_observer.start()
                 
-                # Connect state change notifications
-                self.farcaster_observer.on_state_change = self.processing_hub.trigger_state_change
+                # Connect state change notifications - create a combined callback
+                def combined_farcaster_state_change():
+                    """Combined callback for both processing hub and proactive engine."""
+                    try:
+                        # Trigger processing hub state change
+                        self.processing_hub.trigger_state_change()
+                    except Exception as e:
+                        logger.error(f"Error in processing hub state change: {e}", exc_info=True)
+                    
+                    try:
+                        # Trigger proactive conversation engine
+                        self._on_world_state_change()
+                    except Exception as e:
+                        logger.error(f"Error in proactive engine state change: {e}", exc_info=True)
                 
-                # Connect proactive conversation engine to state changes  
-                self.farcaster_observer.on_state_change = self._on_world_state_change
+                self.farcaster_observer.on_state_change = combined_farcaster_state_change
                 
                 self.world_state.update_system_status({"farcaster_connected": True})
                 logger.info("Farcaster observer initialized and started")
