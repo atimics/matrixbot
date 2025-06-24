@@ -345,10 +345,10 @@ class Thread:
     failed_actions: List[Dict[str, Any]] = field(default_factory=list)  # Track failed attempts
     
     def is_active(self, active_threshold_seconds: int = 86400) -> bool:
-        """Check if thread has recent activity and is a real conversation."""
+        """Check if thread has recent activity and can be engaged."""
         is_recent = (time.time() - self.last_activity_timestamp) < active_threshold_seconds
-        is_conversation = self.message_count > 1 or len(self.participants) > 1
-        return is_recent and is_conversation
+        has_content = self.message_count > 0  # Any message means thread can be active
+        return is_recent and has_content
     
     def is_bot_turn(self, bot_id: str) -> bool:
         """Check if it's the bot's turn to speak in this thread."""

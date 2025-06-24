@@ -3,9 +3,13 @@
 Quick test script to verify thread turn validation logic.
 """
 
+import logging
 import time
 from chatbot.core.world_state.manager import WorldStateManager
 from chatbot.core.world_state.structures import Message
+
+# Enable debug logging
+logging.basicConfig(level=logging.DEBUG)
 
 
 def test_turn_validation():
@@ -21,8 +25,7 @@ def test_turn_validation():
         content="Hello bot!",
         timestamp=time.time(),
         channel_id="test_channel",
-        channel_type="farcaster",
-        channel_name="Test Channel"
+        channel_type="farcaster"
     )
     
     bot_message = Message(
@@ -32,7 +35,6 @@ def test_turn_validation():
         timestamp=time.time() + 1,
         channel_id="test_channel", 
         channel_type="farcaster",
-        channel_name="Test Channel",
         reply_to="test_msg_1"
     )
     
@@ -43,7 +45,6 @@ def test_turn_validation():
         timestamp=time.time() + 2,
         channel_id="test_channel",
         channel_type="farcaster", 
-        channel_name="Test Channel",
         reply_to="test_msg_1"
     )
     
