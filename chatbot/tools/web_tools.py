@@ -73,7 +73,7 @@ class WebSearchTool(ToolInterface):
                 response = await client.post(
                     "https://openrouter.ai/api/v1/chat/completions",
                     headers={
-                        "Authorization": f"Bearer {settings.openrouter_api_key}",
+                        "Authorization": f"Bearer {settings.processing.openrouter_api_key}",
                         "HTTP-Referer": settings.your_site_url or "https://github.com/your-repo",
                         "X-Title": settings.your_site_name or "Chatbot Web Search",
                     },

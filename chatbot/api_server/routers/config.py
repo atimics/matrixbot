@@ -58,7 +58,7 @@ async def get_configuration(orchestrator: MainOrchestrator = Depends(get_orchest
                 "history_retention_days": getattr(settings, 'HISTORY_RETENTION_DAYS', 30)
             },
             "logging": {
-                "level": settings.log_level,
+                "level": settings.processing.log_level,
                 "file_enabled": True
             }
         }

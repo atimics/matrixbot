@@ -155,7 +155,7 @@ class DescribeImageTool(ToolInterface):
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
         openrouter_model = (
-            settings.AI_MULTIMODAL_MODEL
+            settings.processing.ai_multimodal_model
         )  # Use AI_MULTIMODAL_MODEL for image analysis
 
         payload = {

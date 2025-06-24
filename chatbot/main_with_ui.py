@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 def setup_logging() -> None:
     """Set up logging configuration."""
     # Convert string log level to logging constant
-    log_level = getattr(logging, settings.log_level.upper(), logging.INFO)
+    log_level = getattr(logging, settings.processing.log_level.upper(), logging.INFO)
     logging.basicConfig(
         level=log_level,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
