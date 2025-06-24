@@ -412,7 +412,6 @@ class DependencyContainer:
             FollowFarcasterUserTool,
             GetUserTimelineTool,
             LikeFarcasterPostTool,
-            QuoteFarcasterPostTool,
             SendFarcasterDMTool,
             SendFarcasterPostTool,
             UnfollowFarcasterUserTool,
@@ -506,7 +505,6 @@ class DependencyContainer:
         # self._tool_registry.register_tool(SendFarcasterReplyTool())  # DEPRECATED - functionality consolidated into SendFarcasterPostTool
         self._tool_registry.register_tool(SendFarcasterDMTool())
         self._tool_registry.register_tool(LikeFarcasterPostTool())
-        self._tool_registry.register_tool(QuoteFarcasterPostTool())
         self._tool_registry.register_tool(FollowFarcasterUserTool())
         self._tool_registry.register_tool(UnfollowFarcasterUserTool())
         self._tool_registry.register_tool(DeleteFarcasterPostTool())

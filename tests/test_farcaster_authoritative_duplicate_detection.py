@@ -1,17 +1,17 @@
 """
-Tests for authoritative duplicate detection in SendFarcasterReplyTool.
+Tests for authoritative duplicate detection in SendFarcasterPostTool (reply functionality).
 """
 import pytest
 import time
 from unittest.mock import AsyncMock, MagicMock
-from chatbot.tools.farcaster_tools import SendFarcasterReplyTool
+from chatbot.tools.farcaster import SendFarcasterPostTool
 from chatbot.tools.base import ActionContext
 
 
 @pytest.mark.asyncio
 async def test_reply_succeeds_when_no_prior_reply_exists():
     """Test that reply succeeds when no prior reply exists in the conversation thread."""
-    tool = SendFarcasterReplyTool()
+    tool = SendFarcasterPostTool()
     
     # Mock Farcaster observer and API client
     mock_obs = AsyncMock()
@@ -62,7 +62,7 @@ async def test_reply_succeeds_when_no_prior_reply_exists():
 @pytest.mark.asyncio 
 async def test_reply_is_skipped_when_reply_exists_in_direct_replies():
     """Test that reply is skipped when bot's reply already exists in direct_replies."""
-    tool = SendFarcasterReplyTool()
+    tool = SendFarcasterPostTool()
     
     # Mock Farcaster observer and API client
     mock_obs = AsyncMock()
@@ -120,7 +120,7 @@ async def test_reply_is_skipped_when_reply_exists_in_direct_replies():
 @pytest.mark.asyncio
 async def test_reply_is_skipped_when_reply_exists_in_casts():
     """Test that reply is skipped when bot's reply exists in the casts array."""
-    tool = SendFarcasterReplyTool()
+    tool = SendFarcasterPostTool()
     
     # Mock Farcaster observer and API client
     mock_obs = AsyncMock()
@@ -174,7 +174,7 @@ async def test_reply_is_skipped_when_reply_exists_in_casts():
 @pytest.mark.asyncio
 async def test_reply_proceeds_if_thread_check_fails():
     """Test that reply proceeds if the authoritative thread check fails."""
-    tool = SendFarcasterReplyTool()
+    tool = SendFarcasterPostTool()
     
     # Mock Farcaster observer and API client
     mock_obs = AsyncMock()
@@ -211,7 +211,7 @@ async def test_reply_proceeds_if_thread_check_fails():
 @pytest.mark.asyncio
 async def test_reply_skipped_by_internal_check_skips_authoritative_check():
     """Test that if internal check already blocks the reply, authoritative check is not performed."""
-    tool = SendFarcasterReplyTool()
+    tool = SendFarcasterPostTool()
     
     # Mock Farcaster observer and API client
     mock_obs = AsyncMock()
@@ -247,7 +247,7 @@ async def test_reply_skipped_by_internal_check_skips_authoritative_check():
 @pytest.mark.asyncio
 async def test_authoritative_check_handles_missing_bot_fid():
     """Test that authoritative check handles missing bot FID gracefully."""
-    tool = SendFarcasterReplyTool()
+    tool = SendFarcasterPostTool()
     
     # Mock Farcaster observer and API client
     mock_obs = AsyncMock()
@@ -280,7 +280,7 @@ async def test_authoritative_check_handles_missing_bot_fid():
 @pytest.mark.asyncio
 async def test_authoritative_check_handles_malformed_api_response():
     """Test that authoritative check handles malformed API responses gracefully."""
-    tool = SendFarcasterReplyTool()
+    tool = SendFarcasterPostTool()
     
     # Mock Farcaster observer and API client
     mock_obs = AsyncMock()

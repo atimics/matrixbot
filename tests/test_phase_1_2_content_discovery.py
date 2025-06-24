@@ -6,7 +6,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 import time
 
-from chatbot.tools.farcaster_tools import (
+from chatbot.tools.farcaster import (
     GetUserTimelineTool,
     SearchCastsTool,
     GetTrendingCastsTool,

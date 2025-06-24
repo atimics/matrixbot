@@ -390,11 +390,10 @@ class MainOrchestrator:
             return
         from ...tools.core_tools import WaitTool, SetMissionGoalTool, UpdateMissionStatusTool
         from ...tools.describe_image_tool import DescribeImageTool
-        from ...tools.farcaster_tools import (
+        from ...tools.farcaster import (
             FollowFarcasterUserTool,
             GetUserTimelineTool,
             LikeFarcasterPostTool,
-            QuoteFarcasterPostTool,
             SendFarcasterDMTool,
             SendFarcasterPostTool,
             UnfollowFarcasterUserTool,
@@ -495,7 +494,6 @@ class MainOrchestrator:
         # self.tool_registry.register_tool(SendFarcasterReplyTool())  # DEPRECATED - functionality consolidated into SendFarcasterPostTool
         self.tool_registry.register_tool(SendFarcasterDMTool())
         self.tool_registry.register_tool(LikeFarcasterPostTool())
-        self.tool_registry.register_tool(QuoteFarcasterPostTool())
         self.tool_registry.register_tool(FollowFarcasterUserTool())
         self.tool_registry.register_tool(UnfollowFarcasterUserTool())
         self.tool_registry.register_tool(DeleteFarcasterPostTool())

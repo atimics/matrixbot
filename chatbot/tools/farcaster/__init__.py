@@ -8,7 +8,6 @@ organized by functionality for better maintainability.
 # Re-export tools for backward compatibility
 from .send_post import SendFarcasterPostTool
 from .like_post import LikeFarcasterPostTool
-from .quote_post import QuoteFarcasterPostTool
 from .follow_user import FollowFarcasterUserTool, UnfollowFarcasterUserTool
 from .delete_post import DeleteFarcasterPostTool
 from .delete_reaction import DeleteFarcasterReactionTool
@@ -22,7 +21,6 @@ from .deprecated import SendFarcasterDMTool
 __all__ = [
     "SendFarcasterPostTool",
     "LikeFarcasterPostTool",
-    "QuoteFarcasterPostTool",
     "FollowFarcasterUserTool",
     "UnfollowFarcasterUserTool",
     "DeleteFarcasterPostTool",
