@@ -25,7 +25,7 @@ from ...integrations.farcaster import FarcasterObserver
 from ..node_system.node_manager import NodeManager
 from ..node_system.summary_service import NodeSummaryService
 from ..node_system.interaction_tools import NodeInteractionTools
-from ..node_system.node_processor import NodeProcessor
+from ..processors.adaptive_processor import AdaptiveProcessor
 from ...integrations.matrix.observer import MatrixObserver
 from ...integrations.base_nft_service import BaseNFTService
 from ...integrations.eligibility_service import UserEligibilityService
@@ -789,12 +789,12 @@ class MainOrchestrator:
         if hasattr(self.payload_builder, 'node_manager') and self.payload_builder.node_manager:
             node_manager = self.payload_builder.node_manager
             logger.debug("Using PayloadBuilder's NodeManager for critical pinning")
-        # Next, check if ProcessingHub's node_processor has a node_manager
-        elif (self.processing_hub.node_processor and 
-              hasattr(self.processing_hub.node_processor, 'node_manager') and 
-              self.processing_hub.node_processor.node_manager):
-            node_manager = self.processing_hub.node_processor.node_manager
-            logger.debug("Using ProcessingHub's node_processor NodeManager for critical pinning")
+        # Next, check if ProcessingHub's commander_processor has a node_manager
+        elif (self.processing_hub and self.processing_hub.commander_processor and 
+              hasattr(self.processing_hub.commander_processor, 'node_manager') and 
+              self.processing_hub.commander_processor.node_manager):
+            node_manager = self.processing_hub.commander_processor.node_manager
+            logger.debug("Using ProcessingHub's commander_processor NodeManager for critical pinning")
         
         if node_manager:
             for pin_path in critical_pins:
@@ -1236,8 +1236,8 @@ class MainOrchestrator:
                     logger.error(f"Failed to remove Matrix integration: {e}")
     
     def _initialize_node_system(self):
-        """Initialize the node-based processing system."""
-        logger.info("Initializing node-based processing system...")
+        """Initialize the Commander/Sub-Agent processing system with node-based context management."""
+        logger.info("Initializing Commander/Sub-Agent processing system...")
         
         # Ensure required dependencies are available
         if not self.ai_engine:
@@ -1270,8 +1270,8 @@ class MainOrchestrator:
         # Initialize NodeInteractionTools for AI node operations
         self.node_interaction_tools = NodeInteractionTools(self.node_manager)
         
-        # Initialize NodeProcessor with two-phase OODA loop
-        self.node_processor = NodeProcessor(
+        # Initialize AdaptiveProcessor (Commander AI) with strategic decision making
+        self.commander_processor = AdaptiveProcessor(
             node_manager=self.node_manager,
             summary_service=self.node_summary_service,
             ai_engine=self.ai_engine,
@@ -1281,8 +1281,8 @@ class MainOrchestrator:
             action_context=self.action_context
         )
         
-        # Connect NodeProcessor to ProcessingHub
-        self.processing_hub.set_node_processor(self.node_processor)
+        # Connect AdaptiveProcessor (Commander AI) to ProcessingHub
+        self.processing_hub.set_commander_processor(self.commander_processor)
         
         # CRITICAL FIX: Connect NodeManager to WorldStateManager so tools can access it
         self.world_state.node_manager = self.node_manager
@@ -1291,7 +1291,7 @@ class MainOrchestrator:
         # Update ActionContext with the node_manager after initialization
         self._update_action_context_with_node_manager()
         
-        logger.info("Node-based processing system initialized successfully")
+        logger.info("Commander/Sub-Agent processing system initialized successfully")
 
     def _update_action_context_with_node_manager(self):
         """Update ActionContext to include the node_manager for node tools."""

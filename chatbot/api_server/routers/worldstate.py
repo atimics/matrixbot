@@ -37,10 +37,13 @@ async def get_world_state(orchestrator: MainOrchestrator = Depends(get_orchestra
         # Get traditional world state
         state_dict = orchestrator.world_state.to_dict()
         
-        # Add node-based information if available
+        # Add node-based information if available through commander processor
         node_info = {}
-        if hasattr(orchestrator.processing_hub, 'node_manager') and orchestrator.processing_hub.node_manager:
-            node_manager = orchestrator.processing_hub.node_manager
+        if (hasattr(orchestrator.processing_hub, 'commander_processor') and 
+            orchestrator.processing_hub.commander_processor and
+            hasattr(orchestrator.processing_hub.commander_processor, 'node_manager') and 
+            orchestrator.processing_hub.commander_processor.node_manager):
+            node_manager = orchestrator.processing_hub.commander_processor.node_manager
             node_info = {
                 "expanded_nodes": list(node_manager.expanded_nodes.keys()),
                 "collapsed_summaries": list(node_manager.collapsed_node_summaries.keys()),
