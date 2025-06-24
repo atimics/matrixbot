@@ -48,11 +48,11 @@ class TraditionalProcessor:
     handling the traditional full-payload processing approach.
     """
     
-    def __init__(self, ai_engine, tool_registry, rate_limiter, context_manager, action_context):
+    def __init__(self, ai_engine, tool_registry, rate_limiter, history_recorder, action_context):
         self.ai_engine = ai_engine
         self.tool_registry = tool_registry
         self.rate_limiter = rate_limiter
-        self.context_manager = context_manager
+        self.history_recorder = history_recorder
         self.action_context = action_context
         
     async def process_payload(self, payload: Dict[str, Any], active_channels: list) -> None:
@@ -949,7 +949,7 @@ class MainOrchestrator:
             # Update action context with required components
             self.action_context.matrix_observer = matrix_integration or self.matrix_observer
             self.action_context.world_state_manager = self.world_state
-            self.action_context.context_manager = self.context_manager
+            # Note: ActionContext.context_manager is deprecated, leaving as None
             
             # Use unified SendMatrixMessageTool for both messages and replies
             if action.action_type in ["send_matrix_reply", "send_matrix_message"]:
@@ -997,14 +997,28 @@ class MainOrchestrator:
             logger.error(f"Error processing channel {channel_id}: {e}")
 
     async def add_user_message(self, channel_id: str, message_data: Dict[str, Any]) -> None:
-        """Add a user message to the context."""
-        await self.context_manager.add_user_message(channel_id, message_data)
+        """Add a user message to the context using HistoryRecorder."""
+        # Store the message directly using HistoryRecorder
+        from ...core.history_recorder import StateChangeBlock
+        import time
+        
+        await self.history_recorder.record_state_change(StateChangeBlock(
+            timestamp=time.time(),
+            change_type="user_message",
+            source="user",
+            channel_id=channel_id,
+            observations=None,
+            potential_actions=None,
+            selected_actions=None,
+            reasoning=None,
+            raw_content=message_data,
+        ))
 
     async def get_context_summary(self, channel_id: str) -> Optional[Dict[str, Any]]:
         """Get context summary for a channel using HistoryRecorder directly."""
         try:
             # Access HistoryRecorder directly instead of through deprecated ContextManager methods
-            recent_changes = await self.context_manager.history_recorder.get_recent_state_changes(
+            recent_changes = await self.history_recorder.get_recent_state_changes(
                 channel_id=channel_id, 
                 limit=50
             )

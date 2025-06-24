@@ -547,7 +547,7 @@ class DependencyContainer:
         
         # Ensure all required dependencies are initialized
         assert self._world_state_manager is not None, "WorldStateManager not initialized"
-        assert self._context_manager is not None, "ContextManager not initialized"
+        assert self._history_recorder is not None, "HistoryRecorder not initialized"
         assert self._integration_manager is not None, "IntegrationManager not initialized"
         assert self._ai_engine is not None, "AIDecisionEngine not initialized"
         assert self._payload_builder is not None, "PayloadBuilder not initialized"
@@ -561,7 +561,7 @@ class DependencyContainer:
         orchestrator = MainOrchestrator(
             config=orchestrator_config,
             world_state_manager=self._world_state_manager,
-            context_manager=self._context_manager,
+            history_recorder=self._history_recorder,
             integration_manager=self._integration_manager,
             ai_engine=self._ai_engine,
             payload_builder=self._payload_builder,
