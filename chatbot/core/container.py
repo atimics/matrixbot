@@ -425,6 +425,7 @@ class DependencyContainer:
             world_state_manager=self._world_state_manager,
             context_manager=None,  # ContextManager is deprecated
             service_registry=service_registry,
+            database_manager=self._database_manager,  # Enable persistent cache checks
             # Legacy compatibility
             arweave_client=self._arweave_client,
             arweave_service=arweave_service,
