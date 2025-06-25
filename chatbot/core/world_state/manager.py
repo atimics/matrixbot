@@ -951,10 +951,12 @@ class WorldStateManager:
     
     def is_bot_turn_in_thread(self, thread_id: str) -> bool:
         """
-        Check if it's the bot's turn to speak in a thread.
+        Check if it's the bot's turn to speak in a thread with socially-aware logic.
         
-        This is the core validation that prevents spam and inappropriate replies.
-        The bot can only act when it wasn't the last one to speak.
+        This method implements sophisticated turn-taking logic that considers:
+        1. Direct mentions of the bot (always allow response)
+        2. Standard turn-taking (bot can speak if it wasn't the last speaker)
+        3. Group conversation dynamics (new speakers reset turn state)
         
         Args:
             thread_id: The thread identifier to check
@@ -964,10 +966,7 @@ class WorldStateManager:
         """
         thread = self.state.threads.get(thread_id)
         if not thread:
-            logger.warning(f"Turn validation failed: Thread '{thread_id}' does not exist. This could indicate missing thread context that needs hydration.")
-            # RECOMMENDATION 2: Future enhancement point for state hydration
-            # Here we could implement logic to fetch the parent cast and create thread context
-            # For now, we return False to be safe and prevent potential spam
+            logger.warning(f"Turn validation failed: Thread '{thread_id}' does not exist. Context should have been hydrated by AttentionEngine.")
             return False
 
         # Must be a real conversation (allow bot to participate in any thread with activity)
@@ -986,29 +985,48 @@ class WorldStateManager:
         # Get bot ID based on platform - use consistent identifiers
         if thread.platform == 'matrix':
             bot_id = settings.matrix.user_id
+            bot_username = settings.matrix.user_id  # For Matrix, user_id is also the username
         elif thread.platform == 'farcaster':
             # For Farcaster, use username as the primary identifier
             bot_id = settings.farcaster.bot_username
+            bot_username = settings.farcaster.bot_username
         else:
             logger.warning(f"Unknown platform for thread {thread_id}: {thread.platform}")
             return False
             
-        if not bot_id:
-            logger.warning(f"Bot ID not available for platform {thread.platform}")
+        if not bot_id or not bot_username:
+            logger.warning(f"Bot ID/username not available for platform {thread.platform}")
             return False
 
-        # Core rule: Bot can only speak if it wasn't the last speaker
-        if thread.last_speaker_id == bot_id:
-            logger.info(f"Turn validation failed: Bot was the last speaker in thread '{thread_id}'. Waiting for user response.")
+        # Get the most recent message in the thread
+        if not thread.messages:
+            logger.debug(f"Turn validation failed: Thread '{thread_id}' has no messages in history.")
             return False
+        
+        latest_message = thread.messages[-1]  # Messages are sorted by timestamp
+        
+        # === RULE 1: Direct Mention Override ===
+        # If the latest message mentions the bot, always allow response regardless of turn state
+        mention_indicators = [f"@{bot_username}", bot_username.lower(), bot_id.lower()]
+        if any(indicator in latest_message.content.lower() for indicator in mention_indicators):
+            logger.info(f"Turn validation passed: Direct mention detected in thread '{thread_id}' - bot can always respond to mentions.")
+            return True
+        
+        # === RULE 2: Standard Turn-Taking ===
+        # Bot can speak if it wasn't the last speaker
+        if thread.last_speaker_id != bot_id:
+            logger.info(f"Turn validation passed: It is the bot's turn in thread '{thread_id}' (last speaker: {thread.last_speaker_id}).")
+            return True
+        
+        # If we reach here, bot was the last speaker and there's no mention
+        logger.info(f"Turn validation failed: Bot was the last speaker in thread '{thread_id}' and no direct mention detected. Waiting for user response.")
         
         # ENHANCEMENT: Check for recent failed actions to prevent immediate retries
         if thread.has_recent_failed_action('send_farcaster_post') or thread.has_recent_failed_action('send_matrix_message'):
             logger.info(f"Turn validation failed: Recent failed action in thread '{thread_id}'. Waiting for cooldown.")
             return False
             
-        logger.info(f"Turn validation passed: It is the bot's turn in thread '{thread_id}'.")
-        return True
+        return False
 
     def _update_thread_on_new_message(self, message) -> None:
         """

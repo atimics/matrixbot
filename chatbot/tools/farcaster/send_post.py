@@ -178,30 +178,18 @@ class SendFarcasterPostTool(ToolInterface):
             try:
                 thread_id = reply_to_hash  # For Farcaster, the reply target becomes the thread ID
                 
-                # Simplified check - AttentionEngine should have already hydrated context
+                # Simple check - AttentionEngine guarantees context exists
                 if not context.world_state_manager.is_bot_turn_in_thread(thread_id):
-                    # Check if this is a missing context issue (shouldn't happen with new architecture)
-                    if not hasattr(context.world_state_manager.state, 'threads') or not context.world_state_manager.state.threads.get(thread_id):
-                        error_msg = f"ARCHITECTURE ERROR: Thread context missing for {thread_id}. AttentionEngine should have hydrated this before queuing."
-                        logger.error(error_msg)
-                        return {
-                            "status": "blocked",
-                            "message": "Reply blocked: Missing conversation context (architecture error).",
-                            "reason": "missing_thread_context_architecture_error",
-                            "reply_to_hash": reply_to_hash,
-                            "timestamp": time.time()
-                        }
-                    else:
-                        # Normal turn validation - bot shouldn't reply when it's not its turn
-                        error_msg = f"THREAD TURN VIOLATION: It is not the bot's turn to speak in thread {thread_id}. This prevents spam and maintains natural conversation flow."
-                        logger.error(error_msg)
-                        return {
-                            "status": "blocked",
-                            "message": "Reply blocked: Not the bot's turn in this conversation",
-                            "reason": "not_bot_turn",
-                            "reply_to_hash": reply_to_hash,
-                            "timestamp": time.time()
-                        }
+                    # Normal turn validation - bot shouldn't reply when it's not its turn
+                    error_msg = f"THREAD TURN VIOLATION: It is not the bot's turn to speak in thread {thread_id}. This prevents spam and maintains natural conversation flow."
+                    logger.error(error_msg)
+                    return {
+                        "status": "blocked",
+                        "message": "Reply blocked: Not the bot's turn in this conversation",
+                        "reason": "not_bot_turn",
+                        "reply_to_hash": reply_to_hash,
+                        "timestamp": time.time()
+                    }
                 
                 logger.info(f"Layer 3 passed: Thread turn validation approved for {thread_id}")
 
