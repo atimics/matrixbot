@@ -15,7 +15,8 @@ async def test_reply_succeeds_when_no_prior_reply_exists():
     
     # Mock Farcaster observer
     mock_obs = AsyncMock()
-    mock_obs.reply_to_cast.return_value = {"success": True, "cast": {"hash": "new_reply_hash"}}
+    mock_obs.reply_to_cast = AsyncMock(return_value={"success": True, "cast": {"hash": "new_reply_hash"}})
+    mock_obs.reply_queue = None  # No queue, so it uses immediate execution
     
     # Mock world state manager - no previous reply in action history
     mock_world_state = MagicMock()
@@ -24,7 +25,7 @@ async def test_reply_succeeds_when_no_prior_reply_exists():
     
     # Mock service registry
     mock_service_registry = MagicMock()
-    mock_service_registry.get.return_value = mock_obs
+    mock_service_registry.get_service.return_value = mock_obs
     
     context = ActionContext(
         service_registry=mock_service_registry,
@@ -57,7 +58,7 @@ async def test_reply_is_blocked_when_reply_exists_in_action_history():
     
     # Mock service registry
     mock_service_registry = MagicMock()
-    mock_service_registry.get.return_value = mock_obs
+    mock_service_registry.get_service.return_value = mock_obs
     
     context = ActionContext(
         service_registry=mock_service_registry,
@@ -78,57 +79,43 @@ async def test_reply_is_blocked_when_reply_exists_in_action_history():
 
 
 @pytest.mark.asyncio
-async def test_reply_is_skipped_when_reply_exists_in_casts():
-    """Test that reply is skipped when bot's reply exists in the casts array."""
+async def test_reply_with_scheduled_queue():
+    """Test that reply works correctly when using the scheduled queue."""
     tool = SendFarcasterPostTool()
     
-    # Mock Farcaster observer and API client
+    # Mock Farcaster observer with reply queue
     mock_obs = AsyncMock()
-    mock_api_client = AsyncMock()
-    mock_obs.api_client = mock_api_client
-    mock_obs.bot_fid = "12345"
-    
-    # Mock conversation lookup - bot already replied in casts array
-    mock_api_client.lookup_cast_conversation.return_value = {
-        "result": {
-            "conversation": {
-                "cast": {
-                    "direct_replies": []
-                },
-                "casts": [
-                    {
-                        "author": {"fid": "67890"},  # Different FID
-                        "text": "Someone else's reply"
-                    },
-                    {
-                        "author": {"fid": "12345"},  # Bot's FID
-                        "text": "Bot's existing reply"
-                    }
-                ]
-            }
-        }
-    }
+    import asyncio
+    mock_queue = asyncio.Queue()  # Use a real queue
+    mock_obs.reply_queue = mock_queue
+    mock_obs.schedule_reply = MagicMock()
     
     # Mock world state manager
     mock_world_state = MagicMock()
-    mock_world_state.has_replied_to_cast.return_value = False  # Internal state doesn't know
+    mock_world_state.has_replied_to_cast.return_value = False
+    mock_world_state.is_bot_turn_in_thread.return_value = True
+    mock_world_state.add_action_result.return_value = "test_action_id"
+    
+    # Mock service registry
+    mock_service_registry = MagicMock()
+    mock_service_registry.get_service.return_value = mock_obs
     
     context = ActionContext(
-        farcaster_observer=mock_obs,
+        service_registry=mock_service_registry,
         world_state_manager=mock_world_state
     )
     
     params = {
-        "content": "This would be a duplicate reply",
+        "content": "This is a scheduled reply",
         "reply_to_hash": "test_cast_hash"
     }
     
     result = await tool.execute(params, context)
     
-    # Should be blocked by action history check and NOT call reply_to_cast
-    assert result["status"] == "failure"
-    assert "DUPLICATE ACTION BLOCKED" in result["error"]
-    mock_obs.reply_to_cast.assert_not_awaited()
+    # Should be scheduled successfully
+    assert result["status"] == "scheduled"
+    assert "test_cast_hash" in result["message"]
+    mock_obs.schedule_reply.assert_called_once_with("This is a scheduled reply", "test_cast_hash", "test_action_id")
 
 
 @pytest.mark.asyncio
@@ -146,7 +133,7 @@ async def test_reply_is_blocked_when_not_bot_turn():
     
     # Mock service registry
     mock_service_registry = MagicMock()
-    mock_service_registry.get.return_value = mock_obs
+    mock_service_registry.get_service.return_value = mock_obs
     
     context = ActionContext(
         service_registry=mock_service_registry,
@@ -180,7 +167,7 @@ async def test_reply_succeeds_with_exception_handling():
     
     # Mock service registry
     mock_service_registry = MagicMock()
-    mock_service_registry.get.return_value = mock_obs
+    mock_service_registry.get_service.return_value = mock_obs
     
     context = ActionContext(
         service_registry=mock_service_registry,
@@ -214,7 +201,7 @@ async def test_reply_skipped_by_internal_check_skips_authoritative_check():
     
     # Mock service registry
     mock_service_registry = MagicMock()
-    mock_service_registry.get.return_value = mock_obs
+    mock_service_registry.get_service.return_value = mock_obs
     
     context = ActionContext(
         service_registry=mock_service_registry,
@@ -274,7 +261,7 @@ async def test_reply_works_with_missing_world_state_manager():
     
     # Mock service registry
     mock_service_registry = MagicMock()
-    mock_service_registry.get.return_value = mock_obs
+    mock_service_registry.get_service.return_value = mock_obs
     
     # Context without world state manager
     context = ActionContext(
