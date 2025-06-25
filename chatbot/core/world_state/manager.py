@@ -1201,3 +1201,32 @@ class WorldStateManager:
             logger.info(f"Recorded failed action {action_type} in thread {thread_id}: {error}")
         else:
             logger.warning(f"Cannot record failed action - thread {thread_id} not found")
+
+    def record_and_check_daily_interaction(self, user_id: str) -> bool:
+        """
+        Records an interaction with a user for the current day and checks if the daily cap is exceeded.
+        Returns True if the cap is exceeded, False otherwise.
+        """
+        from datetime import datetime
+        from ...config import settings
+
+        today_str = datetime.utcnow().strftime('%Y-%m-%d')
+        daily_cap = getattr(settings.processing, 'daily_unsolicited_reply_cap', 5)
+
+        if user_id not in self.state.daily_interaction_counts:
+            self.state.daily_interaction_counts[user_id] = {}
+
+        # Clean up old dates for this user
+        self.state.daily_interaction_counts[user_id] = {
+            date: count for date, count in self.state.daily_interaction_counts[user_id].items() if date == today_str
+        }
+
+        today_count = self.state.daily_interaction_counts[user_id].get(today_str, 0)
+
+        if today_count >= daily_cap:
+            logger.warning(f"Daily interaction cap of {daily_cap} reached for user {user_id}.")
+            return True # Cap exceeded
+
+        # Increment and record
+        self.state.daily_interaction_counts[user_id][today_str] = today_count + 1
+        return False # Still within cap

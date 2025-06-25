@@ -68,6 +68,9 @@ class ProcessingConfig(BaseSettings):
     )
     enable_two_phase_ai_process: bool = Field(default=False, alias="ENABLE_TWO_PHASE_AI_PROCESS")
     max_exploration_rounds: int = Field(default=3, alias="MAX_EXPLORATION_ROUNDS")
+    
+    # User Interaction Limits
+    daily_unsolicited_reply_cap: int = Field(default=5, alias="DAILY_UNSOLICITED_REPLY_CAP")
 
 
 class MatrixConfig(BaseSettings):

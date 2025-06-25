@@ -139,6 +139,9 @@ class SendFarcasterPostTool(ToolInterface):
                 cast_data = conversation.get('cast', {})
                 all_replies = cast_data.get('direct_replies', [])
                 
+                # Extract the original cast author FID for daily interaction tracking
+                original_author_fid = cast_data.get('author', {}).get('fid')
+                
                 # Also check the broader conversation casts array for replies
                 broader_casts = conversation.get('casts', [])
                 for cast in broader_casts:
@@ -165,6 +168,12 @@ class SendFarcasterPostTool(ToolInterface):
                         return create_error_response(error_msg)
                 
                 logger.info(f"Layer 2 passed: Authoritative API check found no existing reply from bot to {reply_to_hash}")
+                
+                # === DAILY INTERACTION CAP CHECK ===
+                # Check if we've exceeded daily interaction limit with this user
+                if original_author_fid and context.world_state_manager:
+                    if context.world_state_manager.record_and_check_daily_interaction(str(original_author_fid)):
+                        return create_error_response(f"Daily interaction limit reached for user {original_author_fid}.")
 
             except Exception as e:
                 logger.error(f"Layer 2 failed: Authoritative duplicate check failed due to API error: {e}", exc_info=True)

@@ -979,6 +979,9 @@ class WorldStateData:
         self.project_plan: Dict[str, DevelopmentTask] = {}  # task_id -> DevelopmentTask  
         self.github_repository_state: Optional[TargetRepositoryContext] = None
         
+        # Daily interaction tracking to prevent user spam
+        self.daily_interaction_counts: Dict[str, Dict[str, int]] = {}  # Structure: {'user_id': {'YYYY-MM-DD': count}}
+        
         # Backward compatibility placeholders
         self.user_details: Dict[str, Any] = {}
         self.bot_media: Dict[str, Any] = {}  # alias for bot_media_on_farcaster

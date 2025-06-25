@@ -141,6 +141,23 @@ class SendMatrixMessageTool(ToolInterface):
                 }
             
             logger.info(f"Matrix thread turn validation PASSED: Bot's turn to speak in thread {thread_id}")
+            
+            # === DAILY INTERACTION CAP CHECK ===
+            # Check if we've exceeded daily interaction limit with the user we're replying to
+            if context.world_state_manager:
+                # Find the original message to get the sender's user_id
+                original_message = None
+                for channel in context.world_state_manager.state.channels.values():
+                    for message in channel.recent_messages:
+                        if message.id == reply_to_event_id:
+                            original_message = message
+                            break
+                    if original_message:
+                        break
+                
+                if original_message and original_message.sender:
+                    if context.world_state_manager.record_and_check_daily_interaction(original_message.sender):
+                        return {"status": "failure", "error": f"Daily interaction limit reached for user {original_message.sender}.", "timestamp": time.time()}
 
         # Auto-attachment: Check for recently generated media if no image_url provided
         if not image_url and context.world_state_manager:

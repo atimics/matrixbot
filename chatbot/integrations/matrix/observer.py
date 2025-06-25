@@ -412,7 +412,8 @@ class MatrixObserver(Integration):
 
         # Create message object
         metadata = {
-            "matrix_event_type": getattr(event, "msgtype", type(event).__name__)
+            "matrix_event_type": getattr(event, "msgtype", type(event).__name__),
+            "is_direct_message": room_details.get("member_count", 0) == 2  # DM typically has 2 members
         }
         
         # Add original filename to metadata for image messages if available

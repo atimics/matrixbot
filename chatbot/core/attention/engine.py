@@ -222,6 +222,16 @@ class AttentionEngine:
         Returns:
             True if the message should be skipped due to cooldown, False otherwise
         """
+        # Check for direct mentions or DMs first - these bypass cooldown
+        bot_mentioned = any(
+            identifier in message.content.lower() 
+            for identifier in [self.bot_username, self.bot_user_id] 
+            if identifier
+        )
+        if bot_mentioned or message.metadata.get("is_direct_message"):
+            logger.debug(f"Bypassing cooldown for direct mention/DM in message {message.id}")
+            return False
+        
         # Check if we have recent bot activity in this ENTIRE CHANNEL
         if message.channel_id is None:
             logger.warning("Message has no channel_id, skipping cooldown check")
@@ -501,6 +511,10 @@ class AttentionEngine:
         """
         priority_score = ThreadPriority.NORMAL.value
         
+        # Check for direct messages first - highest priority
+        if message.metadata.get("is_direct_message"):
+            return ThreadPriority.CRITICAL  # DMs are top priority
+        
         # Direct mentions or questions get higher priority
         bot_mentioned = any(
             identifier in message.content.lower() 
@@ -509,7 +523,8 @@ class AttentionEngine:
         )
         
         if bot_mentioned:
-            priority_score += 4  # High priority for direct mentions
+            priority_score += 5  # Boost from 4 to 5 for higher priority
+            return ThreadPriority.URGENT  # Ensure it's high priority
         
         if '?' in message.content:
             priority_score += 2  # Questions get priority

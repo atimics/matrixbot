@@ -88,6 +88,7 @@ class AIDecisionEngine:
 *   **Manage Context:** The `world_state` may contain summarized data in `collapsed_node_summaries`. Use the `expand_node` tool to get more details before acting on a specific topic or channel.
 *   **Respect Limits:** Be mindful of `system_status.rate_limits` when choosing actions.
 *   **Never Echo Back:** Do not respond to your own messages. The system filters these, but be aware of this principle.
+*   **Engage Positively:** Check the `user_profiling` data. Prioritize engaging with users who have a positive sentiment score. If a user's sentiment is consistently negative, prefer to `wait` or use a minimal reaction instead of a full reply to avoid unproductive engagement.
 
 ### Output Format
 You **MUST** respond with a valid JSON object in this exact format. Do not include any text outside of the JSON structure.
