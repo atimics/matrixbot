@@ -1208,18 +1208,29 @@ class MainOrchestrator:
         logger.info("Performing startup state synchronization...")
         
         # Sync Farcaster reply history
-        if self.farcaster_observer and self.action_context and self.action_context.database_manager:
-            try:
-                synced_count = await self.farcaster_observer.sync_reply_history(self.action_context.database_manager)
-                logger.info(f"Farcaster state sync completed: {synced_count} replies synced")
-            except Exception as e:
-                logger.error(f"Failed to sync Farcaster reply history: {e}", exc_info=True)
+        if self.integration_manager and self.action_context and self.action_context.database_manager:
+            # Get Farcaster integration
+            active_integrations = self.integration_manager.get_active_integrations()
+            farcaster_integration = None
+            for integration_id, integration in active_integrations.items():
+                if hasattr(integration, 'integration_type') and integration.integration_type == 'farcaster':
+                    farcaster_integration = integration
+                    break
+            
+            if farcaster_integration and hasattr(farcaster_integration, 'sync_reply_history'):
+                try:
+                    synced_count = await farcaster_integration.sync_reply_history(self.action_context.database_manager)
+                    logger.info(f"Farcaster state sync completed: {synced_count} replies synced")
+                except Exception as e:
+                    logger.error(f"Failed to sync Farcaster reply history: {e}", exc_info=True)
+            else:
+                logger.debug("Skipping Farcaster state sync: integration not available or sync method not implemented")
         else:
-            logger.debug("Skipping Farcaster state sync: observer or database manager not available")
+            logger.debug("Skipping Farcaster state sync: integration manager or database manager not available")
         
         # Future: Add Matrix state sync here if needed
-        # if self.matrix_observer and self.action_context and self.action_context.database_manager:
-        #     await self.matrix_observer.sync_message_history(self.action_context.database_manager)
+        # if matrix_integration and self.action_context and self.action_context.database_manager:
+        #     await matrix_integration.sync_message_history(self.action_context.database_manager)
         
         logger.info("Startup state synchronization completed")
 

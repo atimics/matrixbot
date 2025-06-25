@@ -23,8 +23,10 @@ class GoogleAIMediaClient:
     def __init__(
         self,
         api_key: str,
-        default_gemini_image_model: str = "imagen-3.0-generate-001",  # PHASE 2C FIX: Use dedicated image model
-        default_veo_video_model: str = "veo-2.0-generate-001",
+        default_gemini_image_model: str = "gemini-2.0-flash-preview-image-generation",
+        # Note: "gemini-2.0-flash-preview-image-generation" is a model that supports image generation.
+        # If you want to use a different model, you can specify it here.
+         default_veo_video_model: str = "veo-2.0-generate-001",
     ):
         """
         Initialize Google AI Media client.
@@ -32,8 +34,6 @@ class GoogleAIMediaClient:
         Args:
             api_key: Google AI API key (for Gemini Developer API).
             default_gemini_image_model: Default model for image generation.
-                                       PHASE 2C FIX: Now defaults to "imagen-3.0-generate-001" 
-                                       instead of "gemini-2.0-flash-preview-image-generation" which doesn't support image generation.
             default_veo_video_model: Default Veo model for video generation.
         """
         self.api_key = api_key
@@ -168,10 +168,6 @@ class GoogleAIMediaClient:
         warning_message = "GoogleAIMediaClient: All image generation attempts failed."
         logger.warning(warning_message)
         
-        # PHASE 2C FIX: Provide helpful error context
-        logger.error(f"GoogleAIMediaClient: Model {self.default_gemini_image_model} may not support image generation. "
-                    f"Consider using 'imagen-3.0-generate-001' or another dedicated image generation model.")
-
         return None
 
     async def compose_image_with_references(
