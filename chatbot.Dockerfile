@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libolm-dev \
     pkg-config \
     libssl-dev \
+    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy poetry files first for better Docker layer caching

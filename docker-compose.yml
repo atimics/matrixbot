@@ -2,21 +2,23 @@
 
 services:
   postgres:
-    image: postgres:14-alpine
+    image: postgres:15-alpine
     container_name: ratichat_postgres
     environment:
       POSTGRES_USER: ratichat
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-your_strong_password_here}
       POSTGRES_DB: ratichat
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
     networks:
       - ratichat_network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ratichat"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD-SHELL", "pg_isready -U ratichat -d ratichat"]
+      interval: 10s
+      timeout: 5s
       retries: 5
 
   ratichat_backend:
@@ -41,6 +43,12 @@ services:
       # Additional runtime environment
       - PYTHONUNBUFFERED=1
       - RATICHAT_DB_PATH=/app/data/ratichat.db
+      # PostgreSQL connection settings
+      - POSTGRES_USER=ratichat
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-your_strong_password_here}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DB=ratichat
+      - POSTGRES_PORT=5432
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]

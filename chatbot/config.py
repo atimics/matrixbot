@@ -232,6 +232,31 @@ class SecurityConfig(BaseSettings):
     ratichat_encryption_key: Optional[str] = Field(default=None, alias="RATICHAT_ENCRYPTION_KEY")
 
 
+class PostgresConfig(BaseSettings):
+    """PostgreSQL database configuration."""
+    
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8", 
+        extra="ignore"
+    )
+    
+    user: str = Field(default="ratichat", alias="POSTGRES_USER")
+    password: str = Field(default="your_strong_password_here", alias="POSTGRES_PASSWORD")
+    host: str = Field(default="localhost", alias="POSTGRES_HOST")
+    port: int = Field(default=5432, alias="POSTGRES_PORT")
+    dbname: str = Field(default="ratichat", alias="POSTGRES_DB")
+    
+    # Connection pool settings
+    min_pool_size: int = Field(default=1, alias="POSTGRES_MIN_POOL_SIZE")
+    max_pool_size: int = Field(default=10, alias="POSTGRES_MAX_POOL_SIZE")
+    
+    @property
+    def dsn(self) -> str:
+        """Data Source Name connection string."""
+        return f"postgresql://{self.user}:{self.password}@{self.host}:{self.port}/{self.dbname}"
+
+
 class AppConfig(BaseSettings):
     """
     Centralized application configuration with nested validation.
@@ -258,6 +283,7 @@ class AppConfig(BaseSettings):
     storage: StorageConfig = Field(default_factory=StorageConfig)
     developer_tools: DeveloperToolsConfig = Field(default_factory=DeveloperToolsConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
+    postgres: PostgresConfig = Field(default_factory=PostgresConfig)
     
     # Legacy flat configuration (to be migrated over time)
     # Ecosystem Token Tracking
