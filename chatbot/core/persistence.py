@@ -188,6 +188,15 @@ class DatabaseManager:
                 )
             """)
             
+            # Replied-to casts table for duplicate prevention
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS replied_to_casts (
+                    original_cast_hash TEXT PRIMARY KEY NOT NULL,
+                    reply_cast_hash TEXT NOT NULL,
+                    replied_at REAL NOT NULL
+                )
+            """)
+            
             await db.commit()
         
         await self._execute_operation(create_tables_operation)
@@ -644,3 +653,70 @@ class DatabaseManager:
                 )
         
         return None
+
+    # Replied-to Casts Management Methods (for duplicate prevention)
+    async def add_replied_to_cast(self, original_cast_hash: str, reply_cast_hash: str) -> None:
+        """
+        Add a record indicating a cast has been replied to.
+        
+        Args:
+            original_cast_hash: The hash of the original cast that was replied to
+            reply_cast_hash: The hash of the reply cast that was sent
+        """
+        async def db_operation(db):
+            await db.execute(
+                "INSERT OR IGNORE INTO replied_to_casts (original_cast_hash, reply_cast_hash, replied_at) VALUES (?, ?, ?)",
+                (original_cast_hash, reply_cast_hash, time.time())
+            )
+            await db.commit()
+        
+        await self._execute_operation(db_operation)
+        logger.debug(f"Recorded reply to cast {original_cast_hash} with reply hash {reply_cast_hash}")
+
+    async def has_replied_to(self, original_cast_hash: str) -> bool:
+        """
+        Check if a cast has already been replied to from the persistent store.
+        
+        Args:
+            original_cast_hash: The hash of the original cast to check
+            
+        Returns:
+            True if the bot has already replied to this cast, False otherwise
+        """
+        async def db_operation(db) -> bool:
+            async with db.execute(
+                "SELECT 1 FROM replied_to_casts WHERE original_cast_hash = ? LIMIT 1",
+                (original_cast_hash,)
+            ) as cursor:
+                result = await cursor.fetchone()
+                return result is not None
+        
+        result = await self._execute_operation(db_operation)
+        logger.debug(f"Persistent cache check for cast {original_cast_hash}: {'found' if result else 'not found'}")
+        return result
+
+    async def get_replied_to_cast_info(self, original_cast_hash: str) -> Optional[Dict[str, Any]]:
+        """
+        Get detailed information about a replied-to cast.
+        
+        Args:
+            original_cast_hash: The hash of the original cast
+            
+        Returns:
+            Dictionary with reply information or None if not found
+        """
+        async def db_operation(db) -> Optional[Dict[str, Any]]:
+            async with db.execute(
+                "SELECT reply_cast_hash, replied_at FROM replied_to_casts WHERE original_cast_hash = ?",
+                (original_cast_hash,)
+            ) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    return {
+                        "original_cast_hash": original_cast_hash,
+                        "reply_cast_hash": row[0],
+                        "replied_at": row[1]
+                    }
+                return None
+        
+        return await self._execute_operation(db_operation)

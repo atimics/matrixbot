@@ -94,17 +94,79 @@ class SendFarcasterPostTool(ToolInterface):
                 logger.error(error_msg)
                 return create_error_response(error_msg)
 
-            try:
-                # RECOMMENDATION 1: Add a robust check against action history first.
-                # This is the primary duplicate prevention mechanism, independent of live thread state.
-                if context.world_state_manager.has_replied_to_cast(reply_to_hash):
-                    error_msg = f"DUPLICATE ACTION BLOCKED: Already replied or scheduled a reply to cast {reply_to_hash} according to action history."
-                    logger.warning(error_msg)
-                    return create_error_response(error_msg)
+            # === MULTI-LAYERED DUPLICATE REPLY PREVENTION ===
+            logger.info(f"Starting multi-layered duplicate prevention check for reply to: {reply_to_hash}")
 
-                # CRITICAL: THREAD CONTEXT VALIDATION (Keep this as a secondary check)
-                # The bot should NEVER reply outside of active thread conversations
-                # This prevents spam and ensures coherent conversation flow
+            # === LAYER 1: Persistent Local Cache Check ===
+            if context.database_manager:
+                logger.info(f"Layer 1: Checking persistent cache for reply to: {reply_to_hash}")
+                try:
+                    if await context.database_manager.has_replied_to(reply_to_hash):
+                        error_msg = f"DUPLICATE ACTION BLOCKED: Persistent cache indicates a reply to {reply_to_hash} already exists."
+                        logger.warning(error_msg)
+                        return create_error_response(error_msg)
+                    logger.info(f"Layer 1 passed: No reply found in persistent cache for {reply_to_hash}")
+                except Exception as e:
+                    logger.error(f"Layer 1 failed: Error checking persistent cache: {e}", exc_info=True)
+                    # Continue to Layer 2 as fallback
+            else:
+                logger.warning("Layer 1 skipped: Database manager not available for persistent cache check")
+
+            # === LAYER 2: Authoritative API Check ===
+            logger.info(f"Layer 2: Performing authoritative API check for reply to: {reply_to_hash}")
+            if not farcaster_observer.api_client:
+                return create_error_response("Cannot verify reply: Farcaster API client is not configured.")
+            
+            if not hasattr(farcaster_observer, 'bot_fid') or not farcaster_observer.bot_fid:
+                return create_error_response("Cannot verify reply: Bot FID is not configured.")
+
+            try:
+                conversation_data = await farcaster_observer.api_client.lookup_cast_conversation(reply_to_hash)
+                
+                # Navigate the API response structure
+                conversation = conversation_data.get('result', {}).get('conversation', {})
+                if not conversation:
+                    # Try alternative structure
+                    conversation = conversation_data.get('conversation', {})
+                
+                cast_data = conversation.get('cast', {})
+                all_replies = cast_data.get('direct_replies', [])
+                
+                # Also check the broader conversation casts array for replies
+                broader_casts = conversation.get('casts', [])
+                for cast in broader_casts:
+                    if cast.get('parent_hash') == reply_to_hash:
+                        all_replies.append(cast)
+
+                # Check if bot has already replied
+                bot_fid_str = str(farcaster_observer.bot_fid)
+                for reply in all_replies:
+                    author_fid = reply.get('author', {}).get('fid')
+                    if str(author_fid) == bot_fid_str:
+                        error_msg = f"DUPLICATE ACTION BLOCKED: Authoritative API check found existing reply from bot (FID: {bot_fid_str}) to cast {reply_to_hash}."
+                        logger.warning(error_msg)
+                        
+                        # Update persistent cache with this finding
+                        if context.database_manager:
+                            try:
+                                reply_hash = reply.get('hash', 'unknown')
+                                await context.database_manager.add_replied_to_cast(reply_to_hash, reply_hash)
+                                logger.info(f"Updated persistent cache with discovered reply: {reply_hash}")
+                            except Exception as cache_e:
+                                logger.error(f"Failed to update persistent cache: {cache_e}")
+                        
+                        return create_error_response(error_msg)
+                
+                logger.info(f"Layer 2 passed: Authoritative API check found no existing reply from bot to {reply_to_hash}")
+
+            except Exception as e:
+                logger.error(f"Layer 2 failed: Authoritative duplicate check failed due to API error: {e}", exc_info=True)
+                # Fail safe: if the check fails, do not send the reply to avoid potential duplicates
+                return create_error_response(f"Could not verify thread for duplicates due to an API error: {e}")
+
+            # === LAYER 3: Legacy Thread Turn Validation (Secondary) ===
+            logger.info(f"Layer 3: Performing thread turn validation for: {reply_to_hash}")
+            try:
                 thread_id = reply_to_hash  # For Farcaster, the reply target becomes the thread ID
                 
                 if not context.world_state_manager.is_bot_turn_in_thread(thread_id):
@@ -118,12 +180,15 @@ class SendFarcasterPostTool(ToolInterface):
                         "timestamp": time.time()
                     }
                 
-                logger.info(f"Thread turn validation PASSED: Bot's turn to speak in thread {thread_id}")
+                logger.info(f"Layer 3 passed: Thread turn validation approved for {thread_id}")
 
             except Exception as e:
-                # RECOMMENDATION 3: Defensive coding - gracefully handle validation errors
-                logger.error(f"Unexpected error during reply validation for {reply_to_hash}: {e}", exc_info=True)
-                return create_error_response("Internal error during reply validation.")
+                # DEFENSIVE: Gracefully handle validation errors
+                logger.error(f"Layer 3 failed: Unexpected error during thread turn validation for {reply_to_hash}: {e}", exc_info=True)
+                # Don't fail the entire operation for thread turn issues if authoritative check passed
+                logger.warning(f"Proceeding despite thread turn validation error - authoritative check was successful")
+            
+            logger.info(f"All duplicate prevention layers passed for reply to: {reply_to_hash}")
 
         # For non-replies, validate content and embed requirements 
         elif not content and not embed_url:
@@ -273,6 +338,16 @@ class SendFarcasterPostTool(ToolInterface):
                         },
                         result="success",
                     )
+                    
+                    # === POST-EXECUTION: Update Persistent Cache ===
+                    # Record successful reply in persistent cache for future duplicate prevention
+                    if reply_to_hash and cast_hash and context.database_manager:
+                        try:
+                            await context.database_manager.add_replied_to_cast(reply_to_hash, cast_hash)
+                            logger.info(f"Successfully recorded reply to {reply_to_hash} with hash {cast_hash} in persistent cache")
+                        except Exception as cache_e:
+                            logger.error(f"Failed to update persistent cache for successful reply: {cache_e}")
+                            # Don't fail the operation, just log the cache update failure
                 else:
                     context.world_state_manager.add_action_result(
                         action_type=self.name,

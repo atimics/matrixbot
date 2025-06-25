@@ -26,6 +26,7 @@ class ActionContext:
         world_state_manager=None,
         context_manager=None,
         service_registry=None,
+        database_manager=None,  # Add database manager access
         # Legacy parameters for backward compatibility during migration
         matrix_observer=None,
         farcaster_observer=None,
@@ -39,6 +40,7 @@ class ActionContext:
         self.service_registry = service_registry
         self.world_state_manager = world_state_manager
         self.context_manager = context_manager
+        self.database_manager = database_manager  # Direct access to database manager
         
         # Node system access
         self.node_manager: Optional["NodeManager"] = None  # Will be set after node system initialization
