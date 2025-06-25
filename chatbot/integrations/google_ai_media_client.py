@@ -113,7 +113,7 @@ class GoogleAIMediaClient:
             generation_config_obj = types.GenerateContentConfig(
                 temperature=temperature,
                 safety_settings=self.gemini_safety_settings,
-                response_modalities=["IMAGE"],  # IMAGE only, not TEXT+IMAGE
+                response_modalities=["IMAGE", "TEXT"],  # MUST include TEXT and IMAGE
             )
 
             response = await self.client.aio.models.generate_content(
