@@ -826,7 +826,14 @@ class WorldStateManager:
             attention_engine: The AttentionEngine instance to notify on new messages
         """
         self.attention_engine = attention_engine
-        logger.info("AttentionEngine connected to WorldStateManager")
+        logger.info(f"AttentionEngine connected to WorldStateManager (type: {type(attention_engine).__name__})")
+        
+        # Verify the connection works
+        if hasattr(attention_engine, 'neynar_api_client'):
+            has_client = attention_engine.neynar_api_client is not None
+            logger.info(f"  AttentionEngine context hydration capability: {'Enabled' if has_client else 'Disabled'}")
+        else:
+            logger.warning("  AttentionEngine does not have neynar_api_client attribute")
 
     def get_last_bot_activity_in_thread(self, thread_id: str, channel_id: Optional[str] = None) -> Optional[float]:
         """
