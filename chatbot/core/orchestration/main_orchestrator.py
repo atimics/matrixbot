@@ -253,47 +253,27 @@ class MainOrchestrator:
     ):
         self.config = config or OrchestratorConfig()
         
-        # Determine if we're in DI mode (any non-None dependency indicates DI mode)
-        self._is_di_mode = (
-            world_state_manager is not None or
-            history_recorder is not None or
-            integration_manager is not None or
-            ai_engine is not None or
-            payload_builder is not None or
-            processing_hub is not None or
-            rate_limiter is not None or
-            proactive_engine is not None or
-            tool_registry is not None or
-            action_context is not None
-        )
         
-        # Use injected dependencies if provided, otherwise create them (legacy mode)
-        if self._is_di_mode:
-            # DI mode - use all injected dependencies
-            if not all([world_state_manager, history_recorder, integration_manager, 
-                       ai_engine, payload_builder, processing_hub, rate_limiter, 
-                       proactive_engine, tool_registry, action_context]):
-                raise ValueError("In DI mode, all core dependencies must be provided")
-            
-            self.world_state = world_state_manager
-            self.history_recorder = history_recorder
-            self.integration_manager = integration_manager
-            self.ai_engine = ai_engine
-            self.payload_builder = payload_builder
-            self.processing_hub = processing_hub
-            self.rate_limiter = rate_limiter
-            self.proactive_engine = proactive_engine
-            self.tool_registry = tool_registry
-            self.action_context = action_context
-            self.arweave_client = arweave_client
-            
-            logger.info("MainOrchestrator initialized with dependency injection")
-            logger.info(f"DI Mode: {self._is_di_mode}")
-            logger.info("Commander/Sub-Agent architecture will be used")
-        else:
-            # Legacy mode - create dependencies manually
-            logger.warning("MainOrchestrator initializing in legacy mode - consider using DependencyContainer")
-            self._initialize_legacy_dependencies()
+        # DI mode - use all injected dependencies
+        if not all([world_state_manager, history_recorder, integration_manager, 
+                    ai_engine, payload_builder, processing_hub, rate_limiter, 
+                    proactive_engine, tool_registry, action_context]):
+            raise ValueError("In DI mode, all core dependencies must be provided")
+        
+        self.world_state = world_state_manager
+        self.history_recorder = history_recorder
+        self.integration_manager = integration_manager
+        self.ai_engine = ai_engine
+        self.payload_builder = payload_builder
+        self.processing_hub = processing_hub
+        self.rate_limiter = rate_limiter
+        self.proactive_engine = proactive_engine
+        self.tool_registry = tool_registry
+        self.action_context = action_context
+        self.arweave_client = arweave_client
+        
+        logger.info("MainOrchestrator initialized with dependency injection")
+        logger.info("Commander/Sub-Agent architecture will be used")
         
         # External observers
         self.matrix_observer: Optional[MatrixObserver] = None
@@ -307,108 +287,11 @@ class MainOrchestrator:
         self.running = False
         self.cycle_count = 0  # Track processing cycles
         
-        # Initialize tool registry and register tools (only in legacy mode)
-        if not self._is_di_mode:
-            self._register_all_tools()
             
         # Initialize node-based processing system (depends on core components being set)
         # This must happen after dependencies are set (either via DI or legacy init)
         self._initialize_node_system()
     
-    def _initialize_legacy_dependencies(self):
-        """Initialize dependencies manually for legacy compatibility."""
-        # Core components
-        self.world_state = WorldStateManager()
-        self.payload_builder = PayloadBuilder()
-        self.rate_limiter = RateLimiter(self.config.rate_limit_config)
-        self.history_recorder = HistoryRecorder(self.config.db_path)
-        
-        # Integration management
-        encryption_key = settings.security.ratichat_encryption_key
-        self.integration_manager = IntegrationManager(
-            db_path=self.config.db_path,
-            encryption_key=encryption_key,
-            world_state_manager=self.world_state
-        )
-        
-        # Initialize AttentionQueue for thread-centric processing
-        import asyncio
-        self.attention_queue = asyncio.Queue(maxsize=100)
-        
-        # Initialize AttentionEngine
-        from ..attention.engine import AttentionEngine
-        
-        # Configuration for attention engine
-        attention_config = {
-            'bot_fid': settings.farcaster.bot_fid,
-            'bot_user_id': settings.matrix.user_id,
-            'bot_username': settings.farcaster.bot_username,
-            'conversation_cooldown': 180,  # 3 minutes
-            'max_thread_age': 3600,  # 1 hour
-            'priority_boost_keywords': ['help', 'error', 'problem', 'urgent', 'issue']
-        }
-        
-        self.attention_engine = AttentionEngine(
-            world_state=self.world_state,
-            attention_queue=self.attention_queue,
-            config=attention_config
-        )
-        
-        # Processing hub with thread-centric architecture
-        self.processing_hub = ProcessingHub(
-            world_state_manager=self.world_state,
-            payload_builder=self.payload_builder,
-            rate_limiter=self.rate_limiter,
-            attention_queue=self.attention_queue,
-            config=self.config.processing_config
-        )
-        
-        # Connect AttentionEngine to ProcessingHub for channel lock management
-        self.processing_hub.set_attention_engine(self.attention_engine)
-        
-        # Proactive conversation engine (Initiative C)
-        self.proactive_engine = ProactiveConversationEngine(
-            world_state_manager=self.world_state,
-            context_manager=None  # ContextManager deprecated, using None
-        )
-        
-        # Connect proactive engine to world state manager for easy access
-        self.world_state.proactive_engine = self.proactive_engine
-        
-        # Tool Registry and AI Engine
-        self.tool_registry = ToolRegistry()
-        self.ai_engine = AIDecisionEngine(
-            api_key=settings.processing.openrouter_api_key,
-            model=self.config.ai_model
-        )
-        
-        # Initialize Arweave client for internal uploader service
-        self.arweave_client = None
-        if settings.storage.arweave_internal_uploader_service_url:
-            self.arweave_client = ArweaveUploaderClient(
-                uploader_service_url=settings.storage.arweave_internal_uploader_service_url,
-                gateway_url=settings.storage.arweave_gateway_url,
-            )
-            logger.info("Arweave client initialized for internal uploader service.")
-        
-        # Create action context for tool execution
-        from ...tools.base import ActionContext
-        from ...tools.arweave_service import ArweaveService
-        from ...tools.s3_service import S3Service
-        
-        # Initialize arweave service with our client (legacy support)
-        arweave_service_instance = ArweaveService(arweave_client=self.arweave_client)
-        
-        # Initialize S3 service
-        s3_service_instance = S3Service()
-        
-        self.action_context = ActionContext(
-            world_state_manager=self.world_state,
-            context_manager=None,  # ContextManager deprecated
-            arweave_client=self.arweave_client,
-            arweave_service=arweave_service_instance,
-            s3_service=s3_service_instance
-        )
 
     def _register_all_tools(self):
         """Register all available tools with the tool registry."""
@@ -584,6 +467,11 @@ class MainOrchestrator:
         self.running = True
 
         try:
+            # Initialize database manager (for centralized database operations)
+            if hasattr(self, 'database_manager'):
+                await self.database_manager.initialize()
+                logger.info("DatabaseManager initialized for persistent cache operations")
+            
             # Initialize integration manager
             await self.integration_manager.initialize()
             
