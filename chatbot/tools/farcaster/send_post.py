@@ -187,7 +187,7 @@ class SendFarcasterPostTool(ToolInterface):
                         "timestamp": time.time()
                     }
                 
-                logger.info(f"Layer 3 passed: Thread turn validation approved for {thread_id}")
+                logger.info(f"Layer 3 passed: Thread turn validation approved for {thread_id}"                    )
 
             except Exception as e:
                 # DEFENSIVE: Gracefully handle validation errors

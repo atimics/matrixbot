@@ -354,8 +354,8 @@ class MainOrchestrator:
             config=attention_config
         )
         
-        # Connect AttentionEngine to WorldStateManager for message notifications
-        self.world_state.set_attention_engine(self.attention_engine)
+        # Connect AttentionEngine to ProcessingHub for channel lock management
+        self.processing_hub.set_attention_engine(self.attention_engine)
         
         # Processing hub with thread-centric architecture
         self.processing_hub = ProcessingHub(
@@ -365,6 +365,9 @@ class MainOrchestrator:
             attention_queue=self.attention_queue,
             config=self.config.processing_config
         )
+        
+        # Connect AttentionEngine to ProcessingHub for channel lock management
+        self.processing_hub.set_attention_engine(self.attention_engine)
         
         # Proactive conversation engine (Initiative C)
         self.proactive_engine = ProactiveConversationEngine(
@@ -594,10 +597,13 @@ class MainOrchestrator:
             await self._register_integrations_from_env()
             
             # Connect all active integrations from database
-            await self.integration_manager.connect_all_active()
+            await self.integration_manager.connect_all()
             
             # Update action context with properly connected integrations
             await self._update_action_context_integrations()
+            
+            # NEW: Perform authoritative state sync for Farcaster replies
+            await self._perform_startup_state_sync()
             
             # Ensure the media gallery channel exists or create it
             await self._ensure_media_gallery_exists()
@@ -1356,5 +1362,30 @@ class MainOrchestrator:
             logger.info("ActionContext updated with node_manager")
         else:
             logger.warning("Could not update ActionContext with node_manager - missing dependencies")
+    
+    async def _perform_startup_state_sync(self) -> None:
+        """
+        Perform authoritative state sync with external platforms on startup.
+        
+        This ensures the bot's persistent state is consistent with the actual
+        state on the platforms, preventing duplicate actions after restarts.
+        """
+        logger.info("Performing startup state synchronization...")
+        
+        # Sync Farcaster reply history
+        if self.farcaster_observer and self.action_context and self.action_context.database_manager:
+            try:
+                synced_count = await self.farcaster_observer.sync_reply_history(self.action_context.database_manager)
+                logger.info(f"Farcaster state sync completed: {synced_count} replies synced")
+            except Exception as e:
+                logger.error(f"Failed to sync Farcaster reply history: {e}", exc_info=True)
+        else:
+            logger.debug("Skipping Farcaster state sync: observer or database manager not available")
+        
+        # Future: Add Matrix state sync here if needed
+        # if self.matrix_observer and self.action_context and self.action_context.database_manager:
+        #     await self.matrix_observer.sync_message_history(self.action_context.database_manager)
+        
+        logger.info("Startup state synchronization completed")
 
 

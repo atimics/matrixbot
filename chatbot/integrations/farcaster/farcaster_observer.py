@@ -97,6 +97,50 @@ class FarcasterObserver(Integration):
         self.on_state_change: Optional[callable] = None
         
         logger.info("Farcaster observer initialized (refactored)")
+        
+    async def sync_reply_history(self, db_manager) -> int:
+        """
+        Fetches the bot's own recent casts to sync its reply history.
+        This provides an authoritative state sync on startup to ensure
+        the persistent cache is consistent with the Farcaster network.
+        
+        Args:
+            db_manager: Database manager for persistent cache operations
+            
+        Returns:
+            Number of reply records added to the persistent cache
+        """
+        if not self.bot_fid or not self.api_client:
+            logger.warning("Cannot sync reply history: bot_fid or api_client not available.")
+            return 0
+
+        logger.info(f"Performing authoritative reply history sync for FID {self.bot_fid}...")
+        try:
+            # Fetch the bot's 100 most recent casts
+            own_casts_data = await self.api_client.get_casts_by_fid(int(self.bot_fid), limit=100)
+            own_casts = own_casts_data.get("result", {}).get("casts", [])
+            
+            # Fallback for different API response structures
+            if not own_casts:
+                own_casts = own_casts_data.get("casts", [])
+            
+            synced_count = 0
+            for cast in own_casts:
+                # Check if the cast is a reply
+                parent_hash = cast.get("parent_hash")
+                if parent_hash:
+                    # This is a reply from our bot. Ensure it's in our persistent cache.
+                    reply_hash = cast.get("hash")
+                    if reply_hash and not await db_manager.has_replied_to(parent_hash):
+                        await db_manager.add_replied_to_cast(parent_hash, reply_hash)
+                        synced_count += 1
+                        logger.info(f"State Sync: Added missing reply record for cast {parent_hash}")
+            
+            logger.info(f"Authoritative State Sync complete. Added {synced_count} missing reply records to persistent cache.")
+            return synced_count
+        except Exception as e:
+            logger.error(f"Authoritative State Sync failed: {e}", exc_info=True)
+            return 0
 
     def _load_persistent_state(self) -> None:
         """Load persistent state from file"""
