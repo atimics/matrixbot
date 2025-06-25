@@ -78,6 +78,9 @@ class ProcessingHub:
         self.tool_registry = tool_registry
         self.action_context = action_context
         
+        # References to other components (will be set by orchestrator)
+        self.attention_engine: Optional["AttentionEngine"] = None
+        
         # Processing state
         self.running = False
         self.cycle_count = 0
@@ -108,6 +111,11 @@ class ProcessingHub:
         """Set the lightweight AI engine for Sub-Agents."""
         self.lightweight_ai_engine = engine
         logger.info("Lightweight AI engine configured")
+    
+    def set_attention_engine(self, attention_engine: "AttentionEngine"):
+        """Set the AttentionEngine for channel lock management."""
+        self.attention_engine = attention_engine
+        logger.info("AttentionEngine configured for channel lock management")
 
     async def start_processing_loop(self) -> None:
         """Start the main processing event loop."""
@@ -171,8 +179,14 @@ class ProcessingHub:
                 # Record the cycle for rate limiting
                 self.rate_limiter.record_cycle(cycle_start)
 
-                # Process the ContextualThread
-                await self._process_contextual_thread(thread)
+                # Process the ContextualThread with proper lock management
+                channel_id = thread.triggering_message.channel_id
+                try:
+                    await self._process_contextual_thread(thread)
+                finally:
+                    # CRITICAL: Release the channel lock after processing is complete
+                    if channel_id and self.attention_engine:
+                        self.attention_engine.release_channel_lock(channel_id)
 
                 # Update tracking
                 self.cycle_count += 1

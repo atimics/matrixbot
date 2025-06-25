@@ -79,6 +79,9 @@ class AttentionEngine:
         self.metrics = AttentionMetrics()
         self.thread_cache: Dict[str, float] = {}  # thread_id -> creation_time for deduplication
         
+        # NEW: Channel locking mechanism for race condition prevention
+        self.locked_channels: set[str] = set()
+        
         logger.info(f"AttentionEngine initialized")
         logger.info(f"Bot identity: FID={self.bot_fid}, User={self.bot_user_id}, Username={self.bot_username}")
         logger.info(f"Conversation cooldown: {self.conversation_cooldown}s")
@@ -112,21 +115,33 @@ class AttentionEngine:
                 self.metrics.add_message_filtered("cooldown")
                 return None
             
-            # Step 3: Check for thread deduplication
+            # Step 3: NEW - Attention Gate Logic (Channel Locking)
+            channel_id = message.channel_id
+            if channel_id in self.locked_channels:
+                logger.debug(f"AttentionGate: Channel {channel_id} is locked. Discarding message {message.id} to prevent race condition.")
+                self.metrics.add_message_filtered("channel_locked")
+                return None  # Discard the message, as another thread for this channel is already in progress
+            
+            # Step 4: Check for thread deduplication
             thread_id = self._generate_thread_id(message)
             if self._is_duplicate_thread(thread_id):
                 logger.debug(f"Skipping duplicate thread: {thread_id}")
                 self.metrics.add_message_filtered("duplicate")
                 return None
             
-            # Step 4: Build the ContextualThread with rich context
+            # Step 5: Lock the channel before creating the thread
+            if channel_id:
+                self.locked_channels.add(channel_id)
+                logger.debug(f"AttentionGate: Channel {channel_id} locked for processing.")
+            
+            # Step 6: Build the ContextualThread with rich context
             logger.info(f"New attention-worthy message detected: {message.id}")
             thread = await self._build_contextual_thread(message, thread_id)
             
-            # Step 5: Add to queue for processing
+            # Step 7: Add to queue for processing
             await self.attention_queue.put(thread)
             
-            # Step 6: Track metrics and performance
+            # Step 8: Track metrics and performance
             processing_time = time.time() - start_time
             self.metrics.add_thread_created(thread, processing_time)
             self.thread_cache[thread_id] = start_time
@@ -569,6 +584,23 @@ class AttentionEngine:
         self.metrics.reset_metrics()
         self.thread_cache.clear()
         logger.info("AttentionEngine metrics reset")
+    
+    def release_channel_lock(self, channel_id: str) -> None:
+        """
+        Releases the processing lock on a channel.
+        
+        This method MUST be called by the ProcessingHub after a thread
+        is completely finished to allow new threads from the same channel
+        to be processed.
+        
+        Args:
+            channel_id: The channel ID to unlock
+        """
+        if channel_id and channel_id in self.locked_channels:
+            self.locked_channels.remove(channel_id)
+            logger.debug(f"AttentionGate: Channel {channel_id} unlocked.")
+        elif channel_id:
+            logger.warning(f"AttentionGate: Attempted to unlock channel {channel_id} that was not locked.")
     
     def cleanup_old_threads(self) -> None:
         """Clean up old thread cache entries to prevent memory leaks."""
