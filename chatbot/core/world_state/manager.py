@@ -18,8 +18,10 @@ moved to PayloadBuilder for better separation of concerns.
 """
 
 import logging
+import pickle
 import time
-from typing import Any, Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from ...config import settings
 import time
@@ -50,8 +52,9 @@ class WorldStateManager:
     handling all the common operations needed by the orchestration system.
     """
 
-    def __init__(self):
+    def __init__(self, state_file_path: str = "data/world_state.pkl"):
         self.state = WorldStateData()
+        self.state_file = Path(state_file_path)
         
         # Node system integration (set by main orchestrator after initialization)
         self.node_manager: Optional["NodeManager"] = None
@@ -1455,3 +1458,57 @@ class WorldStateManager:
                 
         except Exception as e:
             logger.error(f"Error applying sentiment decay: {e}", exc_info=True)
+
+    def save_state(self) -> None:
+        """Serialize and save the current world state to a file."""
+        try:
+            # Ensure the data directory exists
+            self.state_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Create a backup of the current state file if it exists
+            if self.state_file.exists():
+                backup_path = self.state_file.with_suffix('.pkl.backup')
+                self.state_file.rename(backup_path)
+                logger.debug(f"Created backup of world state at {backup_path}")
+            
+            # Save the current state
+            with open(self.state_file, 'wb') as f:
+                pickle.dump(self.state, f)
+            logger.info(f"World state successfully saved to {self.state_file}")
+            
+        except Exception as e:
+            logger.error(f"Failed to save world state: {e}")
+            # If backup exists, restore it
+            backup_path = self.state_file.with_suffix('.pkl.backup')
+            if backup_path.exists():
+                backup_path.rename(self.state_file)
+                logger.info("Restored backup after save failure")
+
+    def load_state(self) -> None:
+        """Load the world state from a file if it exists."""
+        if self.state_file.exists():
+            try:
+                with open(self.state_file, 'rb') as f:
+                    loaded_state = pickle.load(f)
+                    # Validate the loaded state
+                    if isinstance(loaded_state, WorldStateData):
+                        self.state = loaded_state
+                        logger.info(f"World state successfully loaded from {self.state_file}")
+                        
+                        # Ensure system_status exists (for backward compatibility)
+                        if not hasattr(self.state, 'system_status') or self.state.system_status is None:
+                            self.state.system_status = {
+                                "matrix_connected": False,
+                                "farcaster_connected": False,
+                                "last_observation_cycle": 0,
+                                "total_cycles": 0,
+                            }
+                            logger.info("Initialized system_status for backward compatibility")
+                    else:
+                        logger.error(f"Invalid state file format, starting with fresh state")
+                        self.state = WorldStateData()
+            except Exception as e:
+                logger.error(f"Failed to load world state, starting fresh: {e}")
+                self.state = WorldStateData()
+        else:
+            logger.info("No saved world state found, starting with a fresh state.")

@@ -295,6 +295,9 @@ class MainOrchestrator:
         self._sentiment_feedback_task: Optional[asyncio.Task] = None
         self._sentiment_feedback_interval = 900  # 15 minutes
         
+        # CRITICAL FIX: Periodic task for world state saving
+        self._state_saving_task: Optional[asyncio.Task] = None
+        
             
         # Initialize node-based processing system (depends on core components being set)
         self._initialize_node_system()
@@ -474,13 +477,19 @@ class MainOrchestrator:
         self.running = True
 
         try:
+            # CRITICAL FIX: Load persistent world state before any operations
+            if self.world_state:
+                self.world_state.load_state()
+                logger.info("World state loaded from persistent storage")
+            
             # Initialize database manager (for centralized database operations)
             if hasattr(self, 'database_manager'):
                 await self.database_manager.initialize()
                 logger.info("DatabaseManager initialized for persistent cache operations")
             
             # Initialize integration manager
-            await self.integration_manager.initialize()
+            if self.integration_manager:
+                await self.integration_manager.initialize()
             
             # Register integrations from environment variables
             await self._register_integrations_from_env()
@@ -509,8 +518,14 @@ class MainOrchestrator:
             # SENTIMENT ENHANCEMENT: Start sentiment feedback checking task
             await self._start_sentiment_feedback_task()
             
+            # CRITICAL FIX: Start periodic world state saving to prevent data loss
+            await self._start_periodic_state_saving_task()
+            
             # Start the periodic sentiment feedback checking task
             await self._start_sentiment_feedback_task()
+            
+            # Start the periodic world state saving task
+            await self._start_periodic_state_saving_task()
             
         except Exception as e:
             logger.error(f"Error starting main orchestrator: {e}")
@@ -528,9 +543,13 @@ class MainOrchestrator:
 
         # SENTIMENT ENHANCEMENT: Stop sentiment feedback checking task
         await self._stop_sentiment_feedback_task()
+        
+        # CRITICAL FIX: Stop periodic world state saving task
+        await self._stop_periodic_state_saving_task()
 
         # Stop processing hub
-        self.processing_hub.stop_processing_loop()
+        if self.processing_hub:
+            self.processing_hub.stop_processing_loop()
         
         # Stop proactive conversation engine
         if self.proactive_engine:
@@ -541,13 +560,23 @@ class MainOrchestrator:
             await self.eligibility_service.stop()
         
         # Disconnect all integrations
-        await self.integration_manager.disconnect_all()
+        if self.integration_manager:
+            await self.integration_manager.disconnect_all()
         
         # Clean up integration manager resources
-        await self.integration_manager.cleanup()
+        if self.integration_manager:
+            await self.integration_manager.cleanup()
+
+        # CRITICAL FIX: Save persistent world state before shutdown
+        if self.world_state:
+            self.world_state.save_state()
+            logger.info("World state saved to persistent storage")
 
         # Stop the periodic sentiment feedback checking task
         await self._stop_sentiment_feedback_task()
+
+        # Stop the periodic world state saving task
+        await self._stop_periodic_state_saving_task()
 
         logger.info("Main orchestrator system stopped")
 
@@ -1340,5 +1369,45 @@ class MainOrchestrator:
                 continue
                 
         logger.info("Sentiment feedback checking loop stopped")
+
+    async def _start_periodic_state_saving_task(self) -> None:
+        """Start the periodic world state saving task."""
+        if hasattr(self, '_state_saving_task') and self._state_saving_task and not self._state_saving_task.done():
+            logger.warning("World state saving task already running")
+            return
+            
+        logger.info("Starting periodic world state saving task")
+        self._state_saving_task = asyncio.create_task(self._periodic_state_saving_loop())
+
+    async def _stop_periodic_state_saving_task(self) -> None:
+        """Stop the periodic world state saving task."""
+        if hasattr(self, '_state_saving_task') and self._state_saving_task and not self._state_saving_task.done():
+            logger.info("Stopping periodic world state saving task")
+            self._state_saving_task.cancel()
+            try:
+                await self._state_saving_task
+            except asyncio.CancelledError:
+                logger.info("World state saving task cancelled successfully")
+            except Exception as e:
+                logger.error(f"Error cancelling world state saving task: {e}")
+            self._state_saving_task = None
+
+    async def _periodic_state_saving_loop(self) -> None:
+        """Periodically save the world state to prevent data loss."""
+        save_interval = 300  # Save every 5 minutes
+        
+        try:
+            while self.running:
+                await asyncio.sleep(save_interval)
+                if self.running and self.world_state:
+                    try:
+                        self.world_state.save_state()
+                        logger.debug("Periodic world state save completed")
+                    except Exception as e:
+                        logger.error(f"Failed to save world state periodically: {e}")
+        except asyncio.CancelledError:
+            logger.debug("Periodic state saving loop cancelled")
+        except Exception as e:
+            logger.error(f"Error in periodic state saving loop: {e}")
 
 
