@@ -275,10 +275,6 @@ class MainOrchestrator:
         logger.info("MainOrchestrator initialized with dependency injection")
         logger.info("Commander/Sub-Agent architecture will be used")
         
-        # External observers
-        self.matrix_observer: Optional[MatrixObserver] = None
-        self.farcaster_observer: Optional[FarcasterObserver] = None
-        
         # NFT and eligibility services
         self.base_nft_service: Optional[BaseNFTService] = None
         self.eligibility_service: Optional[UserEligibilityService] = None
@@ -545,23 +541,34 @@ class MainOrchestrator:
                 if await self.base_nft_service.initialize():
                     logger.info("Base NFT service initialized successfully")
                     
-                    # Initialize eligibility service if we have Farcaster observer
+                    # Initialize eligibility service if we have Farcaster integration
                     if (settings.ecosystem_token_contract_address and 
-                        hasattr(self, 'farcaster_observer') and 
-                        self.farcaster_observer and 
-                        hasattr(self.farcaster_observer, 'neynar_api_client')):
+                        self.integration_manager):
                         
-                        self.eligibility_service = UserEligibilityService(
-                            neynar_api_client=self.farcaster_observer.neynar_api_client,
-                            base_nft_service=self.base_nft_service,
-                            world_state_manager=self.world_state
-                        )
-                        await self.eligibility_service.start()
-                        logger.info("User eligibility service started")
+                        # Get active integrations to find Farcaster
+                        active_integrations = self.integration_manager.get_active_integrations()
+                        farcaster_integration = None
+                        for integration_id, integration in active_integrations.items():
+                            if hasattr(integration, 'integration_type') and integration.integration_type == 'farcaster':
+                                farcaster_integration = integration
+                                break
                         
-                        # Update action context with NFT services
-                        self.action_context.base_nft_service = self.base_nft_service
-                        self.action_context.eligibility_service = self.eligibility_service
+                        if farcaster_integration and hasattr(farcaster_integration, 'neynar_api_client'):
+                            self.eligibility_service = UserEligibilityService(
+                                neynar_api_client=farcaster_integration.neynar_api_client,
+                                base_nft_service=self.base_nft_service,
+                                world_state_manager=self.world_state
+                            )
+                            await self.eligibility_service.start()
+                            logger.info("User eligibility service started")
+                            
+                            # Update action context with NFT services
+                            if hasattr(self.action_context, 'base_nft_service'):
+                                self.action_context.base_nft_service = self.base_nft_service
+                            if hasattr(self.action_context, 'eligibility_service'):
+                                self.action_context.eligibility_service = self.eligibility_service
+                        else:
+                            logger.info("Eligibility service not started - Farcaster integration not available")
                     else:
                         logger.info("Eligibility service not started - missing dependencies")
                         
@@ -576,87 +583,11 @@ class MainOrchestrator:
             logger.error(f"Failed to initialize NFT services: {e}")
             logger.info("Continuing without NFT integration")
 
-    async def _initialize_observers(self) -> None:
-        """Initialize available observers based on environment configuration."""
-        # Initialize Matrix observer if credentials available
-        if settings.matrix.user_id and settings.matrix.password:
-            try:
-                self.matrix_observer = MatrixObserver(self.world_state, self.arweave_client)
-                room_id = settings.matrix.room_id
-                self.matrix_observer.add_channel(room_id, "Robot Laboratory")
-                await self.matrix_observer.start()
-                
-                # Connect state change notifications - create a combined callback
-                def combined_state_change():
-                    """Combined callback for both processing hub and proactive engine."""
-                    try:
-                        # Trigger processing hub state change
-                        self.processing_hub.trigger_state_change()
-                    except Exception as e:
-                        logger.error(f"Error in processing hub state change: {e}", exc_info=True)
-                    
-                    try:
-                        # Trigger proactive conversation engine
-                        self._on_world_state_change()
-                    except Exception as e:
-                        logger.error(f"Error in proactive engine state change: {e}", exc_info=True)
-                
-                self.matrix_observer.on_state_change = combined_state_change
-                
-                logger.info("Matrix observer initialized and started")
-            except Exception as e:
-                logger.error(f"Failed to initialize Matrix observer: {e}")
-                logger.info("Continuing without Matrix integration")
 
-        # Initialize Farcaster observer if credentials available
-        if settings.farcaster.neynar_api_key:
-            try:
-                self.farcaster_observer = FarcasterObserver(
-                    api_key=settings.farcaster.neynar_api_key,
-                    signer_uuid=settings.farcaster.bot_signer_uuid,
-                    bot_fid=settings.farcaster.bot_fid,
-                    world_state_manager=self.world_state,
-                )
-                await self.farcaster_observer.start()
-                
-                # Connect state change notifications - create a combined callback
-                def combined_farcaster_state_change():
-                    """Combined callback for both processing hub and proactive engine."""
-                    try:
-                        # Trigger processing hub state change
-                        self.processing_hub.trigger_state_change()
-                    except Exception as e:
-                        logger.error(f"Error in processing hub state change: {e}", exc_info=True)
-                    
-                    try:
-                        # Trigger proactive conversation engine
-                        self._on_world_state_change()
-                    except Exception as e:
-                        logger.error(f"Error in proactive engine state change: {e}", exc_info=True)
-                
-                self.farcaster_observer.on_state_change = combined_farcaster_state_change
-                
-                self.world_state.update_system_status({"farcaster_connected": True})
-                logger.info("Farcaster observer initialized and started")
-            except Exception as e:
-                logger.error(f"Failed to initialize Farcaster observer: {e}")
-                logger.info("Continuing without Farcaster integration")
-        
-        # Register observers with ServiceRegistry during initial setup (no direct assignment needed)
-        if self.matrix_observer and self.action_context and self.action_context.service_registry:
-            self.action_context.service_registry.register_service("matrix_observer", self.matrix_observer)
-            logger.info(f"✓ Matrix observer registered with ServiceRegistry during initialization")
-        
-        if self.farcaster_observer and self.action_context and self.action_context.service_registry:
-            self.action_context.service_registry.register_service("farcaster_observer", self.farcaster_observer)
-            logger.info(f"✓ Farcaster observer registered with ServiceRegistry during initialization")
-        
-        # Configure critical node pinning based on active integrations
-        self._configure_critical_node_pinning()
 
     async def _update_action_context_integrations(self) -> None:
         """Update action context with properly connected integrations from IntegrationManager."""
-        # Update action context with initialized observers
+        # Update action context with initialized integrations
         active_integrations = self.integration_manager.get_active_integrations()
         
         # Find Matrix and Farcaster integrations
@@ -669,18 +600,14 @@ class MainOrchestrator:
             elif hasattr(integration, 'integration_type') and integration.integration_type == 'farcaster':
                 farcaster_integration = integration
         
-        # Determine which observers to use
-        matrix_observer = matrix_integration or self.matrix_observer
-        farcaster_observer = farcaster_integration or self.farcaster_observer
+        # CRITICAL: Register integrations with ServiceRegistry for service abstraction
+        if matrix_integration and self.action_context and self.action_context.service_registry:
+            self.action_context.service_registry.register_service("matrix_observer", matrix_integration)
+            logger.info(f"✓ Matrix integration registered with ServiceRegistry")
         
-        # CRITICAL: Register observers with ServiceRegistry for service abstraction
-        if matrix_observer and self.action_context and self.action_context.service_registry:
-            self.action_context.service_registry.register_service("matrix_observer", matrix_observer)
-            logger.info(f"✓ Matrix observer registered with ServiceRegistry")
-        
-        if farcaster_observer and self.action_context and self.action_context.service_registry:
-            self.action_context.service_registry.register_service("farcaster_observer", farcaster_observer)
-            logger.info(f"✓ Farcaster observer registered with ServiceRegistry")
+        if farcaster_integration and self.action_context and self.action_context.service_registry:
+            self.action_context.service_registry.register_service("farcaster_observer", farcaster_integration)
+            logger.info(f"✓ Farcaster integration registered with ServiceRegistry")
         
         # Also register storage services if available
         if (self.action_context and self.action_context.service_registry and 
@@ -693,32 +620,46 @@ class MainOrchestrator:
             self.action_context.service_registry.register_service("s3_storage", self.action_context.s3_service)
             logger.debug("S3 service registered with ServiceRegistry")
         
-        # Debug logging to track which observer is being used
+        # Debug logging to track which integration is being used
         if farcaster_integration:
             logger.info(f"✓ Using Farcaster integration from IntegrationManager (ID: {farcaster_integration.integration_id})")
-            logger.info(f"  API client initialized: {farcaster_integration.api_client is not None}")
-        elif self.farcaster_observer:
-            logger.info(f"⚠ Using legacy Farcaster observer (fallback)")
-            logger.info(f"  API client initialized: {self.farcaster_observer.api_client is not None}")
+            if hasattr(farcaster_integration, 'api_client'):
+                logger.info(f"  API client initialized: {farcaster_integration.api_client is not None}")
         else:
-            logger.info("ℹ No Farcaster observer available")
+            logger.info("ℹ No Farcaster integration available")
 
     def _configure_critical_node_pinning(self):
         """Configure critical node paths for pinning based on active integrations."""
         critical_pins = []
         
-        # Add Matrix room if available
-        if self.matrix_observer and settings.matrix.room_id:
-            critical_pins.append(f"channels.matrix.{settings.matrix.room_id}")
-            logger.info(f"Added Matrix room to critical pins: channels.matrix.{settings.matrix.room_id}")
-        
-        # Add Farcaster feeds if available
-        if self.farcaster_observer:
-            critical_pins.extend([
-                "farcaster.feeds.home",
-                "farcaster.feeds.notifications"
-            ])
-            logger.info("Added Farcaster feeds to critical pins: home, notifications")
+        # Get active integrations to determine which pins to configure
+        if self.integration_manager:
+            active_integrations = self.integration_manager.get_active_integrations()
+            
+            # Add Matrix room if available
+            matrix_integration = None
+            for integration_id, integration in active_integrations.items():
+                if hasattr(integration, 'integration_type') and integration.integration_type == 'matrix':
+                    matrix_integration = integration
+                    break
+                    
+            if matrix_integration and settings.matrix.room_id:
+                critical_pins.append(f"channels.matrix.{settings.matrix.room_id}")
+                logger.info(f"Added Matrix room to critical pins: channels.matrix.{settings.matrix.room_id}")
+            
+            # Add Farcaster feeds if available
+            farcaster_integration = None
+            for integration_id, integration in active_integrations.items():
+                if hasattr(integration, 'integration_type') and integration.integration_type == 'farcaster':
+                    farcaster_integration = integration
+                    break
+                    
+            if farcaster_integration:
+                critical_pins.extend([
+                    "farcaster.feeds.home",
+                    "farcaster.feeds.notifications"
+                ])
+                logger.info("Added Farcaster feeds to critical pins: home, notifications")
         
         # Try to apply critical pins to available node managers
         node_manager = None
@@ -790,17 +731,29 @@ class MainOrchestrator:
             rate_limit_status = self.rate_limiter.get_status()
             
             # Get integration status
+            # Get integration status from IntegrationManager
+            matrix_integration = None
+            farcaster_integration = None
+            
+            if self.integration_manager:
+                active_integrations = self.integration_manager.get_active_integrations()
+                for integration_id, integration in active_integrations.items():
+                    if hasattr(integration, 'integration_type') and integration.integration_type == 'matrix':
+                        matrix_integration = integration
+                    elif hasattr(integration, 'integration_type') and integration.integration_type == 'farcaster':
+                        farcaster_integration = integration
+            
             integrations = {
                 "matrix": {
-                    "connected": self.matrix_observer is not None and getattr(self.matrix_observer.client, 'logged_in', False) if self.matrix_observer else False,
-                    "monitored_rooms": getattr(self.matrix_observer, 'channels_to_monitor', []) if self.matrix_observer else [],
-                    "pending_invites": len(self.world_state.get_pending_matrix_invites())
+                    "connected": matrix_integration is not None and getattr(matrix_integration, 'connected', False),
+                    "monitored_rooms": getattr(matrix_integration, 'channels_to_monitor', []) if matrix_integration else [],
+                    "pending_invites": len(self.world_state.get_pending_matrix_invites()) if self.world_state else 0
                 },
                 "farcaster": {
-                    "connected": self.farcaster_observer is not None,
+                    "connected": farcaster_integration is not None,
                     "bot_fid": settings.farcaster.bot_fid,
-                    "post_queue_size": getattr(self.farcaster_observer.scheduler.post_queue, 'qsize', lambda: 0)() if self.farcaster_observer and hasattr(self.farcaster_observer, 'scheduler') else 0,
-                    "reply_queue_size": getattr(self.farcaster_observer.scheduler.reply_queue, 'qsize', lambda: 0)() if self.farcaster_observer and hasattr(self.farcaster_observer, 'scheduler') else 0
+                    "post_queue_size": getattr(farcaster_integration, 'post_queue_size', 0) if farcaster_integration else 0,
+                    "reply_queue_size": getattr(farcaster_integration, 'reply_queue_size', 0) if farcaster_integration else 0
                 }
             }
             
@@ -871,28 +824,36 @@ class MainOrchestrator:
         try:
             from ...tools.matrix import SendMatrixMessageTool
             
-            # Get matrix observer from integration manager
-            active_integrations = self.integration_manager.get_active_integrations()
+            # Get matrix integration from integration manager
             matrix_integration = None
-            for integration_id, integration in active_integrations.items():
-                if hasattr(integration, 'name') and integration.name == 'matrix':
-                    matrix_integration = integration
-                    break
+            if self.integration_manager:
+                active_integrations = self.integration_manager.get_active_integrations()
+                for integration_id, integration in active_integrations.items():
+                    if hasattr(integration, 'integration_type') and integration.integration_type == 'matrix':
+                        matrix_integration = integration
+                        break
+            
+            if not matrix_integration:
+                logger.error("No Matrix integration available for direct action execution")
+                return
             
             # Update action context with required components
-            self.action_context.matrix_observer = matrix_integration or self.matrix_observer
-            self.action_context.world_state_manager = self.world_state
-            # Note: ActionContext.context_manager is deprecated, leaving as None
-            
-            # Use unified SendMatrixMessageTool for both messages and replies
-            if action.action_type in ["send_matrix_reply", "send_matrix_message"]:
-                tool = SendMatrixMessageTool()
-            else:
-                logger.error(f"Unknown matrix action type: {action.action_type}")
-                return
+            if self.action_context:
+                if hasattr(self.action_context, 'matrix_observer'):
+                    self.action_context.matrix_observer = matrix_integration
+                if hasattr(self.action_context, 'world_state_manager'):
+                    self.action_context.world_state_manager = self.world_state
+                # Note: ActionContext.context_manager is deprecated, leaving as None
                 
-            result = await tool.execute(action.parameters, self.action_context)
-            logger.info(f"Direct matrix action execution result: {result}")
+                # Use unified SendMatrixMessageTool for both messages and replies
+                if action.action_type in ["send_matrix_reply", "send_matrix_message"]:
+                    tool = SendMatrixMessageTool()
+                else:
+                    logger.error(f"Unknown matrix action type: {action.action_type}")
+                    return
+                    
+                result = await tool.execute(action.parameters, self.action_context)
+                logger.info(f"Direct matrix action execution result: {result}")
             
         except Exception as e:
             logger.error(f"Error executing matrix action directly: {str(e)}")
