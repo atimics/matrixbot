@@ -316,11 +316,26 @@ class DependencyContainer:
         }
         
         assert self._world_state_manager is not None, "WorldStateManager must be initialized first"
+        assert self._integration_manager is not None, "IntegrationManager must be initialized first"
+        
+        # Get Neynar API client for context hydration
+        neynar_api_client = None
+        farcaster_integration = self._integration_manager.get_active_integrations().get('farcaster')
+        if farcaster_integration:
+            # Try multiple ways to access the API client (different integration types have different attributes)
+            api_client = getattr(farcaster_integration, 'api_client', None)
+            neynar_api_client_attr = getattr(farcaster_integration, 'neynar_api_client', None)
+            
+            if api_client:
+                neynar_api_client = api_client
+            elif neynar_api_client_attr:
+                neynar_api_client = neynar_api_client_attr
         
         self._attention_engine = AttentionEngine(
             world_state=self._world_state_manager,
             attention_queue=self._attention_queue,
-            config=attention_config
+            config=attention_config,
+            neynar_api_client=neynar_api_client
         )
         
         # Connect AttentionEngine to WorldStateManager for message notifications

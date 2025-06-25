@@ -25,6 +25,9 @@ from .structures import ContextualThread, ThreadPriority, AttentionMetrics
 from ..world_state.manager import WorldStateManager
 from ..world_state.structures import Message, FarcasterUserDetails, MatrixUserDetails, Channel
 from ...config import settings
+# Import for context hydration functionality
+from ...integrations.farcaster.neynar_api_client import NeynarAPIClient
+from ...integrations.farcaster.farcaster_data_converter import convert_single_api_cast_to_message
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +53,8 @@ class AttentionEngine:
         self, 
         world_state: WorldStateManager, 
         attention_queue: asyncio.Queue, 
-        config: Dict[str, Any]
+        config: Dict[str, Any],
+        neynar_api_client: Optional[NeynarAPIClient] = None
     ):
         """
         Initialize the AttentionEngine.
@@ -59,9 +63,11 @@ class AttentionEngine:
             world_state: WorldStateManager instance for accessing state and context
             attention_queue: Queue where ContextualThread objects will be placed
             config: Configuration dictionary containing bot identity and settings
+            neynar_api_client: Optional NeynarAPIClient for context hydration
         """
         self.world_state = world_state
         self.attention_queue = attention_queue
+        self.neynar_api_client = neynar_api_client
         
         # Bot identity for self-message filtering
         self.bot_fid = config.get('bot_fid')
@@ -85,6 +91,7 @@ class AttentionEngine:
         logger.info(f"AttentionEngine initialized")
         logger.info(f"Bot identity: FID={self.bot_fid}, User={self.bot_user_id}, Username={self.bot_username}")
         logger.info(f"Conversation cooldown: {self.conversation_cooldown}s")
+        logger.info(f"Context hydration: {'Enabled' if self.neynar_api_client else 'Disabled'}")
     
     async def process_new_message(self, message: Message) -> Optional[ContextualThread]:
         """
@@ -114,6 +121,14 @@ class AttentionEngine:
                 logger.debug(f"Skipping message {message.id} due to conversation cooldown")
                 self.metrics.add_message_filtered("cooldown")
                 return None
+            
+            # Step 2.5: NEW - Context Hydration for Farcaster Replies
+            if message.channel_type == 'farcaster' and message.reply_to:
+                context_is_valid = await self._hydrate_reply_context(message)
+                if not context_is_valid:
+                    logger.warning(f"Discarding message {message.id} due to failed context hydration.")
+                    self.metrics.add_message_filtered("context_hydration_failed")
+                    return None
             
             # Step 3: NEW - Attention Gate Logic (Channel Locking)
             channel_id = message.channel_id
@@ -615,3 +630,51 @@ class AttentionEngine:
         
         if expired_threads:
             logger.debug(f"Cleaned up {len(expired_threads)} expired thread cache entries")
+    
+    async def _hydrate_reply_context(self, message: Message) -> bool:
+        """
+        Ensures the parent of a reply exists in the WorldState. If not, fetches it.
+        
+        This method performs proactive context hydration to prevent downstream failures
+        in the send_farcaster_post tool. By ensuring reply context exists before the
+        message reaches the AI, we eliminate wasted LLM inference cycles.
+        
+        Args:
+            message: The message to check for reply context
+            
+        Returns:
+            True if context is present or successfully hydrated, False on failure
+        """
+        parent_hash = message.reply_to
+        if not parent_hash:
+            return True  # Not a reply, no hydration needed.
+
+        # Check if the parent thread already exists
+        if parent_hash in self.world_state.state.threads:
+            logger.debug(f"Context Hydration: Thread for parent cast {parent_hash} already exists.")
+            return True
+
+        # Check if we have the API client for hydration
+        if not self.neynar_api_client:
+            logger.warning(f"Context Hydration: Cannot hydrate context for {parent_hash} - no Neynar API client available.")
+            return False
+
+        logger.info(f"Context Hydration: Thread for parent cast {parent_hash} not found. Fetching context...")
+        try:
+            # Fetch parent cast details from Neynar API
+            parent_cast_data = await self.neynar_api_client.get_cast_by_hash(parent_hash)
+            
+            if parent_cast_data and parent_cast_data.get("cast"):
+                # Convert the parent cast to our standard Message format
+                parent_message = await convert_single_api_cast_to_message(parent_cast_data["cast"])
+                if parent_message:
+                    # Add the parent message to the WorldState, which will create the thread context
+                    self.world_state.add_message(parent_message.channel_id, parent_message)
+                    logger.info(f"Context Hydration successful for parent cast {parent_hash}.")
+                    return True
+            
+            logger.warning(f"Context Hydration failed: Could not fetch or convert parent cast {parent_hash}.")
+            return False
+        except Exception as e:
+            logger.error(f"Context Hydration error for parent {parent_hash}: {e}", exc_info=True)
+            return False
