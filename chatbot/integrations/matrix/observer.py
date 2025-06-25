@@ -1485,7 +1485,8 @@ class MatrixObserver(Integration):
             return {"success": False, "error": error_msg, "invites": [], "count": 0}
 
     async def send_image(
-        self, room_id: str, image_url: str, filename: str = None, content: str = None
+        self, room_id: str, image_url: str = None, filename: str = None, content: str = None, 
+        image_data: bytes = None, mime_type: str = None
     ) -> Dict[str, Any]:
         """
         Send an image to a Matrix room.
@@ -1495,11 +1496,13 @@ class MatrixObserver(Integration):
             image_url: The URL of the image to send (should be publicly accessible)
             filename: Optional filename for the image (defaults to extracted from URL)
             content: Optional text content to accompany the image
+            image_data: Optional raw image bytes (bypasses download for optimization)
+            mime_type: Optional MIME type when image_data is provided
         
         Returns:
             Dict with success status and optional error message
         """
-        logger.info(f"MatrixObserver.send_image called: room={room_id}, url={image_url}")
+        logger.info(f"MatrixObserver.send_image called: room={room_id}, url={image_url}, has_raw_data={bool(image_data)}")
 
         if not self.client:
             logger.error("Matrix client not connected")
@@ -1512,49 +1515,76 @@ class MatrixObserver(Integration):
             import io
             from PIL import Image
             
-            # Determine filename if not provided
-            if not filename:
-                parsed_url = urlparse(image_url)
-                filename = parsed_url.path.split('/')[-1] or "image.jpg"
-            
-            # Download the image with redirect following (handles all URLs including Arweave)
-            logger.info(f"Downloading and uploading image: {image_url}")
-            
-            # Download the image with redirect following
-            async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
-                try:
-                    # Add user-agent and other headers to mimic a browser
-                    headers = {
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-                        "Accept": "image/*,*/*;q=0.8",
-                        "Accept-Language": "en-US,en;q=0.5",
-                        "Connection": "keep-alive",
-                    }
-                    response = await client.get(image_url, headers=headers)
-                    response.raise_for_status()
-                    image_data = response.content
-                except Exception as e:
-                    error_msg = f"Failed to download image from {image_url}: {e}"
-                    logger.error(error_msg)
-                    return {"success": False, "error": error_msg}
-            
-            # Determine MIME type and image dimensions
-            mime_type, _ = mimetypes.guess_type(filename)
-            if not mime_type or not mime_type.startswith('image/'):
-                mime_type = "image/jpeg"  # Default fallback
-            
-            # Extract image properties using Pillow
-            actual_mime_type = mime_type
-            width, height = None, None
-            try:
-                img = Image.open(io.BytesIO(image_data))
-                width, height = img.size
-                if img.format:
-                    actual_mime_type = Image.MIME.get(img.format.upper()) or mime_type
-                logger.info(f"Image properties: w={width}, h={height}, mime={actual_mime_type}")
-            except Exception as e:
-                logger.warning(f"Could not get image dimensions/MIME for {filename}: {e}")
+            # OPTIMIZATION: Use raw image data if provided, bypassing download
+            if image_data and mime_type:
+                logger.info(f"Using provided raw image data for Matrix upload (size: {len(image_data)} bytes)")
+                
+                # Use provided filename or generate default
+                if not filename:
+                    filename = f"generated_image.{mime_type.split('/')[-1]}"
+                    
                 actual_mime_type = mime_type
+                
+                # Extract image properties using Pillow
+                width, height = None, None
+                try:
+                    img = Image.open(io.BytesIO(image_data))
+                    width, height = img.size
+                    if img.format:
+                        actual_mime_type = Image.MIME.get(img.format.upper()) or mime_type
+                    logger.info(f"Raw image properties: w={width}, h={height}, mime={actual_mime_type}")
+                except Exception as e:
+                    logger.warning(f"Could not get image dimensions from raw data: {e}")
+                    actual_mime_type = mime_type
+                    
+            else:
+                # Original download-based logic
+                if not image_url:
+                    return {"success": False, "error": "Either image_url or image_data must be provided"}
+                    
+                # Determine filename if not provided
+                if not filename:
+                    parsed_url = urlparse(image_url)
+                    filename = parsed_url.path.split('/')[-1] or "image.jpg"
+                
+                # Download the image with redirect following (handles all URLs including Arweave)
+                logger.info(f"Downloading and uploading image: {image_url}")
+                
+                # Download the image with redirect following
+                async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
+                    try:
+                        # Add user-agent and other headers to mimic a browser
+                        headers = {
+                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+                            "Accept": "image/*,*/*;q=0.8",
+                            "Accept-Language": "en-US,en;q=0.5",
+                            "Connection": "keep-alive",
+                        }
+                        response = await client.get(image_url, headers=headers)
+                        response.raise_for_status()
+                        image_data = response.content
+                    except Exception as e:
+                        error_msg = f"Failed to download image from {image_url}: {e}"
+                        logger.error(error_msg)
+                        return {"success": False, "error": error_msg}
+                
+                # Determine MIME type and image dimensions
+                mime_type, _ = mimetypes.guess_type(filename)
+                if not mime_type or not mime_type.startswith('image/'):
+                    mime_type = "image/jpeg"  # Default fallback
+                
+                # Extract image properties using Pillow
+                actual_mime_type = mime_type
+                width, height = None, None
+                try:
+                    img = Image.open(io.BytesIO(image_data))
+                    width, height = img.size
+                    if img.format:
+                        actual_mime_type = Image.MIME.get(img.format.upper()) or mime_type
+                    logger.info(f"Downloaded image properties: w={width}, h={height}, mime={actual_mime_type}")
+                except Exception as e:
+                    logger.warning(f"Could not get image dimensions/MIME for {filename}: {e}")
+                    actual_mime_type = mime_type
             
             # Get the file size for content-length
             file_size = len(image_data)

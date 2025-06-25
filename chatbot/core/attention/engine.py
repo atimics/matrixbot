@@ -129,10 +129,10 @@ class AttentionEngine:
                 logger.info(f"Context Hydration: Attempting to hydrate context for Farcaster reply {message.id} -> {message.reply_to}")
                 context_is_valid = await self._hydrate_reply_context(message)
                 if not context_is_valid:
-                    logger.warning(f"Discarding message {message.id} due to failed context hydration.")
-                    self.metrics.add_message_filtered("context_hydration_failed")
+                    logger.warning(f"Discarding message {message.id} due to failed context hydration or bot turn validation.")
+                    self.metrics.add_message_filtered("context_hydration_failed_or_not_bot_turn")
                     return None
-                logger.info(f"Context Hydration: Successfully validated/hydrated context for {message.id}")
+                logger.info(f"Context Hydration: Successfully validated/hydrated context and confirmed bot's turn for {message.id}")
             
             # Step 3: NEW - Attention Gate Logic (Channel Locking)
             channel_id = message.channel_id
@@ -643,11 +643,14 @@ class AttentionEngine:
         in the send_farcaster_post tool. By ensuring reply context exists before the
         message reaches the AI, we eliminate wasted LLM inference cycles.
         
+        This method now includes atomic commit operations and pre-validation of bot turn
+        to prevent expensive AI processing cycles when the bot shouldn't reply.
+        
         Args:
             message: The message to check for reply context
             
         Returns:
-            True if context is present or successfully hydrated, False on failure
+            True if context is present or successfully hydrated AND it's the bot's turn, False otherwise
         """
         parent_hash = message.reply_to
         if not parent_hash:
@@ -655,39 +658,53 @@ class AttentionEngine:
             return True  # Not a reply, no hydration needed.
 
         # Check if the parent thread already exists
-        if parent_hash in self.world_state.state.threads:
+        thread_exists = parent_hash in self.world_state.state.threads
+        if thread_exists:
             logger.debug(f"Context Hydration: Thread for parent cast {parent_hash} already exists.")
-            return True
+        else:
+            # Check if we have the API client for hydration
+            if not self.neynar_api_client:
+                logger.warning(f"Context Hydration: Cannot hydrate context for {parent_hash} - no Neynar API client available.")
+                return False
 
-        # Check if we have the API client for hydration
-        if not self.neynar_api_client:
-            logger.warning(f"Context Hydration: Cannot hydrate context for {parent_hash} - no Neynar API client available.")
-            return False
-
-        logger.info(f"Context Hydration: Thread for parent cast {parent_hash} not found. Fetching context...")
-        try:
-            # Fetch parent cast details from Neynar API
-            logger.debug(f"Context Hydration: Making API call to fetch cast {parent_hash}")
-            parent_cast_data = await self.neynar_api_client.get_cast_by_hash(parent_hash)
-            logger.debug(f"Context Hydration: API response received for {parent_hash}: {bool(parent_cast_data)}")
-            
-            if parent_cast_data and parent_cast_data.get("cast"):
-                logger.debug(f"Context Hydration: Converting cast {parent_hash} to Message format")
-                # Convert the parent cast to our standard Message format
-                parent_message = await convert_single_api_cast_to_message(parent_cast_data["cast"])
-                if parent_message:
-                    # Add the parent message to the WorldState, which will create the thread context
-                    logger.debug(f"Context Hydration: Adding parent message {parent_hash} to WorldState")
-                    self.world_state.add_message(parent_message.channel_id, parent_message)
-                    logger.info(f"Context Hydration successful for parent cast {parent_hash}.")
-                    return True
+            logger.info(f"Context Hydration: Thread for parent cast {parent_hash} not found. Fetching context...")
+            try:
+                # Fetch parent cast details from Neynar API
+                logger.debug(f"Context Hydration: Making API call to fetch cast {parent_hash}")
+                parent_cast_data = await self.neynar_api_client.get_cast_by_hash(parent_hash)
+                logger.debug(f"Context Hydration: API response received for {parent_hash}: {bool(parent_cast_data)}")
+                
+                if parent_cast_data and parent_cast_data.get("cast"):
+                    logger.debug(f"Context Hydration: Converting cast {parent_hash} to Message format")
+                    # Convert the parent cast to our standard Message format
+                    parent_message = await convert_single_api_cast_to_message(parent_cast_data["cast"])
+                    if parent_message:
+                        # ATOMIC OPERATION: Add the parent message to the WorldState, which will create the thread context
+                        logger.debug(f"Context Hydration: Adding parent message {parent_hash} to WorldState")
+                        self.world_state.add_message(parent_message.channel_id, parent_message)
+                        
+                        # Ensure the thread was created properly
+                        if parent_hash not in self.world_state.state.threads:
+                            logger.error(f"Context Hydration: CRITICAL ERROR - Thread {parent_hash} was not created after adding parent message")
+                            return False
+                        
+                        logger.info(f"Context Hydration: Successfully added thread {parent_hash} to WorldState.")
+                    else:
+                        logger.warning(f"Context Hydration failed: Could not convert parent cast {parent_hash} to Message format.")
+                        return False
                 else:
-                    logger.warning(f"Context Hydration failed: Could not convert parent cast {parent_hash} to Message format.")
-            else:
-                logger.warning(f"Context Hydration failed: Invalid API response for parent cast {parent_hash}.")
-            
-            logger.warning(f"Context Hydration failed: Could not fetch or convert parent cast {parent_hash}.")
+                    logger.warning(f"Context Hydration failed: Invalid API response for parent cast {parent_hash}.")
+                    return False
+                
+            except Exception as e:
+                logger.error(f"Context Hydration error for parent {parent_hash}: {e}", exc_info=True)
+                return False
+        
+        # PRE-VALIDATION: Check if it's actually the bot's turn BEFORE creating a ContextualThread
+        # This prevents wasted AI cycles when the bot shouldn't reply
+        if not self.world_state.is_bot_turn_in_thread(parent_hash):
+            logger.info(f"Context Hydration: Bot turn validation failed for thread {parent_hash}. Not the bot's turn to speak - filtering message.")
             return False
-        except Exception as e:
-            logger.error(f"Context Hydration error for parent {parent_hash}: {e}", exc_info=True)
-            return False
+        
+        logger.info(f"Context Hydration: Successfully validated context and bot's turn for {parent_hash}.")
+        return True

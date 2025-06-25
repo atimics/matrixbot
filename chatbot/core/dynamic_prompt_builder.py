@@ -234,6 +234,11 @@ Note: Additional tools available but not prioritized for this situation.
             if count >= 2:
                 rules.append(f"- Avoid repeated {action} actions (used {count} times recently)")
         
+        # Add specific Farcaster duplicate prevention rules
+        rules.append("- CRITICAL: Before using send_farcaster_post with reply_to_hash, check recently_replied_to_casts in the world state")
+        rules.append("- NEVER reply to a cast hash that appears in recently_replied_to_casts.recent_replies")
+        rules.append("- If you see a cast you want to reply to, verify it's NOT in the recently replied list first")
+        
         if rules:
             return f"""
 ANTI-DUPLICATION RULES:

@@ -25,6 +25,8 @@ async def _auto_post_to_gallery(
     media_url: str,
     prompt: str,
     service_used: str,
+    raw_image_data: Optional[bytes] = None,  # NEW: Raw image data for optimization
+    image_mime_type: Optional[str] = None,   # NEW: MIME type for raw data
 ) -> None:
     """
     Best-effort attempt to auto-post generated media to the configured Matrix gallery.
@@ -44,7 +46,17 @@ async def _auto_post_to_gallery(
 
         if media_type == "image":
             tool = SendMatrixImageTool()
-            params = {"channel_id": settings.matrix.media_gallery_room_id, "image_url": media_url, "caption": caption}
+            params = {
+                "channel_id": settings.matrix.media_gallery_room_id, 
+                "image_url": media_url, 
+                "caption": caption
+            }
+            # NEW: Add raw image data for optimization if available
+            if raw_image_data and image_mime_type:
+                # Store raw data as context for the tool execution
+                setattr(context, '_temp_raw_image_data', raw_image_data)
+                setattr(context, '_temp_image_mime_type', image_mime_type)
+                logger.info("Using raw image data for Matrix gallery auto-post optimization")
         elif media_type == "video":
             tool = SendMatrixVideoTool()
             params = {"channel_id": settings.matrix.media_gallery_room_id, "video_url": media_url, "caption": caption}
@@ -149,15 +161,19 @@ class GenerateImageTool(ToolInterface):
             if hasattr(context, 'world_state_manager') and context.world_state_manager:
                 context.world_state_manager.record_generated_media(
                     media_url=image_s3_url, media_type="image", prompt=prompt,
-                    service_used=service_used, aspect_ratio=aspect_ratio
+                    service_used=service_used, aspect_ratio=aspect_ratio,
+                    raw_image_data=image_data, image_mime_type="image/png"  # NEW: Include raw data for Matrix optimization
                 )
 
-            await _auto_post_to_gallery(context, "image", image_s3_url, prompt, service_used)
+            await _auto_post_to_gallery(context, "image", image_s3_url, prompt, service_used, 
+                                        raw_image_data=image_data, image_mime_type="image/png")
 
             return {
                 "status": "success",
                 "message": f"Image generated using {service_used} and stored on S3.",
                 "s3_image_url": image_s3_url,
+                "raw_image_data": image_data,  # NEW: Include raw bytes for Matrix optimization
+                "image_mime_type": "image/png",  # NEW: MIME type for Matrix upload
                 "prompt_used": prompt,
                 "next_actions_suggestion": f"To share this image, use a tool like 'send_matrix_image' with the URL: {image_s3_url}"
             }

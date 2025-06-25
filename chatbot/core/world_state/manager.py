@@ -294,6 +294,10 @@ class WorldStateManager:
                 "is_bot_turn": thread.is_bot_turn(bot_id) if bot_id else False
             }
 
+        # ENHANCEMENT: Include recently replied-to casts to prevent duplicate replies
+        # This helps the AI avoid attempting replies to casts it has already responded to
+        observation["recently_replied_to_casts"] = self._get_recently_replied_to_casts(lookback_seconds)
+
         # Increment observation cycle counter
         self.state.system_status["total_cycles"] += 1
         self.state.system_status["last_observation_cycle"] = time.time()
@@ -404,6 +408,51 @@ class WorldStateManager:
                 if sent_content == content:
                     return True
         return False
+
+    def _get_recently_replied_to_casts(self, lookback_seconds: int) -> Dict[str, Any]:
+        """
+        Get a list of recently replied-to casts to help AI avoid duplicate replies.
+        
+        This method extracts successful Farcaster replies from the action history
+        to provide the AI with context about which casts it has already responded to.
+        
+        Args:
+            lookback_seconds: Time window for recent replies
+            
+        Returns:
+            Dictionary containing recent reply information
+        """
+        cutoff_time = time.time() - lookback_seconds
+        recent_replies = []
+        
+        for action in reversed(self.state.action_history):
+            # Stop if we've gone beyond the time window
+            if action.timestamp < cutoff_time:
+                break
+                
+            # Look for successful Farcaster replies
+            if (action.action_type == "send_farcaster_post" and 
+                action.parameters.get("reply_to_hash") and
+                action.result in ["success", "scheduled"]):  # Include scheduled to prevent duplication
+                
+                reply_info = {
+                    "reply_to_hash": action.parameters.get("reply_to_hash"),
+                    "reply_content": action.parameters.get("content", ""),
+                    "timestamp": action.timestamp,
+                    "result": action.result,
+                    "cast_hash": action.parameters.get("cast_hash")  # If available
+                }
+                recent_replies.append(reply_info)
+        
+        # Reverse to get chronological order (oldest first)
+        recent_replies.reverse()
+        
+        return {
+            "recent_replies": recent_replies,
+            "reply_count": len(recent_replies),
+            "lookback_seconds": lookback_seconds,
+            "summary": f"Bot has replied to {len(recent_replies)} casts in the last {lookback_seconds//60} minutes"
+        }
 
     def get_channel(self, channel_id: str) -> Optional[Channel]:
         """Get a channel by ID"""
@@ -593,7 +642,9 @@ class WorldStateManager:
         prompt: str,
         service_used: str,
         aspect_ratio: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        raw_image_data: Optional[bytes] = None,  # NEW: Store raw bytes for Matrix optimization
+        image_mime_type: Optional[str] = None    # NEW: MIME type for raw data
     ) -> None:
         """
         Record AI-generated media in the image library for future reference.
@@ -605,6 +656,8 @@ class WorldStateManager:
             service_used: The AI service used (e.g., 'google_gemini', 'replicate')
             aspect_ratio: Aspect ratio of the media (e.g., '1:1', '16:9')
             metadata: Additional metadata about the generation
+            raw_image_data: Raw image bytes for Matrix optimization (temporary storage)
+            image_mime_type: MIME type for the raw image data
         """
         media_entry = {
             "url": media_url,
@@ -613,7 +666,9 @@ class WorldStateManager:
             "service_used": service_used,
             "timestamp": time.time(),
             "aspect_ratio": aspect_ratio,
-            "metadata": metadata or {}
+            "metadata": metadata or {},
+            "raw_image_data": raw_image_data,  # NEW: Include raw bytes for optimization
+            "image_mime_type": image_mime_type  # NEW: Include MIME type
         }
         
         self.state.generated_media_library.append(media_entry)
@@ -630,6 +685,28 @@ class WorldStateManager:
         if self.state.generated_media_library:
             last = self.state.generated_media_library[-1]
             return last.get("url")
+        return None
+
+    def get_last_generated_media_with_raw_data(self) -> Optional[Dict[str, Any]]:
+        """
+        Returns the most recently generated media entry that has raw image data.
+        This is used for Matrix upload optimization to avoid re-downloading.
+        
+        Returns:
+            Dict with media entry containing raw_image_data, or None if not available
+        """
+        if not self.state.generated_media_library:
+            return None
+            
+        # Check recent entries (last 3) for raw data within the last 5 minutes
+        cutoff_time = time.time() - 300  # 5 minutes
+        
+        for media_entry in reversed(self.state.generated_media_library[-3:]):
+            if (media_entry.get("raw_image_data") and 
+                media_entry.get("image_mime_type") and
+                media_entry.get("timestamp", 0) > cutoff_time):
+                return media_entry
+                
         return None
 
     def get_world_state_data(self) -> WorldStateData:
