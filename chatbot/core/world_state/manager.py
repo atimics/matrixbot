@@ -753,6 +753,98 @@ class WorldStateManager:
             self.state.last_update = time.time()
         except Exception as e:
             logger.error(f"Error updating user sentiment: {e}", exc_info=True)
+
+    def update_user_sentiment_from_action(self, platform: str, user_identifier: str, action_type: str):
+        """
+        Update user sentiment based on social actions (likes, reactions, mentions, etc.).
+        
+        Args:
+            platform: The platform ('farcaster' or 'matrix')
+            user_identifier: User's platform ID (FID for Farcaster, user_id for Matrix)
+            action_type: Type of action performed
+        """
+        try:
+            # Get or create user
+            if platform == "farcaster":
+                user = self.get_or_create_farcaster_user(user_identifier)
+            elif platform == "matrix":
+                user = self.get_or_create_matrix_user(user_identifier)
+            else:
+                logger.warning(f"Unknown platform for sentiment update: {platform}")
+                return
+            
+            # Create default sentiment if none exists
+            if not user.sentiment:
+                user.sentiment = SentimentData(
+                    score=0.0,
+                    label="neutral",
+                    last_updated=time.time(),
+                    current_sentiment="neutral"
+                )
+            
+            # Define sentiment weight adjustments based on action type
+            sentiment_weights = {
+                'mention': 0.3,            # Direct mentions/replies to bot
+                'positive_reaction': 0.2,   # Likes, recasts, positive reactions
+                'like': 0.1,               # Simple likes
+                'recast': 0.2,             # Recasts/shares
+                'quote_post': 0.2,         # Quote posts
+                'no_feedback_on_reply': -0.05,  # No reaction to bot's reply
+                'negative_text_sentiment': -0.4,  # Negative text analysis
+            }
+            
+            # Apply sentiment adjustment
+            weight = sentiment_weights.get(action_type, 0.0)
+            old_score = user.sentiment.score
+            user.sentiment.score = max(-1.0, min(1.0, old_score + weight))
+            user.sentiment.last_updated = time.time()
+            user.sentiment.last_interaction_time = time.time()
+            
+            # Update sentiment label
+            if user.sentiment.score > 0.3:
+                user.sentiment.label = "positive"
+                user.sentiment.current_sentiment = "positive"
+            elif user.sentiment.score < -0.2:
+                user.sentiment.label = "negative"
+                user.sentiment.current_sentiment = "negative"
+            else:
+                user.sentiment.label = "neutral"
+                user.sentiment.current_sentiment = "neutral"
+            
+            # Add to interaction history
+            interaction_event = {
+                "timestamp": time.time(),
+                "action_type": action_type,
+                "weight": weight,
+                "old_score": old_score,
+                "new_score": user.sentiment.score
+            }
+            user.sentiment.interaction_history.append(interaction_event)
+            
+            # Keep only last 20 interaction events
+            if len(user.sentiment.interaction_history) > 20:
+                user.sentiment.interaction_history = user.sentiment.interaction_history[-20:]
+            
+            # Add to sentiment history
+            history_entry = {
+                "timestamp": time.time(),
+                "sentiment": user.sentiment.label,
+                "score": user.sentiment.score,
+                "trigger": action_type
+            }
+            user.sentiment.history.append(history_entry)
+            
+            # Keep only last 10 history entries
+            if len(user.sentiment.history) > 10:
+                user.sentiment.history = user.sentiment.history[-10:]
+            
+            logger.info(f"Updated sentiment for {platform} user {user_identifier} from {action_type}: "
+                       f"{old_score:.2f} -> {user.sentiment.score:.2f} ({user.sentiment.label})")
+            
+            self.state.last_update = time.time()
+            
+        except Exception as e:
+            logger.error(f"Error updating user sentiment from action: {e}", exc_info=True)
     
     # === Memory Bank Management ===
     
@@ -1230,3 +1322,136 @@ class WorldStateManager:
         # Increment and record
         self.state.daily_interaction_counts[user_id][today_str] = today_count + 1
         return False # Still within cap
+    
+    def add_pending_feedback_action(self, reply_event_id: str, original_event_id: str, 
+                                   user_id: str, platform: str, feedback_threshold_time: float = 3600):
+        """
+        Add a pending feedback action to track bot replies awaiting user feedback.
+        
+        Args:
+            reply_event_id: ID of the bot's reply message/cast
+            original_event_id: ID of the original message/cast being replied to
+            user_id: Identifier of the user who received the reply
+            platform: Platform where the interaction occurred ('farcaster' or 'matrix')
+            feedback_threshold_time: Time in seconds after which lack of feedback is negative (default 1 hour)
+        """
+        try:
+            from .structures import PendingFeedbackAction
+            
+            pending_action = PendingFeedbackAction(
+                reply_event_id=reply_event_id,
+                original_event_id=original_event_id,
+                user_id=user_id,
+                platform=platform,
+                timestamp=time.time(),
+                feedback_threshold_time=feedback_threshold_time
+            )
+            
+            self.state.pending_feedback_actions[reply_event_id] = pending_action
+            self.state.last_update = time.time()
+            
+            logger.debug(f"Added pending feedback action for {platform} reply {reply_event_id} to user {user_id}")
+            
+        except Exception as e:
+            logger.error(f"Error adding pending feedback action: {e}", exc_info=True)
+
+    def remove_pending_feedback_action(self, reply_event_id: str) -> bool:
+        """
+        Remove a pending feedback action when feedback is received.
+        
+        Args:
+            reply_event_id: ID of the reply event to remove
+            
+        Returns:
+            True if action was found and removed, False otherwise
+        """
+        try:
+            if reply_event_id in self.state.pending_feedback_actions:
+                del self.state.pending_feedback_actions[reply_event_id]
+                self.state.last_update = time.time()
+                logger.debug(f"Removed pending feedback action for reply {reply_event_id}")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Error removing pending feedback action: {e}", exc_info=True)
+            return False
+
+    def get_expired_pending_feedback_actions(self) -> List:
+        """
+        Get all pending feedback actions that have expired (past their threshold time).
+        
+        Returns:
+            List of PendingFeedbackAction objects that have exceeded their threshold time
+        """
+        try:
+            expired_actions = []
+            current_time = time.time()
+            
+            for reply_event_id, action in list(self.state.pending_feedback_actions.items()):
+                if current_time - action.timestamp > action.feedback_threshold_time:
+                    expired_actions.append(action)
+            
+            return expired_actions
+            
+        except Exception as e:
+            logger.error(f"Error getting expired feedback actions: {e}", exc_info=True)
+            return []
+
+    def apply_time_decay_to_sentiment(self, decay_factor: float = 0.99):
+        """
+        Apply time decay to all user sentiment scores to gradually move them toward neutral.
+        
+        Args:
+            decay_factor: Factor to multiply sentiment scores by (default 0.99 for gradual decay)
+        """
+        try:
+            updated_count = 0
+            
+            # Apply decay to Farcaster users
+            for user in self.state.farcaster_users.values():
+                if user.sentiment and user.sentiment.score != 0.0:
+                    old_score = user.sentiment.score
+                    user.sentiment.score *= decay_factor
+                    
+                    # Update label if score changed significantly
+                    if abs(old_score - user.sentiment.score) > 0.01:
+                        if user.sentiment.score > 0.3:
+                            user.sentiment.label = "positive"
+                            user.sentiment.current_sentiment = "positive"
+                        elif user.sentiment.score < -0.2:
+                            user.sentiment.label = "negative"
+                            user.sentiment.current_sentiment = "negative"
+                        else:
+                            user.sentiment.label = "neutral"
+                            user.sentiment.current_sentiment = "neutral"
+                        
+                        user.sentiment.last_updated = time.time()
+                        updated_count += 1
+            
+            # Apply decay to Matrix users
+            for user in self.state.matrix_users.values():
+                if user.sentiment and user.sentiment.score != 0.0:
+                    old_score = user.sentiment.score
+                    user.sentiment.score *= decay_factor
+                    
+                    # Update label if score changed significantly
+                    if abs(old_score - user.sentiment.score) > 0.01:
+                        if user.sentiment.score > 0.3:
+                            user.sentiment.label = "positive"
+                            user.sentiment.current_sentiment = "positive"
+                        elif user.sentiment.score < -0.2:
+                            user.sentiment.label = "negative"
+                            user.sentiment.current_sentiment = "negative"
+                        else:
+                            user.sentiment.label = "neutral"
+                            user.sentiment.current_sentiment = "neutral"
+                        
+                        user.sentiment.last_updated = time.time()
+                        updated_count += 1
+            
+            if updated_count > 0:
+                self.state.last_update = time.time()
+                logger.debug(f"Applied sentiment decay to {updated_count} users")
+                
+        except Exception as e:
+            logger.error(f"Error applying sentiment decay: {e}", exc_info=True)

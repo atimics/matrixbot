@@ -433,7 +433,7 @@ class ActionHistory:
 @dataclass
 class SentimentData:
     """
-    Tracks user sentiment based on their interactions.
+    Enhanced sentiment tracking based on both text analysis and social interactions.
     
     Attributes:
         score: Sentiment score from -1.0 (very negative) to 1.0 (very positive)
@@ -441,12 +441,41 @@ class SentimentData:
         last_updated: Unix timestamp of last sentiment update
         confidence: Optional confidence score for the sentiment analysis
         history: List of recent sentiment scores for trending analysis
+        last_interaction_time: Last time user interacted with the bot
+        message_count: Total number of messages analyzed for this user
+        current_sentiment: Cached current sentiment label for quick access
+        interaction_history: Recent interaction events with sentiment weights
     """
     score: float  # -1.0 to 1.0
     label: str    # "positive", "negative", "neutral"
     last_updated: float
     confidence: Optional[float] = None
     history: List[Dict[str, Any]] = field(default_factory=list)
+    last_interaction_time: Optional[float] = None
+    message_count: int = 0
+    current_sentiment: str = "neutral"
+    interaction_history: List[Dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass
+class PendingFeedbackAction:
+    """
+    Tracks bot actions that are waiting for user feedback to assess sentiment.
+    
+    Attributes:
+        reply_event_id: ID of the bot's reply message/cast
+        original_event_id: ID of the original message/cast being replied to
+        user_id: Identifier of the user who received the reply
+        platform: Platform where the interaction occurred (farcaster/matrix)
+        timestamp: When the bot replied
+        feedback_threshold_time: Time after which lack of feedback is considered negative
+    """
+    reply_event_id: str
+    original_event_id: str
+    user_id: str
+    platform: str
+    timestamp: float
+    feedback_threshold_time: float = 3600  # 1 hour default
 
 
 @dataclass
@@ -957,6 +986,9 @@ class WorldStateData:
         self.farcaster_users: Dict[str, FarcasterUserDetails] = {}  # fid -> user details
         self.matrix_users: Dict[str, MatrixUserDetails] = {}  # user_id -> user details
         self.user_memory_bank: Dict[str, List[MemoryEntry]] = {}  # user_platform_id -> memories
+        
+        # Enhanced sentiment analysis - Phase 1: Pending feedback tracking
+        self.pending_feedback_actions: Dict[str, PendingFeedbackAction] = {}  # reply_event_id -> feedback action
         
         # Tool result caching
         self.tool_cache: Dict[str, Dict[str, Any]] = {}  # cache_key -> cached result
