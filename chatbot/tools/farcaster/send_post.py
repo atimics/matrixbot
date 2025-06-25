@@ -89,29 +89,41 @@ class SendFarcasterPostTool(ToolInterface):
             if not content:
                 return create_error_response("Content is required for Farcaster replies")
 
-            # CRITICAL: THREAD CONTEXT VALIDATION
-            # The bot should NEVER reply outside of active thread conversations
-            # This prevents spam and ensures coherent conversation flow
             if not context.world_state_manager:
                 error_msg = "CRITICAL: Cannot validate thread context - world state manager not available. ABORTING reply."
                 logger.error(error_msg)
                 return create_error_response(error_msg)
-            
-            # Check if this is the bot's turn to speak in this thread
-            thread_id = reply_to_hash  # For Farcaster, the reply target becomes the thread ID
-            
-            if not context.world_state_manager.is_bot_turn_in_thread(thread_id):
-                error_msg = f"THREAD TURN VIOLATION: It is not the bot's turn to speak in thread {thread_id}. This prevents spam and maintains natural conversation flow."
-                logger.error(error_msg)
-                return {
-                    "status": "blocked",
-                    "message": "Reply blocked: Not the bot's turn in this conversation",
-                    "reason": "not_bot_turn", 
-                    "reply_to_hash": reply_to_hash,
-                    "timestamp": time.time()
-                }
+
+            try:
+                # RECOMMENDATION 1: Add a robust check against action history first.
+                # This is the primary duplicate prevention mechanism, independent of live thread state.
+                if context.world_state_manager.has_replied_to_cast(reply_to_hash):
+                    error_msg = f"DUPLICATE ACTION BLOCKED: Already replied or scheduled a reply to cast {reply_to_hash} according to action history."
+                    logger.warning(error_msg)
+                    return create_error_response(error_msg)
+
+                # CRITICAL: THREAD CONTEXT VALIDATION (Keep this as a secondary check)
+                # The bot should NEVER reply outside of active thread conversations
+                # This prevents spam and ensures coherent conversation flow
+                thread_id = reply_to_hash  # For Farcaster, the reply target becomes the thread ID
                 
-            logger.info(f"Thread turn validation PASSED: Bot's turn to speak in thread {thread_id}")
+                if not context.world_state_manager.is_bot_turn_in_thread(thread_id):
+                    error_msg = f"THREAD TURN VIOLATION: It is not the bot's turn to speak in thread {thread_id}. This prevents spam and maintains natural conversation flow."
+                    logger.error(error_msg)
+                    return {
+                        "status": "blocked",
+                        "message": "Reply blocked: Not the bot's turn in this conversation",
+                        "reason": "not_bot_turn",
+                        "reply_to_hash": reply_to_hash,
+                        "timestamp": time.time()
+                    }
+                
+                logger.info(f"Thread turn validation PASSED: Bot's turn to speak in thread {thread_id}")
+
+            except Exception as e:
+                # RECOMMENDATION 3: Defensive coding - gracefully handle validation errors
+                logger.error(f"Unexpected error during reply validation for {reply_to_hash}: {e}", exc_info=True)
+                return create_error_response("Internal error during reply validation.")
 
         # For non-replies, validate content and embed requirements 
         elif not content and not embed_url:

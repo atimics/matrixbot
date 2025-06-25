@@ -1,11 +1,38 @@
-# 🤖 Chatbot System
+# Context-Aware AI Chatbot
 
-A sophisticated, context-aware chatbot system with dynamic tool-based architecture, multi-platform integration, and advanced conversation state management. Built for intelligent conversations across Matrix and Farcaster platforms with comprehensive AI-driven decision making.
+A sophisticated, multi-platform, autonomous AI agent designed for advanced, context-aware interactions on Matrix and Farcaster. This system features a modular, resilient architecture built for complex decision-making and proactive community engagement.
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Poetry](https://img.shields.io/badge/dependency%20management-poetry-blue)](https://python-poetry.org/)
 [![License: CC BY-NC 4.0](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/)
 [![Code Quality](https://img.shields.io/badge/code%20quality-black%20%7C%20flake8%20%7C%20mypy-blue)](pyproject.toml)
+
+## ✨ Key Features
+
+-   **🧠 Advanced Agentic Architecture:** Implements a **Commander/Sub-Agent** model. A strategic "Commander" AI handles complex analysis and delegates conversational tasks to lightweight "Sub-Agent" AIs for efficiency.
+-   **🌳 Node-Based World State:** Manages vast amounts of information using a tree-like "node" structure with AI-powered summarization, enabling efficient and scalable context management.
+-   **⚡ Proactive Engagement Engine:** Goes beyond reacting to messages. The AI analyzes the world state to identify opportunities and initiate meaningful conversations on its own.
+-   **🔧 Unified Tool System:** The AI interacts with the world through a dynamic and extensible set of tools, allowing for easy addition of new capabilities.
+-   **🔌 Multi-Platform Integration:** Natively supports **Matrix** and **Farcaster**, with a robust `IntegrationManager` for adding future platforms.
+-   **🖼️ AI Media Generation:** Includes tools for generating images (SDXL, Gemini) and videos (Google Veo) on the fly.
+-   **🌐 Comprehensive Management UI:** A FastAPI backend and Next.js frontend provide a rich, real-time administrative dashboard for monitoring, configuration, and control.
+-   **🐳 Fully Containerized:** Deploys easily and reliably using Docker and Docker Compose.
+
+## 🏛️ Architectural Overview
+
+The system's architecture is designed for robustness and advanced AI behavior, centered around a few core components:
+
+1.  **Dependency Container (`/chatbot/core/container.py`):** The application's entry point. It initializes and injects all necessary components, ensuring a clean, decoupled architecture.
+
+2.  **Main Orchestrator (`/chatbot/core/orchestration/main_orchestrator.py`):** The central coordinator that manages the system's lifecycle, platform observers, and the main processing loop.
+
+3.  **Attention Engine (`/chatbot/core/attention/engine.py`):** The first stage of the processing pipeline. Instead of processing raw events, the Attention Engine acts as an intelligent filter, analyzing incoming messages to determine if they warrant the AI's attention. It bundles messages with their full context (user profile, conversation history) into a `ContextualThread`.
+
+4.  **Processing Hub (`/chatbot/core/orchestration/processing_hub.py`):** The heart of the Commander/Sub-Agent logic. It receives `ContextualThread` objects from the Attention Engine and routes them to the appropriate processor:
+    *   **Commander AI (`AdaptiveProcessor`):** Handles complex, strategic threads that require system-wide awareness. It uses the node-based world state to reason about the big picture and can delegate tasks.
+    *   **Sub-Agents (`MissionProcessor`):** Lightweight, focused AIs that are assigned a specific "mission" (e.g., "answer questions in this channel"). They operate with a smaller context and use a faster, cheaper LLM to handle immediate conversational needs.
+
+5.  **Tool Registry & Execution (`/chatbot/tools/`):** The AI's interface to the outside world. The selected AI processor (Commander or Sub-Agent) chooses a tool, and the system executes it. This includes sending messages, generating media, or analyzing data.
 
 ## 📋 Table of Contents
 

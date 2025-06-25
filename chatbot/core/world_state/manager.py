@@ -957,7 +957,10 @@ class WorldStateManager:
         """
         thread = self.state.threads.get(thread_id)
         if not thread:
-            logger.warning(f"Turn validation failed: Thread '{thread_id}' does not exist.")
+            logger.warning(f"Turn validation failed: Thread '{thread_id}' does not exist. This could indicate missing thread context that needs hydration.")
+            # RECOMMENDATION 2: Future enhancement point for state hydration
+            # Here we could implement logic to fetch the parent cast and create thread context
+            # For now, we return False to be safe and prevent potential spam
             return False
 
         # Must be a real conversation (allow bot to participate in any thread with activity)
