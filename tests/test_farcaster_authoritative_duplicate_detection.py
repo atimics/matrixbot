@@ -83,8 +83,9 @@ async def test_reply_is_blocked_by_persistent_cache():
     # Mock Farcaster observer
     mock_obs = AsyncMock()
     
-    # Mock world state manager
+    # Mock world state manager - internal state should return False to test persistent cache
     mock_world_state = MagicMock()
+    mock_world_state.has_replied_to_cast.return_value = False  # Internal state check passes
     
     # Mock service registry
     mock_service_registry = MagicMock()
