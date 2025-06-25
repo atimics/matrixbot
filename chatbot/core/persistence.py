@@ -197,6 +197,18 @@ class DatabaseManager:
                 )
             """)
             
+            # Pending feedback actions table for enhanced sentiment analysis
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS pending_feedback_actions (
+                    reply_event_id TEXT PRIMARY KEY NOT NULL,
+                    original_event_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    platform TEXT NOT NULL,
+                    timestamp REAL NOT NULL,
+                    feedback_threshold_time REAL NOT NULL DEFAULT 3600
+                )
+            """)
+            
             await db.commit()
         
         await self._execute_operation(create_tables_operation)
