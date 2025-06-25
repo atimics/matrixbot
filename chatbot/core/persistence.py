@@ -209,6 +209,25 @@ class DatabaseManager:
                 )
             """)
             
+            # Key-value store table for unified configuration
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS key_value_store (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    created_at REAL DEFAULT (strftime('%s', 'now')),
+                    updated_at REAL DEFAULT (strftime('%s', 'now'))
+                )
+            """)
+            
+            # Create trigger to update timestamp on key_value_store updates
+            await db.execute("""
+                CREATE TRIGGER IF NOT EXISTS update_key_value_timestamp 
+                AFTER UPDATE ON key_value_store
+                BEGIN
+                    UPDATE key_value_store SET updated_at = strftime('%s', 'now') WHERE key = NEW.key;
+                END
+            """)
+            
             await db.commit()
         
         await self._execute_operation(create_tables_operation)
@@ -732,3 +751,41 @@ class DatabaseManager:
                 return None
         
         return await self._execute_operation(db_operation)
+
+    # Configuration and State Management Methods
+    async def set_config_value(self, key: str, value: Any) -> None:
+        """Store a configuration value in the key-value store."""
+        async def set_operation(db):
+            await db.execute("""
+                INSERT OR REPLACE INTO key_value_store (key, value) VALUES (?, ?)
+            """, (key, json.dumps(value)))
+            await db.commit()
+        
+        await self._execute_operation(set_operation)
+    
+    async def get_config_value(self, key: str, default: Any = None) -> Any:
+        """Retrieve a configuration value from the key-value store."""
+        async def get_operation(db):
+            cursor = await db.execute("""
+                SELECT value FROM key_value_store WHERE key = ?
+            """, (key,))
+            return await cursor.fetchone()
+        
+        result = await self._execute_operation(get_operation)
+        
+        if result:
+            try:
+                return json.loads(result[0])
+            except json.JSONDecodeError:
+                logger.error(f"Failed to decode JSON for config key {key}")
+                return default
+        return default
+    
+    async def delete_config_value(self, key: str) -> bool:
+        """Delete a configuration value from the key-value store."""
+        async def delete_operation(db):
+            cursor = await db.execute("DELETE FROM key_value_store WHERE key = ?", (key,))
+            await db.commit()
+            return cursor.rowcount > 0
+        
+        return await self._execute_operation(delete_operation)
