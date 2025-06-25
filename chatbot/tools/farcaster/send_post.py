@@ -97,6 +97,13 @@ class SendFarcasterPostTool(ToolInterface):
             # === MULTI-LAYERED DUPLICATE REPLY PREVENTION ===
             logger.info(f"Starting multi-layered duplicate prevention check for reply to: {reply_to_hash}")
 
+            # === LAYER 0: Internal State Check (Fastest) ===
+            if hasattr(context.world_state_manager, 'has_replied_to_cast') and context.world_state_manager.has_replied_to_cast(reply_to_hash):
+                error_msg = f"DUPLICATE ACTION BLOCKED: Internal state indicates a reply to {reply_to_hash} already exists."
+                logger.warning(error_msg)
+                return create_error_response(error_msg)
+            logger.info(f"Layer 0 passed: No reply found in internal state for {reply_to_hash}")
+
             # === LAYER 1: Persistent Local Cache Check ===
             if context.database_manager:
                 logger.info(f"Layer 1: Checking persistent cache for reply to: {reply_to_hash}")

@@ -696,4 +696,4 @@ class NeynarAPIClient:
             "include_chronological_parent_casts": False  # We only need the replies
         }
         response = await self._make_request("GET", "/farcaster/cast/conversation", params=params)
-        return response.json()
+        return await response.json()
