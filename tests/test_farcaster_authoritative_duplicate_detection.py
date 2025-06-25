@@ -41,6 +41,7 @@ async def test_reply_succeeds_when_no_prior_reply_exists():
     # Mock world state manager
     mock_world_state = MagicMock()
     mock_world_state.is_bot_turn_in_thread.return_value = True
+    mock_world_state.has_replied_to_cast.return_value = False  # Internal state check passes
     
     # Mock service registry
     mock_service_registry = MagicMock()
@@ -145,6 +146,7 @@ async def test_reply_is_blocked_by_authoritative_api_check():
     
     # Mock world state manager
     mock_world_state = MagicMock()
+    mock_world_state.has_replied_to_cast.return_value = False  # Allow API check
     
     # Mock service registry
     mock_service_registry = MagicMock()
@@ -246,6 +248,7 @@ async def test_reply_handles_api_error_gracefully():
     
     # Mock world state manager
     mock_world_state = MagicMock()
+    mock_world_state.has_replied_to_cast.return_value = False  # Allow API check which will fail
     
     # Mock service registry
     mock_service_registry = MagicMock()
