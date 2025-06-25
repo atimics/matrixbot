@@ -16,7 +16,6 @@ from .get_trending import GetTrendingCastsTool
 from .search_casts import SearchCastsTool
 from .get_cast import GetCastByUrlTool
 from .collect_state import CollectWorldStateTool
-from .deprecated import SendFarcasterDMTool
 
 __all__ = [
     "SendFarcasterPostTool",
@@ -30,5 +29,4 @@ __all__ = [
     "SearchCastsTool",
     "GetCastByUrlTool",
     "CollectWorldStateTool",
-    "SendFarcasterDMTool",
 ]

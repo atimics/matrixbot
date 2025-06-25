@@ -23,7 +23,7 @@ class GoogleAIMediaClient:
     def __init__(
         self,
         api_key: str,
-        default_gemini_image_model: str = "gemini-2.0-flash-preview-image-generation",  # CORRECT: Official Google AI docs model for image generation
+        default_gemini_image_model: str = "imagen-3.0-generate-001",  # PHASE 2C FIX: Use dedicated image model
         default_veo_video_model: str = "veo-2.0-generate-001",
     ):
         """
@@ -32,8 +32,7 @@ class GoogleAIMediaClient:
         Args:
             api_key: Google AI API key (for Gemini Developer API).
             default_gemini_image_model: Default model for image generation.
-                                       MUST use "gemini-2.0-flash-preview-image-generation" per Google AI docs.
-                                       DO NOT change to imagen or flash-latest models. 
+                                       PHASE 2C FIX: Now defaults to "imagen-3.0-generate-001" 
                                        instead of "gemini-2.0-flash-preview-image-generation" which doesn't support image generation.
             default_veo_video_model: Default Veo model for video generation.
         """
@@ -171,7 +170,7 @@ class GoogleAIMediaClient:
         
         # PHASE 2C FIX: Provide helpful error context
         logger.error(f"GoogleAIMediaClient: Model {self.default_gemini_image_model} may not support image generation. "
-                    f"Ensure you are using 'gemini-2.0-flash-preview-image-generation' as per Google AI documentation.")
+                    f"Consider using 'imagen-3.0-generate-001' or another dedicated image generation model.")
 
         return None
 
@@ -446,7 +445,8 @@ async def main():
     try:
         client = GoogleAIMediaClient(
             api_key=api_key,
-            default_gemini_image_model="gemini-2.0-flash-preview-image-generation",  # CORRECT: Official Google AI docs model
+            # "gemini-2.0-flash-preview-image-generation" https://ai.google.dev/gemini-api/docs/image-generation
+            default_gemini_image_model="gemini-2.0-flash-preview-image-generation",
             default_veo_video_model="veo-2.0-generate-001" # Verify this model name
         )
     except Exception as e:

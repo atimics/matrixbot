@@ -454,8 +454,8 @@ class NodeProcessor:
         """
         Execute an individual action through the unified tool registry pipeline.
         
-        CRITICAL FIX: All tools now execute through the same unified pipeline.
-        No more special handling for node tools vs external tools.
+        This method now routes ALL actions (node and external) through the main
+        ToolRegistry, eliminating the forked execution pattern.
         
         Returns:
             True if action executed successfully, False otherwise
@@ -467,31 +467,39 @@ class NodeProcessor:
                 logger.warning(f"NodeProcessor: Unknown tool {action.action_type}")
                 return False
             
-            # CRITICAL FIX: Unified execution path for ALL tools
-            # Ensure ActionContext has node_manager for tools that need it
-            execution_context = self.action_context
-            if not execution_context:
-                # Create minimal context with node_manager for tools that need it
-                execution_context = ActionContext(world_state_manager=self.world_state_manager)
-                execution_context.node_manager = self.node_manager
-            elif not hasattr(execution_context, 'node_manager') or not execution_context.node_manager:
-                # Ensure existing context has node_manager
-                execution_context.node_manager = self.node_manager
-            
-            # Execute tool with unified context - no special handling needed
-            result = await tool.execute(action.parameters, execution_context)
-            success = result.get("status") == "success"
-            
-            if success:
-                logger.debug(f"NodeProcessor: Action {action.action_type} succeeded")
-            else:
-                logger.warning(f"NodeProcessor: Action {action.action_type} failed: {result.get('error', 'Unknown error')}")
-            
-            return success
+            # CRITICAL FIX: All tools should be executed, whether node tools or external tools
+            if action.action_type not in ["expand_node", "collapse_node", "pin_node", "unpin_node", "refresh_summary", "get_expansion_status"]:
+                # External tool - requires full ActionContext
+                if not self.action_context:
+                    logger.warning(f"NodeProcessor: External action {action.action_type} requires ActionContext - cannot execute without it")
+                    return False  # This is actually a failure, not success
                 
-        except Exception as e:
-            logger.error(f"NodeProcessor: Error executing action {action.action_type}: {e}")
-            return False
+                # Execute external tool with full ActionContext
+                result = await tool.execute(action.parameters, self.action_context)
+                success = result.get("status") == "success"
+                if success:
+                    logger.info(f"NodeProcessor: External action {action.action_type} succeeded")
+                else:
+                    logger.warning(f"NodeProcessor: External action {action.action_type} failed: {result.get('error', 'Unknown error')}")
+                return success
+            else:
+                # CRITICAL FIX: Execute node management tool with ActionContext that has node_manager
+                # Use full action_context if available, otherwise create one with node_manager
+                if self.action_context:
+                    # Use the full action context which already has the node_manager
+                    node_context = self.action_context
+                else:
+                    # Create minimal context but ensure it has node_manager for tools
+                    node_context = ActionContext(world_state_manager=self.world_state_manager)
+                    node_context.node_manager = self.node_manager
+                
+                result = await tool.execute(action.parameters, node_context)
+                success = result.get("status") == "success"
+                if success:
+                    logger.debug(f"NodeProcessor: Node action {action.action_type} succeeded")
+                else:
+                    logger.warning(f"NodeProcessor: Node action {action.action_type} failed: {result.get('error', 'Unknown error')}")
+                return success
                 
         except Exception as e:
             logger.error(f"NodeProcessor: Error executing action {action.action_type}: {e}")

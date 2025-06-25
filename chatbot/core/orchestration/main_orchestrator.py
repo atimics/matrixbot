@@ -421,7 +421,6 @@ class MainOrchestrator:
             FollowFarcasterUserTool,
             GetUserTimelineTool,
             LikeFarcasterPostTool,
-            SendFarcasterDMTool,
             SendFarcasterPostTool,
             UnfollowFarcasterUserTool,
             DeleteFarcasterPostTool,
@@ -519,7 +518,7 @@ class MainOrchestrator:
         self.tool_registry.register_tool(SendFarcasterPostTool())
         # NOTE: SendFarcasterReplyTool deprecated - use send_farcaster_post with reply_to_hash parameter
         # self.tool_registry.register_tool(SendFarcasterReplyTool())  # DEPRECATED - functionality consolidated into SendFarcasterPostTool
-        self.tool_registry.register_tool(SendFarcasterDMTool())
+        # NOTE: SendFarcasterDMTool deprecated - functionality not currently available
         self.tool_registry.register_tool(LikeFarcasterPostTool())
         self.tool_registry.register_tool(FollowFarcasterUserTool())
         self.tool_registry.register_tool(UnfollowFarcasterUserTool())

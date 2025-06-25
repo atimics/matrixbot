@@ -32,7 +32,7 @@ class RateLimitConfig:
             # "SendMatrixReplyTool": 150,  # DEPRECATED - functionality consolidated into SendMatrixMessageTool
             "SendFarcasterPostTool": 100,  # Increased limit since this now handles both posts and replies
             # "SendFarcasterReplyTool": 100,  # DEPRECATED - functionality consolidated into SendFarcasterPostTool
-            "SendFarcasterDMTool": 30,
+            # "SendFarcasterDMTool": 30,  # DEPRECATED - functionality not currently available
             "LikeFarcasterPostTool": 200,
             "FollowFarcasterUserTool": 20,
             "UnfollowFarcasterUserTool": 20,
