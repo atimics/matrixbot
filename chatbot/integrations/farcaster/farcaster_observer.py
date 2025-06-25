@@ -1247,3 +1247,43 @@ class FarcasterObserver(Integration):
                 
         except Exception as e:
             logger.error(f"Error processing notifications for sentiment: {e}", exc_info=True)
+
+    async def _process_mentions_for_sentiment(self, casts: List[Dict[str, Any]]) -> None:
+        """
+        Process mentions/replies to extract sentiment signals.
+        
+        Args:
+            casts: List of cast data from mentions/replies
+        """
+        if not self.world_state_manager:
+            return
+            
+        try:
+            logger.debug(f"Processing {len(casts)} mentions/replies for sentiment analysis")
+            
+            for cast in casts:
+                # Extract user information
+                author = cast.get("author", {})
+                user_fid = str(author.get("fid", ""))
+                
+                if not user_fid:
+                    continue
+                
+                # Mentions/replies are positive engagement signals
+                self.world_state_manager.update_user_sentiment_from_action(
+                    platform="farcaster",
+                    user_identifier=user_fid,
+                    action_type="mention"
+                )
+                
+                logger.debug(f"Updated sentiment for user {user_fid} from mention/reply")
+                
+                # Check if this mention is a response to one of our pending feedback actions
+                cast_hash = cast.get("hash")
+                parent_hash = cast.get("parent_hash")
+                
+                if parent_hash and self.world_state_manager.remove_pending_feedback_action(parent_hash):
+                    logger.info(f"Received mention feedback for pending action {parent_hash} from user {user_fid}")
+                
+        except Exception as e:
+            logger.error(f"Error processing mentions for sentiment: {e}", exc_info=True)
