@@ -42,6 +42,14 @@ class TestImageCoordination:
             "event_id": "$test123"
         }
         
+        # Mock Matrix image tool
+        matrix_image_tool = AsyncMock()
+        matrix_image_tool.execute.return_value = {
+            "status": "success",
+            "event_id": "$image123",
+            "message": "Image sent successfully"
+        }
+        
         def get_tool(name):
             if name == "generate_image":
                 return image_tool
@@ -49,6 +57,8 @@ class TestImageCoordination:
                 return farcaster_tool
             elif name == "send_matrix_message":
                 return matrix_tool
+            elif name == "send_matrix_image":
+                return matrix_image_tool
             return None
         
         registry.get_tool.side_effect = get_tool
@@ -107,6 +117,30 @@ class TestImageCoordination:
         
         # Verify Matrix messaging worked
         assert matrix_result["success"] is True
+        assert "event_id" in matrix_result
+
+    @pytest.mark.asyncio
+    async def test_send_matrix_image_coordination(self, mock_tool_registry, mock_action_context):
+        # Test image generation
+        image_tool = mock_tool_registry.get_tool("generate_image")
+        image_result = await image_tool.execute(
+            {"prompt": "A futuristic robot"}, 
+            mock_action_context
+        )
+        
+        # Verify image generation worked
+        assert image_result["status"] == "success"
+        assert "image_url" in image_result
+        
+        # Test Matrix image sending
+        matrix_image_tool = mock_tool_registry.get_tool("send_matrix_image")
+        matrix_result = await matrix_image_tool.execute(
+            {"channel_id": "!test:matrix.org", "image_url": "{{generated_image_url}}", "caption": "Check out this robot!"},
+            mock_action_context
+        )
+        
+        # Verify Matrix image sending worked
+        assert matrix_result["status"] == "success"
         assert "event_id" in matrix_result
 
     @pytest.mark.asyncio

@@ -153,6 +153,14 @@ class TraditionalProcessor:
                         if image_result.get("status") == "success" and "embed_page_url" in image_result:
                             # Inject the embed URL into the posting action
                             action.parameters["embed_url"] = image_result["embed_page_url"]
+                elif action.action_type == "send_matrix_image":
+                    # Check if we have a generated image to coordinate with
+                    if "generate_image" in execution_results:
+                        image_result = execution_results["generate_image"]
+                        if image_result.get("status") == "success" and "s3_image_url" in image_result:
+                            # Inject the image URL into the Matrix image action
+                            action.parameters["image_url"] = image_result["s3_image_url"]
+                            logger.info(f"Coordinated send_matrix_image with generated image: {image_result['s3_image_url']}")
                 
                 # Execute the action
                 result = await self._execute_action_and_return_result(action)
