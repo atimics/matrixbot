@@ -289,7 +289,6 @@ class MainOrchestrator:
         
             
         # Initialize node-based processing system (depends on core components being set)
-        # This must happen after dependencies are set (either via DI or legacy init)
         self._initialize_node_system()
     
 
@@ -475,9 +474,6 @@ class MainOrchestrator:
             # Initialize integration manager
             await self.integration_manager.initialize()
             
-            # Initialize external observers (legacy method for backward compatibility)
-            await self._initialize_observers()
-            
             # Register integrations from environment variables
             await self._register_integrations_from_env()
             
@@ -532,13 +528,6 @@ class MainOrchestrator:
         
         # Clean up integration manager resources
         await self.integration_manager.cleanup()
-        
-        # Stop external observers (legacy compatibility)
-        if self.matrix_observer:
-            await self.matrix_observer.stop()
-
-        if self.farcaster_observer:
-            await self.farcaster_observer.stop()
 
         logger.info("Main orchestrator system stopped")
 
