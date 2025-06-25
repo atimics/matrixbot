@@ -266,19 +266,19 @@ class TestArchitecturalRefinements:
             assert result == {"test": "data"}, "Should return parsed JSON"
             
         # Test the updated home feed method using the correct endpoint
-        with patch.object(client, '_make_request', return_value=mock_response):
+        with patch.object(client, '_make_request', return_value=mock_response) as mock_make_request:
             result = await client.get_home_feed("12345", limit=10)
             # Verify it uses the correct endpoint
-            client._make_request.assert_called_with(
+            mock_make_request.assert_called_with(
                 "GET", "/farcaster/feed/following", 
                 params={"fid": "12345", "limit": 10, "with_recasts": True}
             )
             
         # Test the updated notifications method
-        with patch.object(client, '_make_request', return_value=mock_response):
+        with patch.object(client, '_make_request', return_value=mock_response) as mock_make_request:
             result = await client.get_notifications("12345", limit=15)
             # Verify it respects the API limit constraints
-            client._make_request.assert_called_with(
+            mock_make_request.assert_called_with(
                 "GET", "/farcaster/notifications",
                 params={"fid": "12345", "limit": 15}
             )
