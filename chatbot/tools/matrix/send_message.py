@@ -40,7 +40,7 @@ Parameter Consistency Note:
 
 import logging
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from ...config import settings
 from ...utils.markdown_utils import format_for_matrix
@@ -181,6 +181,20 @@ class SendMatrixMessageTool(ToolInterface):
                     room_id, content, reply_to_event_id, 
                     format_as_markdown=format_as_markdown
                 )
+                
+                # SENTIMENT ENHANCEMENT: Record pending feedback action for tracking lack of response
+                if result.get("success") and context.world_state_manager:
+                    event_id = result.get("event_id")
+                    # Find the original user from the message being replied to
+                    original_user_id = await self._get_user_from_event_id(reply_to_event_id, room_id, context)
+                    if original_user_id and event_id:
+                        await context.world_state_manager.add_pending_feedback_action(
+                            reply_event_id=event_id,
+                            original_event_id=reply_to_event_id,
+                            user_id=original_user_id,
+                            platform="matrix"
+                        )
+                        logger.info(f"Recorded pending feedback action for Matrix reply to {original_user_id}")
             else:
                 # This is a regular message
                 result = await matrix_service.send_message(
@@ -267,3 +281,33 @@ class SendMatrixMessageTool(ToolInterface):
             error_msg = f"Error executing {self.name}: {str(e)}"
             logger.exception(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+    async def _get_user_from_event_id(self, event_id: str, room_id: str, context: ActionContext) -> Optional[str]:
+        """
+        Helper method to extract the original user ID from a Matrix event ID for sentiment tracking.
+        
+        Args:
+            event_id: The Matrix event ID we're replying to
+            room_id: The room ID where the event occurred
+            context: The action context containing world state manager
+            
+        Returns:
+            The user identifier (matrix:user_id) of the original event author, or None if not found
+        """
+        try:
+            # First try to find the message in the world state
+            if context.world_state_manager:
+                channel = context.world_state_manager.state.channels.get(room_id)
+                if channel:
+                    for message in channel.recent_messages:
+                        if message.id == event_id:
+                            return f"matrix:{message.sender}"
+            
+            # If not found in world state, we could potentially fetch from Matrix API
+            # For now, we'll return None as Matrix doesn't have an easy way to fetch individual events
+            logger.warning(f"Could not find user for Matrix event {event_id} in room {room_id}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error getting user from Matrix event {event_id}: {e}")
+            return None

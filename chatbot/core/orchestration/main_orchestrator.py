@@ -291,6 +291,10 @@ class MainOrchestrator:
         self.running = False
         self.cycle_count = 0  # Track processing cycles
         
+        # SENTIMENT ENHANCEMENT: Periodic task for feedback checking
+        self._sentiment_feedback_task: Optional[asyncio.Task] = None
+        self._sentiment_feedback_interval = 900  # 15 minutes
+        
             
         # Initialize node-based processing system (depends on core components being set)
         self._initialize_node_system()
@@ -502,6 +506,12 @@ class MainOrchestrator:
             # Start the processing loop
             await self.processing_hub.start_processing_loop()
             
+            # SENTIMENT ENHANCEMENT: Start sentiment feedback checking task
+            await self._start_sentiment_feedback_task()
+            
+            # Start the periodic sentiment feedback checking task
+            await self._start_sentiment_feedback_task()
+            
         except Exception as e:
             logger.error(f"Error starting main orchestrator: {e}")
             raise
@@ -515,6 +525,9 @@ class MainOrchestrator:
 
         logger.info("Stopping main orchestrator system...")
         self.running = False
+
+        # SENTIMENT ENHANCEMENT: Stop sentiment feedback checking task
+        await self._stop_sentiment_feedback_task()
 
         # Stop processing hub
         self.processing_hub.stop_processing_loop()
@@ -532,6 +545,9 @@ class MainOrchestrator:
         
         # Clean up integration manager resources
         await self.integration_manager.cleanup()
+
+        # Stop the periodic sentiment feedback checking task
+        await self._stop_sentiment_feedback_task()
 
         logger.info("Main orchestrator system stopped")
 
@@ -1241,5 +1257,88 @@ class MainOrchestrator:
         #     await matrix_integration.sync_message_history(self.action_context.database_manager)
         
         logger.info("Startup state synchronization completed")
+
+    async def _start_sentiment_feedback_task(self) -> None:
+        """Start the periodic sentiment feedback checking task."""
+        if self._sentiment_feedback_task and not self._sentiment_feedback_task.done():
+            logger.warning("Sentiment feedback task already running")
+            return
+            
+        logger.info("Starting sentiment feedback checking task")
+        self._sentiment_feedback_task = asyncio.create_task(self._sentiment_feedback_loop())
+
+    async def _stop_sentiment_feedback_task(self) -> None:
+        """Stop the periodic sentiment feedback checking task."""
+        if self._sentiment_feedback_task and not self._sentiment_feedback_task.done():
+            logger.info("Stopping sentiment feedback checking task")
+            self._sentiment_feedback_task.cancel()
+            try:
+                await self._sentiment_feedback_task
+            except asyncio.CancelledError:
+                logger.info("Sentiment feedback task cancelled successfully")
+            except Exception as e:
+                logger.error(f"Error cancelling sentiment feedback task: {e}")
+            self._sentiment_feedback_task = None
+
+    async def _sentiment_feedback_loop(self) -> None:
+        """
+        Periodic loop to check for expired pending feedback actions and apply sentiment adjustments.
+        
+        This implements Phase 1 of the sentiment enhancement: detecting lack of positive feedback
+        on bot replies and applying negative sentiment accordingly.
+        """
+        logger.info(f"Sentiment feedback checking loop started (interval: {self._sentiment_feedback_interval}s)")
+        
+        while self.running:
+            try:
+                await asyncio.sleep(self._sentiment_feedback_interval)
+                
+                if not self.running:
+                    break
+                    
+                logger.debug("Checking for expired pending feedback actions...")
+                
+                # Get expired pending feedback actions from world state manager
+                if self.world_state:
+                    expired_actions = await self.world_state.get_expired_pending_feedback_actions()
+                    
+                    if expired_actions:
+                        logger.info(f"Found {len(expired_actions)} expired pending feedback actions")
+                        
+                        for action in expired_actions:
+                            try:
+                                # Apply negative sentiment for lack of feedback
+                                await self.world_state.update_user_sentiment_from_action(
+                                    platform=action.platform,
+                                    user_identifier=action.user_id,
+                                    action_type="no_feedback_on_reply"
+                                )
+                                
+                                # Remove the expired action
+                                await self.world_state.remove_pending_feedback_action(action.reply_event_id)
+                                
+                                logger.info(f"Applied negative sentiment for lack of feedback: {action.user_id}")
+                                
+                            except Exception as e:
+                                logger.error(f"Error processing expired feedback action: {e}", exc_info=True)
+                                # Continue with other actions even if one fails
+                                continue
+                    
+                    # Apply time decay to all user sentiment scores
+                    try:
+                        await self.world_state.apply_time_decay_to_sentiment()
+                        logger.debug("Applied time decay to sentiment scores")
+                    except Exception as e:
+                        logger.error(f"Error applying time decay to sentiment: {e}")
+                
+            except asyncio.CancelledError:
+                logger.info("Sentiment feedback loop cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Error in sentiment feedback loop: {e}", exc_info=True)
+                # Continue the loop even if there's an error
+                continue
+                
+        logger.info("Sentiment feedback checking loop stopped")
 
 

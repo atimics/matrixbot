@@ -508,8 +508,14 @@ class FarcasterObserver(Integration):
         logger.debug("Observing notifications.")
         try:
             data = await self.api_client.get_notifications(fid=self.bot_fid)
+            notifications = data.get("notifications", [])
+            
+            # SENTIMENT ENHANCEMENT: Process notifications for social signals before converting to messages
+            if self.world_state_manager and notifications:
+                await self._process_notifications_for_sentiment(notifications)
+            
             return await convert_api_notifications_to_messages(
-                data.get("notifications", []),
+                notifications,
                 bot_fid=self.bot_fid,
                 last_check_time_for_filtering=self.last_check_time,
                 last_seen_hashes=self.last_seen_hashes,
@@ -535,8 +541,14 @@ class FarcasterObserver(Integration):
             data = await self.api_client.get_replies_and_recasts_for_user(
                 fid=self.bot_fid, filter_type="replies"
             )
+            casts = data.get("casts", [])
+            
+            # SENTIMENT ENHANCEMENT: Process mentions for social signals
+            if self.world_state_manager and casts:
+                await self._process_mentions_for_sentiment(casts)
+            
             return await convert_api_casts_to_messages(
-                data.get("casts", []),
+                casts,
                 channel_id_prefix="farcaster:mentions_and_replies",
                 cast_type_metadata="mention_or_reply",
                 bot_fid=self.bot_fid,
@@ -1169,3 +1181,69 @@ class FarcasterObserver(Integration):
         except Exception as e:
             logger.error(f"Error observing 'For You' feed: {e}", exc_info=True)
             return []
+    
+    async def _process_notifications_for_sentiment(self, notifications: List[Dict[str, Any]]) -> None:
+        """
+        Process Farcaster notifications to extract social signals and update user sentiment.
+        
+        This method analyzes notifications for:
+        - Likes (positive reactions to bot content)
+        - Recasts/shares (strong positive signals)
+        - Mentions (direct engagement)
+        - Quote posts (commentary/engagement)
+        
+        Args:
+            notifications: List of notification data from Farcaster API
+        """
+        if not self.world_state_manager:
+            return
+            
+        try:
+            logger.debug(f"Processing {len(notifications)} notifications for sentiment analysis")
+            
+            for notification in notifications:
+                notification_type = notification.get("type", "").lower()
+                cast_data = notification.get("cast", {})
+                
+                # Extract user information
+                author = cast_data.get("author", {})
+                user_fid = str(author.get("fid", ""))
+                
+                if not user_fid:
+                    continue
+                
+                # Map notification types to sentiment actions
+                action_type = None
+                
+                if notification_type == "likes":
+                    action_type = "like"
+                elif notification_type == "recasts":
+                    action_type = "recast"  
+                elif notification_type == "mentions":
+                    action_type = "mention"
+                elif notification_type == "replies":
+                    action_type = "mention"  # Treat replies as mentions for sentiment
+                elif notification_type == "follows":
+                    action_type = "positive_reaction"  # New follower is positive
+                elif "quote" in notification_type:
+                    action_type = "quote_post"
+                
+                if action_type:
+                    # Update sentiment for the user who performed the action
+                    self.world_state_manager.update_user_sentiment_from_action(
+                        platform="farcaster",
+                        user_identifier=user_fid,
+                        action_type=action_type
+                    )
+                    
+                    logger.debug(f"Updated sentiment for user {user_fid} from {notification_type} notification")
+                    
+                    # Check if this action relates to a pending feedback action (user reacted to our reply)
+                    cast_hash = cast_data.get("hash")
+                    if cast_hash and action_type in ["like", "recast", "mention"]:
+                        # Check if this cast hash is one of our pending feedback actions
+                        if self.world_state_manager.remove_pending_feedback_action(cast_hash):
+                            logger.info(f"Received positive feedback for pending action {cast_hash} from user {user_fid}")
+                
+        except Exception as e:
+            logger.error(f"Error processing notifications for sentiment: {e}", exc_info=True)

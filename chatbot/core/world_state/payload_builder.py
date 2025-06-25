@@ -180,6 +180,12 @@ class PayloadBuilder:
                     has_replied = world_state_data.has_replied_to_cast(msg.id)
                     msg_dict = msg.to_ai_summary_dict() if optimize_for_size else asdict(msg)
                     msg_dict['already_replied'] = has_replied
+                    
+                    # SENTIMENT ENHANCEMENT: Add user sentiment data to message
+                    sender_sentiment = self._get_user_sentiment_for_message(msg, world_state_data)
+                    if sender_sentiment:
+                        msg_dict['user_sentiment'] = sender_sentiment
+                    
                     messages_for_payload.append(msg_dict)
                 
                 channels_payload[ch_id] = {
@@ -1194,3 +1200,66 @@ class PayloadBuilder:
         """Reset optimization statistics."""
         self.optimizer.reset_stats()
         logger.info("Payload optimization statistics reset")
+    
+    def _get_user_sentiment_for_message(self, message, world_state_data: WorldStateData) -> Optional[Dict[str, Any]]:
+        """
+        Get user sentiment data for a message sender to include in message payload.
+        
+        Args:
+            message: The message object
+            world_state_data: The world state data containing user profiles
+            
+        Returns:
+            Dictionary with sentiment info or None if not found
+        """
+        try:
+            # Try to get sentiment from Farcaster users first
+            if hasattr(message, 'sender') and message.sender:
+                # For Farcaster messages, sender might be the FID
+                farcaster_users = getattr(world_state_data, 'farcaster_users', {})
+                if message.sender in farcaster_users:
+                    user = farcaster_users[message.sender]
+                    sentiment = getattr(user, 'sentiment', None)
+                    if sentiment:
+                        return {
+                            "score": getattr(sentiment, 'sentiment_score', 0.0),
+                            "label": getattr(sentiment, 'current_sentiment', 'neutral')
+                        }
+                
+                # Try Matrix users
+                matrix_users = getattr(world_state_data, 'matrix_users', {})
+                if message.sender in matrix_users:
+                    user = matrix_users[message.sender]
+                    sentiment = getattr(user, 'sentiment', None)
+                    if sentiment:
+                        return {
+                            "score": getattr(sentiment, 'sentiment_score', 0.0),
+                            "label": getattr(sentiment, 'current_sentiment', 'neutral')
+                        }
+                
+                # Try with platform prefix format (e.g., "farcaster:123" or "matrix:@user:domain.com")
+                for platform_prefix in ["farcaster:", "matrix:"]:
+                    platform_key = f"{platform_prefix}{message.sender}"
+                    if platform_prefix == "farcaster:" and farcaster_users:
+                        for fid, user in farcaster_users.items():
+                            if fid == message.sender or platform_key.endswith(fid):
+                                sentiment = getattr(user, 'sentiment', None)
+                                if sentiment:
+                                    return {
+                                        "score": getattr(sentiment, 'sentiment_score', 0.0),
+                                        "label": getattr(sentiment, 'current_sentiment', 'neutral')
+                                    }
+                    elif platform_prefix == "matrix:" and matrix_users:
+                        for user_id, user in matrix_users.items():
+                            if user_id == message.sender or platform_key == user_id:
+                                sentiment = getattr(user, 'sentiment', None)
+                                if sentiment:
+                                    return {
+                                        "score": getattr(sentiment, 'sentiment_score', 0.0),
+                                        "label": getattr(sentiment, 'current_sentiment', 'neutral')
+                                    }
+            
+            return None
+        except Exception as e:
+            logger.error(f"Error getting user sentiment for message: {e}")
+            return None

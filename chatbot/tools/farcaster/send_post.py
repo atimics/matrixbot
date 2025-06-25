@@ -4,7 +4,7 @@ Tool for sending posts to Farcaster.
 import asyncio
 import logging
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from ..base import ActionContext, ToolInterface
 from ...utils.markdown_utils import strip_markdown
@@ -301,6 +301,19 @@ class SendFarcasterPostTool(ToolInterface):
                         content, reply_to_hash, action_id
                     )
                     success_msg = f"Scheduled Farcaster reply to cast {reply_to_hash}"
+                    
+                    # SENTIMENT ENHANCEMENT: Record pending feedback action for tracking lack of response
+                    if context.world_state_manager:
+                        # Find the original user from the cast being replied to
+                        original_user_id = await self._get_user_from_cast_hash(reply_to_hash, context)
+                        if original_user_id:
+                            await context.world_state_manager.add_pending_feedback_action(
+                                reply_event_id=action_id or f"farcaster_reply_{reply_to_hash}_{int(time.time())}",
+                                original_event_id=reply_to_hash,
+                                user_id=original_user_id,
+                                platform="farcaster"
+                            )
+                            logger.info(f"Recorded pending feedback action for reply to {original_user_id}")
                 else:
                     # Note: The schedule_post method now handles embeds properly
                     farcaster_observer.schedule_post(
@@ -437,3 +450,40 @@ class SendFarcasterPostTool(ToolInterface):
             return True
         except ValueError:
             return False
+
+    async def _get_user_from_cast_hash(self, cast_hash: str, context: ActionContext) -> Optional[str]:
+        """
+        Helper method to extract the original user ID from a cast hash for sentiment tracking.
+        
+        Args:
+            cast_hash: The hash of the cast we're replying to
+            context: The action context containing world state manager
+            
+        Returns:
+            The user identifier (farcaster:fid) of the original cast author, or None if not found
+        """
+        try:
+            # First try to find the cast in the world state
+            if context.world_state_manager:
+                for channel in context.world_state_manager.state.channels.values():
+                    for message in channel.recent_messages:
+                        if message.id == cast_hash:
+                            return f"farcaster:{message.sender}"
+            
+            # If not found in world state, try to fetch from API
+            farcaster_observer = get_farcaster_observer(context)
+            if farcaster_observer and farcaster_observer.api_client:
+                try:
+                    cast_data = await farcaster_observer.api_client.get_cast_by_hash(cast_hash)
+                    if cast_data and cast_data.get("cast"):
+                        author = cast_data["cast"].get("author", {})
+                        author_fid = author.get("fid")
+                        if author_fid:
+                            return f"farcaster:{author_fid}"
+                except Exception as e:
+                    logger.warning(f"Failed to fetch cast data for sentiment tracking: {e}")
+            
+            return None
+        except Exception as e:
+            logger.error(f"Error getting user from cast hash {cast_hash}: {e}")
+            return None
