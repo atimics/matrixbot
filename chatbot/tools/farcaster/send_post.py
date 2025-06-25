@@ -176,6 +176,20 @@ class SendFarcasterPostTool(ToolInterface):
             try:
                 thread_id = reply_to_hash  # For Farcaster, the reply target becomes the thread ID
                 
+                # Check if the thread exists first
+                if not hasattr(context.world_state_manager.state, 'threads') or not context.world_state_manager.state.threads.get(thread_id):
+                    error_msg = f"THREAD CONTEXT MISSING: Cannot reply to {thread_id} because the conversation thread is not in memory. Use the 'get_cast_by_url' tool first to fetch the conversation context."
+                    logger.warning(error_msg)
+                    # Return a specific, actionable error for the AI
+                    return {
+                        "status": "blocked",
+                        "message": "Reply blocked: Missing conversation context.",
+                        "reason": "missing_thread_context",
+                        "next_action_suggestion": f"Use 'get_cast_by_url' with the hash '{thread_id}' to load the conversation context before attempting to reply.",
+                        "reply_to_hash": reply_to_hash,
+                        "timestamp": time.time()
+                    }
+
                 if not context.world_state_manager.is_bot_turn_in_thread(thread_id):
                     error_msg = f"THREAD TURN VIOLATION: It is not the bot's turn to speak in thread {thread_id}. This prevents spam and maintains natural conversation flow."
                     logger.error(error_msg)
@@ -187,7 +201,7 @@ class SendFarcasterPostTool(ToolInterface):
                         "timestamp": time.time()
                     }
                 
-                logger.info(f"Layer 3 passed: Thread turn validation approved for {thread_id}"                    )
+                logger.info(f"Layer 3 passed: Thread turn validation approved for {thread_id}")
 
             except Exception as e:
                 # DEFENSIVE: Gracefully handle validation errors
