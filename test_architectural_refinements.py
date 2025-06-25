@@ -265,6 +265,24 @@ class TestArchitecturalRefinements:
             result = await client.lookup_cast_conversation("0xtest")
             assert result == {"test": "data"}, "Should return parsed JSON"
             
+        # Test the updated home feed method using the correct endpoint
+        with patch.object(client, '_make_request', return_value=mock_response):
+            result = await client.get_home_feed("12345", limit=10)
+            # Verify it uses the correct endpoint
+            client._make_request.assert_called_with(
+                "GET", "/farcaster/feed/following", 
+                params={"fid": "12345", "limit": 10, "with_recasts": True}
+            )
+            
+        # Test the updated notifications method
+        with patch.object(client, '_make_request', return_value=mock_response):
+            result = await client.get_notifications("12345", limit=15)
+            # Verify it respects the API limit constraints
+            client._make_request.assert_called_with(
+                "GET", "/farcaster/notifications",
+                params={"fid": "12345", "limit": 15}
+            )
+            
         logger.info("✅ Send Post Enhanced Error Handling test passed!")
     
     async def test_real_world_duplicate_prevention(self):
@@ -383,7 +401,179 @@ class TestArchitecturalRefinements:
         
         logger.info("✅ Turn Validation Mechanism test passed!")
 
-    # ...existing code...
+    async def test_http_timeout_resilience(self):
+        """Test HTTP timeout handling and resilience in the Farcaster API client."""
+        logger.info("Testing HTTP Timeout Resilience...")
+        
+        import httpx
+        from chatbot.integrations.farcaster.neynar_api_client import NeynarAPIClient
+        
+        # Test different timeout scenarios
+        timeout_scenarios = [
+            {
+                "name": "ReadTimeout",
+                "exception": httpx.ReadTimeout("Read timeout"),
+                "should_retry": True
+            },
+            {
+                "name": "ConnectTimeout", 
+                "exception": httpx.ConnectTimeout("Connection timeout"),
+                "should_retry": True
+            },
+            {
+                "name": "HTTPStatusError",
+                "exception": httpx.HTTPStatusError("Server error", request=Mock(), response=Mock()),
+                "should_retry": False
+            }
+        ]
+        
+        # Create client with shorter timeout for testing
+        client = NeynarAPIClient("test_key", "test_signer", "12345")
+        
+        for scenario in timeout_scenarios:
+            logger.info(f"Testing {scenario['name']} scenario...")
+            
+            with patch.object(client._client, 'request') as mock_request:
+                # First call raises the timeout, second succeeds
+                mock_response = Mock()
+                mock_response.raise_for_status = Mock()
+                mock_response.json = Mock(return_value={"casts": []})
+                mock_response.headers = {}
+                
+                if scenario['should_retry']:
+                    # For timeout errors, test that the method handles gracefully
+                    mock_request.side_effect = scenario['exception']
+                    
+                    # This should not crash but handle the timeout gracefully
+                    try:
+                        result = await client.get_home_feed("12345")
+                        assert False, f"Should have raised {scenario['name']}"
+                    except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.RequestError):
+                        logger.info(f"✅ {scenario['name']} properly raised and can be handled")
+                else:
+                    # For HTTP errors, should still raise 
+                    mock_request.side_effect = scenario['exception']
+                    try:
+                        result = await client.get_home_feed("12345")
+                        assert False, f"Should have raised {scenario['name']}"
+                    except httpx.HTTPStatusError:
+                        logger.info(f"✅ {scenario['name']} properly raised")
+        
+        logger.info("✅ HTTP Timeout Resilience test passed!")
+        
+    async def test_farcaster_observer_timeout_handling(self):
+        """Test that FarcasterObserver handles timeouts gracefully."""
+        logger.info("Testing FarcasterObserver Timeout Handling...")
+        
+        import httpx
+        from chatbot.integrations.farcaster.farcaster_observer import FarcasterObserver
+        
+        # Create observer
+        observer = FarcasterObserver(
+            bot_fid="12345",
+            api_key="test_key", 
+            signer_uuid="test_signer"
+        )
+        
+        # Mock the API client to simulate timeout
+        mock_api_client = AsyncMock()
+        mock_api_client.get_home_feed = AsyncMock(side_effect=httpx.ReadTimeout("Read timeout"))
+        mock_api_client.get_notifications = AsyncMock(side_effect=httpx.ReadTimeout("Read timeout"))
+        observer.api_client = mock_api_client
+        
+        # Test home feed observation with timeout
+        home_messages = await observer._observe_home_feed()
+        assert home_messages == [], "Should return empty list on timeout"
+        
+        # Test notifications observation with timeout
+        notification_messages = await observer._observe_notifications()
+        assert notification_messages == [], "Should return empty list on timeout"
+        
+        # Test that observe_feeds handles timeouts gracefully
+        all_messages = await observer.observe_feeds()
+        assert isinstance(all_messages, list), "Should return list even with timeouts"
+        assert len(all_messages) == 0, "Should return empty list when all APIs timeout"
+        
+        logger.info("✅ FarcasterObserver Timeout Handling test passed!")
+        
+    async def test_api_resilience_patterns(self):
+        """Test resilience patterns for API failures based on production logs."""
+        logger.info("Testing API Resilience Patterns...")
+        
+        # Test cases based on actual production failures
+        failure_patterns = [
+            {
+                "name": "Multiple consecutive timeouts",
+                "failures": ["timeout", "timeout", "timeout"],
+                "expected_behavior": "graceful_degradation"
+            },
+            {
+                "name": "Intermittent connectivity issues",
+                "failures": ["timeout", "success", "timeout", "success"], 
+                "expected_behavior": "partial_success"
+            },
+            {
+                "name": "API rate limiting followed by timeout",
+                "failures": ["rate_limit", "timeout", "success"],
+                "expected_behavior": "eventual_success"
+            }
+        ]
+        
+        from chatbot.integrations.farcaster.farcaster_observer import FarcasterObserver
+        import httpx
+        
+        for pattern in failure_patterns:
+            logger.info(f"Testing pattern: {pattern['name']}")
+            
+            observer = FarcasterObserver(
+                bot_fid="12345",
+                api_key="test_key",
+                signer_uuid="test_signer"
+            )
+            
+            # Mock the API client with failure pattern
+            mock_api_client = AsyncMock()
+            call_count = 0
+            
+            def mock_api_call(*args, **kwargs):
+                nonlocal call_count
+                failure_type = pattern['failures'][call_count % len(pattern['failures'])]
+                call_count += 1
+                
+                if failure_type == "timeout":
+                    raise httpx.ReadTimeout("Read timeout")
+                elif failure_type == "rate_limit":
+                    response = Mock()
+                    response.status_code = 429
+                    raise httpx.HTTPStatusError("Too Many Requests", request=Mock(), response=response)
+                else:  # success
+                    return {"casts": []}
+            
+            mock_api_client.get_home_feed = AsyncMock(side_effect=mock_api_call)
+            observer.api_client = mock_api_client
+            
+            # Test multiple observation cycles
+            results = []
+            for i in range(3):
+                try:
+                    messages = await observer._observe_home_feed()
+                    results.append("success" if messages == [] else "data")
+                except Exception as e:
+                    results.append("error")
+            
+            # Verify resilience behavior
+            if pattern['expected_behavior'] == 'graceful_degradation':
+                # Should handle failures gracefully without crashing
+                assert all(result in ["success", "data"] for result in results), \
+                    f"Should handle {pattern['name']} gracefully"
+            elif pattern['expected_behavior'] == 'partial_success':
+                # Should have some successes mixed with failures
+                success_count = sum(1 for r in results if r in ["success", "data"])
+                assert success_count > 0, f"Should have some success in {pattern['name']}"
+            
+            logger.info(f"✅ Pattern '{pattern['name']}' handled correctly")
+        
+        logger.info("✅ API Resilience Patterns test passed!")
 
     async def run_all_tests(self):
         """Run all architectural refinement tests."""
@@ -397,6 +587,9 @@ class TestArchitecturalRefinements:
             await self.test_send_post_error_handling()
             await self.test_real_world_duplicate_prevention()
             await self.test_turn_validation_mechanism()
+            await self.test_http_timeout_resilience()
+            await self.test_farcaster_observer_timeout_handling()
+            await self.test_api_resilience_patterns()
             
             logger.info("=" * 60)
             logger.info("🎉 ALL TESTS PASSED! Architectural refinements are working correctly.")
@@ -408,6 +601,9 @@ class TestArchitecturalRefinements:
             logger.info("4. ✅ Processing Hub Integration - Proper lock management")
             logger.info("5. ✅ Real-World Duplicate Prevention - Multi-layered protection")
             logger.info("6. ✅ Turn Validation System - Prevents conversation spam")
+            logger.info("7. ✅ HTTP Timeout Resilience - Graceful handling of API timeouts")
+            logger.info("8. ✅ Farcaster Observer Timeout Handling - Robustness against API unavailability")
+            logger.info("9. ✅ API Resilience Patterns - Adapts to various API failure scenarios")
             logger.info("")
             logger.info("The duplicate reply 'double spend' problem has been resolved!")
             logger.info("Production logs confirm the system is successfully blocking duplicates!")

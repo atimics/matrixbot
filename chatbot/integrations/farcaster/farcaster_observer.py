@@ -13,6 +13,8 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import httpx
+
 from ...core.world_state import Message
 from ..base import Integration, IntegrationError, IntegrationConnectionError
 from .farcaster_data_converter import (
@@ -487,6 +489,12 @@ class FarcasterObserver(Integration):
                 last_check_time_for_filtering=self.last_check_time,
                 last_seen_hashes=self.last_seen_hashes,
             )
+        except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.PoolTimeout) as e:
+            logger.warning(f"Timeout observing home feed - continuing with empty result: {e}")
+            return []
+        except httpx.HTTPStatusError as e:
+            logger.warning(f"HTTP error observing home feed (status {e.response.status_code}) - continuing with empty result")
+            return []
         except Exception as e:
             logger.error(f"Error observing home feed: {e}", exc_info=True)
             return []
@@ -506,6 +514,12 @@ class FarcasterObserver(Integration):
                 last_check_time_for_filtering=self.last_check_time,
                 last_seen_hashes=self.last_seen_hashes,
             )
+        except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.PoolTimeout) as e:
+            logger.warning(f"Timeout observing notifications - continuing with empty result: {e}")
+            return []
+        except httpx.HTTPStatusError as e:
+            logger.warning(f"HTTP error observing notifications (status {e.response.status_code}) - continuing with empty result")
+            return []
         except Exception as e:
             logger.error(f"Error observing notifications: {e}", exc_info=True)
             return []

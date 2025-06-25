@@ -4,6 +4,7 @@ Neynar API Client for Farcaster
 
 This module provides a client for interacting with the Neynar Farcaster API.
 """
+import asyncio
 import logging
 from typing import Any, Dict, List, Optional, Union
 
@@ -25,6 +26,9 @@ class NeynarAPIClient:
         signer_uuid: Optional[str] = None,
         bot_fid: Optional[str] = None,
         base_url: Optional[str] = None,
+        timeout: float = 30.0,
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
     ):
         if not api_key:
             raise ValueError("API key is required for NeynarAPIClient.")
@@ -32,7 +36,17 @@ class NeynarAPIClient:
         self.signer_uuid = signer_uuid
         self.bot_fid = bot_fid
         self.base_url = base_url or self.DEFAULT_BASE_URL
-        self._client = httpx.AsyncClient(timeout=30.0)
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+        
+        # Create client with custom timeout settings
+        timeout_config = httpx.Timeout(
+            connect=10.0,    # Connection timeout
+            read=timeout,    # Read timeout  
+            write=10.0,      # Write timeout
+            pool=30.0        # Pool timeout
+        )
+        self._client = httpx.AsyncClient(timeout=timeout_config)
         
         # Rate limit tracking
         self.rate_limit_info = {
@@ -63,29 +77,65 @@ class NeynarAPIClient:
         logger.debug(
             f"Making {method.upper()} request to {url} with params={params} json={json_data}"
         )
-        try:
-            response = await self._client.request(
-                method, url, params=params, json=json_data, headers=headers
-            )
-            self._update_rate_limits(response)
-            response.raise_for_status()
-            return response
-        except httpx.HTTPStatusError as e:
-            # Provide more specific error context for debugging
-            response_text = e.response.text if hasattr(e.response, 'text') else 'No response text'
-            logger.error(
-                f"HTTP error for {method.upper()} {url}: {e.response.status_code} - {response_text}"
-            )
-            # For 404 errors on cast operations, provide specific guidance
-            if e.response.status_code == 404 and ("/farcaster/cast" in url):
-                if "conversation" in url:
-                    logger.error(f"Cast conversation not found - the cast may have been deleted or the hash is invalid")
-                elif method.upper() == "POST":
-                    logger.error(f"Cannot post/reply - parent cast not found or invalid")
-            raise
-        except httpx.RequestError as e:
-            logger.error(f"Request error for {method.upper()} {url}: {e}")
-            raise
+        
+        last_exception = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                response = await self._client.request(
+                    method, url, params=params, json=json_data, headers=headers
+                )
+                self._update_rate_limits(response)
+                response.raise_for_status()
+                return response
+                
+            except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.PoolTimeout) as e:
+                last_exception = e
+                if attempt < self.max_retries:
+                    wait_time = self.retry_delay * (2 ** attempt)  # Exponential backoff
+                    logger.warning(
+                        f"Timeout on {method.upper()} {url} (attempt {attempt + 1}/{self.max_retries + 1}). "
+                        f"Retrying in {wait_time:.1f}s... Error: {e}"
+                    )
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.error(
+                        f"Request timeout after {self.max_retries + 1} attempts for {method.upper()} {url}: {e}"
+                    )
+                    raise
+                    
+            except httpx.HTTPStatusError as e:
+                # Don't retry HTTP status errors, but provide better context
+                response_text = e.response.text if hasattr(e.response, 'text') else 'No response text'
+                logger.error(
+                    f"HTTP error for {method.upper()} {url}: {e.response.status_code} - {response_text}"
+                )
+                # For 404 errors on cast operations, provide specific guidance
+                if e.response.status_code == 404 and ("/farcaster/cast" in url):
+                    if "conversation" in url:
+                        logger.error(f"Cast conversation not found - the cast may have been deleted or the hash is invalid")
+                    elif method.upper() == "POST":
+                        logger.error(f"Cannot post/reply - parent cast not found or invalid")
+                raise
+                
+            except httpx.RequestError as e:
+                last_exception = e
+                if attempt < self.max_retries:
+                    wait_time = self.retry_delay * (2 ** attempt)
+                    logger.warning(
+                        f"Request error on {method.upper()} {url} (attempt {attempt + 1}/{self.max_retries + 1}). "
+                        f"Retrying in {wait_time:.1f}s... Error: {e}"
+                    )
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.error(f"Request error after {self.max_retries + 1} attempts for {method.upper()} {url}: {e}")
+                    raise
+        
+        # This should never be reached, but just in case
+        if last_exception:
+            raise last_exception
+        else:
+            # This should never happen but satisfies type checker
+            raise RuntimeError("Unexpected error: no exception but no response")
 
     def _update_rate_limits(self, response: httpx.Response):
         """
@@ -171,21 +221,67 @@ class NeynarAPIClient:
         self,
         fid: str,
         limit: int = 25,
-        include_replies: bool = True,
         with_recasts: bool = True,
+        viewer_fid: Optional[str] = None,
+        cursor: Optional[str] = None,
     ) -> Dict[str, Any]:
+        """
+        Fetch feed based on who a user is following using the dedicated following endpoint.
+        
+        Args:
+            fid: FID of user whose feed you want to create (required)
+            limit: Number of results to fetch (1-100, default 25)
+            with_recasts: Include recasts in the response (default True)
+            viewer_fid: Optional viewer FID for mutes/blocks context
+            cursor: Optional pagination cursor
+        """
+        # Validate limit according to API constraints
+        if limit < 1 or limit > 100:
+            raise ValueError("Limit must be between 1 and 100")
+            
         params = {
             "fid": fid,
-            "feed_type": "following",
             "limit": limit,
-            "include_replies": include_replies,
             "with_recasts": with_recasts,
         }
-        response = await self._make_request("GET", "/farcaster/feed", params=params)
+        
+        # Add optional parameters if provided
+        if viewer_fid:
+            params["viewer_fid"] = str(viewer_fid)
+        if cursor:
+            params["cursor"] = cursor
+            
+        response = await self._make_request("GET", "/farcaster/feed/following", params=params)
         return response.json()
 
-    async def get_notifications(self, fid: str, limit: int = 25) -> Dict[str, Any]:
+    async def get_notifications(
+        self, 
+        fid: str, 
+        limit: int = 15,
+        notification_type: Optional[str] = None,
+        cursor: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Returns a list of notifications for a specific FID.
+        
+        Args:
+            fid: FID of the user to fetch notifications for (required)
+            limit: Number of results to fetch (1-25, default 15)
+            notification_type: Comma-separated notification types: follows, recasts, likes, mentions, replies
+            cursor: Optional pagination cursor
+        """
+        # Validate limit according to API constraints
+        if limit < 1 or limit > 25:
+            raise ValueError("Limit must be between 1 and 25 for notifications")
+            
         params = {"fid": fid, "limit": limit}
+        
+        # Add optional parameters if provided
+        if notification_type:
+            params["type"] = notification_type
+        if cursor:
+            params["cursor"] = cursor
+            
         response = await self._make_request(
             "GET", "/farcaster/notifications", params=params
         )
