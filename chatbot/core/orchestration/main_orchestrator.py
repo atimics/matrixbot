@@ -354,9 +354,6 @@ class MainOrchestrator:
             config=attention_config
         )
         
-        # Connect AttentionEngine to ProcessingHub for channel lock management
-        self.processing_hub.set_attention_engine(self.attention_engine)
-        
         # Processing hub with thread-centric architecture
         self.processing_hub = ProcessingHub(
             world_state_manager=self.world_state,
