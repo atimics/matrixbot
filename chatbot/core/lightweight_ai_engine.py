@@ -174,7 +174,7 @@ Focus on simple, conversational actions that directly advance the mission. Avoid
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
-                "HTTP-Referer": "https://github.com/ratimics/matrixbot",
+                "HTTP-Referer": "https://github.com/atimics/matrixbot",
                 "X-Title": "MatrixBot Lightweight AI"
             }
             

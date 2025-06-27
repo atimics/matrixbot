@@ -1,4 +1,4 @@
-# RatiChat AI - Full-Stack Containerized Architecture
+# RatiChat AI - Full-Stack Containerized Architecture with Snapchain
 
 services:
   postgres:
@@ -21,6 +21,94 @@ services:
       timeout: 5s
       retries: 5
 
+  # NEW: Farcaster Snapchain Node
+  snapchain:
+    image: farcasterxyz/snapchain:latest
+    container_name: ratichat_snapchain
+    command: --network mainnet # Use mainnet. For testnet, use --network testnet
+    restart: unless-stopped
+    ports:
+      # Expose ports to the host machine if needed for direct debugging
+      # but they are accessible within the Docker network by their internal ports.
+      - "3381:3381" # HTTP API
+      - "3382:3382" # Gossip (for peering with other nodes)
+      - "3383:3383" # gRPC (this is what your backend will use)
+    volumes:
+      - snapchain_data:/data # Persist snapchain data to a Docker volume
+    networks:
+      - ratichat_network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3381/v1/info || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 2m # Give the node time to start up before healthchecking
+
+  # NEW: Secure Farcaster Signer Service
+  signer_service:
+    build:
+      context: ./signer_service
+      dockerfile: Dockerfile
+    container_name: ratichat_signer_service
+    restart: unless-stopped
+    ports:
+      - "8002:8000" # Internal port 8000, exposed as 8002
+    volumes:
+      - signer_data:/secure_storage # Persistent encrypted key storage
+    networks:
+      - ratichat_network
+    environment:
+      # Key management configuration
+      - SECURE_STORAGE_PATH=/secure_storage
+      - SIGNER_KEY_ID=default
+      - USE_CLOUD_HSM=false # Set to true for AWS KMS/Azure Key Vault
+      - AUTO_GENERATE_KEY=true # Auto-generate key on first run
+      - DEFAULT_FID=${FARCASTER_BOT_FID:-} # Set this in your .env file
+      
+      # For production, use cloud secrets management:
+      # - AWS_REGION=us-east-1
+      # - AWS_SIGNER_MASTER_KEY_ARN=arn:aws:secretsmanager:region:account:secret:name
+      # - AZURE_KEY_VAULT_URL=https://your-vault.vault.azure.net/
+      # - AZURE_SIGNER_MASTER_KEY_NAME=signer-master-key
+      
+      # For development only - use a strong base64-encoded key:
+      - SIGNER_MASTER_KEY=${SIGNER_MASTER_KEY:-}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # NEW: In-house Farcaster API service
+  farcaster_api_service:
+    build:
+      context: ./farcaster_api_service
+      dockerfile: Dockerfile
+    container_name: ratichat_farcaster_api
+    restart: unless-stopped
+    ports:
+      - "8001:8001" # Expose the API service
+    volumes:
+      - ./farcaster_api_service:/app # For development (remove in production)
+    depends_on:
+      snapchain:
+        condition: service_healthy
+      signer_service:
+        condition: service_healthy
+    networks:
+      - ratichat_network
+    environment:
+      # Connection settings for Snapchain node
+      - SNAPCHAIN_GRPC_HOST=snapchain
+      - SNAPCHAIN_GRPC_PORT=3383
+      # Connection settings for Signer service
+      - SIGNER_SERVICE_URL=http://signer_service:8000
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8001/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   ratichat_backend:
     build:
       context: .
@@ -34,6 +122,9 @@ services:
       - ./.env:/app/.env:ro # Mount .env file for configuration (read-only)
     depends_on:
       postgres:
+        condition: service_healthy
+      # NEW: Make backend wait for Farcaster API service to be healthy
+      farcaster_api_service:
         condition: service_healthy
     networks:
       - ratichat_network
@@ -49,6 +140,9 @@ services:
       - POSTGRES_HOST=postgres
       - POSTGRES_DB=ratichat
       - POSTGRES_PORT=5432
+      # NEW: Environment variables for In-house Farcaster API
+      - FARCASTER_CLIENT_TYPE=internal_api # Use our internal API instead of Neynar
+      - FARCASTER_INTERNAL_API_URL=http://farcaster_api_service:8001 # Internal Docker network URL
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
@@ -76,6 +170,10 @@ services:
 
 volumes:
   postgres_data:
+  # NEW: Volume for Snapchain data persistence
+  snapchain_data:
+  # NEW: Volume for secure signer key storage
+  signer_data:
 
 networks:
   ratichat_network:

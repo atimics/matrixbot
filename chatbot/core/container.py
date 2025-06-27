@@ -217,7 +217,7 @@ class DependencyContainer:
     # Private initialization methods
     async def _init_database_manager(self) -> None:
         """Initialize the database manager."""
-        self._database_manager = DatabaseManager(self.db_path)
+        self._database_manager = DatabaseManager()
         await self._database_manager.initialize()
         logger.debug("DatabaseManager initialized")
     

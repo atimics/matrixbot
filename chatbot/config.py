@@ -111,7 +111,20 @@ class FarcasterConfig(BaseSettings):
         extra="ignore"
     )
     
+    # Client type selection
+    client_type: str = Field(default="neynar", alias="FARCASTER_CLIENT_TYPE")  # 'neynar', 'snapchain', or 'internal_api'
+    
+    # Neynar API configuration
     neynar_api_key: Optional[str] = Field(default=None, alias="NEYNAR_API_KEY")
+    
+    # Internal API configuration
+    internal_api_url: Optional[str] = Field(default=None, alias="FARCASTER_INTERNAL_API_URL")
+    
+    # Snapchain direct configuration (legacy)
+    snapchain_grpc_host: Optional[str] = Field(default=None, alias="SNAPCHAIN_GRPC_HOST")
+    snapchain_grpc_port: Optional[int] = Field(default=None, alias="SNAPCHAIN_GRPC_PORT")
+    
+    # Bot configuration
     bot_fid: Optional[str] = Field(default=None, alias="FARCASTER_BOT_FID")
     bot_signer_uuid: Optional[str] = Field(default=None, alias="FARCASTER_BOT_SIGNER_UUID")
     bot_username: Optional[str] = Field(default=None, alias="FARCASTER_BOT_USERNAME")
@@ -119,12 +132,21 @@ class FarcasterConfig(BaseSettings):
     
     @model_validator(mode='after')
     def validate_farcaster_dependencies(self):
-        """Validate that if Farcaster is configured, all required settings are present."""
-        if self.neynar_api_key:
-            if not all([self.bot_fid, self.bot_signer_uuid, self.bot_username]):
+        """Validate that the chosen client type has the required configuration."""
+        if self.client_type == "neynar":
+            if not self.neynar_api_key:
+                raise ValueError("If client_type is 'neynar', NEYNAR_API_KEY is required")
+            if self.neynar_api_key and not all([self.bot_fid, self.bot_signer_uuid, self.bot_username]):
                 raise ValueError(
                     "If NEYNAR_API_KEY is set, FARCASTER_BOT_FID, FARCASTER_BOT_SIGNER_UUID, and FARCASTER_BOT_USERNAME are all required"
                 )
+        elif self.client_type == "internal_api":
+            if not self.internal_api_url:
+                raise ValueError("If client_type is 'internal_api', FARCASTER_INTERNAL_API_URL is required")
+        elif self.client_type == "snapchain":
+            if not (self.snapchain_grpc_host and self.snapchain_grpc_port):
+                raise ValueError("If client_type is 'snapchain', SNAPCHAIN_GRPC_HOST and SNAPCHAIN_GRPC_PORT are required")
+        
         return self
 
 

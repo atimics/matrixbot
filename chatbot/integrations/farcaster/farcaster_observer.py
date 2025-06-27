@@ -26,6 +26,7 @@ from .farcaster_data_converter import (
 )
 from .farcaster_scheduler import FarcasterScheduler
 from .neynar_api_client import NeynarAPIClient
+from .client_factory import create_farcaster_client, get_client_info, FarcasterClient
 
 logger = logging.getLogger(__name__)
 
@@ -50,9 +51,9 @@ class FarcasterObserver(Integration):
         self.signer_uuid = signer_uuid
         self.bot_fid = str(bot_fid) if bot_fid else None
         self.world_state_manager = world_state_manager
-        self.api_client: Optional[NeynarAPIClient] = None
+        self.api_client: Optional[FarcasterClient] = None
         self.scheduler: Optional[FarcasterScheduler] = None
-        self.neynar_api_client: Optional[NeynarAPIClient] = None  # Legacy compatibility
+        self.neynar_api_client: Optional[FarcasterClient] = None  # Legacy compatibility
         
         # File-based persistence setup
         self.persistence_dir = Path("data/farcaster_state")
@@ -62,23 +63,28 @@ class FarcasterObserver(Integration):
         # Check if properly configured
         self._enabled = bool(self.api_key)
         
-        if self.api_key:
-            self.api_client = NeynarAPIClient(
-                api_key=self.api_key, signer_uuid=self.signer_uuid, bot_fid=self.bot_fid
+        # Create the appropriate client based on configuration
+        self.api_client = create_farcaster_client(
+            api_key=self.api_key,
+            signer_uuid=self.signer_uuid,
+            bot_fid=self.bot_fid
+        )
+        
+        # Legacy compatibility - some code may still reference neynar_api_client
+        self.neynar_api_client = self.api_client
+        
+        if self.api_client and self.world_state_manager:
+            self.scheduler = FarcasterScheduler(
+                api_client=self.api_client,
+                world_state_manager=self.world_state_manager,
             )
-            self.neynar_api_client = self.api_client  # Legacy compatibility
-            if self.world_state_manager:
-                self.scheduler = FarcasterScheduler(
-                    api_client=self.api_client,
-                    world_state_manager=self.world_state_manager,
-                )
-            else:
-                logger.warning(
-                    "WorldStateManager not provided to FarcasterObserver; scheduler actions will not be recorded in WSM."
-                )
-        else:
+        elif not self.api_client:
             logger.warning(
-                "No Farcaster API key provided - observer will be largely inactive."
+                "No Farcaster API client could be created - observer will be largely inactive."
+            )
+        elif not self.world_state_manager:
+            logger.warning(
+                "WorldStateManager not provided to FarcasterObserver; scheduler actions will not be recorded in WSM."
             )
             
         # Load persistent state

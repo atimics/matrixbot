@@ -10,6 +10,7 @@ import time
 from typing import Any, Dict, Optional
 
 from .neynar_api_client import NeynarAPIClient
+from .client_factory import FarcasterClient
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ class FarcasterScheduler:
 
     def __init__(
         self,
-        api_client: NeynarAPIClient,
+        api_client: FarcasterClient,
         world_state_manager: Any,
         scheduler_interval: Optional[float] = None,
     ):
