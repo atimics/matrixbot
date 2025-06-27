@@ -7,16 +7,13 @@ organized routers for better maintainability and separation of concerns.
 
 import logging
 from datetime import datetime
-from typing import Any, Dict
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 from chatbot.core.orchestration import MainOrchestrator
 from .services import SetupManager, LogWebSocketManager
 from .routers import system, tools, config, integrations, ai, worldstate, setup, logs, ui_frames
-from .schemas import StatusResponse
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +114,6 @@ class ChatbotAPIServer:
         async def legacy_status_endpoint():
             """Legacy status endpoint for backwards compatibility - redirects to /api/system/status."""
             from .routers.system import get_system_status
-            from .dependencies import get_orchestrator
             orchestrator = self.orchestrator
             return await get_system_status(orchestrator)
         

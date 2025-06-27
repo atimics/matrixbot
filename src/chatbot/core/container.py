@@ -6,9 +6,7 @@ It replaces manual component initialization throughout the codebase with a clean
 testable dependency injection pattern.
 """
 
-import logging
-from typing import Optional, Dict, Any, TYPE_CHECKING
-from pathlib import Path
+from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .orchestration.main_orchestrator import OrchestratorConfig
@@ -341,7 +339,7 @@ class DependencyContainer:
         # Connect AttentionEngine to WorldStateManager for message notifications
         self._world_state_manager.set_attention_engine(self._attention_engine)
         
-        logger.info(f"AttentionEngine initialized and connected to WorldStateManager")
+        logger.info("AttentionEngine initialized and connected to WorldStateManager")
         logger.info(f"  Context hydration: {'Enabled' if neynar_api_client else 'Disabled'}")
         logger.debug("AttentionEngine initialized")
     

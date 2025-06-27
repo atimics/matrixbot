@@ -16,7 +16,6 @@ import logging
 from typing import Any, Dict, Optional
 
 from .base import ToolInterface, ActionContext
-from ..config import settings
 
 logger = logging.getLogger(__name__)
 

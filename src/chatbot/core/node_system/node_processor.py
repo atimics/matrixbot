@@ -10,16 +10,14 @@ Phase 2: Decide/Act - AI receives expanded nodes and can use external action too
 This pattern ensures the AI first explores and understands the context before taking actions.
 """
 
-import json
 import logging
-import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from chatbot.config import settings
 from .node_manager import NodeManager
 from .summary_service import NodeSummaryService  
 from .interaction_tools import NodeInteractionTools
-from ..ai_engine import AIDecisionEngine, DecisionResult
+from ..ai_engine import AIDecisionEngine
 from ..world_state.manager import WorldStateManager
 from ..world_state.payload_builder import PayloadBuilder
 from ...tools.registry import ToolRegistry
@@ -148,7 +146,7 @@ class NodeProcessor:
                 logger.debug(f"NodeProcessor: Exploration round {self.exploration_rounds_counter}/{self.max_exploration_rounds}")
         else:
             # Skip orient phase and go directly to decide/act
-            logger.info(f"NodeProcessor: Skipping Orient phase due to stalemate prevention")
+            logger.info("NodeProcessor: Skipping Orient phase due to stalemate prevention")
             orient_result = {"success": True, "expansion_actions": 0, "forced_skip": True}
             phases_completed = 1
         
@@ -162,7 +160,7 @@ class NodeProcessor:
             
             # Reset exploration counter if external actions were taken
             if decide_result.get("external_actions", 0) > 0:
-                logger.debug(f"NodeProcessor: External actions taken, resetting exploration counter")
+                logger.debug("NodeProcessor: External actions taken, resetting exploration counter")
                 self.exploration_rounds_counter = 0
                 self.last_cycle_had_external_actions = True
             else:

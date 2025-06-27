@@ -8,14 +8,12 @@ This module handles all integration-related endpoints including:
 - Getting available integration types
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-from datetime import datetime
 import logging
 
 from chatbot.core.orchestration import MainOrchestrator
-from ..schemas import StatusResponse
 from ..dependencies import get_orchestrator
 
 logger = logging.getLogger(__name__)

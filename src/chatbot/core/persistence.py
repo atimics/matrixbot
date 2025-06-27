@@ -6,15 +6,12 @@ source of truth for all database operations in the system. It uses psycopg
 (PostgreSQL) with connection pooling for high-performance concurrent access.
 """
 
-import asyncio
 import json
 import logging
 import time
 from typing import Any, Dict, List, Optional, Callable
-from pathlib import Path
 from dataclasses import dataclass
 
-import psycopg
 from psycopg_pool import AsyncConnectionPool
 from chatbot.config import settings
 

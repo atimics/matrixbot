@@ -7,7 +7,6 @@ Orchestrates Farcaster API, data conversion, and scheduling.
 import asyncio
 import json
 import logging
-import os
 import time
 from dataclasses import asdict
 from pathlib import Path
@@ -16,17 +15,15 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 from ...core.world_state import Message
-from ..base import Integration, IntegrationError, IntegrationConnectionError
+from ..base import Integration, IntegrationConnectionError
 from .farcaster_data_converter import (
     convert_api_casts_to_messages,
     convert_api_notifications_to_messages,
-    convert_single_api_cast_to_message,
     extract_cast_hash_from_url,
-    parse_farcaster_timestamp,
 )
 from .farcaster_scheduler import FarcasterScheduler
 from .neynar_api_client import NeynarAPIClient
-from .client_factory import create_farcaster_client, get_client_info, FarcasterClient
+from .client_factory import create_farcaster_client, FarcasterClient
 
 logger = logging.getLogger(__name__)
 

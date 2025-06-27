@@ -7,7 +7,7 @@ This module provides tools for storing memories and media permanently on S3.
 import json
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from chatbot.config import settings
 from chatbot.integrations.s3_client import S3Client

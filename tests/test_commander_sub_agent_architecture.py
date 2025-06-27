@@ -6,16 +6,15 @@ This module tests the integration between the ProcessingHub, AdaptiveProcessor (
 and MissionProcessor (Sub-Agent) to ensure the new architecture works correctly.
 """
 
-import asyncio
 import logging
 import pytest
 import pytest_asyncio
 import tempfile
 import time
-from unittest.mock import Mock, AsyncMock
+from unittest.mock import Mock
 
 from chatbot.core.container import DependencyContainer
-from chatbot.core.world_state.structures import Mission, Channel, Message, WorldStateData
+from chatbot.core.world_state.structures import Mission, Channel, Message
 from chatbot.config import settings
 
 logger = logging.getLogger(__name__)

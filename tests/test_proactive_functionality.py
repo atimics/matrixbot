@@ -7,7 +7,6 @@ are working correctly.
 """
 
 import pytest
-import asyncio
 import time
 from unittest.mock import Mock, AsyncMock
 

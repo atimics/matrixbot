@@ -8,10 +8,9 @@ Provides robust video generation with rate limiting, browser headers, and pollin
 import asyncio
 import logging
 import os
-import random
 import tempfile
 import time
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional
 
 import httpx
 

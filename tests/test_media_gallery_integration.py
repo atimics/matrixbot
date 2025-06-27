@@ -6,16 +6,13 @@ This script tests the new media gallery integration to ensure
 generated media is automatically posted to the dedicated gallery channel.
 """
 
-import asyncio
-import json
 import logging
 import pytest
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from chatbot.config import settings
 from chatbot.core.orchestration.main_orchestrator import MainOrchestrator
-from chatbot.tools.media_generation_tools import GenerateImageTool, GenerateVideoTool, _auto_post_to_gallery
+from chatbot.tools.media_generation_tools import GenerateImageTool, _auto_post_to_gallery
 from chatbot.tools.base import ActionContext
 
 logger = logging.getLogger(__name__)

@@ -6,7 +6,7 @@ This module provides a client for interacting with the Neynar Farcaster API.
 """
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 import httpx
 
@@ -112,9 +112,9 @@ class NeynarAPIClient:
                 # For 404 errors on cast operations, provide specific guidance
                 if e.response.status_code == 404 and ("/farcaster/cast" in url):
                     if "conversation" in url:
-                        logger.error(f"Cast conversation not found - the cast may have been deleted or the hash is invalid")
+                        logger.error("Cast conversation not found - the cast may have been deleted or the hash is invalid")
                     elif method.upper() == "POST":
-                        logger.error(f"Cannot post/reply - parent cast not found or invalid")
+                        logger.error("Cannot post/reply - parent cast not found or invalid")
                 raise
                 
             except httpx.RequestError as e:

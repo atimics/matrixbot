@@ -4,9 +4,9 @@ Test suite for the security and performance improvements.
 
 import pytest
 import json
-from unittest.mock import Mock, patch, MagicMock
-from chatbot.api_server.security import APIKeyAuth, RateLimitedAPIKeyAuth
-from chatbot.core.world_state.dynamic_optimizer import DynamicPayloadOptimizer, PayloadOptimizationConfig
+from unittest.mock import Mock, patch
+from chatbot.api_server.security import APIKeyAuth
+from chatbot.core.world_state.dynamic_optimizer import DynamicPayloadOptimizer
 
 
 class TestAPIKeyAuth:

@@ -6,7 +6,7 @@ particularly for checking user eligibility for ecosystem NFT airdrops.
 """
 
 import logging
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Any
 from chatbot.config import settings
 
 logger = logging.getLogger(__name__)

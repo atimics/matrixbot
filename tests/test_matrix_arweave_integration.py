@@ -47,7 +47,7 @@ class TestMatrixArweaveIntegration:
         mock_room.room_id = room_id
         mock_room.display_name = display_name
         mock_room.name = display_name
-        mock_room.canonical_alias = f"#test:example.com"
+        mock_room.canonical_alias = "#test:example.com"
         mock_room.alt_aliases = []
         mock_room.topic = "Test topic"
         mock_room.avatar = None

@@ -6,10 +6,9 @@ Tools for enhanced user profiling, sentiment analysis, and memory management.
 Part of Initiative B: Enhanced User Profiling Implementation.
 """
 
-import json
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 from .base import ActionContext, ToolInterface
 from ..core.world_state.structures import MemoryEntry, SentimentData

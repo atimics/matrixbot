@@ -12,7 +12,7 @@ Central hub for the new Commander/Sub-Agent architecture where the system:
 import asyncio
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:

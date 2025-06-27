@@ -6,8 +6,6 @@ This script generates a cryptographically secure master key that can be used
 to encrypt signer private keys at rest.
 """
 
-import os
-import base64
 from cryptography.fernet import Fernet
 
 def generate_master_key():

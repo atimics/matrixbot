@@ -1,11 +1,9 @@
 """
 GitHub API client for repository inspection and PR status (read-only).
 """
-import os
 import httpx
 from typing import Any, Dict, List, Optional
 import asyncio
-import time
 
 from ..config import settings
 

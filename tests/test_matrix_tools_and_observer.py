@@ -1,9 +1,7 @@
 import pytest
-import time
 import mimetypes
 from unittest.mock import AsyncMock, Mock
 
-import nio
 from chatbot.tools.matrix_tools import (
     SendMatrixReplyTool, 
     SendMatrixMessageTool,
@@ -15,7 +13,7 @@ from chatbot.tools.matrix_tools import (
 )
 from chatbot.tools.base import ActionContext
 from chatbot.integrations.matrix.observer import MatrixObserver
-from chatbot.core.world_state import WorldStateManager, WorldState, Message
+from chatbot.core.world_state import WorldStateManager
 
 # ---- Tests for Matrix Tools ----
 @pytest.mark.asyncio

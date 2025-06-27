@@ -8,8 +8,7 @@ This integration provides secure upload and retrieval capabilities for permanent
 import asyncio
 import logging
 import os
-from typing import Dict, List, Optional, Any, Union
-from pathlib import Path
+from typing import Dict, Optional, Any
 
 logger = logging.getLogger(__name__)
 

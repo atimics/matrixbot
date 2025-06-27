@@ -1,7 +1,6 @@
 """
 Core tools that don't depend on specific platforms.
 """
-import asyncio
 import logging
 import time
 import uuid

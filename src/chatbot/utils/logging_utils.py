@@ -6,8 +6,10 @@ visibility in VS Code terminal and other development environments.
 """
 
 import logging
+import os
 import sys
 from typing import Optional
+
 
 
 class ColoredFormatter(logging.Formatter):
@@ -122,7 +124,3 @@ def get_colored_logger(name: str) -> logging.Logger:
         Logger instance
     """
     return logging.getLogger(name)
-
-
-# Import os here to avoid issues
-import os

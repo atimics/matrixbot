@@ -2,7 +2,6 @@
 Tool for deleting Farcaster reactions.
 """
 import logging
-import time
 from typing import Any, Dict
 
 from ..base import ActionContext, ToolInterface

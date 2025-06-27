@@ -2,7 +2,6 @@
 Tool for collecting Farcaster world state data.
 """
 import logging
-import time
 from typing import Any, Dict
 
 from ..base import ActionContext, ToolInterface

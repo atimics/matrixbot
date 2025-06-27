@@ -2,10 +2,8 @@
 Tests to increase coverage for the world_state module.
 Focused on testing actual functionality that exists.
 """
-import pytest
 import json
 import time
-from unittest.mock import Mock, patch, MagicMock
 from chatbot.core.world_state import (
     WorldState, 
     WorldStateManager, 

@@ -43,7 +43,6 @@ import time
 from typing import Any, Dict, Optional
 
 from ...config import settings
-from ...utils.markdown_utils import format_for_matrix
 from ..base import ActionContext, ToolInterface
 
 logger = logging.getLogger(__name__)

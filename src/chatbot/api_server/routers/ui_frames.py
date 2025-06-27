@@ -7,12 +7,11 @@ This module handles all UI serving and Farcaster frame endpoints including:
 - Frame actions and responses
 """
 
-from typing import Dict, Any, Optional
-from fastapi import APIRouter, HTTPException, Request, Depends
+from typing import Dict, Any
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 import os
-from datetime import datetime
 import logging
 
 from chatbot.core.orchestration import MainOrchestrator
@@ -228,7 +227,7 @@ async def handle_mint_action(
                 "frameData": {
                     "image": {"url": success_image},
                     "buttons": [
-                        {"text": "View NFT", "action": "link", "target": f"https://opensea.io/assets/..."},
+                        {"text": "View NFT", "action": "link", "target": "https://opensea.io/assets/..."},
                         {"text": "Share", "action": "link", "target": f"https://warpcast.com/~/compose?text=Just+minted+{frame_metadata.get('title', 'NFT')}!"}
                     ],
                     "imageAspectRatio": "1:1"

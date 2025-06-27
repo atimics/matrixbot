@@ -11,9 +11,8 @@ import logging
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Set
-from abc import ABC, abstractmethod
 
-from ..world_state.structures import WorldStateData, Message, Channel
+from ..world_state.structures import WorldStateData, Channel
 
 logger = logging.getLogger(__name__)
 

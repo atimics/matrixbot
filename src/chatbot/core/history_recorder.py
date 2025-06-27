@@ -6,7 +6,6 @@ This module handles the persistence layer for conversation context and state cha
 providing a clean interface for storing bot actions and decisions for later analysis.
 """
 
-import asyncio
 import json
 import logging
 import time
@@ -211,7 +210,7 @@ class HistoryRecorder:
         # Store in database first
         try:
             await self._persist_state_change(state_change)
-            logger.debug(f"HistoryRecorder: Successfully persisted state change to database")
+            logger.debug("HistoryRecorder: Successfully persisted state change to database")
         except Exception as e:
             logger.error(f"HistoryRecorder: Failed to persist state change to database: {e}")
 
@@ -272,7 +271,7 @@ class HistoryRecorder:
                     ),
                 )
                 await db.commit()
-                logger.debug(f"HistoryRecorder: Successfully inserted state change into database")
+                logger.debug("HistoryRecorder: Successfully inserted state change into database")
 
         except Exception as e:
             logger.error(f"HistoryRecorder: Error persisting state change: {e}")

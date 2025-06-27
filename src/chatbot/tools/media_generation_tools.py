@@ -7,7 +7,6 @@ like Replicate and Google AI (Gemini/Veo) and storing them permanently on S3.
 
 import httpx
 import logging
-import time
 from typing import Any, Dict, Optional
 
 from chatbot.config import settings

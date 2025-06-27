@@ -8,7 +8,6 @@ It handles the conversion between gRPC protobufs and JSON for easy REST API inte
 import logging
 import grpc
 from typing import Dict, Any, Optional, List
-import asyncio
 from datetime import datetime
 
 # Import farcaster protobuf definitions

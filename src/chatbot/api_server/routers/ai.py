@@ -7,7 +7,6 @@ This module handles all AI-related endpoints including:
 - Managing AI engine status
 """
 
-from typing import Dict, Any, List
 from fastapi import APIRouter, HTTPException, Depends
 from datetime import datetime
 import logging
@@ -15,7 +14,7 @@ import logging
 from chatbot.core.orchestration import MainOrchestrator
 from chatbot.config import settings
 from ..dependencies import get_orchestrator
-from ..security import require_api_key, validate_admin_access
+from ..security import validate_admin_access
 
 logger = logging.getLogger(__name__)
 

@@ -8,8 +8,6 @@ allowing for comprehensive monitoring and control of the bot through a web inter
 import asyncio
 import logging
 import signal
-import sys
-from pathlib import Path
 from threading import Thread
 
 import uvicorn
@@ -17,7 +15,7 @@ import uvicorn
 from chatbot.api_server import create_api_server
 from chatbot.config import settings
 from chatbot.core.container import DependencyContainer
-from chatbot.core.orchestration import MainOrchestrator, OrchestratorConfig
+from chatbot.core.orchestration import OrchestratorConfig
 
 logger = logging.getLogger(__name__)
 

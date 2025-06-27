@@ -16,7 +16,7 @@ These tools are restricted to strategic access level (Commander AI only).
 
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from .base import ToolInterface, ActionContext
 

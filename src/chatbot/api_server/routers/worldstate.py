@@ -8,7 +8,6 @@ This module handles all world state-related endpoints including:
 - Executing node-based actions
 """
 
-from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from datetime import datetime
@@ -16,7 +15,6 @@ import logging
 
 from chatbot.core.orchestration import MainOrchestrator
 from ..dependencies import get_orchestrator
-from ..schemas import StatusResponse
 
 logger = logging.getLogger(__name__)
 

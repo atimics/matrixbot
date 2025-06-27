@@ -4,7 +4,7 @@ Tests for AI decision engine functionality.
 import pytest
 import json
 from unittest.mock import AsyncMock, patch, MagicMock, Mock
-from chatbot.core.ai_engine import AIDecisionEngine, DecisionResult, ActionPlan
+from chatbot.core.ai_engine import AIDecisionEngine
 
 
 class TestAIDecisionEngine:

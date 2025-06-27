@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional
 
 from ..base import ActionContext, ToolInterface
 from ...utils.markdown_utils import strip_markdown
-from .utils import get_farcaster_observer, create_error_response, create_success_response
+from .utils import get_farcaster_observer, create_error_response
 
 logger = logging.getLogger(__name__)
 
@@ -206,7 +206,7 @@ class SendFarcasterPostTool(ToolInterface):
                 # DEFENSIVE: Gracefully handle validation errors
                 logger.error(f"Layer 3 failed: Unexpected error during thread turn validation for {reply_to_hash}: {e}", exc_info=True)
                 # Don't fail the entire operation for thread turn issues if authoritative check passed
-                logger.warning(f"Proceeding despite thread turn validation error - authoritative check was successful")
+                logger.warning("Proceeding despite thread turn validation error - authoritative check was successful")
             
             logger.info(f"All duplicate prevention layers passed for reply to: {reply_to_hash}")
 

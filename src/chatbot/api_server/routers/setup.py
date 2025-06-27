@@ -7,16 +7,13 @@ This module handles all setup-related endpoints including:
 - Resetting setup process
 """
 
-from typing import Dict, Any, Optional
+from typing import Any
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-from datetime import datetime
 import logging
 
-from chatbot.core.orchestration import MainOrchestrator
 from ..services import SetupManager
-from ..schemas import StatusResponse
-from ..dependencies import get_orchestrator, get_setup_manager
+from ..dependencies import get_setup_manager
 
 logger = logging.getLogger(__name__)
 

@@ -13,7 +13,6 @@ Phase 3: Full ACE lifecycle orchestration with learning
 """
 import asyncio
 import os
-import json
 from typing import Any, Dict, List, Optional
 from pathlib import Path
 
@@ -987,13 +986,13 @@ class AnalyzeAndProposeChangeTool(ToolInterface):  # Phase 2 - GitHub-Centric
         focus: str, files: List[str]
     ) -> str:
         """Format analysis results for GitHub issue/comment."""
-        content = f"## Code Analysis Results\n\n"
+        content = "## Code Analysis Results\n\n"
         content += f"**Focus:** {focus.replace('_', ' ').title()}\n"
         
         if files:
             content += f"**Files Analyzed:** {', '.join(files)}\n"
         
-        content += f"\n### Analysis Summary\n"
+        content += "\n### Analysis Summary\n"
         
         if analysis_result.get("issues_found"):
             content += f"**Issues Found:** {len(analysis_result['issues_found'])}\n"
@@ -1001,7 +1000,7 @@ class AnalyzeAndProposeChangeTool(ToolInterface):  # Phase 2 - GitHub-Centric
                 content += f"- {issue.get('description', 'Issue identified')}\n"
         
         if analysis_result.get("metrics"):
-            content += f"\n**Code Metrics:**\n"
+            content += "\n**Code Metrics:**\n"
             metrics = analysis_result["metrics"]
             for key, value in metrics.items():
                 content += f"- {key.replace('_', ' ').title()}: {value}\n"
@@ -1017,11 +1016,11 @@ class AnalyzeAndProposeChangeTool(ToolInterface):  # Phase 2 - GitHub-Centric
                 if proposal.get("implementation_plan"):
                     content += f"**Implementation:**\n{proposal['implementation_plan']}\n"
         
-        content += f"\n### Next Steps\n"
-        content += f"1. Review the proposed changes above\n"
-        content += f"2. Use `ImplementCodeChangesTool` to apply selected changes\n"
-        content += f"3. Test the implementation\n"
-        content += f"4. Create a pull request with the changes\n"
+        content += "\n### Next Steps\n"
+        content += "1. Review the proposed changes above\n"
+        content += "2. Use `ImplementCodeChangesTool` to apply selected changes\n"
+        content += "3. Test the implementation\n"
+        content += "4. Create a pull request with the changes\n"
         
         return content
 

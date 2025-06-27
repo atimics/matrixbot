@@ -10,7 +10,7 @@ This module provides tools for creating interactive Farcaster Frames including:
 
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 from .base import ToolInterface, ActionContext
 
@@ -661,7 +661,7 @@ class CreateMintFrameTool(ToolInterface):
                 cast_text += "🔒 Exclusive for token holders and NFT collectors only!\n"
             else:
                 cast_text += "🎉 Open mint for everyone!\n"
-            cast_text += f"\n👇 Click below to mint this NFT"
+            cast_text += "\n👇 Click below to mint this NFT"
 
             # Post to Farcaster with frame
             if hasattr(farcaster_observer, 'post_cast_with_frame'):

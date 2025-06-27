@@ -40,6 +40,8 @@ python-multipart = "^0.0.20"
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.0"
 pytest-asyncio = ">=0.23.6,<2.0.0"
+ruff = "^0.4.4"
+
 
 [build-system]
 requires = ["poetry-core"]

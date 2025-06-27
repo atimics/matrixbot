@@ -12,8 +12,6 @@ import base64
 from pathlib import Path
 from typing import Optional, Dict, Any
 from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import ed25519
 
 logger = logging.getLogger(__name__)
@@ -171,7 +169,7 @@ class SecureKeyManager:
         self._public_key = public_key
         self._fid = fid
         
-        logger.info(f"New signer key generated and stored securely")
+        logger.info("New signer key generated and stored securely")
         logger.info(f"Public key (for registration): {public_key.to_bytes().hex()}")
         
         return {

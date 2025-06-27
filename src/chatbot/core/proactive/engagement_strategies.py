@@ -8,10 +8,8 @@ platform, and community dynamics.
 """
 
 import logging
-import random
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from .proactive_engine import ConversationOpportunity, EngagementPlan

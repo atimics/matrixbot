@@ -16,7 +16,6 @@ from typing import Any, Dict, List
 
 import httpx
 
-from .prompts import prompt_builder
 from .ai_response_validator import AIResponseValidator, ErrorRecoverySystem
 from .dynamic_prompt_builder import DynamicPromptBuilder, ContextAnalyzer
 from .performance_monitor import performance_monitor
@@ -155,9 +154,6 @@ When it's not your turn to speak:
             tool_registry: ToolRegistry instance containing available tools
             access_level: Access level for tool filtering ('strategic' for Commander AI)
         """
-        from ..tools.registry import (  # Import here to avoid circular imports
-            ToolRegistry,
-        )
 
         self.dynamic_tool_prompt_part = tool_registry.get_tool_descriptions_for_ai(access_level)
         self._build_full_system_prompt()
@@ -240,7 +236,7 @@ Analyze the situation and respond with your decision in the required JSON format
                     return DecisionResult(
                         selected_actions=[],
                         reasoning=f"Payload too large ({payload_size_kb:.2f} KB) - reduce AI payload settings in config.",
-                        observations=f"HTTP 413 Error: Request payload exceeded server limits",
+                        observations="HTTP 413 Error: Request payload exceeded server limits",
                         cycle_id=cycle_id,
                     )
                 elif response.status_code != 200:

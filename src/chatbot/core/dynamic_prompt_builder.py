@@ -10,7 +10,6 @@ and complexity issues identified in the engineering report.
 import logging
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
-from pathlib import Path
 
 from .prompts import prompt_builder
 

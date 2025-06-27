@@ -1,7 +1,6 @@
 """
 Research and knowledge management tools for building a persistent knowledge base.
 """
-import hashlib
 import logging
 import time
 from typing import Any, Dict

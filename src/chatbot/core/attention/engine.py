@@ -88,7 +88,7 @@ class AttentionEngine:
         # NEW: Channel locking mechanism for race condition prevention
         self.locked_channels: set[str] = set()
         
-        logger.info(f"AttentionEngine initialized")
+        logger.info("AttentionEngine initialized")
         logger.info(f"Bot identity: FID={self.bot_fid}, User={self.bot_user_id}, Username={self.bot_username}")
         logger.info(f"Conversation cooldown: {self.conversation_cooldown}s")
         logger.info(f"Context hydration: {'Enabled' if self.neynar_api_client else 'Disabled'}")

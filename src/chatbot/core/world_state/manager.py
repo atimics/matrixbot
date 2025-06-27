@@ -24,8 +24,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from ...config import settings
-import time
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..node_system.node_manager import NodeManager
@@ -1505,7 +1503,7 @@ class WorldStateManager:
                             }
                             logger.info("Initialized system_status for backward compatibility")
                     else:
-                        logger.error(f"Invalid state file format, starting with fresh state")
+                        logger.error("Invalid state file format, starting with fresh state")
                         self.state = WorldStateData()
             except Exception as e:
                 logger.error(f"Failed to load world state, starting fresh: {e}")

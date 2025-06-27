@@ -11,13 +11,12 @@ import asyncio
 import logging
 import time
 import aiohttp
-import json
 from typing import List, Dict, Optional, Any
 
 from chatbot.config import settings
 from chatbot.integrations.farcaster.neynar_api_client import NeynarAPIClient
 from chatbot.core.world_state.manager import WorldStateManager
-from chatbot.core.world_state.structures import MonitoredTokenHolder, Message, TokenMetadata, TokenHolderData
+from chatbot.core.world_state.structures import MonitoredTokenHolder, Message, TokenMetadata
 
 logger = logging.getLogger(__name__)
 

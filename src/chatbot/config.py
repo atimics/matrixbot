@@ -12,7 +12,7 @@ import json
 import os
 from pathlib import Path
 from typing import Optional, List
-from pydantic import BaseModel, model_validator, Field
+from pydantic import model_validator, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 

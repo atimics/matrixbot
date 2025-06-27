@@ -6,18 +6,13 @@ A web-based control panel for managing the context-aware orchestrator system.
 Allows viewing state changes, managing contexts, exporting training data, and controlling the system.
 """
 
-import asyncio
-import json
 import logging
-import os
 import time
 from datetime import datetime
-from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import List, Optional
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
@@ -25,7 +20,6 @@ import uvicorn
 # Import our context management components
 # Note: HistoryRecorder was consolidated into ContextManager for cleaner architecture
 from chatbot.core.orchestration import MainOrchestrator
-from chatbot.core.world_state import WorldStateManager
 
 logger = logging.getLogger(__name__)
 

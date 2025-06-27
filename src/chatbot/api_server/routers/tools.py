@@ -4,7 +4,6 @@ Tools management router - handles tool configuration and status.
 
 import logging
 from datetime import datetime
-from typing import Dict, Any
 
 from fastapi import APIRouter, HTTPException, Depends
 

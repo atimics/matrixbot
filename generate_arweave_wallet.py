@@ -16,7 +16,6 @@ import argparse
 import json
 import os
 import sys
-from pathlib import Path
 
 try:
     from arweave import Wallet
@@ -57,15 +56,15 @@ def generate_wallet(output_path: str) -> bool:
         if os.path.exists(output_path):
             # Test loading the wallet to ensure it's valid
             test_wallet = Wallet(output_path)
-            print(f"✅ Wallet generated successfully!")
+            print("✅ Wallet generated successfully!")
             print(f"📍 Wallet Address: {test_wallet.address}")
             print(f"📁 Wallet File: {output_path}")
-            print(f"")
-            print(f"⚠️  IMPORTANT SECURITY NOTES:")
-            print(f"   1. Back up this wallet file securely")
-            print(f"   2. The wallet needs AR tokens to perform transactions")
-            print(f"   3. Fund the wallet at: https://faucet.arweave.net (testnet) or buy AR tokens")
-            print(f"   4. Keep the wallet file secure - anyone with access can spend your AR")
+            print("")
+            print("⚠️  IMPORTANT SECURITY NOTES:")
+            print("   1. Back up this wallet file securely")
+            print("   2. The wallet needs AR tokens to perform transactions")
+            print("   3. Fund the wallet at: https://faucet.arweave.net (testnet) or buy AR tokens")
+            print("   4. Keep the wallet file secure - anyone with access can spend your AR")
             return True
         else:
             print("❌ ERROR: Wallet file was not created")
@@ -103,11 +102,11 @@ def main():
     success = generate_wallet(args.output_path)
     
     if success:
-        print(f"")
-        print(f"🚀 Next steps:")
-        print(f"   1. Fund the wallet with AR tokens")
-        print(f"   2. Start the arweave-service with docker-compose up arweave-service")
-        print(f"   3. Test uploads with the service API endpoints")
+        print("")
+        print("🚀 Next steps:")
+        print("   1. Fund the wallet with AR tokens")
+        print("   2. Start the arweave-service with docker-compose up arweave-service")
+        print("   3. Test uploads with the service API endpoints")
         sys.exit(0)
     else:
         sys.exit(1)

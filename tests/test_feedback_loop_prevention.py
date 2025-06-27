@@ -6,8 +6,6 @@ This test verifies that the bot does not repeatedly reply to the same message
 when its own reply triggers a new processing cycle.
 """
 
-import asyncio
-import json
 import time
 from unittest.mock import Mock, AsyncMock, patch
 

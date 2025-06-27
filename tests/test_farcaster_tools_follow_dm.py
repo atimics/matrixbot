@@ -1,5 +1,4 @@
 import pytest
-import time
 from unittest.mock import AsyncMock
 from chatbot.tools.farcaster import (
     FollowFarcasterUserTool,

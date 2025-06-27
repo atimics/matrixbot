@@ -6,8 +6,7 @@ fragmented execution paths and creates a single, unified pipeline for all tools.
 """
 
 import pytest
-from unittest.mock import Mock, AsyncMock, patch
-import time
+from unittest.mock import Mock, AsyncMock
 
 from chatbot.tools.registry import ToolRegistry
 from chatbot.tools.base import ActionContext

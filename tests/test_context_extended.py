@@ -6,7 +6,7 @@ import os
 import tempfile
 import time
 from chatbot.core.context import ContextManager
-from chatbot.core.world_state import WorldStateManager, Message
+from chatbot.core.world_state import WorldStateManager
 from chatbot.config import AppConfig
 
 

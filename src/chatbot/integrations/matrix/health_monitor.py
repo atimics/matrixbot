@@ -10,8 +10,8 @@ import asyncio
 import logging
 import time
 import json
-from datetime import datetime, timedelta
-from typing import Dict, Any, Optional
+from datetime import datetime
+from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
 

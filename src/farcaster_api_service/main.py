@@ -7,9 +7,7 @@ Integrates with the signer service for secure message signing.
 """
 
 import logging
-import asyncio
 import aiohttp
-import base64
 from contextlib import asynccontextmanager
 from typing import Dict, Any, List, Optional
 from datetime import datetime

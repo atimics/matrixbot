@@ -17,8 +17,8 @@ import time
 from dataclasses import asdict
 from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING
 
-from .structures import WorldStateData, Channel
-from .dynamic_optimizer import DynamicPayloadOptimizer, PayloadOptimizationConfig
+from .structures import WorldStateData
+from .dynamic_optimizer import DynamicPayloadOptimizer
 
 if TYPE_CHECKING:
     from ..node_system.node_manager import NodeManager

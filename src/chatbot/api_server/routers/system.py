@@ -4,14 +4,13 @@ System management router - handles system status, control, and health checks.
 
 import logging
 from datetime import datetime
-from typing import Dict, Any
 
 from fastapi import APIRouter, HTTPException, Depends
 
 from ..schemas import SystemCommand, StatusResponse
 from chatbot.core.orchestration import MainOrchestrator
 from ..dependencies import get_orchestrator
-from ..security import require_api_key, validate_admin_access
+from ..security import validate_admin_access
 
 logger = logging.getLogger(__name__)
 

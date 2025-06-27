@@ -2,7 +2,6 @@
 Tests for authoritative duplicate detection in SendFarcasterPostTool (reply functionality).
 """
 import pytest
-import time
 from unittest.mock import AsyncMock, MagicMock
 from chatbot.tools.farcaster import SendFarcasterPostTool
 from chatbot.tools.base import ActionContext

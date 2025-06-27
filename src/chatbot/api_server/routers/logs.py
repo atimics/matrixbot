@@ -7,14 +7,12 @@ This module handles all logging and history-related endpoints including:
 - WebSocket log streaming (handled in main.py)
 """
 
-from typing import Dict, Any, List
 from fastapi import APIRouter, HTTPException, Depends
 from datetime import datetime
 import logging
 
 from chatbot.core.orchestration import MainOrchestrator
 from ..dependencies import get_orchestrator
-from ..schemas import StatusResponse
 
 logger = logging.getLogger(__name__)
 

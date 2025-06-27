@@ -4,9 +4,8 @@ Test suite for the new tool-based architecture.
 
 import pytest
 from unittest.mock import Mock, AsyncMock
-import time
 
-from chatbot.tools.base import ToolInterface, ActionContext
+from chatbot.tools.base import ActionContext
 from chatbot.tools.registry import ToolRegistry
 from chatbot.tools.core_tools import WaitTool
 from chatbot.tools.matrix import SendMatrixMessageTool

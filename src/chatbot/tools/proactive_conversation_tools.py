@@ -6,7 +6,7 @@ Part of Initiative C: Proactive Conversation Management.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -161,7 +161,7 @@ class InitiateProactiveConversationTool(ToolInterface):
                     
                     return {
                         "status": "success",
-                        "message": f"Proactive conversation initiated successfully",
+                        "message": "Proactive conversation initiated successfully",
                         "opportunity_id": engagement_plan.opportunity_id,
                         "channel_id": channel_id,
                         "strategy": engagement_strategy

@@ -1,7 +1,6 @@
 """
 Tests for Matrix markdown formatting functionality.
 """
-import pytest
 from chatbot.utils.markdown_utils import format_for_matrix, MatrixMarkdownFormatter
 
 

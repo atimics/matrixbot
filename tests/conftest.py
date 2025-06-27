@@ -4,14 +4,13 @@ Global test configuration and fixtures.
 
 import asyncio
 import logging  # Add this
-import os
 import shutil
 import tempfile
 from pathlib import Path
 from typing import AsyncGenerator, Generator
 import pytest
 import pytest_asyncio  # Import this
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 from chatbot.config import AppConfig
 from chatbot.core.history_recorder import HistoryRecorder

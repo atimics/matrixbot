@@ -6,9 +6,7 @@ Combines simple and enhanced test coverage in a single file.
 import pytest
 import tempfile
 import time
-import json
 from pathlib import Path
-from unittest.mock import Mock, patch, AsyncMock
 from dataclasses import asdict
 
 from chatbot.core.history_recorder import HistoryRecorder, StateChangeBlock

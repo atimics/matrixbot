@@ -5,7 +5,6 @@ Handles incoming webhook events from Farcaster (via Neynar) for real-time notifi
 This provides faster response to mentions, follows, and other events.
 """
 
-import asyncio
 import json
 import logging
 from typing import Any, Dict, Optional

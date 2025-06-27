@@ -10,7 +10,6 @@ import json
 import logging
 import time
 from typing import Any, Dict, List, Optional, Type
-from pathlib import Path
 import uuid
 
 import aiosqlite
@@ -18,6 +17,7 @@ from cryptography.fernet import Fernet
 
 from ..integrations.base import Integration, IntegrationError
 from ..config import settings
+
 
 logger = logging.getLogger(__name__)
 
@@ -478,7 +478,7 @@ class IntegrationManager:
                 credentials[cred_key] = decrypted_value
             except Exception as e:
                 logger.warning(f"Failed to decrypt credential '{cred_key}' for integration '{integration_id}': {e}")
-                logger.warning(f"This usually happens when the encryption key has changed. Will fall back to environment variables.")
+                logger.warning("This usually happens when the encryption key has changed. Will fall back to environment variables.")
                 invalid_credentials.append(cred_key)
                 encryption_failed = True
         
@@ -591,7 +591,6 @@ class IntegrationManager:
     
     async def _apply_env_fallbacks(self, integration_type: str, credentials: Dict[str, str]) -> Dict[str, str]:
         """Apply environment variable fallbacks for missing or invalid credentials"""
-        from ..config import settings
         
         if integration_type == 'farcaster':
             # Check if we have any valid credentials, if not fall back to environment
@@ -633,7 +632,6 @@ class IntegrationManager:
     
     def _has_env_fallback_credentials(self, integration_type: str) -> bool:
         """Check if environment variables are available for fallback"""
-        from ..config import settings
         
         if integration_type == 'farcaster':
             return bool(settings.farcaster.neynar_api_key)
@@ -751,7 +749,6 @@ class IntegrationManager:
     
     async def _get_env_credentials(self, integration_type: str) -> Dict[str, str]:
         """Get credentials from environment variables for the specified integration type"""
-        from ..config import settings
         
         credentials = {}
         

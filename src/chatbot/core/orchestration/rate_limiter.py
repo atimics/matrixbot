@@ -5,7 +5,6 @@ Provides advanced rate limiting capabilities with adaptive behavior,
 action-specific limits, and channel-based throttling.
 """
 
-import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from typing import Any, Dict

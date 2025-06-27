@@ -57,7 +57,7 @@ class APIKeyAuth:
         
         # Validate API key
         if not self._validate_api_key(credentials.credentials):
-            logger.warning(f"Invalid API key attempt from client")
+            logger.warning("Invalid API key attempt from client")
             raise HTTPException(
                 status_code=401,
                 detail="Invalid API key"

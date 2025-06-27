@@ -9,7 +9,6 @@ to ensure it's working correctly after the transformation.
 import json
 import requests
 import time
-from pathlib import Path
 import pytest
 
 def test_arweave_service(base_url: str = "http://localhost:8001"):
@@ -25,7 +24,7 @@ def test_arweave_service(base_url: str = "http://localhost:8001"):
         health_data = response.json()
         
         if response.status_code == 200:
-            print(f"   ✅ Health check passed")
+            print("   ✅ Health check passed")
             print(f"   📊 Status: {health_data['status']}")
             print(f"   🔐 Wallet ready: {health_data['wallet_ready']}")
             print(f"   📍 Wallet address: {health_data.get('wallet_address', 'N/A')}")
@@ -49,7 +48,7 @@ def test_arweave_service(base_url: str = "http://localhost:8001"):
         
         if response.status_code == 200:
             wallet_data = response.json()
-            print(f"   ✅ Wallet info retrieved")
+            print("   ✅ Wallet info retrieved")
             print(f"   📍 Address: {wallet_data['address']}")
             print(f"   💰 Balance: {wallet_data['balance_ar']} AR")
             print(f"   📊 Status: {wallet_data['status']}")
@@ -87,7 +86,7 @@ def test_arweave_service(base_url: str = "http://localhost:8001"):
             
             if response.status_code == 200:
                 upload_result = response.json()
-                print(f"   ✅ Data upload successful")
+                print("   ✅ Data upload successful")
                 print(f"   🆔 Transaction ID: {upload_result['transaction_id']}")
                 print(f"   🌐 Arweave URL: {upload_result['arweave_url']}")
                 print(f"   📦 Data size: {upload_result['data_size']} bytes")

@@ -7,17 +7,13 @@ including opportunity detection, engagement planning, and tool functionality.
 """
 
 import asyncio
-import json
 import logging
-import sys
 import time
-from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Dict, List, Any
-from unittest.mock import Mock, AsyncMock, MagicMock
+from unittest.mock import Mock, AsyncMock
 
-from chatbot.core.proactive.proactive_engine import ProactiveConversationEngine, ConversationOpportunity
-from chatbot.core.world_state.structures import WorldStateData, Channel, Message, FarcasterUserDetails, MatrixUserDetails, SentimentData
+from chatbot.core.proactive.proactive_engine import ProactiveConversationEngine
+from chatbot.core.world_state.structures import WorldStateData, Channel, Message, FarcasterUserDetails, SentimentData
 from chatbot.tools.proactive_conversation_tools import (
     InitiateProactiveConversationTool,
     DetectConversationOpportunitiesTool, 

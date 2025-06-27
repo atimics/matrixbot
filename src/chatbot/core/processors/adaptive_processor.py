@@ -85,7 +85,7 @@ class AdaptiveProcessor(Processor):
         self.active_missions_monitored: Dict[str, float] = {}  # mission_id -> last_check_time
         self.strategic_opportunities: List[Dict[str, Any]] = []
         
-        logger.info(f"AdaptiveProcessor (Commander AI) initialized")
+        logger.info("AdaptiveProcessor (Commander AI) initialized")
         logger.info(f"Mission delegation enabled: {self.enable_mission_delegation}")
     
     async def process_cycle(

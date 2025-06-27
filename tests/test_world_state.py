@@ -2,9 +2,8 @@
 Comprehensive tests for world state management functionality.
 Combines comprehensive and extended test coverage in a single file.
 """
-import pytest
 import time
-from chatbot.core.world_state import WorldStateManager, WorldState, Message, Channel, ActionHistory
+from chatbot.core.world_state import WorldStateManager, Message
 
 
 class TestWorldStateBasic:

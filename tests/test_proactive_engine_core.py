@@ -8,11 +8,8 @@ without relying on the tools module which has import issues.
 
 import asyncio
 import logging
-import sys
 import time
-from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Dict, List, Any
 from unittest.mock import Mock, AsyncMock
 
 from chatbot.core.proactive.proactive_engine import ProactiveConversationEngine, ConversationOpportunity

@@ -126,7 +126,7 @@ class TestHistoryRecorder:
                 )
                 count = await cursor.fetchone()
                 assert count[0] >= 1, f"Expected at least 1 user_input record, found {count[0]}"
-        except Exception as e:
+        except Exception:
             # If direct database check fails, at least verify in-memory storage
             assert len(context_manager.state_changes) >= 1
 

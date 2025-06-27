@@ -1,11 +1,10 @@
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 import time
-import httpx
 import tempfile
 from pathlib import Path
 from chatbot.integrations.farcaster.farcaster_observer import FarcasterObserver
-from chatbot.core.world_state import WorldStateManager, WorldState, Message
+from chatbot.core.world_state import WorldStateManager, Message
 
 @pytest.fixture
 def observer():

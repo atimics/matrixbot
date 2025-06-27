@@ -21,12 +21,10 @@ from ...core.ai_engine import AIDecisionEngine, ActionPlan
 from ...core.history_recorder import HistoryRecorder
 from ...core.integration_manager import IntegrationManager
 from ...integrations.arweave_uploader_client import ArweaveUploaderClient
-from ...integrations.farcaster import FarcasterObserver
 from ..node_system.node_manager import NodeManager
 from ..node_system.summary_service import NodeSummaryService
 from ..node_system.interaction_tools import NodeInteractionTools
 from ..processors.adaptive_processor import AdaptiveProcessor
-from ...integrations.matrix.observer import MatrixObserver
 from ...integrations.base_nft_service import BaseNFTService
 from ...integrations.eligibility_service import UserEligibilityService
 from ...tools.registry import ToolRegistry
@@ -35,7 +33,6 @@ from ..world_state.payload_builder import PayloadBuilder
 from .processing_hub import ProcessingHub, ProcessingConfig
 from .rate_limiter import RateLimiter, RateLimitConfig
 from ..proactive import ProactiveConversationEngine
-from ...integrations.matrix.health_monitor import MatrixHealthMonitor
 
 logger = logging.getLogger(__name__)
 
@@ -656,11 +653,11 @@ class MainOrchestrator:
         # CRITICAL: Register integrations with ServiceRegistry for service abstraction
         if matrix_integration and self.action_context and self.action_context.service_registry:
             self.action_context.service_registry.register_service("matrix_observer", matrix_integration)
-            logger.info(f"✓ Matrix integration registered with ServiceRegistry")
+            logger.info("✓ Matrix integration registered with ServiceRegistry")
         
         if farcaster_integration and self.action_context and self.action_context.service_registry:
             self.action_context.service_registry.register_service("farcaster_observer", farcaster_integration)
-            logger.info(f"✓ Farcaster integration registered with ServiceRegistry")
+            logger.info("✓ Farcaster integration registered with ServiceRegistry")
         
         # Also register storage services if available
         if (self.action_context and self.action_context.service_registry and 
@@ -1044,7 +1041,7 @@ class MainOrchestrator:
         existing_integrations = await self.integration_manager.list_integrations()
         
         # Debug log the Farcaster settings
-        logger.info(f"Farcaster settings check:")
+        logger.info("Farcaster settings check:")
         logger.info(f"  neynar_api_key: {'SET' if settings.farcaster.neynar_api_key else 'NOT SET'}")
         logger.info(f"  bot_fid: {'SET' if settings.farcaster.bot_fid else 'NOT SET'}")
         logger.info(f"  bot_signer_uuid: {'SET' if settings.farcaster.bot_signer_uuid else 'NOT SET'}")

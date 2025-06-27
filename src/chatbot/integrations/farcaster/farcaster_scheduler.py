@@ -9,7 +9,6 @@ import logging
 import time
 from typing import Any, Dict, Optional
 
-from .neynar_api_client import NeynarAPIClient
 from .client_factory import FarcasterClient
 
 logger = logging.getLogger(__name__)

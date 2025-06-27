@@ -8,7 +8,6 @@ import time
 from unittest.mock import patch, AsyncMock
 
 from chatbot.core.world_state import WorldStateManager
-from chatbot.core.history_recorder import HistoryRecorder
 from chatbot.core.context import ContextManager
 from chatbot.core.orchestration import MainOrchestrator, OrchestratorConfig, ProcessingConfig
 

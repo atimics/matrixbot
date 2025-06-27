@@ -7,7 +7,6 @@ It manages private keys securely and exposes a minimal REST API for signing oper
 
 import os
 import logging
-import base64
 from contextlib import asynccontextmanager
 from typing import Dict, Any, List, Optional
 

@@ -3,7 +3,6 @@ Test suite for custom exception classes.
 """
 
 import pytest
-from unittest.mock import Mock
 
 from chatbot.exceptions import (
     ChatbotBaseException,

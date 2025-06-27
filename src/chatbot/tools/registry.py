@@ -1,7 +1,6 @@
 """
 Tool registry for dynamic tool management and AI prompt generation.
 """
-import json
 import logging
 from typing import Any, Dict, List, Optional
 

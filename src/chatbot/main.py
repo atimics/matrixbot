@@ -8,11 +8,10 @@ For commercial use, contact the copyright holder for permission.
 
 import asyncio
 import logging
-from pathlib import Path
 
 from chatbot.config import settings
 from chatbot.core.container import DependencyContainer
-from chatbot.core.orchestration import OrchestratorConfig, ProcessingConfig
+from chatbot.core.orchestration import OrchestratorConfig
 from chatbot.utils.logging_utils import setup_colorized_logging
 
 

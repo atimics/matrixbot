@@ -9,13 +9,11 @@ It uses simpler models and focused prompts for mission fulfillment.
 import json
 import logging
 from typing import Dict, List, Any, Optional
-from dataclasses import asdict
 
 import httpx
 
 from chatbot.config import settings
 from .ai_engine import ActionPlan
-from .world_state.structures import Mission
 
 logger = logging.getLogger(__name__)
 

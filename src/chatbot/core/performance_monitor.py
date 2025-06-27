@@ -8,11 +8,10 @@ monitoring capabilities as outlined in the engineering report.
 
 import logging
 import time
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 from dataclasses import dataclass, field
 from collections import deque, defaultdict
-from datetime import datetime, timedelta
-import json
+from datetime import datetime
 import threading
 
 logger = logging.getLogger(__name__)

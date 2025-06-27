@@ -135,7 +135,7 @@ class SendMatrixVideoTool(ToolInterface):
                 content=content
             )
             
-            from nio import RoomSendResponse, RoomSendError
+            from nio import RoomSendResponse
             if isinstance(send_response, RoomSendResponse):
                 # Record this action success in world state
                 if context.world_state_manager:

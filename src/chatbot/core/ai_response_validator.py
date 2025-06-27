@@ -9,7 +9,7 @@ addressing the critical JSON parsing failures identified in the engineering repo
 import json
 import logging
 import re
-from typing import Dict, Any, List, Optional, Union
+from typing import Dict, Optional
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)

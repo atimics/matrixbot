@@ -6,7 +6,7 @@ for the Commander/Sub-Agent architecture.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 
 class Processor(ABC):

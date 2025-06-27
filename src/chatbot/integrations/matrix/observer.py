@@ -12,9 +12,8 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, TYPE_CHECKING, Callable
+from typing import Any, Dict, Optional, Callable
 
-import httpx
 from dotenv import load_dotenv
 from nio import (
     AsyncClient,
@@ -28,7 +27,7 @@ from nio import (
 
 from ...config import settings
 from ...core.world_state import Channel, Message, WorldStateManager
-from ..base import Integration, IntegrationError, IntegrationConnectionError
+from ..base import Integration, IntegrationConnectionError
 
 logger = logging.getLogger(__name__)
 load_dotenv()

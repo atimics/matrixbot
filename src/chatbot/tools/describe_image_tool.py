@@ -1,8 +1,7 @@
 import logging
 import re
 import time
-from typing import Any, Dict, List
-from urllib.parse import urlparse
+from typing import Any, Dict
 
 import httpx
 
@@ -20,7 +19,6 @@ async def ensure_publicly_accessible_image_url(image_url: str, context: ActionCo
     For Matrix URLs, download via nio client and upload to Arweave.
     Returns tuple of (url, is_accessible)
     """
-    import re
     
     # Check if this is a Matrix media URL using a generic pattern
     matrix_url_pattern = r"https://([^/]+)/_matrix/media/(?:r0|v3)/download/([^/]+)/(.+)"

@@ -23,18 +23,17 @@ import logging
 import shutil
 import sqlite3
 import sys
-import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
 import psycopg
+from chatbot.config import settings
 
 # Add the project root to the Python path for imports
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from chatbot.config import settings
 
 # Configure logging
 logging.basicConfig(

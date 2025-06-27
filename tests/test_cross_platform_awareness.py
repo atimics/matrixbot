@@ -10,13 +10,11 @@ Tests all components of the cross-platform awareness system:
 - Complete integration testing
 """
 
-import json
 import time
 import unittest
-from collections import deque
 from unittest.mock import MagicMock, patch, Mock
 
-from chatbot.core.node_system.node_manager import NodeManager, SystemEvent, NodeMetadata
+from chatbot.core.node_system.node_manager import NodeManager, SystemEvent
 from chatbot.core.orchestration.main_orchestrator import MainOrchestrator
 from chatbot.core.world_state.payload_builder import PayloadBuilder
 from chatbot.core.world_state import WorldStateManager
@@ -533,7 +531,6 @@ class TestPayloadBuilderCrossPlatform(unittest.TestCase):
         """Test compact Farcaster user data with bio truncation."""
         # Add Farcaster messages with user data
         from chatbot.core.world_state.structures import Message
-        import time
         
         # Create a message with extended user info (this is how user data is typically stored)
         message = Message(
