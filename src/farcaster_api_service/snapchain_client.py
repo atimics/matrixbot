@@ -13,8 +13,8 @@ from datetime import datetime
 
 # Import farcaster protobuf definitions
 try:
-    from farcaster import Message, CastAddBody, CastId, UserDataType
-    from farcaster.fcproto.message_pb2 import Message as MessageProto
+    # Import protobuf classes directly from fcproto
+    from farcaster.fcproto.message_pb2 import Message as MessageProto, CastAddBody, CastId, UserDataType
     from farcaster.fcproto.hub_service_pb2_grpc import HubServiceStub
     from farcaster.fcproto import hub_service_pb2 as hub_pb2
 except ImportError as e:
