@@ -53,7 +53,8 @@ class SQLiteToPostgresMigrator:
     
     def __init__(self, sqlite_path: str, dry_run: bool = False, backup_dir: Optional[str] = None):
         self.sqlite_path = sqlite_path
-        self.postgres_dsn = settings.postgres.dsn
+        # Use external DSN for migration scripts running outside Docker
+        self.postgres_dsn = settings.postgres.external_dsn
         self.dry_run = dry_run
         self.backup_dir = backup_dir
         self.migration_stats = {

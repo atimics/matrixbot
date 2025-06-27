@@ -92,11 +92,13 @@ class PostgreSQLMigrationTest:
         """Set up the test environment."""
         logger.info("Setting up test environment...")
         
-        # Verify PostgreSQL connection settings
-        logger.info(f"PostgreSQL DSN: {settings.postgres.dsn}")
+        # Use external DSN for tests running outside Docker
+        logger.info(f"PostgreSQL External DSN: {settings.postgres.external_dsn}")
         
-        # Initialize database manager
+        # Initialize database manager with external connection
         self.db_manager = DatabaseManager()
+        # Override the DSN for external access
+        self.db_manager.dsn = settings.postgres.external_dsn
         await self.db_manager.initialize()
         
         logger.info("✅ Test environment setup complete")

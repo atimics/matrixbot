@@ -12,11 +12,13 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
     git \
+    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Poetry
+# Install Poetry with export plugin
 RUN pip install --upgrade pip
-RUN pip install poetry
+RUN pip install "poetry>=2.0.0"
+RUN poetry self add poetry-plugin-export
 
 # Configure Poetry
 ENV POETRY_NO_INTERACTION=1 \
@@ -28,6 +30,9 @@ WORKDIR /app
 
 # Copy Poetry configuration files FIRST for better layer caching
 COPY pyproject.toml poetry.lock ./
+
+# Generate requirements.txt from Poetry for reliable dependency installation
+RUN poetry export -f requirements.txt --output requirements.txt --without-hashes --only=main
 
 # Install dependencies using Poetry (no-root since package-mode is false)
 # This happens BEFORE copying source code for better Docker layer caching
@@ -49,6 +54,7 @@ ENV CHATBOT_ENV=production
 # Install runtime dependencies only
 RUN apt-get update && apt-get install -y \
     curl \
+    libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
@@ -60,12 +66,19 @@ WORKDIR /app
 # Copy the virtual environment from builder
 COPY --from=builder /app/.venv /app/.venv
 
+# Copy the generated requirements.txt as backup
+COPY --from=builder /app/requirements.txt /app/requirements.txt
+
 # Copy application code
 COPY --from=builder /app/chatbot /app/chatbot
 COPY --from=builder /app/pyproject.toml /app/pyproject.toml
 
-# Add Poetry venv to PATH
+# Add Poetry venv to PATH  
 ENV PATH="/app/.venv/bin:$PATH"
+ENV VIRTUAL_ENV="/app/.venv"
+
+# Verify psycopg is installed, install from requirements.txt if missing
+RUN python -c "import psycopg.pool" 2>/dev/null || pip install -r requirements.txt
 
 # Create directories for data persistence
 RUN mkdir -p /app/data /app/logs /app/matrix_store /app/context_storage

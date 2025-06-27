@@ -255,6 +255,11 @@ class PostgresConfig(BaseSettings):
     def dsn(self) -> str:
         """Data Source Name connection string."""
         return f"postgresql://{self.user}:{self.password}@{self.host}:{self.port}/{self.dbname}"
+    
+    @property
+    def external_dsn(self) -> str:
+        """External Data Source Name for migration scripts (uses localhost)."""
+        return f"postgresql://{self.user}:{self.password}@localhost:{self.port}/{self.dbname}"
 
 
 class AppConfig(BaseSettings):
