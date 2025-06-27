@@ -21,28 +21,92 @@ services:
       timeout: 5s
       retries: 5
 
-  # NEW: Farcaster Snapchain Node
+  # Snapchain Node with AWS Storage Support
+  # Choose one of the deployment options below by uncommenting the appropriate section
+  
+  # Option 1: AWS EBS Storage (Recommended for AWS deployment)
   snapchain:
     image: farcasterxyz/snapchain:latest
     container_name: ratichat_snapchain
-    command: --network mainnet # Use mainnet. For testnet, use --network testnet
+    init: true
+    environment:
+      RUST_BACKTRACE: "full"
+      # AWS Configuration (set these in .env for production)
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+    entrypoint:
+      - "/bin/bash"
+      - "-c"
+      - |
+        #!/bin/bash
+        # Ensure data directory exists and has proper permissions
+        mkdir -p /app/.rocks /app/.rocks.snapshot
+        chown -R 1000:1000 /app/.rocks /app/.rocks.snapshot
+        
+        cat > config.toml <<EOF
+        rpc_address="0.0.0.0:3383"
+        http_address="0.0.0.0:3381"
+        rocksdb_dir=".rocks"
+        fc_network="Mainnet"
+        read_node = true
+        
+        [statsd]
+        prefix="snap_read"
+        addr="127.0.0.1:8125"
+        use_tags=false
+        
+        [gossip]
+        address="/ip4/0.0.0.0/udp/3382/quic-v1"
+        bootstrap_peers = "/ip4/54.236.164.51/udp/3382/quic-v1,/ip4/54.87.204.167/udp/3382/quic-v1,/ip4/44.197.255.20/udp/3382/quic-v1,/ip4/34.195.157.114/udp/3382/quic-v1,/ip4/107.20.169.236/udp/3382/quic-v1"
+        
+        [consensus]
+        validator_addresses = ["6bc2d8901443de856d2670b0c2ea12b6727132fa830f9030d3a44ac5da9b1a72","67474a42e0c6507198b73373b0558dfc94616b976ecfdf5c45fae11e2bee7102","81032ecefa4260e5a63424f5a4b8b18b52d717a52583b3ffe22c4a7b084911b8","2c0f58a364b7959c85e49b5a50d14d220c16f8bd7879b0d5d3f68b32de83ecb8","29696eb40eb900a329a8d2542edef15d552c9ba6ded7882276be1e9eca090970"]
+        shard_ids = [1,2]
+        num_shards = 2
+        
+        [snapshot]
+        endpoint_url = "https://e1f9f185c6e63471dd39f96abd3413c4.r2.cloudflarestorage.com"
+        load_db_from_snapshot=true
+        EOF
+        
+        echo "Starting Snapchain with AWS-optimized configuration..."
+        exec ./snapchain --config-path config.toml
     restart: unless-stopped
     ports:
-      # Expose ports to the host machine if needed for direct debugging
-      # but they are accessible within the Docker network by their internal ports.
-      - "3381:3381" # HTTP API
-      - "3382:3382" # Gossip (for peering with other nodes)
-      - "3383:3383" # gRPC (this is what your backend will use)
+      - "3381:3381/tcp" # HTTP API
+      - "3382:3382/udp" # Gossip (for peering with other nodes)  
+      - "3383:3383/tcp" # gRPC (this is what your backend will use)
     volumes:
-      - snapchain_data:/data # Persist snapchain data to a Docker volume
+      # For AWS deployment: 
+      # 1. Mount EBS volume to host at /mnt/snapchain-data
+      # 2. Update these paths to use the mounted EBS volume:
+      #    - /mnt/snapchain-data/.rocks:/app/.rocks
+      #    - /mnt/snapchain-data/.rocks.snapshot:/app/.rocks.snapshot
+      # For now using Docker volumes (will auto-create EBS if using AWS driver):
+      - snapchain_data:/app/.rocks
+      - snapchain_snapshot:/app/.rocks.snapshot
     networks:
       - ratichat_network
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:3381/v1/info || exit 1"]
-      interval: 30s
+      interval: 60s
       timeout: 10s
       retries: 5
-      start_period: 2m # Give the node time to start up before healthchecking
+      start_period: 10m # Give the node time to download snapshots (~2 hours for full sync)
+    # AWS-specific resource limits (adjust based on your instance type)
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: '4.0'
+        reservations:
+          memory: 4G
+          cpus: '2.0'
+
+  # Option 2: For local development or if you want to skip snapchain entirely,
+  # comment out the above snapchain service and use remote snapchain via .env:
+  # SNAPCHAIN_GRPC_HOST=your-remote-snapchain-host.com
 
   # NEW: Secure Farcaster Signer Service
   signer_service:
@@ -91,16 +155,19 @@ services:
     volumes:
       - ./src/farcaster_api_service:/app # For development (remove in production)
     depends_on:
-      snapchain:
-        condition: service_healthy
+      # snapchain:
+      #   condition: service_healthy
       signer_service:
         condition: service_healthy
     networks:
       - ratichat_network
     environment:
-      # Connection settings for Snapchain node
-      - SNAPCHAIN_GRPC_HOST=snapchain
-      - SNAPCHAIN_GRPC_PORT=3383
+      # Connection settings for Snapchain node (local or remote)
+      - SNAPCHAIN_GRPC_HOST=${SNAPCHAIN_GRPC_HOST:-snapchain}
+      - SNAPCHAIN_GRPC_PORT=${SNAPCHAIN_GRPC_PORT:-3383}
+      # For remote snapchain, you can set these in .env:
+      # SNAPCHAIN_GRPC_HOST=your-remote-snapchain-host.com
+      # SNAPCHAIN_GRPC_PORT=3383
       # Connection settings for Signer service
       - SIGNER_SERVICE_URL=http://signer_service:8000
     healthcheck:
@@ -172,6 +239,7 @@ volumes:
   postgres_data:
   # NEW: Volume for Snapchain data persistence
   snapchain_data:
+  snapchain_snapshot:
   # NEW: Volume for secure signer key storage
   signer_data:
 
