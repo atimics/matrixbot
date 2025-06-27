@@ -40,7 +40,7 @@ RUN poetry install --only=main --no-interaction --no-ansi --no-root && \
     rm -rf $POETRY_CACHE_DIR
 
 # Copy source code AFTER dependencies are installed
-COPY chatbot/ ./chatbot/
+COPY src/chatbot/ ./chatbot/
 
 
 # Production stage

@@ -47,7 +47,7 @@ services:
   # NEW: Secure Farcaster Signer Service
   signer_service:
     build:
-      context: ./signer_service
+      context: ./src/signer_service
       dockerfile: Dockerfile
     container_name: ratichat_signer_service
     restart: unless-stopped
@@ -82,14 +82,14 @@ services:
   # NEW: In-house Farcaster API service
   farcaster_api_service:
     build:
-      context: ./farcaster_api_service
+      context: ./src/farcaster_api_service
       dockerfile: Dockerfile
     container_name: ratichat_farcaster_api
     restart: unless-stopped
     ports:
       - "8001:8001" # Expose the API service
     volumes:
-      - ./farcaster_api_service:/app # For development (remove in production)
+      - ./src/farcaster_api_service:/app # For development (remove in production)
     depends_on:
       snapchain:
         condition: service_healthy
@@ -152,7 +152,7 @@ services:
 
   ratichat_ui:
     build:
-      context: ./ui-nextjs # Point to the Next.js app
+      context: ./src/ui-nextjs # Point to the Next.js app
       dockerfile: Dockerfile
     container_name: ratichat_ui
     ports:

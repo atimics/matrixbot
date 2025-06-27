@@ -141,8 +141,8 @@ class SecureKeyManager:
         logger.info(f"Generating new signer key for FID {fid}")
         
         # Generate Ed25519 key pair
-        private_key = ed25519.SigningKey.generate()
-        public_key = private_key.verifying_key
+        private_key = ed25519.SigningKey(os.urandom(32))
+        public_key = private_key.verify_key
         
         # Store encrypted private key
         private_key_bytes = private_key.encode()
@@ -203,7 +203,7 @@ class SecureKeyManager:
             
             private_key_bytes = self._decrypt_key(encrypted_key)
             private_key = ed25519.SigningKey(private_key_bytes)
-            public_key = private_key.verifying_key
+            public_key = private_key.verify_key
             
             # Store in memory
             self._private_key = private_key
