@@ -77,8 +77,8 @@ COPY --from=builder /app/pyproject.toml /app/pyproject.toml
 ENV PATH="/app/.venv/bin:$PATH"
 ENV VIRTUAL_ENV="/app/.venv"
 
-# Verify psycopg is installed, install from requirements.txt if missing
-RUN python -c "import psycopg.pool" 2>/dev/null || pip install -r requirements.txt
+# Verify psycopg.pool is available - if not, install missing packages
+RUN python -c "import psycopg.pool" || (echo "psycopg.pool not found, installing missing packages..." && pip install -r requirements.txt)
 
 # Create directories for data persistence
 RUN mkdir -p /app/data /app/logs /app/matrix_store /app/context_storage

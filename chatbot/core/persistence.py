@@ -15,7 +15,7 @@ from pathlib import Path
 from dataclasses import dataclass
 
 import psycopg
-from psycopg.pool import AsyncConnectionPool
+from psycopg_pool import AsyncConnectionPool
 from chatbot.config import settings
 
 logger = logging.getLogger(__name__)
