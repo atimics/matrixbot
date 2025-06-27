@@ -78,14 +78,23 @@ services:
       - "3382:3382/udp" # Gossip (for peering with other nodes)  
       - "3383:3383/tcp" # gRPC (this is what your backend will use)
     volumes:
-      # For AWS deployment: 
-      # 1. Mount EBS volume to host at /mnt/snapchain-data
-      # 2. Update these paths to use the mounted EBS volume:
-      #    - /mnt/snapchain-data/.rocks:/app/.rocks
-      #    - /mnt/snapchain-data/.rocks.snapshot:/app/.rocks.snapshot
-      # For now using Docker volumes (will auto-create EBS if using AWS driver):
-      - snapchain_data:/app/.rocks
-      - snapchain_snapshot:/app/.rocks.snapshot
+      # Option A: For local development (Mac/Linux)
+      - /tmp/snapchain-data/.rocks:/app/.rocks
+      - /tmp/snapchain-data/.rocks.snapshot:/app/.rocks.snapshot
+      
+      # Option B: For AWS EBS deployment (uncomment when running on EC2): 
+      # Mount EBS volume to host at /mnt/snapchain-data and use:
+      # - /mnt/snapchain-data/.rocks:/app/.rocks
+      # - /mnt/snapchain-data/.rocks.snapshot:/app/.rocks.snapshot
+      
+      # Option C: For Storj DCS deployment:
+      # Run ./setup-storj-snapchain.sh first, then use:
+      # - /mnt/snapchain-data/.rocks:/app/.rocks
+      # - /mnt/snapchain-data/.rocks.snapshot:/app/.rocks.snapshot
+      
+      # Option C: For development with Docker volumes (will auto-create):
+      # - snapchain_data:/app/.rocks  # Using EBS instead
+      # - snapchain_snapshot:/app/.rocks.snapshot  # Using EBS instead
     networks:
       - ratichat_network
     healthcheck:
