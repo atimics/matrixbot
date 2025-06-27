@@ -142,10 +142,10 @@ class SecureKeyManager:
         
         # Generate Ed25519 key pair
         private_key = ed25519.SigningKey(os.urandom(32))
-        public_key = private_key.verify_key
+        public_key = private_key.get_verifying_key()
         
         # Store encrypted private key
-        private_key_bytes = private_key.encode()
+        private_key_bytes = private_key.to_bytes()
         encrypted_key = self._encrypt_key(private_key_bytes)
         
         with open(self.key_file, 'wb') as f:
@@ -154,7 +154,7 @@ class SecureKeyManager:
         # Store metadata
         metadata = {
             "fid": fid,
-            "public_key_hex": public_key.encode().hex(),
+            "public_key_hex": public_key.to_bytes().hex(),
             "created_at": "2025-06-26T00:00:00Z",  # Current timestamp
             "key_type": "ed25519"
         }
@@ -172,11 +172,11 @@ class SecureKeyManager:
         self._fid = fid
         
         logger.info(f"New signer key generated and stored securely")
-        logger.info(f"Public key (for registration): {public_key.encode().hex()}")
+        logger.info(f"Public key (for registration): {public_key.to_bytes().hex()}")
         
         return {
             "fid": fid,
-            "public_key_hex": public_key.encode().hex(),
+            "public_key_hex": public_key.to_bytes().hex(),
             "registration_required": True,
             "message": "Register this public key on-chain using your account's Owner Key"
         }
@@ -203,7 +203,7 @@ class SecureKeyManager:
             
             private_key_bytes = self._decrypt_key(encrypted_key)
             private_key = ed25519.SigningKey(private_key_bytes)
-            public_key = private_key.verify_key
+            public_key = private_key.get_verifying_key()
             
             # Store in memory
             self._private_key = private_key
@@ -211,7 +211,7 @@ class SecureKeyManager:
             self._fid = metadata["fid"]
             
             logger.info(f"Loaded existing signer key for FID {self._fid}")
-            logger.info(f"Public key: {public_key.encode().hex()}")
+            logger.info(f"Public key: {public_key.to_bytes().hex()}")
             
             return metadata
             
@@ -239,7 +239,7 @@ class SecureKeyManager:
         """Get the public key as a hex string."""
         if not self._public_key:
             return None
-        return self._public_key.encode().hex()
+        return self._public_key.to_bytes().hex()
     
     def get_fid(self) -> Optional[int]:
         """Get the FID associated with this key."""
