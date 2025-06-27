@@ -13,14 +13,27 @@ from datetime import datetime
 
 # Import farcaster protobuf definitions
 try:
-    # Import protobuf classes directly from fcproto
-    from farcaster.fcproto.message_pb2 import Message as MessageProto, CastAddBody, CastId, UserDataType
-    from farcaster.fcproto.hub_service_pb2_grpc import HubServiceStub
-    from farcaster.fcproto import hub_service_pb2 as hub_pb2
+    # Import the correct protobuf classes
+    from farcaster.fcproto.message_pb2 import Message, CastAddBody, CastId, UserDataType
+    from farcaster.fcproto.request_response_pb2 import HubInfoRequest, FidRequest
+    from farcaster.fcproto.rpc_pb2_grpc import HubServiceStub
+    GRPC_AVAILABLE = True
+    logger = logging.getLogger(__name__)
+    logger.info("Successfully imported farcaster-py protobuf classes")
 except ImportError as e:
-    logging.error(f"Failed to import farcaster-py: {e}")
-    logging.error("Please install farcaster-py: pip install farcaster-py")
-    raise
+    logging.warning(f"farcaster-py gRPC not available: {e}")
+    # Define minimal fallbacks
+    class UserDataType:
+        USER_DATA_TYPE_USERNAME = 1
+        USER_DATA_TYPE_DISPLAY = 2
+        USER_DATA_TYPE_BIO = 3
+        USER_DATA_TYPE_PFP = 6
+    HubServiceStub = None
+    HubInfoRequest = None
+    FidRequest = None
+    CastId = None
+    Message = None
+    GRPC_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +63,10 @@ class SnapchainClient:
     
     async def connect(self):
         """Establish gRPC connection to the Snapchain node."""
+        if not GRPC_AVAILABLE:
+            logger.warning("gRPC functionality not available - running in stub mode")
+            return
+            
         try:
             self._channel = grpc.aio.insecure_channel(self.address)
             self._stub = HubServiceStub(self._channel)
@@ -80,10 +97,13 @@ class SnapchainClient:
         Returns:
             Dict containing node information
         """
+        if not GRPC_AVAILABLE:
+            return {"error": "gRPC not available", "version": "stub"}
+            
         self._ensure_connected()
         
         try:
-            request = hub_pb2.HubInfoRequest()
+            request = HubInfoRequest()
             response = await self._stub.GetInfo(request)
             
             return {
@@ -112,13 +132,16 @@ class SnapchainClient:
         Returns:
             Dict containing cast data, or None if not found
         """
+        if not GRPC_AVAILABLE:
+            return None
+            
         self._ensure_connected()
         
         try:
             # Remove 0x prefix if present and convert to bytes
             hash_bytes = bytes.fromhex(cast_hash.replace('0x', ''))
             
-            request = hub_pb2.CastId(hash=hash_bytes)
+            request = CastId(hash=hash_bytes)
             response = await self._stub.GetCast(request)
             
             return self._convert_cast_message_to_dict(response)
@@ -142,10 +165,13 @@ class SnapchainClient:
         Returns:
             List of cast dictionaries
         """
+        if not GRPC_AVAILABLE:
+            return []
+            
         self._ensure_connected()
         
         try:
-            request = hub_pb2.FidRequest(fid=fid)
+            request = FidRequest(fid=fid)
             response = await self._stub.GetCastsByFid(request)
             
             casts = []
@@ -173,11 +199,14 @@ class SnapchainClient:
         Returns:
             Dict containing submission result
         """
+        if not GRPC_AVAILABLE:
+            return {"success": False, "error": "gRPC not available"}
+            
         self._ensure_connected()
         
         try:
             # Create message proto with dataBytes populated
-            message = MessageProto()
+            message = Message()
             message.data_bytes = message_data
             # Important: data field should be undefined/empty as per docs
             
@@ -256,10 +285,13 @@ class SnapchainClient:
         Returns:
             Dict containing user data, or None if not found
         """
+        if not GRPC_AVAILABLE:
+            return None
+            
         self._ensure_connected()
         
         try:
-            request = hub_pb2.FidRequest(fid=fid)
+            request = FidRequest(fid=fid)
             response = await self._stub.GetUserData(request)
             
             user_data = {}
