@@ -224,7 +224,7 @@ class MainOrchestrator:
         # Core components
         self.world_state = WorldStateManager()
         self.payload_builder = PayloadBuilder()
-        self.rate_limiter = RateLimiter(self.config.rate_limit_config)
+        self.rate_limiter = RateLimiter(self.config.rate_limit_config, world_state_manager=self.world_state)
         self.context_manager = ContextManager(self.world_state, self.config.db_path)
         
         # Integration management
@@ -340,6 +340,7 @@ class MainOrchestrator:
         from ...tools.permaweb_tools import StorePermanentMemoryTool
         from ...tools.web_tools import WebSearchTool
         from ...tools.research_tools import UpdateResearchTool, QueryResearchTool
+        from ...tools.mini_app_tools import UpdateMiniAppDBTool, SearchMiniAppsTool
         from ...tools.developer_tools import (
             GetGitHubIssuesTool, GetGitHubIssueDetailsTool, CommentOnGitHubIssueTool,
             CreateGitHubIssueTool, AnalyzeChannelForIssuesTool,
@@ -367,6 +368,10 @@ class MainOrchestrator:
         self.tool_registry.register_tool(WebSearchTool())
         self.tool_registry.register_tool(UpdateResearchTool())
         self.tool_registry.register_tool(QueryResearchTool())
+        
+        # Mini-app recommendation tools
+        self.tool_registry.register_tool(UpdateMiniAppDBTool())
+        self.tool_registry.register_tool(SearchMiniAppsTool())
         
         # Matrix tools
         self.tool_registry.register_tool(SendMatrixMessageTool())

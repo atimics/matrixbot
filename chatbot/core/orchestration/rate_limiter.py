@@ -67,13 +67,14 @@ class RateLimitConfig:
 class RateLimiter:
     """Enhanced rate limiting with adaptive behavior and action-specific limits."""
 
-    def __init__(self, config: RateLimitConfig):
+    def __init__(self, config: RateLimitConfig, world_state_manager=None):
         self.config = config
+        self.world_state_manager = world_state_manager
 
         # Time-based tracking for different rate limit types
         self.cycle_history = deque()  # For tracking processing cycles
         self.action_history: Dict[str, deque] = defaultdict(lambda: deque())
-        self.daily_action_history: Dict[str, deque] = defaultdict(lambda: deque())  # For 24-hour tracking
+        # Note: daily_action_history is now handled by world state for persistence
         self.channel_history: Dict[str, deque] = defaultdict(lambda: deque())
 
         # State for adaptive behavior
@@ -166,16 +167,25 @@ class RateLimiter:
 
         # Check daily limit (only if not a mention and daily limit exists)
         if not is_mention and action_name in self.config.daily_limits:
-            daily_deque = self.daily_action_history[action_name]
-            self._clean_deque(daily_deque, current_time, 86400)  # 24 hours
-            
-            daily_limit = self.config.daily_limits[action_name]
-            if len(daily_deque) >= daily_limit:
-                oldest_daily_action = daily_deque[0] if daily_deque else current_time
-                wait_time = 86400 - (current_time - oldest_daily_action)
+            if self.world_state_manager and hasattr(self.world_state_manager, 'state'):
+                # Use persistent world state for daily tracking
+                if action_name not in self.world_state_manager.state.daily_rate_limits:
+                    from ..world_state.structures import DailyRateLimit
+                    self.world_state_manager.state.daily_rate_limits[action_name] = DailyRateLimit(
+                        action_name=action_name,
+                        daily_limit=self.config.daily_limits[action_name]
+                    )
+                
+                daily_limiter = self.world_state_manager.state.daily_rate_limits[action_name]
+                can_execute, reason = daily_limiter.can_execute(current_time, is_mention)
+                if not can_execute:
+                    return False, reason
+            else:
+                # Fallback: use basic daily limit check without persistence
+                daily_limit = self.config.daily_limits[action_name]
                 return (
                     False,
-                    f"Daily action limit exceeded: {len(daily_deque)}/{daily_limit} per day. Wait {wait_time:.0f}s",
+                    f"Daily limit not enforced: world state not available. Limit would be {daily_limit} per day.",
                 )
 
         return True, ""
@@ -217,9 +227,17 @@ class RateLimiter:
         """Record an action execution."""
         self.action_history[action_name].append(current_time)
         
-        # Also record for daily tracking if action has daily limits
-        if action_name in self.config.daily_limits:
-            self.daily_action_history[action_name].append(current_time)
+        # Also record for daily tracking if action has daily limits and world state is available
+        if action_name in self.config.daily_limits and self.world_state_manager and hasattr(self.world_state_manager, 'state'):
+            if action_name not in self.world_state_manager.state.daily_rate_limits:
+                from ..world_state.structures import DailyRateLimit
+                self.world_state_manager.state.daily_rate_limits[action_name] = DailyRateLimit(
+                    action_name=action_name,
+                    daily_limit=self.config.daily_limits[action_name]
+                )
+            
+            daily_limiter = self.world_state_manager.state.daily_rate_limits[action_name]
+            daily_limiter.record_execution(current_time)
 
     def record_channel_message(self, channel_id: str, current_time: float):
         """Record a message sent to a channel."""
@@ -243,13 +261,30 @@ class RateLimiter:
         # Add daily limits status
         daily_action_status = {}
         for action_name, daily_limit in self.config.daily_limits.items():
-            daily_deque = self.daily_action_history[action_name]
-            self._clean_deque(daily_deque, current_time, 86400)  # 24 hours
-            daily_action_status[action_name] = {
-                "used": len(daily_deque),
-                "limit": daily_limit,
-                "remaining": max(0, daily_limit - len(daily_deque)),
-            }
+            if self.world_state_manager and hasattr(self.world_state_manager, 'state'):
+                if action_name not in self.world_state_manager.state.daily_rate_limits:
+                    from ..world_state.structures import DailyRateLimit
+                    self.world_state_manager.state.daily_rate_limits[action_name] = DailyRateLimit(
+                        action_name=action_name,
+                        daily_limit=daily_limit
+                    )
+                
+                daily_limiter = self.world_state_manager.state.daily_rate_limits[action_name]
+                daily_limiter.clean_old_entries(current_time)
+                used_count = len(daily_limiter.timestamps)
+                daily_action_status[action_name] = {
+                    "used": used_count,
+                    "limit": daily_limit,
+                    "remaining": max(0, daily_limit - used_count),
+                }
+            else:
+                # World state not available
+                daily_action_status[action_name] = {
+                    "used": 0,
+                    "limit": daily_limit,
+                    "remaining": daily_limit,
+                    "note": "World state not available - tracking not persistent"
+                }
 
         return {
             "cycles_per_hour": len(self.cycle_history),

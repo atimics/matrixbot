@@ -342,6 +342,48 @@ class ActionHistory:
 
 
 @dataclass
+class DailyRateLimit:
+    """
+    Tracks daily rate limiting for specific actions with persistence.
+    
+    Attributes:
+        action_name: Name of the action being rate limited
+        timestamps: List of execution timestamps within the current day
+        daily_limit: Maximum number of executions allowed per day
+        last_reset: Timestamp of the last daily reset (for cleanup)
+    """
+    action_name: str
+    timestamps: List[float] = field(default_factory=list)
+    daily_limit: int = 3
+    last_reset: float = field(default_factory=time.time)
+    
+    def clean_old_entries(self, current_time: float):
+        """Remove entries older than 24 hours."""
+        cutoff_time = current_time - 86400  # 24 hours
+        self.timestamps = [ts for ts in self.timestamps if ts >= cutoff_time]
+        
+    def can_execute(self, current_time: float, is_mention: bool = False) -> tuple[bool, str]:
+        """Check if action can be executed within daily limits."""
+        # Mentions bypass daily limits
+        if is_mention:
+            return True, ""
+            
+        self.clean_old_entries(current_time)
+        
+        if len(self.timestamps) >= self.daily_limit:
+            oldest_timestamp = min(self.timestamps) if self.timestamps else current_time
+            wait_time = 86400 - (current_time - oldest_timestamp)
+            return False, f"Daily limit exceeded: {len(self.timestamps)}/{self.daily_limit} per day. Wait {wait_time:.0f}s"
+            
+        return True, ""
+        
+    def record_execution(self, current_time: float):
+        """Record a new execution."""
+        self.clean_old_entries(current_time)
+        self.timestamps.append(current_time)
+
+
+@dataclass
 class SentimentData:
     """
     Tracks user sentiment based on their interactions.
@@ -387,6 +429,35 @@ class MemoryEntry:
     memory_type: str = "observation"  # observation, preference, fact, important_interaction
     importance: float = 0.5  # 0.0 to 1.0
     ai_summary: Optional[str] = None
+
+
+@dataclass  
+class MiniAppEntry:
+    """
+    Represents a Farcaster mini-app with metadata for recommendations.
+    
+    Attributes:
+        name: Human-readable name of the mini-app
+        url: Direct URL to access the mini-app
+        description: Detailed description of what the app does
+        developer: Name or identifier of the app developer
+        tags: List of keywords for searching and categorization
+        category: Primary category (e.g., "games", "tools", "social", "defi")
+        popularity_score: Optional popularity metric (0.0 to 1.0)
+        added_timestamp: When this entry was added to the database
+        last_updated: When this entry was last modified
+        metadata: Additional platform-specific information
+    """
+    name: str
+    url: str  
+    description: str
+    developer: str
+    tags: List[str] = field(default_factory=list)
+    category: str = "tools"
+    popularity_score: Optional[float] = None
+    added_timestamp: float = field(default_factory=time.time)
+    last_updated: float = field(default_factory=time.time)
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -891,6 +962,7 @@ class WorldStateData:
 
         # Rate limiting and API management
         self.rate_limits: Dict[str, Any] = {}  # API rate limiting information
+        self.daily_rate_limits: Dict[str, DailyRateLimit] = {}  # Persistent daily rate limiting
 
         # Matrix room management
         self.pending_matrix_invites: List[
@@ -934,6 +1006,9 @@ class WorldStateData:
         
         # Research knowledge base - persistent AI learning and knowledge accumulation
         self.research_database: Dict[str, Dict[str, Any]] = {}  # topic -> research_entry
+        
+        # Mini-app recommendation database - curated Farcaster mini-apps for user recommendations
+        self.mini_app_database: Dict[str, MiniAppEntry] = {}  # app_name -> mini_app_entry
         
         # Autonomous Code Evolution (ACE) capabilities
         self.target_repositories: Dict[str, TargetRepositoryContext] = {}  # repo_url -> context

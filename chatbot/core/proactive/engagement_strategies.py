@@ -582,6 +582,111 @@ class ContentSharingStrategy(EngagementStrategy):
         )
 
 
+class MiniAppRecommendationStrategy(EngagementStrategy):
+    """Strategy for recommending relevant mini-apps based on user needs."""
+    
+    def __init__(self):
+        super().__init__(
+            name="mini_app_recommendation",
+            description="Recommend relevant Farcaster mini-apps based on expressed user needs"
+        )
+    
+    def can_handle(self, opportunity: ConversationOpportunity) -> bool:
+        """Check if this is a mini-app recommendation opportunity."""
+        return opportunity.opportunity_type == "mini_app_opportunity"
+    
+    def generate_engagement_plan(self, opportunity: ConversationOpportunity) -> EngagementPlan:
+        """Generate a plan to recommend relevant mini-apps."""
+        context = opportunity.context
+        category = context.get("category", "tools")
+        matched_keyword = context.get("matched_keyword", "")
+        platform = context.get("platform", "farcaster")
+        
+        # Create action sequence
+        action_sequence = []
+        
+        # First, search for relevant mini-apps
+        search_query = matched_keyword
+        if category == "games":
+            search_query = "games entertainment fun"
+        elif category == "storage":
+            search_query = "storage files upload"
+        elif category == "tools":
+            search_query = "tools utility productivity"
+        elif category == "social":
+            search_query = "poll community social"
+        elif category == "defi":
+            search_query = "trading finance defi"
+        elif category == "buy":
+            search_query = "marketplace shopping buy"
+        
+        action_sequence.append({
+            "action_type": "search_mini_apps",
+            "parameters": {
+                "query": search_query,
+                "category": category if category != "help" else "",
+                "limit": 3,
+                "include_popularity": True
+            },
+            "reasoning": f"Search for {category} mini-apps relevant to user's interest in '{matched_keyword}'"
+        })
+        
+        # Then, reply with recommendations based on platform
+        if platform == "farcaster":
+            action_sequence.append({
+                "action_type": "send_farcaster_reply",
+                "parameters": {
+                    "text": "{{mini_app_recommendations}}",
+                    "reply_to": context.get("message_id")
+                },
+                "reasoning": "Reply with mini-app recommendations on Farcaster"
+            })
+        elif platform == "matrix":
+            action_sequence.append({
+                "action_type": "send_matrix_reply",
+                "parameters": {
+                    "content": "{{mini_app_recommendations}}",
+                    "reply_to": context.get("message_id")
+                },
+                "reasoning": "Reply with mini-app recommendations in Matrix"
+            })
+        else:
+            # Default to Farcaster post if platform is unclear
+            action_sequence.append({
+                "action_type": "send_farcaster_post",
+                "parameters": {
+                    "text": "{{mini_app_recommendations}}",
+                    "channel_id": context.get("channel_id")
+                },
+                "reasoning": "Share mini-app recommendations as a post"
+            })
+        
+        # Calculate priority and confidence based on context
+        priority = opportunity.priority
+        confidence = 0.8  # High confidence for keyword-based recommendations
+        
+        # Adjust confidence based on keyword specificity
+        if category in ["help", "buy"]:
+            confidence = 0.9  # Very high confidence for explicit needs
+        elif matched_keyword in ["how do i", "looking for", "need help"]:
+            confidence = 0.85
+        
+        return EngagementPlan(
+            plan_id=f"mini_app_{opportunity.opportunity_id}_{int(time.time())}",
+            opportunity=opportunity,
+            strategy_name=self.name,
+            action_sequence=action_sequence,
+            timing_preference="immediate",
+            success_metrics={
+                "recommendation_relevance": 0,
+                "user_engagement": 0,
+                "app_discovery_success": 0
+            },
+            estimated_impact=7,  # Good impact for helping users discover relevant apps
+            confidence=confidence
+        )
+
+
 class EngagementStrategyRegistry:
     """Registry for managing engagement strategies."""
     
@@ -597,7 +702,8 @@ class EngagementStrategyRegistry:
             QuietChannelStrategy(),
             NewUserWelcomeStrategy(),
             CrossPlatformBridgeStrategy(),
-            ContentSharingStrategy()
+            ContentSharingStrategy(),
+            MiniAppRecommendationStrategy()
         ]
         
         for strategy in default_strategies:

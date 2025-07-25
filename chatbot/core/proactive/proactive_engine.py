@@ -114,6 +114,9 @@ class ProactiveConversationEngine:
             # 6. Detect community engagement opportunities
             opportunities.extend(self._detect_community_opportunities(world_state_data))
             
+            # 7. Detect mini-app recommendation opportunities
+            opportunities.extend(self._detect_mini_app_opportunities(world_state_data))
+            
             # Filter and prioritize opportunities
             opportunities = self._filter_and_prioritize_opportunities(opportunities, current_time)
             
@@ -328,6 +331,86 @@ class ProactiveConversationEngine:
         content_opportunities = self._detect_content_sharing_opportunities(world_state_data)
         opportunities.extend(content_opportunities)
         
+        return opportunities
+    
+    def _detect_mini_app_opportunities(self, world_state_data: WorldStateData) -> List[ConversationOpportunity]:
+        """Detect opportunities to recommend mini-apps based on user needs and interests."""
+        opportunities = []
+        current_time = time.time()
+        
+        # Keywords that indicate potential mini-app needs
+        mini_app_keywords = {
+            "storage": ["storage", "files", "storage space", "ipfs", "arweave", "upload"],
+            "games": ["game", "play", "fun", "bored", "entertainment", "puzzle"],
+            "tools": ["tool", "utility", "manage", "organize", "productivity"],
+            "social": ["poll", "vote", "survey", "community", "group", "connect"],
+            "defi": ["trade", "swap", "buy", "sell", "token", "crypto", "finance", "dex"],
+            "buy": ["buy", "purchase", "shopping", "marketplace", "store"],
+            "help": ["how do i", "need help", "looking for", "where can", "how to"]
+        }
+        
+        # Analyze recent messages for mini-app needs
+        for channel_id, channel in world_state_data.channels.items():
+            if not channel.recent_messages:
+                continue
+                
+            # Only look at recent messages (last 2 hours)
+            recent_msgs = [
+                msg for msg in channel.recent_messages 
+                if current_time - msg.timestamp < 7200
+            ]
+            
+            for message in recent_msgs:
+                content_lower = message.content.lower()
+                
+                # Skip bot's own messages
+                if message.sender in ["ratichat", "bot", "ai"]:  # Adjust based on bot names
+                    continue
+                
+                # Check for keywords indicating mini-app needs
+                for category, keywords in mini_app_keywords.items():
+                    for keyword in keywords:
+                        if keyword in content_lower:
+                            # Found a potential mini-app opportunity
+                            opportunity_id = f"mini_app_{category}_{channel_id}_{message.id}_{int(current_time)}"
+                            
+                            # Priority based on category and keyword match
+                            priority = 6  # Base priority
+                            if category in ["help", "buy"]:
+                                priority = 8  # Higher priority for explicit needs
+                            elif category in ["games", "tools"]:
+                                priority = 7  # Medium-high for entertainment/productivity
+                            
+                            opportunities.append(ConversationOpportunity(
+                                opportunity_id=opportunity_id,
+                                opportunity_type="mini_app_opportunity",
+                                priority=priority,
+                                context={
+                                    "channel_id": channel_id,
+                                    "channel_name": channel.name,
+                                    "message_id": message.id,
+                                    "user_id": message.sender,
+                                    "user_fid": getattr(message, 'sender_fid', None),
+                                    "category": category,
+                                    "matched_keyword": keyword,
+                                    "original_message": message.content,
+                                    "timestamp": message.timestamp,
+                                    "platform": channel.type or "unknown"
+                                },
+                                platform=channel.type or "unknown",
+                                channel_id=channel_id,
+                                user_id=message.sender,
+                                expires_at=current_time + 14400,  # Expire after 4 hours
+                                reasoning=f"User mentioned '{keyword}' which suggests they might benefit from {category} mini-apps"
+                            ))
+                            
+                            # Only create one opportunity per message to avoid spam
+                            break
+                    else:
+                        continue
+                    break
+        
+        logger.info(f"ProactiveEngine: Detected {len(opportunities)} mini-app opportunities")
         return opportunities
     
     def _analyze_channel_activity_pattern(self, channel: Channel) -> Dict[str, Any]:
