@@ -126,6 +126,66 @@ class SendFarcasterPostTool(ToolInterface):
             "required": ["content"]
         }
 
+    async def _validate_mentions(self, content: str, context: ActionContext) -> Dict[str, Any]:
+        """
+        Validate that any mentions in the content are only to followers.
+        
+        CAST-FIRST POLICY: Only allow mentioning users who follow our bot.
+        """
+        import re
+        
+        # Extract all @mentions from content
+        mention_pattern = r'@([a-zA-Z0-9_-]+)'
+        mentions = re.findall(mention_pattern, content)
+        
+        if not mentions:
+            return {"allowed": True, "reason": "No mentions found"}
+        
+        logger.info(f"Found mentions in cast: {mentions}")
+        
+        try:
+            # Get our bot's follower list
+            if hasattr(context.farcaster_observer, 'get_followers'):
+                followers_result = await context.farcaster_observer.get_followers()
+                if not followers_result.get("success"):
+                    # If we can't check followers, be conservative and reject mentions
+                    return {
+                        "allowed": False,
+                        "reason": "Cannot verify follower status - mentions not allowed"
+                    }
+                
+                follower_usernames = set()
+                followers = followers_result.get("followers", [])
+                for follower in followers:
+                    if "username" in follower:
+                        follower_usernames.add(follower["username"].lower())
+                
+                # Check each mention
+                for mention in mentions:
+                    mention_lower = mention.lower()
+                    if mention_lower not in follower_usernames:
+                        return {
+                            "allowed": False,
+                            "reason": f"User @{mention} is not a follower - only followers can be mentioned"
+                        }
+                
+                logger.info(f"All mentions are followers: {mentions}")
+                return {"allowed": True, "reason": "All mentions are followers"}
+            
+            else:
+                # Fallback: if we can't check followers, reject all mentions for safety
+                return {
+                    "allowed": False,
+                    "reason": "Follower verification not available - mentions not allowed"
+                }
+                
+        except Exception as e:
+            logger.error(f"Error validating mentions: {e}")
+            return {
+                "allowed": False,
+                "reason": f"Error checking followers: {str(e)}"
+            }
+
     async def execute(
         self, params: Dict[str, Any], context: ActionContext
     ) -> Dict[str, Any]:
@@ -157,6 +217,14 @@ class SendFarcasterPostTool(ToolInterface):
 
         # Strip markdown formatting for Farcaster
         content = strip_markdown(content)
+
+        # CAST-FIRST POLICY: Validate mentions - only allow mentioning followers
+        if context.farcaster_observer:
+            mention_validation = await self._validate_mentions(content, context)
+            if not mention_validation["allowed"]:
+                error_msg = f"Cast rejected: {mention_validation['reason']}"
+                logger.warning(error_msg)
+                return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
         # Truncate content if too long for Farcaster
         MAX_FARCASTER_CONTENT_LENGTH = 320
@@ -431,7 +499,76 @@ class SendFarcasterReplyTool(ToolInterface):
             logger.warning(error_msg)
             return {"status": "skipped", "error": error_msg, "timestamp": time.time()}
 
-        # 2. Check if we've already replied to this cast (internal state)
+        # 2. CAST-FIRST POLICY: Check if reply is allowed under new restrictions
+        reply_allowed = False
+        reply_reason = ""
+        
+        # Get the original cast to analyze context
+        try:
+            if context.farcaster_observer and context.farcaster_observer.api_client:
+                cast_details = await context.farcaster_observer.api_client.lookup_cast_by_hash(reply_to_hash)
+                if cast_details and "result" in cast_details and "cast" in cast_details["result"]:
+                    cast_data = cast_details["result"]["cast"]
+                    cast_text = cast_data.get("text", "")
+                    cast_author_fid = cast_data.get("author", {}).get("fid")
+                    
+                    # Get bot username from settings
+                    bot_username = settings.FARCASTER_BOT_USERNAME
+                    
+                    # Check if this cast mentions the bot - HIGH PRIORITY
+                    if _is_mention_to_bot(
+                        cast_content=cast_text,
+                        bot_fid=context.farcaster_observer.bot_fid,
+                        bot_username=bot_username
+                    ):
+                        reply_allowed = True
+                        reply_reason = "Direct mention detected"
+                        logger.info(f"Reply allowed: {reply_reason} in cast {reply_to_hash}")
+                    
+                    # Check if this is a reply to bot's own cast - MEDIUM PRIORITY
+                    elif cast_data.get("parent_hash") and context.world_state_manager:
+                        parent_hash = cast_data.get("parent_hash")
+                        if context.world_state_manager.is_bot_cast(parent_hash):
+                            reply_allowed = True
+                            reply_reason = "Reply to bot's own cast thread"
+                            logger.info(f"Reply allowed: {reply_reason} in cast {reply_to_hash}")
+                    
+                    # Check if this is a direct reply to one of bot's casts
+                    elif cast_data.get("parent_author", {}).get("fid") == context.farcaster_observer.bot_fid:
+                        reply_allowed = True
+                        reply_reason = "Direct reply to bot's cast"
+                        logger.info(f"Reply allowed: {reply_reason} in cast {reply_to_hash}")
+                    
+                    # If none of the above, reject the reply
+                    if not reply_allowed:
+                        error_msg = (
+                            f"Reply blocked by cast-first policy. Bot only replies to: "
+                            f"1) Direct mentions (@{bot_username}), "
+                            f"2) Replies in bot's own cast threads. "
+                            f"Cast {reply_to_hash} doesn't meet these criteria. "
+                            f"Consider creating a new cast instead."
+                        )
+                        logger.info(error_msg)
+                        return {
+                            "status": "skipped", 
+                            "error": error_msg,
+                            "policy": "cast_first_engagement",
+                            "timestamp": time.time()
+                        }
+                    
+        except Exception as e:
+            logger.warning(f"Could not check reply eligibility for cast {reply_to_hash}: {e}")
+            # If we can't determine eligibility, default to blocking (safer approach)
+            error_msg = f"Could not verify reply eligibility for cast {reply_to_hash}, blocking as precaution"
+            logger.warning(error_msg)
+            return {
+                "status": "skipped", 
+                "error": error_msg,
+                "policy": "cast_first_engagement",
+                "timestamp": time.time()
+            }
+
+        # 3. Check if we've already replied to this cast (internal state)
         if (
             context.world_state_manager
             and context.world_state_manager.has_replied_to_cast(reply_to_hash)

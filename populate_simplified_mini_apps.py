@@ -149,20 +149,19 @@ async def populate_simplified_database():
             logger.info(f"     URL: {app.url}")
             logger.info(f"     Summary: {app.ai_summary[:100]}...")
             
-        return success_count
+        return world_state_manager
         
     except Exception as e:
         logger.error(f"Error during database population: {e}", exc_info=True)
-        return 0
+        return None
 
 
-async def test_simplified_search():
+async def test_simplified_search(world_state_manager):
     """Test the simplified search functionality."""
     logger.info("\nTesting simplified search functionality...")
     
     try:
-        # Initialize world state manager
-        world_state_manager = WorldStateManager()
+        # Use the provided world state manager with populated data
         context = ActionContext(world_state_manager=world_state_manager)
         
         # Import search tool
@@ -200,7 +199,7 @@ async def test_simplified_search():
         logger.error(f"Error during search testing: {e}", exc_info=True)
 
 
-async def interactive_search_demo():
+async def interactive_search_demo(world_state_manager):
     """Run an interactive demo with natural language queries."""
     print("\n🔍 Interactive Natural Language Search Demo")
     print("=" * 50)
@@ -212,8 +211,7 @@ async def interactive_search_demo():
     print()
     
     try:
-        # Setup environment
-        world_state_manager = WorldStateManager()
+        # Use the provided world state manager with populated data
         context = ActionContext(world_state_manager=world_state_manager)
         
         from chatbot.tools.mini_app_tools import SearchMiniAppsTool
@@ -262,19 +260,21 @@ async def main():
     print("Each app is a 'digital index card' with name, URL, and AI summary")
     print()
     
-    # Populate the database
-    success_count = await populate_simplified_database()
+    # Populate the database and get the world state manager
+    world_state_manager = await populate_simplified_database()
     
-    if success_count > 0:
+    if world_state_manager is not None:
         # Test search functionality
-        await test_simplified_search()
+        await test_simplified_search(world_state_manager)
         
         print("\n" + "=" * 60)
         response = input("Would you like to try the interactive search demo? (y/n): ").strip().lower()
         
         if response in ['y', 'yes']:
-            await interactive_search_demo()
+            await interactive_search_demo(world_state_manager)
         
+        # Get the count of apps for display
+        success_count = len(world_state_manager.state.mini_app_database)
         print("\n✅ Setup complete! The simplified mini-app recommendation system is ready.")
         print(f"📱 {success_count} mini-apps with AI summaries available")
         print("\nThe system uses intelligent text matching on rich AI summaries!")

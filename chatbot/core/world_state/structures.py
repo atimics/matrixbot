@@ -1003,6 +1003,9 @@ class WorldStateData:
         # Mini-app recommendation database - curated Farcaster mini-apps for user recommendations
         self.mini_app_database: Dict[str, MiniAppEntry] = {}  # app_name -> mini_app_entry
         
+        # Follower interaction profiles - AI summaries and interaction patterns for followers
+        self.follower_profiles: Dict[str, Any] = {}  # username -> FollowerProfile
+        
         # Autonomous Code Evolution (ACE) capabilities
         self.target_repositories: Dict[str, TargetRepositoryContext] = {}  # repo_url -> context
         self.development_tasks: Dict[str, DevelopmentTask] = {}  # task_id -> task

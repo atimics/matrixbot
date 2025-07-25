@@ -25,13 +25,13 @@ class RateLimitConfig:
     max_burst_cycles: int = 20  # Restored from overly conservative 5 to proper 20 (cycles in burst window)
     cooldown_multiplier: float = 1.5  # How much to slow down after burst
 
-    # Action-specific limits (per hour)
-    action_limits: Dict[str, int] = field(
+    # Hourly limits for different action types  
+    hourly_limits: Dict[str, int] = field(
         default_factory=lambda: {
             "SendMatrixMessageTool": 100,
             "SendMatrixReplyTool": 150,
-            "SendFarcasterPostTool": 50,
-            "SendFarcasterReplyTool": 100,
+            "SendFarcasterPostTool": 3,  # CAST-FIRST POLICY: Maximum 3 casts per hour to avoid spam
+            "SendFarcasterReplyTool": 20,  # CAST-FIRST POLICY: Decreased from 100 to discourage excessive replying
             "SendFarcasterDMTool": 30,
             "LikeFarcasterPostTool": 200,
             "FollowFarcasterUserTool": 20,
@@ -51,7 +51,7 @@ class RateLimitConfig:
     # Daily limits for specific actions (per 24 hours)
     daily_limits: Dict[str, int] = field(
         default_factory=lambda: {
-            "SendFarcasterReplyTool": 3,  # Only 3 replies per day for general conversations
+            "SendFarcasterReplyTool": 1,  # CAST-FIRST POLICY: Only 1 reply per day for non-mention conversations
         }
     )
 
@@ -148,7 +148,7 @@ class RateLimiter:
         Returns:
             (can_execute, reason_if_not)
         """
-        if action_name not in self.config.action_limits:
+        if action_name not in self.config.hourly_limits:
             return True, ""
 
         # Clean old action history
@@ -156,7 +156,7 @@ class RateLimiter:
         self._clean_deque(action_deque, current_time, 3600)
 
         # Check hourly limit
-        limit = self.config.action_limits[action_name]
+        limit = self.config.hourly_limits[action_name]
         if len(action_deque) >= limit:
             oldest_action = action_deque[0] if action_deque else current_time
             wait_time = 3600 - (current_time - oldest_action)
@@ -249,7 +249,7 @@ class RateLimiter:
         self._clean_deque(self.cycle_history, current_time, 3600)
 
         action_status = {}
-        for action_name, limit in self.config.action_limits.items():
+        for action_name, limit in self.config.hourly_limits.items():
             action_deque = self.action_history[action_name]
             self._clean_deque(action_deque, current_time, 3600)
             action_status[action_name] = {
