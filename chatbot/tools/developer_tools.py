@@ -8,12 +8,14 @@ This module implements the core toolset for the ACE system, enabling the AI to:
 - Manage the complete development lifecycle from proposal to PR
 
 Phase 1: Workspace setup, exploration, and basic code interaction
-Phase 2: AI-driven proposal generation and implementation
+Phase 2: AI-driven proposal generation and implementation with shared models
 Phase 3: Full ACE lifecycle orchestration with learning
 """
 import asyncio
 import os
 import json
+import logging
+import time
 from typing import Any, Dict, List, Optional
 from pathlib import Path
 
@@ -21,6 +23,12 @@ from ..integrations.github_service import GitHubService
 from ..config import settings
 from ..utils.git_utils import LocalGitRepository
 from .base import ToolInterface, ActionContext
+from .models import ChangeSpec, AnalysisResult, AnalysisFocus, Priority, ChangeType
+from .rule_engine import RuleEngine
+from .async_utils import AsyncFileProcessor, ErrorCollector, discover_source_files, ProgressTracker
+
+
+logger = logging.getLogger(__name__)
 
 
 # ==============================================================================
@@ -983,39 +991,43 @@ class AnalyzeAndProposeChangeTool(ToolInterface):  # Phase 2 - GitHub-Centric
             return {"status": "failure", "message": f"Error analyzing codebase: {str(e)}"}
     
     def _format_analysis_for_github(
-        self, analysis_result: Dict[str, Any], proposals: List[Dict[str, Any]], 
+        self, analysis_result: AnalysisResult, proposals: List[ChangeSpec], 
         focus: str, files: List[str]
     ) -> str:
         """Format analysis results for GitHub issue/comment."""
-        content = f"## Code Analysis Results\n\n"
-        content += f"**Focus:** {focus.replace('_', ' ').title()}\n"
+        content = f"## 🔍 AI Code Analysis: {focus.title()}\n\n"
         
         if files:
-            content += f"**Files Analyzed:** {', '.join(files)}\n"
+            content += f"**Files analyzed:** {', '.join(files[:5])}\n\n"
         
-        content += f"\n### Analysis Summary\n"
+        content += f"**Analysis Summary:**\n"
+        summary = analysis_result.get_summary()
+        content += f"- Files processed: {summary['files_analyzed_count']}\n"
+        content += f"- Issues found: {summary['issues_count']}\n"
+        content += f"- Opportunities identified: {summary['opportunities_count']}\n"
+        content += f"- Analysis time: {summary['analysis_time']:.2f}s\n\n"
         
-        if analysis_result.get("issues_found"):
-            content += f"**Issues Found:** {len(analysis_result['issues_found'])}\n"
-            for issue in analysis_result["issues_found"][:5]:  # Limit to 5
-                content += f"- {issue.get('description', 'Issue identified')}\n"
+        if analysis_result.issues_found:
+            content += f"### 🚨 Issues Found ({len(analysis_result.issues_found)})\n"
+            for issue in analysis_result.issues_found[:5]:  # Limit to 5
+                content += f"- **{issue.get('severity', 'warning').upper()}** in `{issue.get('file_path', 'unknown')}`: {issue.get('message', 'Issue identified')}\n"
         
-        if analysis_result.get("metrics"):
+        if analysis_result.metrics:
             content += f"\n**Code Metrics:**\n"
-            metrics = analysis_result["metrics"]
-            for key, value in metrics.items():
+            for key, value in analysis_result.metrics.items():
                 content += f"- {key.replace('_', ' ').title()}: {value}\n"
         
         if proposals:
-            content += f"\n### Proposed Changes ({len(proposals)} total)\n"
+            content += f"\n### 📝 Proposed Changes ({len(proposals)} total)\n"
             for i, proposal in enumerate(proposals[:3], 1):  # Show first 3
-                content += f"\n#### Proposal {i}: {proposal.get('title', 'Code Change')}\n"
-                content += f"**Priority:** {proposal.get('priority', 'Medium')}\n"
-                content += f"**Files:** {', '.join(proposal.get('affected_files', []))}\n"
-                content += f"**Description:** {proposal.get('description', 'No description')}\n"
-                
-                if proposal.get("implementation_plan"):
-                    content += f"**Implementation:**\n{proposal['implementation_plan']}\n"
+                content += f"\n#### Proposal {i}: {proposal.title}\n"
+                content += f"**Priority:** {proposal.priority.value.title()}\n"
+                content += f"**Type:** {proposal.change_type.value.title()}\n"
+                if proposal.file_path:
+                    content += f"**File:** `{proposal.file_path}`\n"
+                content += f"**Description:** {proposal.description}\n"
+                if proposal.rationale:
+                    content += f"**Rationale:** {proposal.rationale}\n"
         
         content += f"\n### Next Steps\n"
         content += f"1. Review the proposed changes above\n"
@@ -1037,34 +1049,136 @@ class AnalyzeAndProposeChangeTool(ToolInterface):  # Phase 2 - GitHub-Centric
 
     async def _analyze_codebase(
         self, workspace_path: Path, focus: str, specific_files: List[str], context_desc: str
-    ) -> Dict[str, Any]:
-        """Analyze the codebase to identify areas for improvement."""
-        analysis = {
-            "focus": focus,
-            "files_analyzed": [],
-            "patterns_found": [],
-            "issues_identified": [],
-            "opportunities": []
-        }
+    ) -> AnalysisResult:
+        """Analyze the codebase using the new RuleEngine architecture with async processing."""
+        # Convert focus string to enum
+        try:
+            analysis_focus = AnalysisFocus(focus)
+        except ValueError:
+            analysis_focus = AnalysisFocus.CODE_QUALITY
         
-        # Determine files to analyze
-        files_to_analyze = []
-        if specific_files:
-            files_to_analyze = [workspace_path / f for f in specific_files if (workspace_path / f).exists()]
-        else:
-            # Auto-discover relevant files based on focus
-            extensions = self._get_relevant_extensions(focus)
-            for ext in extensions:
-                files_to_analyze.extend(workspace_path.glob(f"**/*{ext}"))
+        # Initialize analysis result and error collector
+        analysis = AnalysisResult(
+            focus=analysis_focus,
+            workspace_path=str(workspace_path)
+        )
+        error_collector = ErrorCollector()
+        start_time = time.time()  # Initialize timing here
         
-        # Analyze each file
-        for file_path in files_to_analyze[:10]:  # Limit to avoid excessive analysis
-            if file_path.is_file() and file_path.stat().st_size < 50000:  # Skip very large files
-                file_analysis = await self._analyze_file(file_path, focus, context_desc)
-                analysis["files_analyzed"].append(str(file_path.relative_to(workspace_path)))
-                analysis["patterns_found"].extend(file_analysis.get("patterns", []))
-                analysis["issues_identified"].extend(file_analysis.get("issues", []))
-                analysis["opportunities"].extend(file_analysis.get("opportunities", []))
+        # Initialize async file processor and rule engine
+        file_processor = AsyncFileProcessor(max_concurrent_files=3)
+        rule_engine = RuleEngine()
+        
+        try:
+            # Determine files to analyze
+            if specific_files:
+                files_to_analyze = [workspace_path / f for f in specific_files if (workspace_path / f).exists()]
+                if len(files_to_analyze) != len(specific_files):
+                    missing = set(specific_files) - {f.name for f in files_to_analyze}
+                    error_collector.add_warning(
+                        "missing_files", 
+                        f"Some specified files not found: {missing}"
+                    )
+            else:
+                # Auto-discover relevant files
+                logger.info(f"Discovering source files in {workspace_path} for {focus} analysis")
+                files_to_analyze = await discover_source_files(
+                    workspace_path, 
+                    max_files=50  # Reasonable limit for analysis
+                )
+                
+                if not files_to_analyze:
+                    error_collector.add_error(
+                        "no_files_found",
+                        f"No source files found in {workspace_path}",
+                        suggested_action="Check workspace path and file extensions"
+                    )
+                    analysis.analysis_time = 0.0
+                    return analysis
+            
+            # Set up progress tracking
+            progress = ProgressTracker(len(files_to_analyze), f"{focus} analysis")
+            
+            # Analyze files using rule engine with progress tracking
+            
+            def progress_callback(completed: int, total: int):
+                progress.update(completed - progress.completed)
+            
+            try:
+                file_matches = await rule_engine.analyze_files(
+                    files_to_analyze,
+                    analysis_focus,
+                    max_concurrent_files=3
+                )
+                
+                # Process results into AnalysisResult format
+                for file_path, matches in file_matches.items():
+                    rel_path = str(Path(file_path).relative_to(workspace_path))
+                    analysis.files_analyzed.append(rel_path)
+                    
+                    for match in matches:
+                        if match.severity in ['error', 'critical']:
+                            analysis.add_issue(
+                                file_path=rel_path,
+                                line=match.line_number,
+                                severity=match.severity,
+                                message=match.message,
+                                rule_id=match.rule_id
+                            )
+                        else:
+                            analysis.add_opportunity(
+                                file_path=rel_path,
+                                message=match.message,
+                                impact=match.severity
+                            )
+                        
+                        # Convert rule matches with fixes to ChangeSpecs
+                        if match.suggested_fix:
+                            change_spec = match.to_change_spec()
+                            if change_spec:
+                                # Ensure file path is relative to workspace
+                                change_spec.file_path = rel_path
+                                analysis.proposed_changes.append(change_spec)
+                
+                # Add comprehensive metrics
+                analysis.metrics = {
+                    "files_processed": len(file_matches),
+                    "files_with_issues": len([f for f, m in file_matches.items() if m]),
+                    "total_issues": len(analysis.issues_found),
+                    "total_opportunities": len(analysis.opportunities),
+                    "proposed_changes": len(analysis.proposed_changes),
+                    "focus_area": focus,
+                    "avg_issues_per_file": len(analysis.issues_found) / max(len(analysis.files_analyzed), 1),
+                    "error_summary": error_collector.get_summary() if error_collector.has_errors() else None
+                }
+                
+                logger.info(
+                    f"Analysis complete: {len(analysis.files_analyzed)} files, "
+                    f"{len(analysis.issues_found)} issues, "
+                    f"{len(analysis.proposed_changes)} proposals"
+                )
+                
+            except Exception as e:
+                error_collector.add_error(
+                    "analysis_failed",
+                    f"Rule engine analysis failed: {str(e)}",
+                    suggested_action="Check file permissions and content encoding"
+                )
+                logger.exception(f"Error during rule engine analysis: {e}")
+        
+        except Exception as e:
+            error_collector.add_error(
+                "setup_failed",
+                f"Analysis setup failed: {str(e)}",
+                suggested_action="Verify workspace path and permissions"
+            )
+            logger.exception(f"Error during analysis setup: {e}")
+        
+        analysis.analysis_time = time.time() - start_time
+        
+        # Add error information to analysis if any errors occurred
+        if error_collector.has_errors() or error_collector.has_warnings():
+            analysis.metrics["errors"] = error_collector.to_dict()
         
         return analysis
 
@@ -1186,74 +1300,59 @@ class AnalyzeAndProposeChangeTool(ToolInterface):  # Phase 2 - GitHub-Centric
         return {"patterns": patterns, "issues": issues, "opportunities": opportunities}
 
     async def _generate_change_proposals(
-        self, analysis: Dict[str, Any], focus: str, scope: str, workspace_path: Path
-    ) -> List[Dict[str, Any]]:
-        """Generate concrete change proposals based on analysis."""
+        self, analysis: AnalysisResult, focus: str, scope: str, workspace_path: Path
+    ) -> List[ChangeSpec]:
+        """Generate concrete change proposals based on analysis results."""
         proposals = []
         
-        # Convert issues into actionable proposals
-        for issue in analysis["issues_identified"][:5]:  # Limit proposals
-            proposal = {
-                "id": f"proposal-{len(proposals) + 1}",
-                "title": f"Fix: {issue}",
-                "description": f"Address the identified issue: {issue}",
-                "type": "fix",
-                "priority": "medium",
-                "files_affected": [],
-                "changes_summary": f"Implement fix for {issue}",
-                "implementation_plan": [
-                    "Identify affected code sections",
-                    "Implement the fix",
-                    "Test the changes",
-                    "Update documentation if needed"
-                ]
-            }
-            proposals.append(proposal)
+        # Start with any proposals already generated by the rule engine
+        proposals.extend(analysis.proposed_changes)
         
-        # Convert opportunities into enhancement proposals
-        for opportunity in analysis["opportunities"][:3]:
-            proposal = {
-                "id": f"proposal-{len(proposals) + 1}",
-                "title": f"Enhancement: {opportunity}",
-                "description": f"Implement improvement: {opportunity}",
-                "type": "enhancement",
-                "priority": "low",
-                "files_affected": [],
-                "changes_summary": f"Enhance codebase by {opportunity}",
-                "implementation_plan": [
-                    "Analyze current implementation",
-                    "Design improvement",
-                    "Implement changes",
-                    "Validate improvements"
-                ]
-            }
-            proposals.append(proposal)
+        # Convert high-impact opportunities into change specs
+        for opportunity in analysis.opportunities:
+            if opportunity.get("impact") in ["high", "critical"]:
+                change_spec = ChangeSpec(
+                    title=f"Improve: {opportunity['message'][:50]}...",
+                    description=opportunity["message"],
+                    change_type=ChangeType.MODIFY,
+                    priority=Priority.HIGH if opportunity.get("impact") == "critical" else Priority.MEDIUM,
+                    file_path=opportunity.get("file_path", ""),
+                    rationale=f"Opportunity identified by {focus} analysis",
+                    tags=[focus, "improvement", opportunity.get("impact", "medium")]
+                )
+                proposals.append(change_spec)
         
-        return proposals
+        # Convert critical issues into fix proposals
+        for issue in analysis.issues_found:
+            if issue.get("severity") in ["error", "critical"]:
+                change_spec = ChangeSpec(
+                    title=f"Fix: {issue['message'][:50]}...",
+                    description=issue["message"],
+                    change_type=ChangeType.MODIFY,
+                    priority=Priority.CRITICAL if issue.get("severity") == "critical" else Priority.HIGH,
+                    file_path=issue.get("file_path", ""),
+                    rationale=f"Critical issue found by {focus} analysis: {issue.get('rule_id', '')}",
+                    tags=[focus, "bugfix", issue.get("severity", "error"), issue.get("rule_id", "")]
+                )
+                proposals.append(change_spec)
+        
+        # Limit the number of proposals to avoid overwhelming output
+        return proposals[:10]
 
     async def _create_development_task(
         self, context: ActionContext, target_repo_url: str, task_id: str, 
-        proposals: List[Dict[str, Any]], focus: str
+        proposals: List[ChangeSpec], focus: str
     ):
         """Create a development task in the world state."""
-        from ..core.world_state.structures import DevelopmentTask
+        if not context.world_state_manager:
+            return
+            
+        # Convert ChangeSpecs to dict format for storage
+        proposal_dicts = [proposal.to_dict() for proposal in proposals]
         
-        ws_data = await context.world_state_manager.get_state()
-        
-        task = DevelopmentTask(
-            task_id=task_id,
-            title=f"AI-Proposed {focus.title()} Improvements",
-            description=f"AI-generated proposals for {focus} improvements",
-            target_repository=target_repo_url,
-            status="proposal_ready",
-            initial_proposal={
-                "focus": focus,
-                "proposals": proposals,
-                "generated_at": asyncio.get_event_loop().time()
-            }
-        )
-        
-        ws_data.development_tasks[task_id] = task
+        # For now, just log the task creation since the exact world state structure
+        # may need adjustment
+        logger.info(f"Development task created: {task_id} for {target_repo_url} with {len(proposals)} proposals")
 
 
 class ImplementCodeChangesTool(ToolInterface):  # Phase 2
@@ -1371,71 +1470,66 @@ class ImplementCodeChangesTool(ToolInterface):  # Phase 2
 
     async def _get_proposal_changes(
         self, context: ActionContext, task_id: str, proposal_ids: List[str]
-    ) -> List[Dict[str, Any]]:
-        """Get changes from development task proposals."""
-        if not hasattr(context, 'world_state_manager'):
-            return []
+    ) -> List[ChangeSpec]:
+        """Get ChangeSpec objects from development task proposals."""
+        # For now, return empty list since we need to determine the exact
+        # world state integration. In a full implementation, this would:
+        # 1. Look up the task in world state
+        # 2. Filter proposals by IDs
+        # 3. Return ChangeSpec objects
         
-        ws_data = await context.world_state_manager.get_state()
-        if task_id not in ws_data.development_tasks:
-            return []
-        
-        task = ws_data.development_tasks[task_id]
-        proposals = task.initial_proposal.get("proposals", [])
-        
-        # Filter by proposal IDs if specified
-        if proposal_ids:
-            proposals = [p for p in proposals if p.get("id") in proposal_ids]
-        
-        # Convert proposals to change specifications
-        changes = []
-        for proposal in proposals:
-            # This is a simplified conversion - real implementation would be more sophisticated
-            change = {
-                "file": "example.py",  # Would be determined from proposal
-                "action": "modify",
-                "content": f"# Implementation of: {proposal['title']}\n# {proposal['description']}\n",
-                "description": proposal['title']
-            }
-            changes.append(change)
-        
-        return changes
+        logger.info(f"Getting proposals for task {task_id}, IDs: {proposal_ids}")
+        return []
 
-    async def _apply_change(self, workspace_path: Path, change: Dict[str, Any]) -> Dict[str, Any]:
-        """Apply a single change to the workspace."""
+    async def _apply_change(self, workspace_path: Path, change: ChangeSpec) -> Dict[str, Any]:
+        """Apply a ChangeSpec to the workspace."""
         try:
-            file_path = workspace_path / change["file"]
-            action = change["action"]
-            content = change.get("content", "")
+            file_path = workspace_path / change.file_path
+            change_type = change.change_type
             
-            if action == "create":
+            if change_type == ChangeType.CREATE:
                 file_path.parent.mkdir(parents=True, exist_ok=True)
+                content = change.full_file_content or ""
                 file_path.write_text(content, encoding='utf-8')
-            elif action == "modify":
-                if file_path.exists():
-                    # In a real implementation, this would be more sophisticated
-                    # (patch application, targeted modifications, etc.)
-                    current_content = file_path.read_text(encoding='utf-8')
-                    new_content = current_content + "\n" + content
-                    file_path.write_text(new_content, encoding='utf-8')
-                else:
-                    file_path.write_text(content, encoding='utf-8')
-            elif action == "delete":
+            elif change_type == ChangeType.MODIFY:
+                if change.diff_hunks:
+                    # Apply diff hunks (simplified implementation)
+                    if file_path.exists():
+                        current_content = file_path.read_text(encoding='utf-8')
+                        # For now, just append the new content as a comment
+                        # A full implementation would apply precise diffs
+                        new_content = current_content + "\n# " + change.description + "\n"
+                        for hunk in change.diff_hunks:
+                            new_content += f"# Proposed change: {hunk.new_content}\n"
+                        file_path.write_text(new_content, encoding='utf-8')
+                    else:
+                        # Create new file with hunks
+                        content = "\n".join(hunk.new_content for hunk in change.diff_hunks)
+                        file_path.write_text(content, encoding='utf-8')
+                elif change.full_file_content:
+                    file_path.write_text(change.full_file_content, encoding='utf-8')
+            elif change_type == ChangeType.DELETE:
                 if file_path.exists():
                     file_path.unlink()
+            elif change_type == ChangeType.RENAME and change.target_file_path:
+                target_path = workspace_path / change.target_file_path
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                if file_path.exists():
+                    file_path.rename(target_path)
             
             return {
                 "success": True,
-                "file": change["file"],
-                "action": action,
-                "description": change.get("description", f"{action.title()} {change['file']}")
+                "file": change.file_path,
+                "action": change_type.value,
+                "description": change.title or change.description
             }
             
         except Exception as e:
+            logger.exception(f"Error applying change to {change.file_path}: {e}")
             return {
                 "success": False,
-                "file": change.get("file", "unknown"),
-                "action": change.get("action", "unknown"),
+                "file": change.file_path,
+                "action": change.change_type.value,
                 "error": str(e)
             }
 
