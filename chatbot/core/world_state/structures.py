@@ -434,30 +434,23 @@ class MemoryEntry:
 @dataclass  
 class MiniAppEntry:
     """
-    Represents a Farcaster mini-app with metadata for recommendations.
+    Represents a Farcaster mini-app with AI-generated summary for recommendations.
+    
+    This simplified structure focuses on the essentials: name, URL, and an AI-generated
+    summary that serves as the "brain" of the recommendation system.
     
     Attributes:
-        name: Human-readable name of the mini-app
+        name: Official name of the mini-app (e.g., "Paragraph")
         url: Direct URL to access the mini-app
-        description: Detailed description of what the app does
-        developer: Name or identifier of the app developer
-        tags: List of keywords for searching and categorization
-        category: Primary category (e.g., "games", "tools", "social", "defi")
-        popularity_score: Optional popularity metric (0.0 to 1.0)
+        ai_summary: AI-generated casual summary explaining what it does, who it's for, and its purpose
         added_timestamp: When this entry was added to the database
         last_updated: When this entry was last modified
-        metadata: Additional platform-specific information
     """
     name: str
     url: str  
-    description: str
-    developer: str
-    tags: List[str] = field(default_factory=list)
-    category: str = "tools"
-    popularity_score: Optional[float] = None
+    ai_summary: str  # The "brain" - AI-generated description with use cases and user types
     added_timestamp: float = field(default_factory=time.time)
     last_updated: float = field(default_factory=time.time)
-    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

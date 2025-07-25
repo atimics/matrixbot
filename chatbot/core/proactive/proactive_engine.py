@@ -338,16 +338,12 @@ class ProactiveConversationEngine:
         opportunities = []
         current_time = time.time()
         
-        # Keywords that indicate potential mini-app needs
-        mini_app_keywords = {
-            "storage": ["storage", "files", "storage space", "ipfs", "arweave", "upload"],
-            "games": ["game", "play", "fun", "bored", "entertainment", "puzzle"],
-            "tools": ["tool", "utility", "manage", "organize", "productivity"],
-            "social": ["poll", "vote", "survey", "community", "group", "connect"],
-            "defi": ["trade", "swap", "buy", "sell", "token", "crypto", "finance", "dex"],
-            "buy": ["buy", "purchase", "shopping", "marketplace", "store"],
-            "help": ["how do i", "need help", "looking for", "where can", "how to"]
-        }
+        # Simplified keywords for common needs
+        need_indicators = [
+            "how do i", "how to", "looking for", "need help", "any good", "recommend",
+            "storage", "files", "space", "game", "games", "fun", "bored", "entertainment",
+            "poll", "vote", "survey", "tool", "app", "application", "buy", "purchase"
+        ]
         
         # Analyze recent messages for mini-app needs
         for channel_id, channel in world_state_data.channels.items():
@@ -367,48 +363,39 @@ class ProactiveConversationEngine:
                 if message.sender in ["ratichat", "bot", "ai"]:  # Adjust based on bot names
                     continue
                 
-                # Check for keywords indicating mini-app needs
-                for category, keywords in mini_app_keywords.items():
-                    for keyword in keywords:
-                        if keyword in content_lower:
-                            # Found a potential mini-app opportunity
-                            opportunity_id = f"mini_app_{category}_{channel_id}_{message.id}_{int(current_time)}"
-                            
-                            # Priority based on category and keyword match
-                            priority = 6  # Base priority
-                            if category in ["help", "buy"]:
-                                priority = 8  # Higher priority for explicit needs
-                            elif category in ["games", "tools"]:
-                                priority = 7  # Medium-high for entertainment/productivity
-                            
-                            opportunities.append(ConversationOpportunity(
-                                opportunity_id=opportunity_id,
-                                opportunity_type="mini_app_opportunity",
-                                priority=priority,
-                                context={
-                                    "channel_id": channel_id,
-                                    "channel_name": channel.name,
-                                    "message_id": message.id,
-                                    "user_id": message.sender,
-                                    "user_fid": getattr(message, 'sender_fid', None),
-                                    "category": category,
-                                    "matched_keyword": keyword,
-                                    "original_message": message.content,
-                                    "timestamp": message.timestamp,
-                                    "platform": channel.type or "unknown"
-                                },
-                                platform=channel.type or "unknown",
-                                channel_id=channel_id,
-                                user_id=message.sender,
-                                expires_at=current_time + 14400,  # Expire after 4 hours
-                                reasoning=f"User mentioned '{keyword}' which suggests they might benefit from {category} mini-apps"
-                            ))
-                            
-                            # Only create one opportunity per message to avoid spam
-                            break
-                    else:
-                        continue
-                    break
+                # Check for any need indicators
+                for indicator in need_indicators:
+                    if indicator in content_lower:
+                        # Found a potential mini-app opportunity
+                        opportunity_id = f"mini_app_need_{channel_id}_{message.id}_{int(current_time)}"
+                        
+                        # Higher priority for explicit requests
+                        priority = 8 if any(word in content_lower for word in ["recommend", "looking for", "how do i"]) else 6
+                        
+                        opportunities.append(ConversationOpportunity(
+                            opportunity_id=opportunity_id,
+                            opportunity_type="mini_app_opportunity",
+                            priority=priority,
+                            context={
+                                "channel_id": channel_id,
+                                "channel_name": channel.name,
+                                "message_id": message.id,
+                                "user_id": message.sender,
+                                "user_fid": getattr(message, 'sender_fid', None),
+                                "matched_indicator": indicator,
+                                "original_message": message.content,
+                                "timestamp": message.timestamp,
+                                "platform": channel.type or "unknown"
+                            },
+                            platform=channel.type or "unknown",
+                            channel_id=channel_id,
+                            user_id=message.sender,
+                            expires_at=current_time + 14400,  # Expire after 4 hours
+                            reasoning=f"User mentioned '{indicator}' which suggests they might benefit from mini-app recommendations"
+                        ))
+                        
+                        # Only create one opportunity per message to avoid spam
+                        break
         
         logger.info(f"ProactiveEngine: Detected {len(opportunities)} mini-app opportunities")
         return opportunities

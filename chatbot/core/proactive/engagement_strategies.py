@@ -598,37 +598,39 @@ class MiniAppRecommendationStrategy(EngagementStrategy):
     def generate_engagement_plan(self, opportunity: ConversationOpportunity) -> EngagementPlan:
         """Generate a plan to recommend relevant mini-apps."""
         context = opportunity.context
-        category = context.get("category", "tools")
-        matched_keyword = context.get("matched_keyword", "")
+        matched_indicator = context.get("matched_indicator", "")
         platform = context.get("platform", "farcaster")
+        original_message = context.get("original_message", "")
         
         # Create action sequence
         action_sequence = []
         
-        # First, search for relevant mini-apps
-        search_query = matched_keyword
-        if category == "games":
+        # First, search for relevant mini-apps using the original message as the query
+        # This leverages the AI summaries to find contextually relevant apps
+        search_query = original_message.lower()
+        
+        # Extract key terms from the message for better search
+        if any(word in search_query for word in ["storage", "files", "space"]):
+            search_query = "storage files management"
+        elif any(word in search_query for word in ["game", "games", "fun", "bored", "entertainment"]):
             search_query = "games entertainment fun"
-        elif category == "storage":
-            search_query = "storage files upload"
-        elif category == "tools":
+        elif any(word in search_query for word in ["poll", "vote", "survey"]):
+            search_query = "polls voting community"
+        elif any(word in search_query for word in ["tool", "app", "utility"]):
             search_query = "tools utility productivity"
-        elif category == "social":
-            search_query = "poll community social"
-        elif category == "defi":
-            search_query = "trading finance defi"
-        elif category == "buy":
+        elif any(word in search_query for word in ["buy", "purchase", "shopping"]):
             search_query = "marketplace shopping buy"
+        else:
+            # Use the matched indicator as the search term
+            search_query = matched_indicator
         
         action_sequence.append({
             "action_type": "search_mini_apps",
             "parameters": {
                 "query": search_query,
-                "category": category if category != "help" else "",
-                "limit": 3,
-                "include_popularity": True
+                "limit": 3
             },
-            "reasoning": f"Search for {category} mini-apps relevant to user's interest in '{matched_keyword}'"
+            "reasoning": f"Search for mini-apps relevant to user's query: '{matched_indicator}'"
         })
         
         # Then, reply with recommendations based on platform
@@ -661,14 +663,11 @@ class MiniAppRecommendationStrategy(EngagementStrategy):
                 "reasoning": "Share mini-app recommendations as a post"
             })
         
-        # Calculate priority and confidence based on context
-        priority = opportunity.priority
-        confidence = 0.8  # High confidence for keyword-based recommendations
-        
-        # Adjust confidence based on keyword specificity
-        if category in ["help", "buy"]:
-            confidence = 0.9  # Very high confidence for explicit needs
-        elif matched_keyword in ["how do i", "looking for", "need help"]:
+        # Calculate confidence based on how explicit the request was
+        confidence = 0.7  # Base confidence
+        if any(word in matched_indicator for word in ["recommend", "looking for", "how do i"]):
+            confidence = 0.9  # Very high confidence for explicit requests
+        elif any(word in matched_indicator for word in ["need help", "any good"]):
             confidence = 0.85
         
         return EngagementPlan(

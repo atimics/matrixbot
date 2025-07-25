@@ -340,7 +340,7 @@ class MainOrchestrator:
         from ...tools.permaweb_tools import StorePermanentMemoryTool
         from ...tools.web_tools import WebSearchTool
         from ...tools.research_tools import UpdateResearchTool, QueryResearchTool
-        from ...tools.mini_app_tools import UpdateMiniAppDBTool, SearchMiniAppsTool
+        from ...tools.mini_app_tools import UpdateMiniAppSummaryTool, SearchMiniAppsTool
         from ...tools.developer_tools import (
             GetGitHubIssuesTool, GetGitHubIssueDetailsTool, CommentOnGitHubIssueTool,
             CreateGitHubIssueTool, AnalyzeChannelForIssuesTool,
@@ -370,7 +370,7 @@ class MainOrchestrator:
         self.tool_registry.register_tool(QueryResearchTool())
         
         # Mini-app recommendation tools
-        self.tool_registry.register_tool(UpdateMiniAppDBTool())
+        self.tool_registry.register_tool(UpdateMiniAppSummaryTool())
         self.tool_registry.register_tool(SearchMiniAppsTool())
         
         # Matrix tools
