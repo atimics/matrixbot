@@ -1,93 +1,40 @@
 """
 Farcaster platform-specific tools.
 """
+import asyncio
 import logging
+import re
 import time
 from typing import Any, Dict, Optional
 
 from .base import ActionContext, ToolInterface
+from .farcaster_constants import (
+    MAX_FARCASTER_CONTENT_LENGTH,
+    ERROR_MESSAGES,
+    SUCCESS_MESSAGES,
+    RECENT_MEDIA_TIMEOUT
+)
+from .farcaster_utils import (
+    FarcasterCastUtils,
+    DuplicateGuard,
+    MediaUtils,
+    EmbedUtils
+)
 from ..utils.markdown_utils import strip_markdown
 from ..config import settings
 
 logger = logging.getLogger(__name__)
 
 
-def _is_mention_to_bot(
-    cast_content: str, 
-    bot_fid: Optional[str] = None, 
-    bot_username: Optional[str] = None
-) -> bool:
-    """
-    Determine if a cast mentions the bot.
-    
-    Args:
-        cast_content: The text content of the cast
-        bot_fid: Bot's Farcaster ID
-        bot_username: Bot's username
-        
-    Returns:
-        True if the cast mentions the bot, False otherwise
-    """
-    if not cast_content:
-        return False
-        
-    content_lower = cast_content.lower()
-    
-    # Check for username mention
-    if bot_username:
-        username_lower = bot_username.lower()
-        # Look for @username mentions
-        if f"@{username_lower}" in content_lower:
-            return True
-            
-    # Could also check for FID mentions if needed in the future
-    # For now, username-based mention detection should be sufficient
-    
-    return False
+# For backward compatibility, keep the old function names as aliases
+def _is_mention_to_bot(cast_content: str, bot_fid: Optional[str] = None, bot_username: Optional[str] = None) -> bool:
+    """Backward compatibility alias for FarcasterCastUtils.is_mention_to_bot"""
+    return FarcasterCastUtils.is_mention_to_bot(cast_content, bot_fid, bot_username)
 
 
 def _summarize_cast_for_ai(cast_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Create an AI-optimized summary of a cast, removing verbose metadata.
-
-    Args:
-        cast_data: Full cast data dictionary from asdict() conversion
-
-    Returns:
-        Compact cast summary suitable for AI context
-    """
-    # Extract essential information only
-    summary = {
-        "id": cast_data.get("id"),
-        "sender": cast_data.get("sender_username") or cast_data.get("sender"),
-        "content": cast_data.get("content", "")[:200] + "..." if len(cast_data.get("content", "")) > 200 else cast_data.get("content", ""),
-        "timestamp": cast_data.get("timestamp"),
-        "engagement": {
-            "likes": cast_data.get("metadata", {}).get("reactions", {}).get("likes_count", 0),
-            "recasts": cast_data.get("metadata", {}).get("reactions", {}).get("recasts_count", 0),
-            "replies": cast_data.get("metadata", {}).get("replies_count", 0)
-        },
-        "user_info": {
-            "username": cast_data.get("sender_username"),
-            "display_name": cast_data.get("sender_display_name"),
-            "followers": cast_data.get("sender_follower_count"),
-            "power_badge": cast_data.get("metadata", {}).get("power_badge", False)
-        }
-    }
-
-    # Add reply context if it's a reply
-    if cast_data.get("reply_to"):
-        summary["reply_to"] = cast_data.get("reply_to")
-
-    # Add channel if it's in a specific channel
-    channel_id = cast_data.get("channel_id", "")
-    if ":" in channel_id and not channel_id.endswith("_all"):
-        # Extract meaningful channel name (e.g., "farcaster:trending_all:chatbfg" -> "chatbfg")
-        parts = channel_id.split(":")
-        if len(parts) > 2:
-            summary["channel"] = parts[-1]
-
-    return summary
+    """Backward compatibility alias for FarcasterCastUtils.summarize_cast_for_ai"""
+    return FarcasterCastUtils.summarize_cast_for_ai(cast_data)
 
 
 class SendFarcasterPostTool(ToolInterface):
@@ -121,6 +68,18 @@ class SendFarcasterPostTool(ToolInterface):
                 "embed_url": {
                     "type": "string",
                     "description": "A URL to embed in the cast, such as an Arweave URL for an image/video page or a frame URL."
+                },
+                "media": {
+                    "type": "array",
+                    "description": "Array of media objects to attach",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "url": {"type": "string"},
+                            "type": {"type": "string", "enum": ["image", "video", "gif"]},
+                            "alt_text": {"type": "string"}
+                        }
+                    }
                 }
             },
             "required": ["content"]
@@ -132,11 +91,8 @@ class SendFarcasterPostTool(ToolInterface):
         
         CAST-FIRST POLICY: Only allow mentioning users who follow our bot.
         """
-        import re
-        
-        # Extract all @mentions from content
-        mention_pattern = r'@([a-zA-Z0-9_-]+)'
-        mentions = re.findall(mention_pattern, content)
+        # Extract all @mentions from content using utility
+        mentions = FarcasterCastUtils.extract_mentions(content)
         
         if not mentions:
             return {"allowed": True, "reason": "No mentions found"}
@@ -196,7 +152,7 @@ class SendFarcasterPostTool(ToolInterface):
 
         # Check if Farcaster integration is available
         if not context.farcaster_observer:
-            error_msg = "Farcaster integration (observer) not configured."
+            error_msg = ERROR_MESSAGES["no_integration"]
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
@@ -207,7 +163,7 @@ class SendFarcasterPostTool(ToolInterface):
 
         # Allow empty content only if we have embed to attach
         if not content and not embed_url:
-            error_msg = "Missing required parameter 'content' for Farcaster post (content required when no embed is attached)"
+            error_msg = ERROR_MESSAGES["missing_content"]
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
         
@@ -215,8 +171,8 @@ class SendFarcasterPostTool(ToolInterface):
         if not content and embed_url:
             content = "📎"  # Simple emoji for embed posts
 
-        # Strip markdown formatting for Farcaster
-        content = strip_markdown(content)
+        # Validate and clean content using utility
+        content = FarcasterCastUtils.validate_content(content)
 
         # CAST-FIRST POLICY: Validate mentions - only allow mentioning followers
         if context.farcaster_observer:
@@ -226,48 +182,32 @@ class SendFarcasterPostTool(ToolInterface):
                 logger.warning(error_msg)
                 return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
-        # Truncate content if too long for Farcaster
-        MAX_FARCASTER_CONTENT_LENGTH = 320
-        if len(content) > MAX_FARCASTER_CONTENT_LENGTH:
-            content = content[:MAX_FARCASTER_CONTENT_LENGTH - 3] + "..."
-            logger.warning(f"Farcaster content truncated to {MAX_FARCASTER_CONTENT_LENGTH} chars.")
-
         # Auto-attachment: Check for recently generated media if no embed_url provided
-        if not embed_url and context.world_state_manager:
-            recent_media_url = context.world_state_manager.get_last_generated_media_url()
+        if not embed_url:
+            recent_media_url = MediaUtils.get_recent_media_url(
+                context.world_state_manager, 
+                RECENT_MEDIA_TIMEOUT
+            )
             if recent_media_url:
-                # Check if the media was generated recently (within last 5 minutes)
-                if hasattr(context.world_state_manager.state, 'generated_media_library'):
-                    media_library = context.world_state_manager.state.generated_media_library
-                    if media_library:
-                        last_media = media_library[-1]
-                        media_age = time.time() - last_media.get('timestamp', 0)
-                        if media_age <= 300:  # 5 minutes
-                            embed_url = recent_media_url
-                            logger.info(f"Auto-attaching recently generated media to Farcaster post: {embed_url}")
+                embed_url = recent_media_url
+                logger.info(f"Auto-attaching recently generated media to Farcaster post: {embed_url}")
 
-        # Prepare embeds
-        embeds = []
-        if embed_url:
-            embeds.append({"url": embed_url})
-            logger.info(f"Adding embed to Farcaster post: {embed_url}")
+        # Prepare embeds and media using utilities
+        media = params.get("media", [])
+        media = FarcasterCastUtils.prepare_media(media)
+        embeds = EmbedUtils.prepare_embeds(embed_url, media)
 
-        # Prevent duplicate posts with identical content
-        if (
-            context.world_state_manager
-            and context.world_state_manager.has_sent_farcaster_post(content)
-        ):
-            error_msg = "Already sent Farcaster post with identical content. Skipping duplicate."
+        # Check for duplicate posts using utility
+        duplicate_guard = DuplicateGuard(context.world_state_manager)
+        if duplicate_guard.check_duplicate_cast(content):
+            error_msg = ERROR_MESSAGES["duplicate_cast"]
             logger.warning(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
         # If observer supports scheduling (has a real asyncio.Queue), enqueue; otherwise, execute immediately
-        import asyncio
-
         post_q = getattr(context.farcaster_observer, "post_queue", None)
         if isinstance(post_q, asyncio.Queue):
             try:
-                # Record scheduling and get action_id for tracking
                 action_id = None
                 if context.world_state_manager:
                     action_id = context.world_state_manager.add_action_result(
@@ -276,22 +216,21 @@ class SendFarcasterPostTool(ToolInterface):
                             "content": content,
                             "channel": channel,
                             "embeds": embeds,
+                            "media": media,
                         },
                         result="scheduled",
                     )
-
-                # Note: The schedule_post method now handles embeds properly
                 context.farcaster_observer.schedule_post(
-                    content, channel, action_id, embeds
+                    content, channel, action_id, embeds, media
                 )
-                success_msg = "Scheduled Farcaster post via scheduler"
+                success_msg = SUCCESS_MESSAGES["cast_scheduled"]
                 logger.info(success_msg)
                 return {
                     "status": "scheduled",
                     "message": success_msg,
                     "content": content,
                     "channel": channel,
-                    "action_id": action_id,  # Return action_id for tracking
+                    "action_id": action_id,
                     "timestamp": time.time(),
                 }
             except Exception as e:
@@ -304,17 +243,14 @@ class SendFarcasterPostTool(ToolInterface):
                 }
         # Immediate execution fallback
         try:
-            # Prepare embed URLs for the observer
-            embed_urls = [e['url'] for e in embeds if 'url' in e]
-
+            embed_urls = EmbedUtils.extract_embed_urls(embeds)
             result = await context.farcaster_observer.post_cast(
                 content=content,
                 channel=channel,
-                embed_urls=embed_urls if embed_urls else None
+                embed_urls=embed_urls if embed_urls else None,
+                media=media if media else None
             )
             logger.info(f"Farcaster observer post_cast returned: {result}")
-
-            # Record this action in world state
             if context.world_state_manager:
                 if result.get("success"):
                     cast_hash = result.get("cast", {}).get("hash")
@@ -325,6 +261,7 @@ class SendFarcasterPostTool(ToolInterface):
                             "channel": channel,
                             "cast_hash": cast_hash,
                             "embed_url": embed_url,
+                            "media": media,
                         },
                         result="success",
                     )
@@ -332,13 +269,13 @@ class SendFarcasterPostTool(ToolInterface):
                     context.world_state_manager.add_action_result(
                         action_type=self.name,
                         parameters={
-                            "content": content, 
-                            "channel": channel, 
+                            "content": content,
+                            "channel": channel,
                             "embed_url": embed_url,
+                            "media": media,
                         },
                         result=f"failure: {result.get('error', 'unknown')}",
                     )
-
             if result.get("success"):
                 return {"status": "success", **result}
             else:
@@ -350,20 +287,125 @@ class SendFarcasterPostTool(ToolInterface):
         except Exception as e:
             error_msg = f"Error executing send_farcaster_post: {e}"
             logger.exception(error_msg)
-
-            # Record this action failure in world state
             if context.world_state_manager:
                 context.world_state_manager.add_action_result(
                     action_type=self.name,
                     parameters={
-                        "content": content, 
+                        "content": content,
                         "channel": channel,
                         "embed_url": embed_url,
+                        "media": media,
                     },
                     result=f"failure: {str(e)}",
                 )
-
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+# --- Thread Creation Tool ---
+class CreateFarcasterThreadTool(ToolInterface):
+    """Tool for creating multi-cast threads on Farcaster."""
+    @property
+    def name(self) -> str:
+        return "create_farcaster_thread"
+    @property
+    def description(self) -> str:
+        return "Create a thread of multiple posts on Farcaster."
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "thread_posts": {
+                    "type": "array",
+                    "description": "Array of posts to create as a thread",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "content": {"type": "string"},
+                            "media": {"type": "array"}
+                        }
+                    }
+                },
+                "channel": {"type": "string"}
+            },
+            "required": ["thread_posts"]
+        }
+    async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
+        thread_posts = params["thread_posts"]
+        channel = params.get("channel")
+        results = []
+        previous_cast_hash = None
+        for post in thread_posts:
+            content = FarcasterCastUtils.validate_content(post.get("content", ""))
+            media = FarcasterCastUtils.prepare_media(post.get("media", []))
+            result = await context.farcaster_observer.post_cast(
+                content=content,
+                channel=channel,
+                embed_urls=[m["url"] for m in media if m["type"] == "image"],
+                media=media,
+                reply_to_hash=previous_cast_hash
+            )
+            previous_cast_hash = result.get("cast", {}).get("hash")
+            results.append(result)
+        return {"status": "success", "results": results}
+# --- Scheduling Tool ---
+class ScheduleFarcasterPostTool(ToolInterface):
+    """Tool for scheduling future Farcaster posts."""
+    @property
+    def name(self) -> str:
+        return "schedule_farcaster_post"
+    @property
+    def description(self) -> str:
+        return "Schedule a Farcaster post for future publishing."
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "content": {"type": "string"},
+                "scheduled_time": {"type": "number", "description": "Unix timestamp"},
+                "channel": {"type": "string"},
+                "media": {"type": "array"}
+            }
+        }
+    async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
+        content = FarcasterCastUtils.validate_content(params.get("content", ""))
+        scheduled_time = params.get("scheduled_time")
+        channel = params.get("channel")
+        media = FarcasterCastUtils.prepare_media(params.get("media", []))
+        # Assume observer has schedule_post_at method
+        result = await context.farcaster_observer.schedule_post_at(
+            content=content,
+            channel=channel,
+            scheduled_time=scheduled_time,
+            media=media
+        )
+        return {"status": "success" if result.get("success") else "failure", **result}
+# --- Casting Capabilities Meta-Tool ---
+class GetCastingCapabilitiesTool(ToolInterface):
+    """Tool to understand available casting options and best practices."""
+    @property
+    def name(self) -> str:
+        return "get_casting_capabilities"
+    @property
+    def description(self) -> str:
+        return "Get available Farcaster casting capabilities and limits."
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {"type": "object", "properties": {}, "required": []}
+    async def execute(self, params: Dict[str, Any], context: ActionContext) -> Dict[str, Any]:
+        return {
+            "capabilities": {
+                "text_casting": "Use send_farcaster_post for simple text",
+                "image_casting": "Use send_farcaster_image_post for images",
+                "quote_casting": "Use quote_farcaster_post to quote with commentary",
+                "thread_creation": "Use create_farcaster_thread for multi-part posts",
+                "scheduling": "Use schedule_farcaster_post for future posts"
+            },
+            "limits": {
+                "max_length": 320,
+                "max_images": 2,
+                "max_thread_length": 25
+            }
+        }
 
 
 class SendFarcasterReplyTool(ToolInterface):
@@ -1675,8 +1717,13 @@ class CollectWorldStateTool(ToolInterface):
 class GetTrendingCastsTool(ToolInterface):
     """Tool to get trending casts from Farcaster."""
     
-    name = "get_trending_casts"
-    description = "Get trending casts from Farcaster to see what's popular on the platform"
+    @property
+    def name(self) -> str:
+        return "get_trending_casts"
+    
+    @property
+    def description(self) -> str:
+        return "Get trending casts from Farcaster to see what's popular on the platform"
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
@@ -1785,8 +1832,13 @@ class GetTrendingCastsTool(ToolInterface):
 class SearchCastsTool(ToolInterface):
     """Tool to search for casts on Farcaster."""
     
-    name = "search_casts"
-    description = "Search for casts on Farcaster by query text"
+    @property
+    def name(self) -> str:
+        return "search_casts"
+    
+    @property
+    def description(self) -> str:
+        return "Search for casts on Farcaster by query text"
 
     def __init__(self):
         self.parameters = [
@@ -1913,8 +1965,13 @@ class SearchCastsTool(ToolInterface):
 class GetCastByUrlTool(ToolInterface):
     """Tool to get a specific cast by its URL or hash."""
     
-    name = "get_cast_by_url"
-    description = "Get details about a specific Farcaster cast by its URL or hash"
+    @property
+    def name(self) -> str:
+        return "get_cast_by_url"
+    
+    @property
+    def description(self) -> str:
+        return "Get details about a specific Farcaster cast by its URL or hash"
 
     def __init__(self):
         self.parameters = [
@@ -2016,206 +2073,148 @@ class GetCastByUrlTool(ToolInterface):
             }
 
 
-class DeleteFarcasterPostTool(ToolInterface):
+class ListFarcasterToolsTool(ToolInterface):
     """
-    Tool for deleting a Farcaster post (cast) by hash.
+    Meta-tool that lists all available Farcaster tools and their capabilities.
     """
 
     @property
     def name(self) -> str:
-        return "delete_farcaster_post"
+        return "list_farcaster_tools"
 
     @property
     def description(self) -> str:
-        return "Delete a Farcaster cast by its hash. Use this to remove a post you previously made."
+        return "Get a list of all available Farcaster tools with their descriptions and required parameters."
 
     @property
     def parameters_schema(self) -> Dict[str, Any]:
         return {
             "type": "object",
-            "properties": {
-                "cast_hash": {
-                    "type": "string",
-                    "description": "The hash of the cast to delete"
-                }
-            },
-            "required": ["cast_hash"]
+            "properties": {},
+            "required": []
         }
 
     async def execute(
         self, params: Dict[str, Any], context: ActionContext
     ) -> Dict[str, Any]:
         """
-        Execute the Farcaster delete cast action.
+        Return information about all available Farcaster tools.
         """
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
-
-        # Check if Farcaster integration is available
-        if not context.farcaster_observer:
-            error_msg = "Farcaster integration (observer) not configured."
-            logger.error(error_msg)
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
-
-        # Extract and validate parameters
-        cast_hash = params.get("cast_hash")
-
-        if not cast_hash:
-            error_msg = "Missing required parameter 'cast_hash' for Farcaster delete"
-            logger.error(error_msg)
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
-
-        try:
-            # Use the observer's delete_cast method
-            result = await context.farcaster_observer.delete_cast(cast_hash)
-            logger.info(f"Farcaster observer delete_cast returned: {result}")
-
-            # Record this action in world state
-            if context.world_state_manager:
-                if result.get("success"):
-                    context.world_state_manager.add_action_result(
-                        action_type=self.name,
-                        parameters={"cast_hash": cast_hash},
-                        result="success",
-                    )
-                else:
-                    context.world_state_manager.add_action_result(
-                        action_type=self.name,
-                        parameters={"cast_hash": cast_hash},
-                        result=f"failure: {result.get('error', 'unknown')}",
-                    )
-
-            if result.get("success"):
-                success_msg = f"Successfully deleted Farcaster cast: {cast_hash}"
-                logger.info(success_msg)
-                return {
-                    "status": "success",
-                    "message": success_msg,
-                    "cast_hash": cast_hash,
-                    "timestamp": time.time(),
-                }
-            else:
-                error_msg = f"Failed to delete Farcaster cast: {result.get('error', 'unknown error')}"
-                logger.error(error_msg)
-                return {
-                    "status": "failure",
-                    "error": error_msg,
-                    "cast_hash": cast_hash,
-                    "timestamp": time.time(),
-                }
-
-        except Exception as e:
-            error_msg = f"Error executing {self.name}: {str(e)}"
-            logger.exception(error_msg)
-
-            # Record this action failure in world state
-            if context.world_state_manager:
-                context.world_state_manager.add_action_result(
-                    action_type=self.name,
-                    parameters={"cast_hash": cast_hash},
-                    result=f"failure: {str(e)}",
-                )
-
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
-
-
-class DeleteFarcasterReactionTool(ToolInterface):
-    """
-    Tool for deleting a reaction (like/recast) from a Farcaster post.
-    """
-
-    @property
-    def name(self) -> str:
-        return "delete_farcaster_reaction"
-
-    @property
-    def description(self) -> str:
-        return "Delete a reaction (like or recast) from a Farcaster cast. Use this to remove a like or recast you previously made."
-
-    @property
-    def parameters_schema(self) -> Dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "cast_hash": {
-                    "type": "string",
-                    "description": "The hash of the cast to remove reaction from"
+        tools_info = {
+            "posting_tools": {
+                "send_farcaster_post": {
+                    "description": "Send a new post (cast) to Farcaster",
+                    "required_fields": ["content"],
+                    "optional_fields": ["channel", "embed_url", "media"]
+                },
+                "send_farcaster_image_post": {
+                    "description": "Send an image post to Farcaster",
+                    "required_fields": ["image_url"],
+                    "optional_fields": ["content", "alt_text", "channel"]
+                },
+                "send_farcaster_reply": {
+                    "description": "Reply to a specific cast on Farcaster",
+                    "required_fields": ["content", "reply_to_hash"],
+                    "optional_fields": []
+                },
+                "create_farcaster_thread": {
+                    "description": "Create a thread of multiple posts on Farcaster",
+                    "required_fields": ["thread_posts"],
+                    "optional_fields": ["channel"]
                 }
             },
-            "required": ["cast_hash"]
+            "interaction_tools": {
+                "like_farcaster_post": {
+                    "description": "Like (react to) a specific cast on Farcaster",
+                    "required_fields": ["cast_hash"],
+                    "optional_fields": []
+                },
+                "quote_farcaster_post": {
+                    "description": "Quote cast (repost with commentary) on Farcaster",
+                    "required_fields": ["content", "quoted_cast_hash"],
+                    "optional_fields": ["channel"]
+                },
+                "follow_farcaster_user": {
+                    "description": "Follow a Farcaster user by FID",
+                    "required_fields": ["fid"],
+                    "optional_fields": []
+                }
+            },
+            "discovery_tools": {
+                "get_trending_casts": {
+                    "description": "Get trending casts from Farcaster",
+                    "required_fields": [],
+                    "optional_fields": ["channel_id", "limit", "time_range"]
+                },
+                "search_casts": {
+                    "description": "Search for casts on Farcaster by query text",
+                    "required_fields": ["query"],
+                    "optional_fields": ["limit", "channel"]
+                },
+                "get_cast_by_url": {
+                    "description": "Get details about a specific cast by URL or hash",
+                    "required_fields": ["farcaster_url"],
+                    "optional_fields": []
+                }
+            },
+            "management_tools": {
+                "delete_farcaster_post": {
+                    "description": "Delete a Farcaster cast by its hash",
+                    "required_fields": ["cast_hash"],
+                    "optional_fields": []
+                },
+                "delete_farcaster_reaction": {
+                    "description": "Delete a reaction from a Farcaster cast",
+                    "required_fields": ["cast_hash"],
+                    "optional_fields": []
+                }
+            },
+            "policy_info": {
+                "cast_first_policy": "Bot only replies to direct mentions or replies in its own threads",
+                "mention_policy": "Only followers can be mentioned in casts",
+                "rate_limits": "Daily limits apply (bypassed for mentions to bot)",
+                "media_support": "Images, videos, and GIFs supported via media parameter or embed_url"
+            }
         }
 
-    async def execute(
-        self, params: Dict[str, Any], context: ActionContext
-    ) -> Dict[str, Any]:
-        """
-        Execute the Farcaster delete reaction action.
-        """
-        logger.info(f"Executing tool '{self.name}' with params: {params}")
+        return {
+            "status": "success",
+            "tools": tools_info,
+            "total_tools": sum(len(category) for category in tools_info.values() if isinstance(category, dict)),
+            "timestamp": time.time()
+        }
 
-        # Check if Farcaster integration is available
-        if not context.farcaster_observer:
-            error_msg = "Farcaster integration (observer) not configured."
-            logger.error(error_msg)
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
-        # Extract and validate parameters
-        cast_hash = params.get("cast_hash")
-
-        if not cast_hash:
-            error_msg = "Missing required parameter 'cast_hash' for Farcaster reaction delete"
-            logger.error(error_msg)
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
-
-        try:
-            # Use the observer's delete_reaction method
-            result = await context.farcaster_observer.delete_reaction(cast_hash)
-            logger.info(f"Farcaster observer delete_reaction returned: {result}")
-
-            # Record this action in world state
-            if context.world_state_manager:
-                if result.get("success"):
-                    context.world_state_manager.add_action_result(
-                        action_type=self.name,
-                        parameters={"cast_hash": cast_hash},
-                        result="success",
-                    )
-                else:
-                    context.world_state_manager.add_action_result(
-                        action_type=self.name,
-                        parameters={"cast_hash": cast_hash},
-                        result=f"failure: {result.get('error', 'unknown')}",
-                    )
-
-            if result.get("success"):
-                success_msg = f"Successfully deleted reaction from Farcaster cast: {cast_hash}"
-                logger.info(success_msg)
-                return {
-                    "status": "success",
-                    "message": success_msg,
-                    "cast_hash": cast_hash,
-                    "timestamp": time.time(),
-                }
-            else:
-                error_msg = f"Failed to delete reaction from Farcaster cast: {result.get('error', 'unknown error')}"
-                logger.error(error_msg)
-                return {
-                    "status": "failure",
-                    "error": error_msg,
-                    "cast_hash": cast_hash,
-                    "timestamp": time.time(),
-                }
-
-        except Exception as e:
-            error_msg = f"Error executing {self.name}: {str(e)}"
-            logger.exception(error_msg)
-
-            # Record this action failure in world state
-            if context.world_state_manager:
-                context.world_state_manager.add_action_result(
-                    action_type=self.name,
-                    parameters={"cast_hash": cast_hash},
-                    result=f"failure: {str(e)}",
-                )
-
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+# Export canonical tool classes
+__all__ = [
+    # Posting and content tools
+    "SendFarcasterPostTool",
+    "SendFarcasterReplyTool", 
+    "CreateFarcasterThreadTool",
+    "ScheduleFarcasterPostTool",
+    
+    # Interaction tools
+    "LikeFarcasterPostTool",
+    "QuoteFarcasterPostTool",
+    "FollowFarcasterUserTool",
+    "UnfollowFarcasterUserTool",
+    "SendFarcasterDMTool",
+    
+    # Content discovery tools
+    "GetTrendingCastsTool",
+    "SearchCastsTool",
+    "GetCastByUrlTool",
+    "GetUserTimelineTool",
+    "CollectWorldStateTool",
+    
+    # Management tools
+    "DeleteFarcasterPostTool",
+    "DeleteFarcasterReactionTool",
+    "GetCastingCapabilitiesTool",
+    "ListFarcasterToolsTool",
+    
+    # Utility functions
+    "_is_mention_to_bot",
+    "_summarize_cast_for_ai",
+]
 
