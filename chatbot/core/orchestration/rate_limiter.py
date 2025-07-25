@@ -48,6 +48,13 @@ class RateLimitConfig:
         }
     )
 
+    # Daily limits for specific actions (per 24 hours)
+    daily_limits: Dict[str, int] = field(
+        default_factory=lambda: {
+            "SendFarcasterReplyTool": 3,  # Only 3 replies per day for general conversations
+        }
+    )
+
     # Channel-specific limits (messages per hour)
     channel_limits: Dict[str, int] = field(
         default_factory=lambda: {
@@ -66,6 +73,7 @@ class RateLimiter:
         # Time-based tracking for different rate limit types
         self.cycle_history = deque()  # For tracking processing cycles
         self.action_history: Dict[str, deque] = defaultdict(lambda: deque())
+        self.daily_action_history: Dict[str, deque] = defaultdict(lambda: deque())  # For 24-hour tracking
         self.channel_history: Dict[str, deque] = defaultdict(lambda: deque())
 
         # State for adaptive behavior
@@ -126,11 +134,18 @@ class RateLimiter:
         return True, 0.0
 
     def can_execute_action(
-        self, action_name: str, current_time: float
+        self, action_name: str, current_time: float, is_mention: bool = False
     ) -> tuple[bool, str]:
         """
         Check if an action can be executed based on rate limits.
-        Returns (can_execute, reason_if_not)
+        
+        Args:
+            action_name: Name of the action to check
+            current_time: Current timestamp
+            is_mention: If True, daily limits are bypassed for mentions
+            
+        Returns:
+            (can_execute, reason_if_not)
         """
         if action_name not in self.config.action_limits:
             return True, ""
@@ -139,6 +154,7 @@ class RateLimiter:
         action_deque = self.action_history[action_name]
         self._clean_deque(action_deque, current_time, 3600)
 
+        # Check hourly limit
         limit = self.config.action_limits[action_name]
         if len(action_deque) >= limit:
             oldest_action = action_deque[0] if action_deque else current_time
@@ -147,6 +163,20 @@ class RateLimiter:
                 False,
                 f"Action rate limit exceeded: {len(action_deque)}/{limit} per hour. Wait {wait_time:.0f}s",
             )
+
+        # Check daily limit (only if not a mention and daily limit exists)
+        if not is_mention and action_name in self.config.daily_limits:
+            daily_deque = self.daily_action_history[action_name]
+            self._clean_deque(daily_deque, current_time, 86400)  # 24 hours
+            
+            daily_limit = self.config.daily_limits[action_name]
+            if len(daily_deque) >= daily_limit:
+                oldest_daily_action = daily_deque[0] if daily_deque else current_time
+                wait_time = 86400 - (current_time - oldest_daily_action)
+                return (
+                    False,
+                    f"Daily action limit exceeded: {len(daily_deque)}/{daily_limit} per day. Wait {wait_time:.0f}s",
+                )
 
         return True, ""
 
@@ -186,6 +216,10 @@ class RateLimiter:
     def record_action(self, action_name: str, current_time: float):
         """Record an action execution."""
         self.action_history[action_name].append(current_time)
+        
+        # Also record for daily tracking if action has daily limits
+        if action_name in self.config.daily_limits:
+            self.daily_action_history[action_name].append(current_time)
 
     def record_channel_message(self, channel_id: str, current_time: float):
         """Record a message sent to a channel."""
@@ -206,6 +240,17 @@ class RateLimiter:
                 "remaining": max(0, limit - len(action_deque)),
             }
 
+        # Add daily limits status
+        daily_action_status = {}
+        for action_name, daily_limit in self.config.daily_limits.items():
+            daily_deque = self.daily_action_history[action_name]
+            self._clean_deque(daily_deque, current_time, 86400)  # 24 hours
+            daily_action_status[action_name] = {
+                "used": len(daily_deque),
+                "limit": daily_limit,
+                "remaining": max(0, daily_limit - len(daily_deque)),
+            }
+
         return {
             "cycles_per_hour": len(self.cycle_history),
             "max_cycles_per_hour": self.config.max_cycles_per_hour,
@@ -214,6 +259,7 @@ class RateLimiter:
             "cooldown_remaining": max(0, self.cooldown_until - current_time),
             "burst_detected": self.burst_detected,
             "action_limits": action_status,
+            "daily_action_limits": daily_action_status,
             "channel_message_counts": {
                 ch_id: len(self.channel_history[ch_id])
                 for ch_id in self.channel_history

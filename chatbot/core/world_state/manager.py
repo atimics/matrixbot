@@ -4,7 +4,8 @@ World State Manager
 
 This module provides the primary interface for managing WorldStateData. It handles
 all CRUD operations on the world state, including adding messages, managing channels,
-tracking actions, and maintaining system status.
+tracking actions, and maintaining system status. Enhanced with persistence capabilities
+for maintaining state across restarts.
 
 Responsibilities:
 - Add/update messages and channels
@@ -12,11 +13,14 @@ Responsibilities:
 - Manage Matrix invites and channel status
 - Record bot media and generated content
 - Provide access to world state metrics
+- Persist and restore state across restarts
+- Manage atomic operations for Farcaster replies
 
 Note: This module focuses on data management only. AI payload generation has been
 moved to PayloadBuilder for better separation of concerns.
 """
 
+import asyncio
 import logging
 import time
 from typing import Any, Dict, List, Optional
@@ -31,20 +35,29 @@ from .structures import (
     FarcasterUserDetails,
     MatrixUserDetails
 )
+from .persistence import WorldStatePersistence, ReplyMutex
 
 logger = logging.getLogger(__name__)
 
 
 class WorldStateManager:
     """
-    Manages the world state and provides updates.
+    Manages the world state and provides updates with persistence capabilities.
     
     This class provides a high-level interface for interacting with WorldStateData,
     handling all the common operations needed by the orchestration system.
+    Enhanced with automatic persistence, atomic operations, and state recovery.
     """
 
-    def __init__(self):
+    def __init__(self, enable_persistence: bool = True, state_file: str = "data/world_state.json"):
         self.state = WorldStateData()
+        
+        # Initialize persistence if enabled
+        self.persistence: Optional[WorldStatePersistence] = None
+        self.reply_mutex = ReplyMutex()
+        
+        if enable_persistence:
+            self.persistence = WorldStatePersistence(state_file=state_file)
         
         # Initialize system status
         self.state.system_status = {
@@ -53,7 +66,42 @@ class WorldStateManager:
             "last_observation_cycle": 0,
             "total_cycles": 0,
         }
-        logger.info("WorldStateManager: Initialized empty world state")
+        logger.info("WorldStateManager: Initialized with persistence support")
+
+    async def initialize(self):
+        """
+        Initialize the manager, loading saved state if available.
+        """
+        if self.persistence:
+            saved_state = await self.persistence.load_state()
+            if saved_state:
+                self.state = saved_state
+                logger.info("WorldStateManager: Loaded saved state")
+            
+            # Start auto-save
+            await self.persistence.start_auto_save(lambda: self.state)
+        
+        logger.info("WorldStateManager: Initialization complete")
+
+    async def shutdown(self):
+        """
+        Shutdown the manager, saving current state.
+        """
+        if self.persistence:
+            await self.persistence.save_state(self.state)
+            await self.persistence.stop_auto_save()
+        logger.info("WorldStateManager: Shutdown complete")
+
+    async def create_backup(self) -> bool:
+        """
+        Create a manual backup of the current state.
+        
+        Returns:
+            bool: True if backup was successful
+        """
+        if self.persistence:
+            return await self.persistence.backup_state(self.state)
+        return False
 
     @property
     def world_state(self):
@@ -61,7 +109,7 @@ class WorldStateManager:
         return self.state
 
     def add_channel(
-        self, channel_or_id, channel_type: str = None, name: str = None, status: str = "active"
+        self, channel_or_id, channel_type: Optional[str] = None, name: Optional[str] = None, status: str = "active"
     ):
         """Add a new channel to monitor
         
@@ -116,17 +164,28 @@ class WorldStateManager:
             # If the dict itself is a message dict, treat it as the message
             if message is None and all(k in d for k in ("id", "sender", "content", "timestamp", "channel_type")):
                 message = d
+        elif len(args) == 1:
+            # Single message argument
+            message = args[0]
+            channel_id = None
         else:
             raise TypeError("add_message expects (channel_id, message), (message_data, message), or (dict with channel_id and message)")
 
         # Convert dict to Message if needed
         if isinstance(message, dict):
             message = Message(**message)
+            
+        # Handle None message case
+        if message is None:
+            logger.warning("add_message called with None message")
+            return
+            
         # Deduplicate across channels
         if message.id in self.state.seen_messages:
             logger.debug(f"WorldStateManager: Deduplicated message {message.id}")
             return
         self.state.seen_messages.add(message.id)
+        
         # Handle None channel_id gracefully
         if not channel_id:
             channel_id = message.channel_id or f"{message.channel_type}:unknown"
@@ -135,10 +194,15 @@ class WorldStateManager:
             # Auto-create channel if it doesn't exist
             self.add_channel(channel_id, channel_type=message.channel_type, name=channel_id)
         self.state.channels[channel_id].recent_messages.append(message)
+        
         # Limit to 50 messages per channel
         if len(self.state.channels[channel_id].recent_messages) > 50:
             self.state.channels[channel_id].recent_messages = self.state.channels[channel_id].recent_messages[-50:]
         self.state.channels[channel_id].update_last_checked()
+        
+        # Schedule persistence save
+        if self.persistence:
+            self.persistence.schedule_save()
 
     def add_message_compat(self, channel_id_or_dict, message=None):
         """Compatibility wrapper for tests that call add_message with (dict, message) or (message_data, message)."""
@@ -321,8 +385,13 @@ class WorldStateManager:
     def has_replied_to_cast(self, cast_hash: str) -> bool:
         """
         Check if the AI has already replied to a specific cast.
-        This now checks for successful or scheduled actions.
+        Uses both the enhanced FarcasterReplyState and legacy action history.
         """
+        # First check the enhanced reply state
+        if self.state.farcaster_reply_state.has_replied_to_cast(cast_hash):
+            return True
+            
+        # Fallback to action history for backward compatibility
         for action in self.state.action_history:
             if action.action_type == "send_farcaster_reply":
                 reply_to_hash = action.parameters.get("reply_to_hash")
@@ -787,3 +856,144 @@ class WorldStateManager:
                         logger.debug(f"Bot reply found in messages for event {original_event_id}: message_id {msg.id}")
                         return True
         return False
+
+    # Enhanced Farcaster Reply Management Methods
+    
+    def has_pending_reply_to_cast(self, cast_hash: str) -> bool:
+        """
+        Check if we have a pending reply to a cast.
+        
+        Args:
+            cast_hash: The cast hash to check
+            
+        Returns:
+            bool: True if we have a pending reply to this cast
+        """
+        return self.state.farcaster_reply_state.has_pending_reply(cast_hash)
+    
+    def was_last_to_reply_in_thread(self, thread_hash: str, bot_fid: str) -> bool:
+        """
+        Check if the bot was the last to reply in a thread.
+        
+        Args:
+            thread_hash: The thread hash to check
+            bot_fid: The bot's Farcaster ID
+            
+        Returns:
+            bool: True if bot was last to reply
+        """
+        return self.state.farcaster_reply_state.was_last_to_reply_in_thread(thread_hash, bot_fid)
+    
+    def is_bot_cast(self, cast_hash: str) -> bool:
+        """
+        Check if a cast was created by the bot (never reply to own casts).
+        
+        Args:
+            cast_hash: The cast hash to check
+            
+        Returns:
+            bool: True if this is the bot's own cast
+        """
+        return self.state.farcaster_reply_state.is_bot_cast(cast_hash)
+    
+    def add_bot_cast(self, cast_hash: str) -> None:
+        """
+        Record that a cast was created by the bot.
+        
+        Args:
+            cast_hash: The cast hash to record
+        """
+        self.state.farcaster_reply_state.add_bot_cast(cast_hash)
+        if self.persistence:
+            self.persistence.schedule_save()
+    
+    def update_thread_context(self, thread_hash: str, last_replier_fid: str) -> None:
+        """
+        Update thread context with latest reply information.
+        
+        Args:
+            thread_hash: The thread hash
+            last_replier_fid: FID of the user who last replied
+        """
+        self.state.farcaster_reply_state.update_thread_context(thread_hash, last_replier_fid)
+        if self.persistence:
+            self.persistence.schedule_save()
+    
+    async def atomic_reply_to_cast(self, 
+                                 cast_hash: str,
+                                 thread_hash: Optional[str],
+                                 bot_fid: str,
+                                 reply_func,
+                                 reply_params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Perform an atomic reply to a cast with proper state management.
+        
+        This method ensures that:
+        1. We don't reply to the same cast twice
+        2. We don't reply to our own casts
+        3. We don't reply if we were the last to reply in the thread
+        4. State is updated atomically
+        
+        Args:
+            cast_hash: Cast being replied to
+            thread_hash: Thread the cast belongs to (optional)
+            bot_fid: Bot's Farcaster ID
+            reply_func: Async function to send the reply
+            reply_params: Parameters for reply_func
+            
+        Returns:
+            Dict with reply result
+        """
+        # Check if this is our own cast
+        if self.is_bot_cast(cast_hash):
+            return {
+                "status": "skipped",
+                "message": "Cannot reply to own cast",
+                "cast_hash": cast_hash,
+                "timestamp": time.time()
+            }
+        
+        # Check if we were last to reply in thread
+        if thread_hash and self.was_last_to_reply_in_thread(thread_hash, bot_fid):
+            return {
+                "status": "skipped", 
+                "message": "Bot was last to reply in thread",
+                "cast_hash": cast_hash,
+                "thread_hash": thread_hash,
+                "timestamp": time.time()
+            }
+        
+        # Use the reply mutex for atomic operation
+        return await self.reply_mutex.safe_reply_with_state_update(
+            cast_hash=cast_hash,
+            thread_hash=thread_hash,
+            bot_fid=bot_fid,
+            world_state_manager=self,
+            reply_func=reply_func,
+            reply_params=reply_params
+        )
+    
+    def cleanup_old_farcaster_state(self) -> None:
+        """
+        Clean up old Farcaster state entries to prevent memory bloat.
+        """
+        self.state.farcaster_reply_state.cleanup_old_entries()
+        if self.persistence:
+            self.persistence.schedule_save()
+    
+    def get_farcaster_reply_stats(self) -> Dict[str, Any]:
+        """
+        Get statistics about Farcaster reply state.
+        
+        Returns:
+            Dict with statistics
+        """
+        state = self.state.farcaster_reply_state
+        return {
+            "total_replied_casts": len(state.replied_to_casts),
+            "total_replied_threads": len(state.replied_to_threads),
+            "pending_replies": len(state.pending_replies),
+            "tracked_bot_casts": len(state.bot_own_casts),
+            "active_threads": len(state.thread_participation),
+            "conversation_contexts": len(state.conversation_context)
+        }

@@ -3,12 +3,47 @@ Farcaster platform-specific tools.
 """
 import logging
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from .base import ActionContext, ToolInterface
 from ..utils.markdown_utils import strip_markdown
+from ..config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _is_mention_to_bot(
+    cast_content: str, 
+    bot_fid: Optional[str] = None, 
+    bot_username: Optional[str] = None
+) -> bool:
+    """
+    Determine if a cast mentions the bot.
+    
+    Args:
+        cast_content: The text content of the cast
+        bot_fid: Bot's Farcaster ID
+        bot_username: Bot's username
+        
+    Returns:
+        True if the cast mentions the bot, False otherwise
+    """
+    if not cast_content:
+        return False
+        
+    content_lower = cast_content.lower()
+    
+    # Check for username mention
+    if bot_username:
+        username_lower = bot_username.lower()
+        # Look for @username mentions
+        if f"@{username_lower}" in content_lower:
+            return True
+            
+    # Could also check for FID mentions if needed in the future
+    # For now, username-based mention detection should be sufficient
+    
+    return False
 
 
 def _summarize_cast_for_ai(cast_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -297,7 +332,13 @@ class SendFarcasterReplyTool(ToolInterface):
         self, params: Dict[str, Any], context: ActionContext
     ) -> Dict[str, Any]:
         """
-        Execute the Farcaster reply action.
+        Execute the Farcaster reply action with enhanced duplicate prevention.
+        
+        This method implements comprehensive duplicate prevention including:
+        - Self-reply detection (never reply to own casts)
+        - Thread-aware duplicate checking
+        - Atomic state updates with rollback on failure
+        - Authoritative on-chain verification
         """
         logger.info(f"Executing tool '{self.name}' with params: {params}")
 
@@ -322,76 +363,254 @@ class SendFarcasterReplyTool(ToolInterface):
             logger.error(error_msg)
             return {"status": "failure", "error": error_msg, "timestamp": time.time()}
 
+        # --- RATE LIMITING WITH MENTION EXCEPTION ---
+        current_time = time.time()
+        is_mention = False
+        
+        # First, we need to get the original cast to check if it mentions the bot
+        if context.farcaster_observer and context.farcaster_observer.api_client:
+            try:
+                cast_details = await context.farcaster_observer.api_client.lookup_cast_by_hash(reply_to_hash)
+                if cast_details and "result" in cast_details and "cast" in cast_details["result"]:
+                    cast_data = cast_details["result"]["cast"]
+                    cast_text = cast_data.get("text", "")
+                    
+                    # Get bot username from settings
+                    bot_username = settings.FARCASTER_BOT_USERNAME
+                    
+                    # Check if this cast mentions the bot
+                    is_mention = _is_mention_to_bot(
+                        cast_content=cast_text,
+                        bot_fid=context.farcaster_observer.bot_fid,
+                        bot_username=bot_username
+                    )
+                    
+                    if is_mention:
+                        logger.info(f"Cast {reply_to_hash} mentions the bot - bypassing daily rate limit")
+                    
+            except Exception as e:
+                logger.warning(f"Could not check if cast {reply_to_hash} is a mention: {e}")
+                # If we can't determine, treat as non-mention to be safe with rate limits
+        
+        # Check rate limits (daily limits bypassed for mentions)
+        if context.rate_limiter:
+            can_execute, rate_limit_reason = context.rate_limiter.can_execute_action(
+                self.name, current_time, is_mention=is_mention
+            )
+            
+            if not can_execute:
+                logger.warning(f"Rate limit exceeded for {self.name}: {rate_limit_reason}")
+                return {
+                    "status": "rate_limited", 
+                    "error": rate_limit_reason,
+                    "is_mention": is_mention,
+                    "timestamp": time.time()
+                }
+
         # Strip markdown formatting for Farcaster
-        content = strip_markdown(content)
+        if content:
+            content = strip_markdown(content)
 
         # Truncate content if too long for Farcaster
         MAX_FARCASTER_CONTENT_LENGTH = 320
-        if len(content) > MAX_FARCASTER_CONTENT_LENGTH:
+        if content and len(content) > MAX_FARCASTER_CONTENT_LENGTH:
             content = content[:MAX_FARCASTER_CONTENT_LENGTH - 3] + "..."
             logger.warning(f"Farcaster reply content truncated to {MAX_FARCASTER_CONTENT_LENGTH} chars.")
 
-        # Check if we've already replied to this cast
+        # Get bot FID for enhanced checks
+        bot_fid = context.farcaster_observer.bot_fid if context.farcaster_observer else None
+        
+        if not bot_fid:
+            logger.warning("Bot FID not available, enhanced duplicate checks will be limited")
+
+        # --- ENHANCED DUPLICATE PREVENTION ---
+        
+        # 1. Check if this is our own cast (never reply to self)
+        if context.world_state_manager and context.world_state_manager.is_bot_cast(reply_to_hash):
+            error_msg = f"Cannot reply to own cast {reply_to_hash}"
+            logger.warning(error_msg)
+            return {"status": "skipped", "error": error_msg, "timestamp": time.time()}
+
+        # 2. Check if we've already replied to this cast (internal state)
         if (
             context.world_state_manager
             and context.world_state_manager.has_replied_to_cast(reply_to_hash)
         ):
             error_msg = f"Already replied to cast {reply_to_hash}. Cannot reply to the same cast twice."
             logger.warning(error_msg)
-            return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+            return {"status": "skipped", "error": error_msg, "timestamp": time.time()}
 
-        # --- AUTHORITATIVE DUPLICATE CHECK ---
-        # Check the actual Farcaster thread to see if we've already replied
-        # This is the definitive source of truth and prevents duplicates even if internal state is lost
-        if context.farcaster_observer and context.farcaster_observer.api_client:
+        # 3. Get thread context and check if we were last to reply
+        thread_hash = None
+        try:
+            if context.farcaster_observer and context.farcaster_observer.api_client:
+                cast_details = await context.farcaster_observer.api_client.lookup_cast_by_hash(reply_to_hash)
+                if cast_details and "result" in cast_details and "cast" in cast_details["result"]:
+                    cast_data = cast_details["result"]["cast"]
+                    thread_hash = cast_data.get("thread_hash") or cast_data.get("parent_hash")
+                    
+                    # Check if we were last to reply in this thread
+                    if (thread_hash and bot_fid and context.world_state_manager and 
+                        context.world_state_manager.was_last_to_reply_in_thread(thread_hash, bot_fid)):
+                        error_msg = f"Bot was last to reply in thread {thread_hash}, skipping to maintain conversation flow"
+                        logger.info(error_msg)
+                        return {"status": "skipped", "error": error_msg, "timestamp": time.time()}
+        except Exception as e:
+            logger.warning(f"Could not fetch thread context for {reply_to_hash}: {e}")
+
+        # 4. AUTHORITATIVE DUPLICATE CHECK - Check actual on-chain state
+        if context.farcaster_observer and context.farcaster_observer.api_client and bot_fid:
             try:
-                bot_fid = context.farcaster_observer.bot_fid
-                if bot_fid:
-                    logger.debug(f"Performing authoritative duplicate check for cast {reply_to_hash} with bot FID {bot_fid}")
-                    conversation = await context.farcaster_observer.api_client.lookup_cast_conversation(reply_to_hash)
+                logger.debug(f"Performing authoritative duplicate check for cast {reply_to_hash} with bot FID {bot_fid}")
+                conversation = await context.farcaster_observer.api_client.lookup_cast_conversation(reply_to_hash)
+                
+                if conversation and "result" in conversation and "conversation" in conversation["result"]:
+                    # Check both direct replies and nested conversation
+                    all_casts = conversation["result"]["conversation"].get("cast", {}).get("direct_replies", [])
                     
-                    if conversation and "result" in conversation and "conversation" in conversation["result"]:
-                        # Check both direct replies and nested conversation
-                        all_casts = conversation["result"]["conversation"].get("cast", {}).get("direct_replies", [])
-                        
-                        # Also check if the conversation has a nested structure
-                        if "casts" in conversation["result"]["conversation"]:
-                            all_casts.extend(conversation["result"]["conversation"]["casts"])
-                        
-                        for cast in all_casts:
-                            if cast and "author" in cast and "fid" in cast["author"]:
-                                if str(cast["author"]["fid"]) == str(bot_fid):
-                                    # The bot has already replied to this cast on-chain
-                                    error_msg = f"Authoritative check failed: Bot (FID {bot_fid}) already replied to cast {reply_to_hash}. Aborting to prevent duplicate."
-                                    logger.warning(error_msg)
-                                    
-                                    # Update internal state to correct any drift
-                                    if context.world_state_manager:
-                                        context.world_state_manager.add_action_result(
-                                            action_type=self.name,
-                                            parameters={"content": content, "reply_to_hash": reply_to_hash},
-                                            result="skipped_duplicate_on_chain",
-                                        )
-                                    
-                                    return {
-                                        "status": "skipped", 
-                                        "message": "Duplicate reply already exists in the Farcaster thread",
-                                        "reply_to_hash": reply_to_hash,
-                                        "timestamp": time.time()
-                                    }
+                    # Also check if the conversation has a nested structure
+                    if "casts" in conversation["result"]["conversation"]:
+                        all_casts.extend(conversation["result"]["conversation"]["casts"])
                     
-                    logger.debug(f"Authoritative check passed: No existing reply found for cast {reply_to_hash}")
-                else:
-                    logger.warning("Bot FID not available for authoritative duplicate check, proceeding with caution")
-                    
+                    for cast in all_casts:
+                        if cast and "author" in cast and "fid" in cast["author"]:
+                            if str(cast["author"]["fid"]) == str(bot_fid):
+                                # The bot has already replied to this cast on-chain
+                                error_msg = f"Authoritative check failed: Bot (FID {bot_fid}) already replied to cast {reply_to_hash}. Aborting to prevent duplicate."
+                                logger.warning(error_msg)
+                                
+                                # Update internal state to correct any drift
+                                if context.world_state_manager:
+                                    context.world_state_manager.add_action_result(
+                                        action_type=self.name,
+                                        parameters={"content": content, "reply_to_hash": reply_to_hash},
+                                        result="skipped_duplicate_on_chain",
+                                    )
+                                    # Also update the FarcasterReplyState
+                                    context.world_state_manager.state.farcaster_reply_state.confirm_reply(
+                                        reply_to_hash, thread_hash, bot_fid
+                                    )
+                                
+                                return {
+                                    "status": "skipped", 
+                                    "message": "Duplicate reply already exists in the Farcaster thread",
+                                    "reply_to_hash": reply_to_hash,
+                                    "timestamp": time.time()
+                                }
+                
+                logger.debug(f"Authoritative check passed: No existing reply found for cast {reply_to_hash}")
+                
             except Exception as e:
                 # Log the error but proceed - we don't want API failures to completely block replies
                 logger.error(f"Failed to perform authoritative duplicate check for cast {reply_to_hash}: {e}. Proceeding with caution.")
-                # Internal check already passed, so we'll proceed
 
+        # --- ATOMIC REPLY EXECUTION ---
+        
+        # If we have the enhanced world state manager, use atomic operations
+        if (context.world_state_manager and 
+            hasattr(context.world_state_manager, 'atomic_reply_to_cast') and 
+            bot_fid):
+            
+            async def reply_func(content, reply_to_hash):
+                """Wrapper function for atomic reply execution."""
+                import asyncio
+                
+                # Type guard - ensure farcaster_observer exists
+                if not context.farcaster_observer:
+                    raise Exception("Farcaster observer not available")
+                    
+                reply_q = getattr(context.farcaster_observer, "reply_queue", None)
+                
+                # If scheduling supported, enqueue
+                if isinstance(reply_q, asyncio.Queue):
+                    # For scheduled replies, we'll handle action tracking differently
+                    context.farcaster_observer.schedule_reply(content, reply_to_hash, None)
+                    return {
+                        "status": "scheduled",
+                        "message": f"Scheduled Farcaster reply to cast {reply_to_hash}",
+                        "reply_to_hash": reply_to_hash,
+                        "content": content,
+                        "timestamp": time.time(),
+                    }
+                else:
+                    # Direct execution
+                    result = await context.farcaster_observer.reply_to_cast(content, reply_to_hash)
+                    if result.get("success"):
+                        cast_hash = result.get("cast", {}).get("hash")
+                        return {
+                            "status": "success", 
+                            "cast_hash": cast_hash,
+                            "reply_to_hash": reply_to_hash,
+                            "content": content,
+                            **result
+                        }
+                    else:
+                        return {
+                            "status": "failure",
+                            "error": result.get("error", "unknown"),
+                            "reply_to_hash": reply_to_hash,
+                            "timestamp": time.time(),
+                        }
+            
+            try:
+                # Use atomic reply method
+                result = await context.world_state_manager.atomic_reply_to_cast(
+                    cast_hash=reply_to_hash,
+                    thread_hash=thread_hash,
+                    bot_fid=bot_fid,
+                    reply_func=reply_func,
+                    reply_params={"content": content, "reply_to_hash": reply_to_hash}
+                )
+                
+                # Record in action history
+                if result.get("status") == "success":
+                    context.world_state_manager.add_action_result(
+                        action_type=self.name,
+                        parameters={"content": content, "reply_to_hash": reply_to_hash},
+                        result="success",
+                    )
+                    # Record in rate limiter
+                    if context.rate_limiter:
+                        context.rate_limiter.record_action(self.name, current_time)
+                elif result.get("status") == "scheduled":
+                    action_id = context.world_state_manager.add_action_result(
+                        action_type=self.name,
+                        parameters={"content": content, "reply_to_hash": reply_to_hash},
+                        result="scheduled",
+                    )
+                    result["action_id"] = action_id
+                    # Record in rate limiter for scheduled actions too
+                    if context.rate_limiter:
+                        context.rate_limiter.record_action(self.name, current_time)
+                else:
+                    context.world_state_manager.add_action_result(
+                        action_type=self.name,
+                        parameters={"content": content, "reply_to_hash": reply_to_hash},
+                        result=f"failure: {result.get('error', 'unknown')}",
+                    )
+                
+                return result
+                
+            except Exception as e:
+                error_msg = f"Atomic reply execution failed: {e}"
+                logger.exception(error_msg)
+                
+                # Record failure
+                if context.world_state_manager:
+                    context.world_state_manager.add_action_result(
+                        action_type=self.name,
+                        parameters={"content": content, "reply_to_hash": reply_to_hash},
+                        result=f"failure: {str(e)}",
+                    )
+                
+                return {"status": "failure", "error": error_msg, "timestamp": time.time()}
+
+        # --- FALLBACK TO LEGACY EXECUTION ---
+        logger.warning("Using legacy reply execution (enhanced atomic operations not available)")
+        
         import asyncio
-
         reply_q = getattr(context.farcaster_observer, "reply_queue", None)
+        
         # If scheduling supported, enqueue
         if isinstance(reply_q, asyncio.Queue):
             try:
@@ -407,6 +626,10 @@ class SendFarcasterReplyTool(ToolInterface):
                 context.farcaster_observer.schedule_reply(
                     content, reply_to_hash, action_id
                 )
+                # Record in rate limiter for scheduled actions
+                if context.rate_limiter:
+                    context.rate_limiter.record_action(self.name, current_time)
+                    
                 success_msg = f"Scheduled Farcaster reply to cast {reply_to_hash}"
                 logger.info(success_msg)
                 return {
@@ -414,7 +637,7 @@ class SendFarcasterReplyTool(ToolInterface):
                     "message": success_msg,
                     "reply_to_hash": reply_to_hash,
                     "content": content,
-                    "action_id": action_id,  # Return action_id for tracking
+                    "action_id": action_id,
                     "timestamp": time.time(),
                 }
             except Exception as e:
@@ -425,6 +648,7 @@ class SendFarcasterReplyTool(ToolInterface):
                     "error": error_msg,
                     "timestamp": time.time(),
                 }
+        
         # Fallback immediate execution
         try:
             result = await context.farcaster_observer.reply_to_cast(
@@ -445,6 +669,16 @@ class SendFarcasterReplyTool(ToolInterface):
                         },
                         result="success",
                     )
+                    
+                    # Record in rate limiter for successful immediate execution
+                    if context.rate_limiter:
+                        context.rate_limiter.record_action(self.name, current_time)
+                    
+                    # Update FarcasterReplyState
+                    if bot_fid:
+                        context.world_state_manager.state.farcaster_reply_state.confirm_reply(
+                            reply_to_hash, thread_hash, bot_fid
+                        )
                 else:
                     context.world_state_manager.add_action_result(
                         action_type=self.name,

@@ -21,6 +21,7 @@ class ActionContext:
         arweave_service=None,
         base_nft_service=None,
         eligibility_service=None,
+        rate_limiter=None,
     ):
         self.matrix_observer = matrix_observer
         self.farcaster_observer = farcaster_observer
@@ -30,6 +31,7 @@ class ActionContext:
         self.arweave_service = arweave_service
         self.base_nft_service = base_nft_service
         self.eligibility_service = eligibility_service
+        self.rate_limiter = rate_limiter
 
 
 class ToolInterface(ABC):

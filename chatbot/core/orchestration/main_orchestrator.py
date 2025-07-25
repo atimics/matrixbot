@@ -277,7 +277,8 @@ class MainOrchestrator:
             world_state_manager=self.world_state,
             context_manager=self.context_manager,
             arweave_client=self.arweave_client,
-            arweave_service=arweave_service_instance
+            arweave_service=arweave_service_instance,
+            rate_limiter=self.rate_limiter
         )
         
         # External observers

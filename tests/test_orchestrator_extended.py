@@ -50,28 +50,28 @@ class TestOrchestratorExtended:
     @pytest.mark.asyncio
     async def test_start_stop_without_observers(self):
         """Test starting and stopping orchestrator without observers."""
-        # Mock the processing hub to avoid actual processing
-        with patch.object(self.orchestrator.processing_hub, 'start_processing_loop') as mock_start:
-            with patch.object(self.orchestrator.processing_hub, 'stop_processing_loop') as mock_stop:
-                # Mock _initialize_observers to avoid actual observer initialization
-                with patch.object(self.orchestrator, '_initialize_observers') as mock_init:
-                    loop = asyncio.get_event_loop()
-                    init_future = loop.create_future()
-                    init_future.set_result(None)
-                    mock_init.return_value = init_future
-                    
-                    # Mock the processing loop to return immediately
-                    start_future = loop.create_future()
-                    start_future.set_result(None)
-                    mock_start.return_value = start_future
-                    
-                    # Test start
-                    await self.orchestrator.start()
-                    assert self.orchestrator.running is False  # Will be set to False in finally block
-                    
-                    # Verify methods were called
-                    mock_init.assert_called_once()
-                    mock_start.assert_called_once()
+        # Mock all async methods that could hang or make external calls
+        with patch.object(self.orchestrator.integration_manager, 'initialize', new_callable=AsyncMock) as mock_integration_init, \
+             patch.object(self.orchestrator, '_initialize_observers', new_callable=AsyncMock) as mock_init_observers, \
+             patch.object(self.orchestrator, '_register_integrations_from_env', new_callable=AsyncMock) as mock_register_integrations, \
+             patch.object(self.orchestrator.integration_manager, 'connect_all_active', new_callable=AsyncMock) as mock_connect_all, \
+             patch.object(self.orchestrator, '_update_action_context_integrations', new_callable=AsyncMock) as mock_update_context, \
+             patch.object(self.orchestrator, '_ensure_media_gallery_exists', new_callable=AsyncMock) as mock_media_gallery, \
+             patch.object(self.orchestrator, '_initialize_nft_services', new_callable=AsyncMock) as mock_nft_services, \
+             patch.object(self.orchestrator.proactive_engine, 'start', new_callable=AsyncMock) as mock_proactive_start, \
+             patch.object(self.orchestrator.processing_hub, '_main_event_loop', new_callable=AsyncMock) as mock_main_loop:
+            
+            # Mock the main event loop to return immediately instead of running infinitely
+            mock_main_loop.return_value = None
+            
+            # Test start
+            await self.orchestrator.start()
+            assert self.orchestrator.running is False  # Will be set to False in finally block
+            
+            # Verify critical methods were called
+            mock_integration_init.assert_called_once()
+            mock_init_observers.assert_called_once()
+            mock_main_loop.assert_called_once()
     
     @pytest.mark.asyncio
     async def test_message_processing(self):

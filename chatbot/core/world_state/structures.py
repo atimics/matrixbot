@@ -722,6 +722,112 @@ class NFTMintRecord:
     eligibility_criteria_met: Dict[str, bool] = field(default_factory=dict)
 
 
+@dataclass
+class FarcasterReplyState:
+    """
+    Enhanced Farcaster reply tracking with comprehensive duplicate prevention.
+    
+    This structure provides atomic tracking of all reply-related state to prevent
+    duplicate replies, race conditions, and ensure proper conversation flow.
+    
+    Attributes:
+        replied_to_casts: Set of cast hashes we have replied to
+        replied_to_threads: Map thread_hash -> set of cast_hashes replied to in that thread
+        pending_replies: Set of cast hashes with pending replies (not yet confirmed)
+        last_reply_in_thread: Map thread_hash -> fid of last replier in that thread
+        thread_participation: Map thread_hash -> ordered list of fids who participated
+        bot_own_casts: Set of cast hashes that are our own posts (never reply to these)
+        conversation_context: Map cast_hash -> conversation metadata for context
+    """
+    replied_to_casts: set[str] = field(default_factory=set)
+    replied_to_threads: Dict[str, set[str]] = field(default_factory=dict)
+    pending_replies: set[str] = field(default_factory=set)
+    last_reply_in_thread: Dict[str, str] = field(default_factory=dict)
+    thread_participation: Dict[str, List[str]] = field(default_factory=dict)
+    bot_own_casts: set[str] = field(default_factory=set)
+    conversation_context: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    
+    def has_replied_to_cast(self, cast_hash: str) -> bool:
+        """Check if we have replied to a specific cast."""
+        return cast_hash in self.replied_to_casts or cast_hash in self.pending_replies
+    
+    def has_pending_reply(self, cast_hash: str) -> bool:
+        """Check if we have a pending reply to a cast."""
+        return cast_hash in self.pending_replies
+    
+    def add_pending_reply(self, cast_hash: str, thread_hash: Optional[str] = None) -> bool:
+        """
+        Add a pending reply. Returns False if already replied, pending, or is bot's own cast.
+        """
+        if self.has_replied_to_cast(cast_hash):
+            return False
+        
+        # Never reply to our own casts
+        if self.is_bot_cast(cast_hash):
+            return False
+        
+        self.pending_replies.add(cast_hash)
+        return True
+    
+    def confirm_reply(self, cast_hash: str, thread_hash: Optional[str] = None, bot_fid: Optional[str] = None) -> None:
+        """
+        Confirm a reply was sent successfully.
+        """
+        self.pending_replies.discard(cast_hash)
+        self.replied_to_casts.add(cast_hash)
+        
+        if thread_hash:
+            if thread_hash not in self.replied_to_threads:
+                self.replied_to_threads[thread_hash] = set()
+            self.replied_to_threads[thread_hash].add(cast_hash)
+            
+            if bot_fid:
+                self.last_reply_in_thread[thread_hash] = bot_fid
+                
+                if thread_hash not in self.thread_participation:
+                    self.thread_participation[thread_hash] = []
+                if bot_fid not in self.thread_participation[thread_hash]:
+                    self.thread_participation[thread_hash].append(bot_fid)
+    
+    def remove_pending_reply(self, cast_hash: str) -> None:
+        """Remove a pending reply (e.g., on failure)."""
+        self.pending_replies.discard(cast_hash)
+    
+    def was_last_to_reply_in_thread(self, thread_hash: str, bot_fid: str) -> bool:
+        """Check if bot was the last to reply in a thread."""
+        return self.last_reply_in_thread.get(thread_hash) == bot_fid
+    
+    def add_bot_cast(self, cast_hash: str) -> None:
+        """Track that a cast is our own (never reply to these)."""
+        self.bot_own_casts.add(cast_hash)
+    
+    def is_bot_cast(self, cast_hash: str) -> bool:
+        """Check if a cast is our own."""
+        return cast_hash in self.bot_own_casts
+    
+    def update_thread_context(self, thread_hash: str, last_replier_fid: str) -> None:
+        """Update thread context with latest reply information."""
+        self.last_reply_in_thread[thread_hash] = last_replier_fid
+        
+        if thread_hash not in self.thread_participation:
+            self.thread_participation[thread_hash] = []
+        if last_replier_fid not in self.thread_participation[thread_hash]:
+            self.thread_participation[thread_hash].append(last_replier_fid)
+    
+    def cleanup_old_entries(self, max_age_seconds: int = 86400 * 7) -> None:
+        """Clean up old entries to prevent unbounded growth."""
+        # This would need timestamp tracking to implement properly
+        # For now, we can limit set sizes
+        if len(self.replied_to_casts) > 10000:
+            # Convert to list, sort, keep newest 8000
+            sorted_casts = list(self.replied_to_casts)[-8000:]
+            self.replied_to_casts = set(sorted_casts)
+        
+        if len(self.bot_own_casts) > 5000:
+            sorted_casts = list(self.bot_own_casts)[-4000:]
+            self.bot_own_casts = set(sorted_casts)
+
+
 class WorldStateData:
     def add_action_history(self, action_data: dict):
         """Compatibility method for tests that call add_action_history on WorldStateData."""
@@ -813,6 +919,9 @@ class WorldStateData:
 
         # Initialize timestamp tracking
         self.last_update = time.time()
+        
+        # Enhanced Farcaster reply tracking with comprehensive duplicate prevention
+        self.farcaster_reply_state = FarcasterReplyState()
         
         # Enhanced user tracking with sentiment and memory
         self.farcaster_users: Dict[str, FarcasterUserDetails] = {}  # fid -> user details
@@ -913,17 +1022,9 @@ class WorldStateData:
     def has_replied_to_cast(self, cast_hash: str) -> bool:
         """
         Check if the AI has already replied to a specific cast.
-        This now checks for successful or scheduled actions.
+        Uses the enhanced FarcasterReplyState for accurate tracking.
         """
-        for action in self.action_history:
-            if action.action_type == "send_farcaster_reply":
-                reply_to_hash = action.parameters.get("reply_to_hash")
-                if reply_to_hash == cast_hash:
-                    # Consider it replied if the action was successful OR is still scheduled.
-                    # This prevents re-queueing a reply while one is already pending.
-                    if action.result != "failure":
-                        return True
-        return False
+        return self.farcaster_reply_state.has_replied_to_cast(cast_hash)
 
     def set_rate_limits(self, key: str, limits: Dict[str, Any]):
         """Set rate limit info for a service."""
@@ -965,7 +1066,7 @@ class WorldStateData:
             self.action_history = self.action_history[-10:]
         self.last_update = time.time()
 
-    def to_dict_for_ai(self, include_channels: List[str] = None, max_messages_per_channel: int = None, message_limit_per_channel: int = None, max_actions: int = None) -> Dict[str, Any]:
+    def to_dict_for_ai(self, include_channels: Optional[List[str]] = None, max_messages_per_channel: Optional[int] = None, message_limit_per_channel: Optional[int] = None, max_actions: Optional[int] = None) -> Dict[str, Any]:
         """Convert world state to AI-friendly dict with optional limits."""
         data: Dict[str, Any] = {}
         # Channels

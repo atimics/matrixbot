@@ -2,7 +2,7 @@
 
 services:
   postgres:
-    image: postgres:14-alpine
+    image: postgres:15-alpine
     container_name: ratichat_postgres
     environment:
       POSTGRES_USER: ratichat
@@ -72,24 +72,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-
-  ratichat_ui:
-    build:
-      context: ./ui-nextjs # Point to the Next.js app
-      dockerfile: Dockerfile
-    container_name: ratichat_ui
-    ports:
-      - "3000:3000"
-    networks:
-      - ratichat_network
-    environment:
-      # For client-side API calls (from browser)
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
-      # For server-side API calls (from Next.js server)
-      - INTERNAL_API_URL=http://ratichat_backend:8000
-    depends_on:
-      - ratichat_backend
-    restart: unless-stopped
 
 volumes:
   postgres_data:
