@@ -247,8 +247,7 @@ class SendFarcasterPostTool(ToolInterface):
             result = await context.farcaster_observer.post_cast(
                 content=content,
                 channel=channel,
-                embed_urls=embed_urls if embed_urls else None,
-                media=media if media else None
+                embed_urls=embed_urls if embed_urls else None
             )
             logger.info(f"Farcaster observer post_cast returned: {result}")
             if context.world_state_manager:
@@ -340,7 +339,6 @@ class CreateFarcasterThreadTool(ToolInterface):
                 content=content,
                 channel=channel,
                 embed_urls=[m["url"] for m in media if m["type"] == "image"],
-                media=media,
                 reply_to_hash=previous_cast_hash
             )
             previous_cast_hash = result.get("cast", {}).get("hash")
@@ -375,8 +373,7 @@ class ScheduleFarcasterPostTool(ToolInterface):
         result = await context.farcaster_observer.schedule_post_at(
             content=content,
             channel=channel,
-            scheduled_time=scheduled_time,
-            media=media
+            scheduled_time=scheduled_time
         )
         return {"status": "success" if result.get("success") else "failure", **result}
 # --- Casting Capabilities Meta-Tool ---
