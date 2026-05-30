@@ -1,9 +1,0 @@
-{
-  "upgrades_applied": {
-    "event_driven_inbox": true,
-    "persistent_state": true,
-    "unprompted_messaging": true,
-    "applied_at": "2026-05-30T13:20:00-07:00"
-  },
-  "notes": "Mailbox improvements implemented: named pipe FIFO for event-driven inbox, persistent state file support, and unprompted messaging capability. The FIFO is at mailbox_in.fifo."
-}
