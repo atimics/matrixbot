@@ -95,13 +95,13 @@ class CodexBridge:
         with MAILBOX_IN.open("a") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
-        # Build prompt: orchestrator identity + conversation + latest message
         history = self._format_history(self._load_history(chat_id))
         prompt = (
+            f"CHAT_ID={chat_id} MSG_ID={message_id}\n"
             f"{ORCHESTRATOR_PROMPT}\n\n"
             f"CONVERSATION SO FAR:\n{history}\n\n"
             f"LATEST MESSAGE (reply to this): {text}\n\n"
-            f"Reply to mailbox_out.jsonl and clear mailbox_in.jsonl."
+            f"Use CHAT_ID={chat_id} and MSG_ID={message_id} in your reply."
         )
 
         await self._dispatch(prompt, sender_name, text)
@@ -114,7 +114,6 @@ class CodexBridge:
             cmd = [
                 "codex", "exec", "resume", "--last",
                 "--dangerously-bypass-approvals-and-sandbox",
-                "-C", str(MAILBOX_DIR),
                 prompt,
             ]
             label = "resumed"
