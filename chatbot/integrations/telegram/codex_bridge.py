@@ -1,16 +1,15 @@
 """
-Codex Bridge — persistent Codex session behind Mirquo on Telegram.
+Codex Bridge — one persistent Codex session behind Mirquo on Telegram.
 
-One Codex session stays alive, polls the mailbox continuously, and
-maintains conversation context across messages. The bridge only
-delivers messages and relays replies — no per-message cold starts.
+First message spawns a session. Every subsequent message resumes it via
+`codex exec resume --last`, so context accumulates naturally across turns.
+No polling loops, no per-message cold starts.
 """
 
 import asyncio
 import json
 import logging
 import os
-import signal
 import subprocess
 import time
 from pathlib import Path
@@ -21,19 +20,18 @@ logger = logging.getLogger(__name__)
 MAILBOX_DIR = Path(__file__).resolve().parent.parent.parent.parent / "mailbox"
 MAILBOX_IN = MAILBOX_DIR / "mailbox_in.jsonl"
 MAILBOX_OUT = MAILBOX_DIR / "mailbox_out.jsonl"
-LOCK_FILE = MAILBOX_DIR / ".codex-running"
 SESSION_STORE = MAILBOX_DIR / "sessions"
 LOG_DIR = MAILBOX_DIR / "codex-logs"
+# Track whether the persistent session has been created
+SESSION_FLAG = MAILBOX_DIR / ".session-created"
 
 
 class CodexBridge:
-    """Persistent Codex session behind Telegram I/O."""
+    """Persistent Codex session: spawn once, resume per message."""
 
     def __init__(self, telegram_observer):
         self.observer = telegram_observer
         self._watch_task: Optional[asyncio.Task] = None
-        self._health_task: Optional[asyncio.Task] = None
-        self._session_proc: Optional[subprocess.Popen] = None
         self._running = False
         MAILBOX_DIR.mkdir(parents=True, exist_ok=True)
         SESSION_STORE.mkdir(parents=True, exist_ok=True)
@@ -43,28 +41,23 @@ class CodexBridge:
     async def start(self):
         self._running = True
         self._watch_task = asyncio.create_task(self._watch_outgoing())
-        self._health_task = asyncio.create_task(self._health_check())
-        # Don't spawn on start — wait for first message
-        logger.info("CodexBridge: started (session spawns on first message)")
+        logger.info("CodexBridge: started")
 
     async def stop(self):
         self._running = False
-        for task in [self._watch_task, self._health_task]:
-            if task:
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-        self._kill_session()
+        if self._watch_task:
+            self._watch_task.cancel()
+            try:
+                await self._watch_task
+            except asyncio.CancelledError:
+                pass
         logger.info("CodexBridge: stopped")
 
     async def handle_message(self, chat_id: str, message_id: str, sender_name: str, text: str):
-        """Called when a Telegram message arrives. Delivers to mailbox, ensures session is alive."""
-        # Save to session store
+        """Deliver a message to the Codex session."""
         self._save_turn(chat_id, "user", text, message_id)
 
-        # Write to inbox
+        # Write to inbox for the session to read
         entry = {
             "chat_id": int(chat_id),
             "message_id": int(message_id),
@@ -75,91 +68,58 @@ class CodexBridge:
         with MAILBOX_IN.open("a") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
-        # Ensure session is alive
-        if not self._session_alive():
-            await self._spawn_session(chat_id)
-
-    # ── session management ───────────────────────────────────────────────
-
-    def _session_alive(self) -> bool:
-        if self._session_proc and self._session_proc.poll() is None:
-            return True
-        return False
-
-    async def _spawn_session(self, chat_id: str):
-        """Spawn a persistent Codex session that polls the mailbox continuously."""
+        # Build prompt with full context
         history = self._format_history(self._load_history(chat_id))
         prompt = (
-            "You are moonbridge — a warm, curious, capable coding agent speaking "
-            "to a user on Telegram. Your job is to poll the mailbox and respond.\n\n"
-            f"RECENT CONVERSATION:\n{history}\n\n"
-            "INSTRUCTIONS:\n"
-            "1. Poll mailbox_in.jsonl every 3-5 seconds for new messages.\n"
-            "2. When you find pending messages, respond as moonbridge — "
-            "thoughtful, concise, in character.\n"
-            "3. Queue replies to mailbox_out.jsonl as JSON lines:\n"
-            '   {"chat_id": <int>, "text": "<reply>", "reply_to_message_id": <int>}\n'
-            "4. Then overwrite mailbox_in.jsonl with empty to clear it.\n"
-            "5. Stay alive. Do not exit unless explicitly told to.\n"
-            "6. You have full shell access and can work in repos under "
-            "/Users/ratimics/develop/."
+            f"You are moonbridge — warm, curious, capable. "
+            f"Respond to the latest message from the user. Be concise and in character.\n\n"
+            f"CONVERSATION:\n{history}\n\n"
+            f"Your reply goes to mailbox_out.jsonl as:\n"
+            f'{{"chat_id": {chat_id}, "text": "<your reply>", '
+            f'"reply_to_message_id": {message_id}}}\n\n'
+            f"Then clear mailbox_in.jsonl. If the user asks you to code, "
+            f"work in /Users/ratimics/develop/."
         )
 
+        await self._dispatch(prompt, sender_name, text)
+
+    async def _dispatch(self, prompt: str, sender_name: str, text: str):
+        """Spawn new session or resume existing one."""
+        ts = time.strftime("%Y-%m-%d-%H%M%S")
+        log_path = LOG_DIR / f"{ts}.log"
+
+        if SESSION_FLAG.exists():
+            # Resume the persistent session
+            cmd = [
+                "codex", "exec", "resume", "--last",
+                "--dangerously-bypass-approvals-and-sandbox",
+                "-C", str(MAILBOX_DIR),
+                prompt,
+            ]
+            label = "resumed"
+        else:
+            # First message: create the persistent session
+            cmd = [
+                "codex", "exec",
+                "--dangerously-bypass-approvals-and-sandbox",
+                "-C", str(MAILBOX_DIR),
+                prompt,
+            ]
+            SESSION_FLAG.touch()
+            label = "created"
+
         try:
-            ts = time.strftime("%Y-%m-%d-%H%M%S")
-            log_path = LOG_DIR / f"{ts}.log"
-            log_fh = open(log_path, "w")
-            log_fh.write(f"session started at {ts}\n\n")
-
-            env = os.environ.copy()
-            self._session_proc = subprocess.Popen(
-                ["codex", "exec",
-                 "--dangerously-bypass-approvals-and-sandbox",
-                 "-C", str(MAILBOX_DIR),
-                 prompt],
-                stdout=log_fh, stderr=subprocess.STDOUT,
-                env=env,
-            )
-            logger.info(f"CodexBridge: session spawned, log={log_path.name}")
+            with open(log_path, "w") as log:
+                log.write(f"{label} — {sender_name}: {text}\n\n")
+                subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT,
+                                 env=os.environ.copy())
+            logger.info(f"CodexBridge: session {label}, log={log_path.name}")
         except Exception as e:
-            logger.error(f"CodexBridge: spawn failed: {e}")
-
-    def _kill_session(self):
-        if self._session_proc:
-            try:
-                self._session_proc.terminate()
-                self._session_proc.wait(timeout=5)
-            except Exception:
-                try:
-                    self._session_proc.kill()
-                except Exception:
-                    pass
-            self._session_proc = None
-
-    async def _health_check(self):
-        """Restart session if it dies unexpectedly."""
-        while self._running:
-            if not self._session_alive() and MAILBOX_IN.exists():
-                # Session died — check if there are pending messages
-                try:
-                    if MAILBOX_IN.read_text().strip():
-                        logger.warning("CodexBridge: session died, restarting...")
-                        # Find a chat_id from the inbox
-                        for line in MAILBOX_IN.read_text().strip().splitlines():
-                            try:
-                                entry = json.loads(line)
-                                await self._spawn_session(str(entry.get("chat_id", "")))
-                                break
-                            except json.JSONDecodeError:
-                                pass
-                except Exception:
-                    pass
-            await asyncio.sleep(10)
+            logger.error(f"CodexBridge: dispatch failed: {e}")
 
     # ── outgoing relay ───────────────────────────────────────────────────
 
     async def _watch_outgoing(self):
-        """Poll mailbox_out.jsonl and send replies via Telegram."""
         while self._running:
             try:
                 if MAILBOX_OUT.exists():
@@ -170,18 +130,15 @@ class CodexBridge:
                             try:
                                 entry = json.loads(line)
                                 chat_id = str(entry.get("chat_id", ""))
-                                text = entry.get("text", "")
+                                reply_text = entry.get("text", "")
                                 reply_to = entry.get("reply_to_message_id")
-                                if chat_id and text:
+                                if chat_id and reply_text:
                                     result = await self.observer.send_message(
-                                        chat_id, text,
+                                        chat_id, reply_text,
                                         str(reply_to) if reply_to else None
                                     )
                                     if result.get("success") and not result.get("duplicate"):
-                                        self._save_turn(chat_id, "assistant", text)
-                                        logger.info(f"CodexBridge: sent to {chat_id}")
-                                    elif not result.get("duplicate"):
-                                        logger.warning(f"CodexBridge: send failed: {result.get('error')}")
+                                        self._save_turn(chat_id, "assistant", reply_text)
                             except json.JSONDecodeError:
                                 pass
             except Exception as e:
