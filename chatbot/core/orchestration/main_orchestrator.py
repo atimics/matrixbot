@@ -22,6 +22,7 @@ from ...integrations.farcaster import FarcasterObserver
 from ..node_system.node_manager import NodeManager
 from ...integrations.matrix.observer import MatrixObserver
 from ...integrations.telegram import TelegramObserver
+from ...integrations.telegram.codex_bridge import CodexBridge
 from ...integrations.base_nft_service import BaseNFTService
 from ...integrations.eligibility_service import UserEligibilityService
 from ...tools.registry import ToolRegistry
@@ -533,6 +534,9 @@ class MainOrchestrator:
         if self.telegram_observer:
             await self.telegram_observer.stop()
 
+        if hasattr(self, 'codex_bridge') and self.codex_bridge:
+            await self.codex_bridge.stop()
+
         logger.info("Main orchestrator system stopped")
 
     def _setup_processing_components(self):
@@ -647,6 +651,10 @@ class MainOrchestrator:
                     world_state_manager=self.world_state
                 )
                 await self.telegram_observer.start()
+                # Create and start CodexBridge for persistent Codex session
+                self.codex_bridge = CodexBridge(self.telegram_observer)
+                self.telegram_observer.codex_bridge = self.codex_bridge
+                await self.codex_bridge.start()
                 self.world_state.update_system_status({
                     "telegram_connected": True,
                     "agent_capabilities": "mirquo can delegate coding work to the cenetex agent — a GitHub-native coding agent that implements changes, creates PRs, and manages repos across the cenetex org. Use the GitHub tools to view issues, explore codebases, implement changes, and create pull requests."

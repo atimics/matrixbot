@@ -46,6 +46,7 @@ class TelegramObserver(Integration):
 
         super().__init__(integration_id, display_name, config or {})
         self.world_state = world_state_manager
+        self.codex_bridge = None  # set by orchestrator after init
         self.token = settings.TELEGRAM_BOT_TOKEN
         self._http: Optional[httpx.AsyncClient] = None
         self._poll_task: Optional[asyncio.Task] = None
@@ -241,6 +242,15 @@ class TelegramObserver(Integration):
 
         if self.world_state:
             self.world_state.add_message(chat_id, message)
+
+        # Route to CodexBridge for processing (instead of ratichat AI engine)
+        if self.codex_bridge:
+            asyncio.create_task(
+                self.codex_bridge.handle_message(
+                    chat_id, str(msg.get("message_id", "")),
+                    sender.get("first_name", "unknown"), text
+                )
+            )
 
         log_text = text[:100] + "…" if len(text) > 100 else text
         logger.info(
