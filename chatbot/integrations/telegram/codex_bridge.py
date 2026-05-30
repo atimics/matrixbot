@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import subprocess
+from .arweave_store import ArweaveStore
 import time
 from pathlib import Path
 from typing import Optional
@@ -60,6 +61,7 @@ class CodexBridge:
         self._running = False
         MAILBOX_DIR.mkdir(parents=True, exist_ok=True)
         SESSION_STORE.mkdir(parents=True, exist_ok=True)
+        self.arweave = ArweaveStore()
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         # Ensure swarm registry exists
         if not SWARM_REGISTRY.exists():
@@ -83,7 +85,7 @@ class CodexBridge:
 
     async def handle_message(self, chat_id: str, message_id: str, sender_name: str, text: str):
         """Deliver a message to the Mirquo orchestrator session."""
-        self._save_turn(chat_id, "user", text, message_id)
+        await self._save_turn(chat_id, "user", text, message_id)
 
         entry = {
             "chat_id": int(chat_id),
@@ -95,7 +97,7 @@ class CodexBridge:
         with MAILBOX_IN.open("a") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
-        history = self._format_history(self._load_history(chat_id))
+        history = self._format_history(await self._load_history(chat_id))
         prompt = (
             f"CHAT_ID={chat_id} MSG_ID={message_id}\n"
             f"{ORCHESTRATOR_PROMPT}\n\n"
@@ -155,7 +157,7 @@ class CodexBridge:
                                         str(reply_to) if reply_to else None
                                     )
                                     if result.get("success") and not result.get("duplicate"):
-                                        self._save_turn(chat_id, "assistant", reply_text)
+                                        asyncio.create_task(self._save_turn(chat_id, "assistant", reply_text))
                             except json.JSONDecodeError:
                                 pass
             except Exception as e:
@@ -165,23 +167,11 @@ class CodexBridge:
     def _session_path(self, chat_id: str) -> Path:
         return SESSION_STORE / f"{chat_id}.json"
 
-    def _load_history(self, chat_id: str) -> list:
-        path = self._session_path(chat_id)
-        if not path.exists():
-            return []
-        try:
-            return json.loads(path.read_text())[-30:]
-        except (json.JSONDecodeError, OSError):
-            return []
+    async def _load_history(self, chat_id: str) -> list:
+        return await self.arweave.load_history(chat_id)
 
-    def _save_turn(self, chat_id: str, role: str, text: str, msg_id: str = None):
-        path = self._session_path(chat_id)
-        history = self._load_history(chat_id)
-        entry = {"role": role, "text": text}
-        if msg_id:
-            entry["message_id"] = str(msg_id)
-        history.append(entry)
-        path.write_text(json.dumps(history[-30:], ensure_ascii=False, indent=2))
+    async def _save_turn(self, chat_id: str, role: str, text: str, msg_id: str = None):
+        asyncio.create_task(self.arweave.save_turn(chat_id, role, text, msg_id))
 
     def _format_history(self, history: list) -> str:
         if not history:
