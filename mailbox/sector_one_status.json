@@ -1,0 +1,20 @@
+{
+  "name": "Prospect Refinery",
+  "chain_health": "ok",
+  "inventory": {
+    "ferrite_ore": 0.0,
+    "cuprite_ore": 0.0,
+    "crystal_ore": 0.0,
+    "ferrite_ingot": 6.0,
+    "cuprite_ingot": 0.0,
+    "crystal_ingot": 0.0,
+    "frame": 0.0,
+    "laser_module": 0.0,
+    "tractor_module": 0.0,
+    "repair_kit": 108.0
+  },
+  "players_visible": 30,
+  "asteroids_visible": 150,
+  "contracts": 2,
+  "last_check": 1780183722.230449
+}
