@@ -232,3 +232,4 @@ mailbox/processed_ids.txt
 mailbox/sessions/
 mailbox/.session-created
 mailbox/codex-logs/
+mailbox/workers/
