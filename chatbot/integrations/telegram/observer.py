@@ -55,6 +55,7 @@ class TelegramObserver(Integration):
         self._offset_file = Path("telegram_offset.txt")
 
         # Check configuration
+        self._replied_ids: set[str] = set()  # dedup sent replies
         self._enabled = bool(self.token)
         if not self._enabled:
             logger.warning(
@@ -196,6 +197,9 @@ class TelegramObserver(Integration):
                     if msg:
                         await self._handle_message(msg)
 
+                # Periodic dedup cleanup (keep last 5 min of IDs)
+                if len(self._replied_ids) > 100:
+                    self._replied_ids.clear()
                 await asyncio.sleep(0.5)
 
             except asyncio.CancelledError:
@@ -262,6 +266,8 @@ class TelegramObserver(Integration):
         try:
             result = await self._api("sendMessage", data)
             if result.get("ok"):
+                if dedup_key:
+                    self._replied_ids.add(dedup_key)
                 logger.info(f"TelegramObserver: Sent to {chat_id}")
                 return {"success": True, "message_id": result["result"]["message_id"]}
             return {"success": False, "error": result.get("description", "unknown")}
