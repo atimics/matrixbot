@@ -259,6 +259,12 @@ class TelegramObserver(Integration):
         if not self._http:
             return {"success": False, "error": "Not connected"}
 
+        # Dedup: one reply per (chat, msg_id)
+        dedup_key = f"{chat_id}:{reply_to_message_id}" if reply_to_message_id else None
+        if dedup_key and dedup_key in self._replied_ids:
+            logger.info(f"TelegramObserver: DEDUP skipped {dedup_key}")
+            return {"success": True, "message_id": None, "duplicate": True}
+
         data: dict = {"chat_id": int(chat_id), "text": text}
         if reply_to_message_id:
             data["reply_to_message_id"] = int(reply_to_message_id)
