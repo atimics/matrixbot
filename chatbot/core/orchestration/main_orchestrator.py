@@ -21,6 +21,7 @@ from ...integrations.arweave_uploader_client import ArweaveUploaderClient
 from ...integrations.farcaster import FarcasterObserver
 from ..node_system.node_manager import NodeManager
 from ...integrations.matrix.observer import MatrixObserver
+from ...integrations.telegram import TelegramObserver
 from ...integrations.base_nft_service import BaseNFTService
 from ...integrations.eligibility_service import UserEligibilityService
 from ...tools.registry import ToolRegistry
@@ -516,6 +517,9 @@ class MainOrchestrator:
         if self.farcaster_observer:
             await self.farcaster_observer.stop()
 
+        if self.telegram_observer:
+            await self.telegram_observer.stop()
+
         logger.info("Main orchestrator system stopped")
 
     def _setup_processing_components(self):
@@ -622,10 +626,24 @@ class MainOrchestrator:
             except Exception as e:
                 logger.error(f"Failed to initialize Farcaster observer: {e}")
                 logger.info("Continuing without Farcaster integration")
-        
+
+        # Initialize Telegram observer if token available
+        if settings.TELEGRAM_BOT_TOKEN:
+            try:
+                self.telegram_observer = TelegramObserver(
+                    world_state_manager=self.world_state
+                )
+                await self.telegram_observer.start()
+                self.world_state.update_system_status({"telegram_connected": True})
+                logger.info("Telegram observer initialized and started")
+            except Exception as e:
+                logger.error(f"Failed to initialize Telegram observer: {e}")
+                logger.info("Continuing without Telegram integration")
+
         # Update action context with initialized observers
         self.action_context.matrix_observer = self.matrix_observer
         self.action_context.farcaster_observer = self.farcaster_observer
+        self.action_context.telegram_observer = self.telegram_observer
         
         # Configure critical node pinning based on active integrations
         self._configure_critical_node_pinning()

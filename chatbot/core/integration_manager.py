@@ -155,6 +155,12 @@ class IntegrationManager:
             self.integration_types['farcaster'] = FarcasterObserver
         except ImportError as e:
             logger.warning(f"Failed to import FarcasterObserver: {e}")
+
+        try:
+            from ..integrations.telegram import TelegramObserver
+            self.integration_types['telegram'] = TelegramObserver
+        except ImportError as e:
+            logger.warning(f"Failed to import TelegramObserver: {e}")
             
         logger.info(f"Registered integration types: {list(self.integration_types.keys())}")
         
@@ -264,6 +270,13 @@ class IntegrationManager:
                 api_key=credentials.get('api_key'),
                 signer_uuid=credentials.get('signer_uuid'),
                 bot_fid=credentials.get('bot_fid'),
+                world_state_manager=world_state_manager
+            )
+        elif integration_data['integration_type'] == 'telegram':
+            integration = integration_class(
+                integration_id=integration_id,
+                display_name=integration_data['display_name'],
+                config=config,
                 world_state_manager=world_state_manager
             )
         else:

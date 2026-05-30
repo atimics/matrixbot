@@ -58,6 +58,9 @@ class AppConfig(BaseSettings):
     )
     MATRIX_DEVICE_ID: Optional[str] = None
     MATRIX_MEDIA_GALLERY_ROOM_ID: Optional[str] = None  # Dedicated channel for auto-posting generated media
+
+    # Telegram
+    TELEGRAM_BOT_TOKEN: Optional[str] = None
     DEVICE_NAME: str = "ratichat_bot"
 
     # Farcaster (Optional)
