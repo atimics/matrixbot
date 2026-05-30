@@ -233,3 +233,4 @@ mailbox/sessions/
 mailbox/.session-created
 mailbox/codex-logs/
 mailbox/workers/
+mailbox/mirquo.launch

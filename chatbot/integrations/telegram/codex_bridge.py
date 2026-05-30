@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import subprocess
+import zipfile
 from .arweave_store import ArweaveStore
 import time
 from pathlib import Path
@@ -51,6 +52,33 @@ STEP 6: Clear the inbox:
 
 IMPORTANT: Execute ALL steps. Do not skip step 5. Do not read Python files.
 Do not debug the infrastructure. Be concise. Commander, not explorer."""
+
+
+# ── launch file loading ──────────────────────────────────────────────────
+
+def _load_persona_from_launch() -> str:
+    """Load Mirquo's persona prompt from a .launch file if available."""
+    launch_paths = [
+        MAILBOX_DIR / "mirquo.launch",
+        Path("/Users/ratimics/develop/mirquo-launch/mirquo.launch"),
+    ]
+    for lp in launch_paths:
+        if lp.exists():
+            try:
+                import zipfile
+                with zipfile.ZipFile(lp) as zf:
+                    if "persona.json" in zf.namelist():
+                        persona = json.loads(zf.read("persona.json"))
+                        prompts = persona.get("prompts", {})
+                        system = prompts.get("system", "")
+                        if system:
+                            logger.info(f"CodexBridge: loaded persona from {lp}")
+                            return system
+            except Exception as e:
+                logger.warning(f"CodexBridge: failed to load {lp}: {e}")
+    return ""
+
+_PERSONA_OVERRIDE = _load_persona_from_launch()
 
 class CodexBridge:
     """Mirquo orchestrator behind Telegram I/O."""
@@ -98,9 +126,10 @@ class CodexBridge:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
         history = self._format_history(await self._load_history(chat_id))
+        persona = _PERSONA_OVERRIDE or ORCHESTRATOR_PROMPT
         prompt = (
             f"CHAT_ID={chat_id} MSG_ID={message_id}\n"
-            f"{ORCHESTRATOR_PROMPT}\n\n"
+            f"{persona}\n\n"
             f"CONVERSATION SO FAR:\n{history}\n\n"
             f"LATEST MESSAGE (reply to this): {text}\n\n"
             f"Use CHAT_ID={chat_id} and MSG_ID={message_id} in your reply."
