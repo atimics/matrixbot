@@ -227,3 +227,8 @@ data/chatbot.db
 # Arweave wallet files (SENSITIVE!)
 **/arweave_wallet.json
 arweave_wallet_data/
+mailbox/mailbox_*
+mailbox/processed_ids.txt
+mailbox/sessions/
+mailbox/.session-created
+mailbox/codex-logs/
