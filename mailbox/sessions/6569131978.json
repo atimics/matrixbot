@@ -1,0 +1,16 @@
+[
+  {
+    "role": "user",
+    "text": "hello",
+    "message_id": "119"
+  },
+  {
+    "role": "assistant",
+    "text": "Hey there — good to hear from you. What's on your mind?"
+  },
+  {
+    "role": "user",
+    "text": "What repositories do you have",
+    "message_id": "121"
+  }
+]

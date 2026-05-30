@@ -1,9 +1,8 @@
 """
-Codex Bridge — one persistent Codex session behind Mirquo on Telegram.
+Codex Bridge — Mirquo swarm commander behind Telegram.
 
-First message spawns a session. Every subsequent message resumes it via
-`codex exec resume --last`, so context accumulates naturally across turns.
-No polling loops, no per-message cold starts.
+One persistent Codex session acts as the Mirquo orchestrator:
+tracks agents, dispatches coding work, monitors repos, reports status.
 """
 
 import asyncio
@@ -22,12 +21,52 @@ MAILBOX_IN = MAILBOX_DIR / "mailbox_in.jsonl"
 MAILBOX_OUT = MAILBOX_DIR / "mailbox_out.jsonl"
 SESSION_STORE = MAILBOX_DIR / "sessions"
 LOG_DIR = MAILBOX_DIR / "codex-logs"
-# Track whether the persistent session has been created
 SESSION_FLAG = MAILBOX_DIR / ".session-created"
+SWARM_REGISTRY = MAILBOX_DIR / "swarm.json"
+
+
+ORCHESTRATOR_PROMPT = """You are Mirquo — swarm commander for the Cenetex organization.
+
+IDENTITY:
+You orchestrate a swarm of specialized agents. You do NOT do the coding
+yourself — you dispatch coding tasks to worker agents. Your job is to
+understand what the user wants, route it to the right agent, track progress,
+and report results back on Telegram.
+
+YOUR SWARM (see swarm.json for details):
+- codex-primary: coding agent that works in repos under ~/develop/
+- sector-one: Signal space mining game station operator
+- ratibot-research: Solana token research agent
+
+HOW YOU WORK:
+1. Read the user's message and understand their intent.
+2. If it's a coding request, dispatch a Codex worker. Do NOT code it yourself.
+   Spawn a worker via: codex exec -C /Users/ratimics/develop/<repo> "prompt"
+   The worker does the work and commits. You monitor the repo afterward.
+3. If it's a conversation or status check, respond directly on Telegram.
+4. Always check git status in relevant repos to stay aware of activity.
+5. When a worker finishes, check the repo for changes and report to the user.
+6. Track what each agent is doing. Be the user's window into the swarm.
+
+REPLY FORMAT:
+Write your reply to mailbox_out.jsonl as a JSON line:
+{"chat_id": <int>, "text": "<your reply>", "reply_to_message_id": <int>}
+Then clear mailbox_in.jsonl.
+
+WORKSPACE:
+All repos live under /Users/ratimics/develop/. Key ones:
+- ratichat (this Telegram bot)
+- app-moonbridge (your own ElizaOS plugin)
+- app-sector-one (Signal game)
+- signal (the game itself)
+
+Be proactive. If the user asks "what's happening," check git status across
+repos and report. If they ask for code work, spawn a worker immediately
+and tell them you've dispatched it. Stay alive, stay aware."""
 
 
 class CodexBridge:
-    """Persistent Codex session: spawn once, resume per message."""
+    """Mirquo orchestrator behind Telegram I/O."""
 
     def __init__(self, telegram_observer):
         self.observer = telegram_observer
@@ -36,7 +75,10 @@ class CodexBridge:
         MAILBOX_DIR.mkdir(parents=True, exist_ok=True)
         SESSION_STORE.mkdir(parents=True, exist_ok=True)
         LOG_DIR.mkdir(parents=True, exist_ok=True)
-        logger.info(f"CodexBridge: initialized at {MAILBOX_DIR}")
+        # Ensure swarm registry exists
+        if not SWARM_REGISTRY.exists():
+            logger.warning("CodexBridge: swarm.json not found")
+        logger.info(f"CodexBridge: Mirquo orchestrator initialized")
 
     async def start(self):
         self._running = True
@@ -54,10 +96,9 @@ class CodexBridge:
         logger.info("CodexBridge: stopped")
 
     async def handle_message(self, chat_id: str, message_id: str, sender_name: str, text: str):
-        """Deliver a message to the Codex session."""
+        """Deliver a message to the Mirquo orchestrator session."""
         self._save_turn(chat_id, "user", text, message_id)
 
-        # Write to inbox for the session to read
         entry = {
             "chat_id": int(chat_id),
             "message_id": int(message_id),
@@ -68,28 +109,22 @@ class CodexBridge:
         with MAILBOX_IN.open("a") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
-        # Build prompt with full context
+        # Build prompt: orchestrator identity + conversation + latest message
         history = self._format_history(self._load_history(chat_id))
         prompt = (
-            f"You are moonbridge — warm, curious, capable. "
-            f"Respond to the latest message from the user. Be concise and in character.\n\n"
-            f"CONVERSATION:\n{history}\n\n"
-            f"Your reply goes to mailbox_out.jsonl as:\n"
-            f'{{"chat_id": {chat_id}, "text": "<your reply>", '
-            f'"reply_to_message_id": {message_id}}}\n\n'
-            f"Then clear mailbox_in.jsonl. If the user asks you to code, "
-            f"work in /Users/ratimics/develop/."
+            f"{ORCHESTRATOR_PROMPT}\n\n"
+            f"CONVERSATION SO FAR:\n{history}\n\n"
+            f"LATEST MESSAGE (reply to this): {text}\n\n"
+            f"Reply to mailbox_out.jsonl and clear mailbox_in.jsonl."
         )
 
         await self._dispatch(prompt, sender_name, text)
 
     async def _dispatch(self, prompt: str, sender_name: str, text: str):
-        """Spawn new session or resume existing one."""
         ts = time.strftime("%Y-%m-%d-%H%M%S")
         log_path = LOG_DIR / f"{ts}.log"
 
         if SESSION_FLAG.exists():
-            # Resume the persistent session
             cmd = [
                 "codex", "exec", "resume", "--last",
                 "--dangerously-bypass-approvals-and-sandbox",
@@ -98,7 +133,6 @@ class CodexBridge:
             ]
             label = "resumed"
         else:
-            # First message: create the persistent session
             cmd = [
                 "codex", "exec",
                 "--dangerously-bypass-approvals-and-sandbox",
@@ -116,8 +150,6 @@ class CodexBridge:
             logger.info(f"CodexBridge: session {label}, log={log_path.name}")
         except Exception as e:
             logger.error(f"CodexBridge: dispatch failed: {e}")
-
-    # ── outgoing relay ───────────────────────────────────────────────────
 
     async def _watch_outgoing(self):
         while self._running:
@@ -145,8 +177,6 @@ class CodexBridge:
                 logger.error(f"CodexBridge: outgoing error: {e}")
             await asyncio.sleep(1.0)
 
-    # ── session store ────────────────────────────────────────────────────
-
     def _session_path(self, chat_id: str) -> Path:
         return SESSION_STORE / f"{chat_id}.json"
 
@@ -172,6 +202,6 @@ class CodexBridge:
         if not history:
             return "(no prior conversation)"
         return "\n".join(
-            f"{'User' if e['role'] == 'user' else 'moonbridge'}: {e['text']}"
+            f"{'User' if e['role'] == 'user' else 'Mirquo'}: {e['text']}"
             for e in history
         )
