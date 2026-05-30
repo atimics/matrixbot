@@ -284,6 +284,7 @@ class MainOrchestrator:
         # External observers
         self.matrix_observer: Optional[MatrixObserver] = None
         self.farcaster_observer: Optional[FarcasterObserver] = None
+        self.telegram_observer: Optional[TelegramObserver] = None
         
         # NFT and eligibility services
         self.base_nft_service: Optional[BaseNFTService] = None
@@ -325,6 +326,7 @@ class MainOrchestrator:
             CreateMintFrameTool,
             CreateAirdropClaimFrameTool,
         )
+        from ...tools.telegram_tools import SendTelegramMessageTool, SendTelegramReplyTool
         from ...tools.matrix_tools import (
             AcceptMatrixInviteTool,
             IgnoreMatrixInviteTool,
@@ -336,7 +338,13 @@ class MainOrchestrator:
             SendMatrixReplyTool,
             SendMatrixVideoTool,
         )
-        from ...tools.media_generation_tools import GenerateImageTool, GenerateVideoTool
+        try:
+            from ...tools.media_generation_tools import GenerateImageTool, GenerateVideoTool
+            _has_media_tools = True
+        except ImportError:
+            GenerateImageTool = GenerateVideoTool = None
+            _has_media_tools = False
+            logger.warning("Media generation tools unavailable — skipping")
         from ...tools.permaweb_tools import StorePermanentMemoryTool
         from ...tools.web_tools import WebSearchTool
         from ...tools.research_tools import UpdateResearchTool, QueryResearchTool
@@ -379,6 +387,10 @@ class MainOrchestrator:
         self.tool_registry.register_tool(AcceptMatrixInviteTool())
         self.tool_registry.register_tool(IgnoreMatrixInviteTool())
         
+        # Telegram tools
+        self.tool_registry.register_tool(SendTelegramMessageTool())
+        self.tool_registry.register_tool(SendTelegramReplyTool())
+
         # Farcaster tools
         self.tool_registry.register_tool(SendFarcasterPostTool())
         self.tool_registry.register_tool(SendFarcasterReplyTool())
@@ -407,8 +419,9 @@ class MainOrchestrator:
         self.tool_registry.register_tool(CreateAirdropClaimFrameTool())
         
         # Media generation tools
-        self.tool_registry.register_tool(GenerateImageTool())
-        self.tool_registry.register_tool(GenerateVideoTool())
+        if _has_media_tools:
+            self.tool_registry.register_tool(GenerateImageTool())
+            self.tool_registry.register_tool(GenerateVideoTool())
         
         # Permaweb tools
         self.tool_registry.register_tool(StorePermanentMemoryTool())
@@ -634,7 +647,10 @@ class MainOrchestrator:
                     world_state_manager=self.world_state
                 )
                 await self.telegram_observer.start()
-                self.world_state.update_system_status({"telegram_connected": True})
+                self.world_state.update_system_status({
+                    "telegram_connected": True,
+                    "agent_capabilities": "mirquo can delegate coding work to the cenetex agent — a GitHub-native coding agent that implements changes, creates PRs, and manages repos across the cenetex org. Use the GitHub tools to view issues, explore codebases, implement changes, and create pull requests."
+                })
                 logger.info("Telegram observer initialized and started")
             except Exception as e:
                 logger.error(f"Failed to initialize Telegram observer: {e}")

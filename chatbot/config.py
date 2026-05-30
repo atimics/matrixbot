@@ -37,7 +37,7 @@ class AppConfig(BaseSettings):
     )
 
     # Chatbot Core
-    CHATBOT_DB_PATH: str = "data/chatbot.db"
+    CHATBOT_DB_PATH: str = ":memory:"
     OBSERVATION_INTERVAL: float = 2.0
     MAX_CYCLES_PER_HOUR: int = 300
     MAX_ACTIONS_PER_HOUR: int = 600
