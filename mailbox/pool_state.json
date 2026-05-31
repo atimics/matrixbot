@@ -1,7 +1,9 @@
 {
-  "reserve_sector": 100000.99956084788,
-  "reserve_sol": 10.00022984842812,
+  "reserve_sector": 100350.0,
+  "reserve_sol": 10.000178302000002,
   "total_fees_sector": 1.6501649999999999,
   "total_swaps": 12,
-  "last_swap": 1780200796.4377222
+  "last_swap": 1780201351.722502,
+  "fees": 1.050105,
+  "swaps": 10
 }
