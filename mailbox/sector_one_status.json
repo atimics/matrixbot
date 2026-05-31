@@ -1,20 +1,8 @@
 {
   "name": "Prospect Refinery",
-  "chain_health": "ok",
-  "inventory": {
-    "ferrite_ore": 0.0,
-    "cuprite_ore": 0.0,
-    "crystal_ore": 0.0,
-    "ferrite_ingot": 23.0,
-    "cuprite_ingot": 0.0,
-    "crystal_ingot": 0.0,
-    "frame": 0.0,
-    "laser_module": 0.0,
-    "tractor_module": 0.0,
-    "repair_kit": 0.0
-  },
-  "players_visible": 31,
-  "contracts": 2,
-  "hail_set": true,
-  "last_check": 1780186162.954367
+  "chain": "ok",
+  "players": 3,
+  "docked": 0,
+  "ingots": 8.0,
+  "last_check": 1780203904.2052228
 }
