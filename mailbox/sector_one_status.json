@@ -5,16 +5,16 @@
     "ferrite_ore": 0.0,
     "cuprite_ore": 0.0,
     "crystal_ore": 0.0,
-    "ferrite_ingot": 6.0,
+    "ferrite_ingot": 23.0,
     "cuprite_ingot": 0.0,
     "crystal_ingot": 0.0,
     "frame": 0.0,
     "laser_module": 0.0,
     "tractor_module": 0.0,
-    "repair_kit": 108.0
+    "repair_kit": 0.0
   },
-  "players_visible": 30,
+  "players_visible": 31,
   "contracts": 2,
-  "hail_set": false,
-  "last_check": 1780184728.180539
+  "hail_set": true,
+  "last_check": 1780186162.954367
 }
