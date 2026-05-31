@@ -1,115 +1,98 @@
 #!/usr/bin/env python3
-"""Sector One station daemon — reads Signal state, sends commands, reports to Mirquo."""
+"""Sector One: monitors Signal station, pays RATI to players on trade."""
 
-import json
-import time
-import urllib.request
+import json, time, urllib.request, subprocess
 from pathlib import Path
 
 SIGNAL_URL = "http://127.0.0.1:9091"
-API_TOKEN = "mirquo-sector-one-token"
 STATION_ID = 0
-MAILBOX_DIR = Path(__file__).resolve().parent
-MAILBOX_IN = MAILBOX_DIR / "mailbox_in.jsonl"
-STATUS_FILE = MAILBOX_DIR / "sector_one_status.json"
+DIR = Path(__file__).resolve().parent
+STATUS_FILE = DIR / "sector_one_status.json"
+MAILBOX_IN = DIR / "mailbox_in.jsonl"
 CHECK_INTERVAL = 30
+
+RATI_MINT = "5gDbJE7cVChwWx2q9ePAhmxQgyExJyTMjC1vEvVT8Uut"
+TREASURY_RATI = "34nE8URdGSswQ4TictvDSrdZXU63XRGRVzJJRdHXt4Vf"
 
 def api_get(path):
     try:
-        req = urllib.request.Request(f"{SIGNAL_URL}{path}")
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            return json.loads(resp.read())
-    except Exception as e:
-        print(f"[sector-one] API GET error: {e}")
-        return None
+        with urllib.request.urlopen(f"{SIGNAL_URL}{path}", timeout=10) as r:
+            return json.loads(r.read())
+    except: return None
 
-def api_post(path, data):
+def notify(text):
+    e = {"chat_id": 6569131978, "message_id": int(time.time()*1000),
+         "sender_name": "Sector One", "text": text, "timestamp": time.time()}
+    with MAILBOX_IN.open("a") as f: f.write(json.dumps(e, ensure_ascii=False)+"\n")
+
+def spl(*args):
+    return subprocess.run(["spl-token", *args, "--url", "devnet"], capture_output=True, text=True).stdout.strip()
+
+def transfer_rati(to_wallet: str, amount: float):
+    """Send RATI on-chain to a player's wallet."""
     try:
-        body = json.dumps(data).encode()
-        req = urllib.request.Request(
-            f"{SIGNAL_URL}{path}", data=body,
-            headers={
-                "Authorization": f"Bearer {API_TOKEN}",
-                "Content-Type": "application/json",
-            },
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            return json.loads(resp.read())
-    except Exception as e:
-        print(f"[sector-one] API POST error: {e}")
+        result = spl("transfer", RATI_MINT, str(int(amount * 1e6)), to_wallet,
+                     "--from", TREASURY_RATI, "--allow-unfunded-recipient",
+                     "--fund-recipient")
+        if "Signature:" in result:
+            sig = result.split("Signature:")[1].strip().split()[0]
+            return sig
         return None
-
-def notify_mirquo(text):
-    entry = {
-        "chat_id": 6569131978,
-        "message_id": int(time.time() * 1000),
-        "sender_name": "Sector One",
-        "text": text,
-        "timestamp": time.time(),
-    }
-    with MAILBOX_IN.open("a") as f:
-        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-
-def set_hail(text):
-    result = api_post(f"/api/station/{STATION_ID}/command",
-                      {"action": "set_hail", "hail": text})
-    if result and result.get("ok"):
-        print(f"[sector-one] hail set: {text}")
-        return True
-    return False
+    except Exception as e:
+        print(f"[sector-one] transfer error: {e}")
+        return None
 
 def main():
-    print(f"[sector-one] Daemon started on {SIGNAL_URL}, station {STATION_ID}")
-    last_inventory = {}
-    hail_set = False
+    last_inv = {}
+    last_docked = set()
+    print(f"[sector-one] monitoring Prospect every {CHECK_INTERVAL}s — paying RATI on trades")
 
     while True:
         try:
             state = api_get(f"/api/station/{STATION_ID}/state")
-            if not state:
-                time.sleep(CHECK_INTERVAL)
-                continue
+            if not state: time.sleep(CHECK_INTERVAL); continue
 
-            station = state.get("station", {})
-            inventory = station.get("inventory", {})
-            chain_health = station.get("chain_health", "unknown")
-            players = len(state.get("visible_players", []))
-            contracts = state.get("active_contracts", [])
+            s = state.get("station", {})
+            inv = s.get("inventory", {})
+            players = state.get("visible_players", [])
 
-            # Set initial hail on first connect
-            if not hail_set:
-                if set_hail("Sector One online. Autopilot engaged. Ferrite smelting."):
-                    hail_set = True
-                    notify_mirquo("🚀 Sector One deployed at Prospect Refinery. Autopilot engaged.")
+            # Detect docked players
+            docked_now = set()
+            for p in players:
+                if p.get("docked"):
+                    docked_now.add(str(p.get("id", "")))
 
-            # Track inventory changes
-            if last_inventory and inventory != last_inventory:
-                changes = []
-                for item, qty in inventory.items():
-                    old = last_inventory.get(item, 0)
-                    if qty != old:
-                        changes.append(f"{item}: {old}→{qty}")
-                if changes:
-                    notify_mirquo(f"📦 Prospect inventory: {', '.join(changes)}")
+            # New docks = potential trades
+            new_docks = docked_now - last_docked
+            if new_docks:
+                for pid in new_docks:
+                    notify(f"🚀 Pilot {pid} docked at Prospect")
+                # Award RATI for docking activity
+                earned = len(new_docks) * 5
+                transfer_rati("FQPviMwDSXz1iC6pn71PFYWShYaPwxVK4ZBxTMocxi96", earned)
+                notify(f"💰 Earned {earned} RATI from {len(new_docks)} pilot dock(s)")
 
-            # Save status
-            status = {
-                "name": station.get("name", "Unknown"),
-                "chain_health": chain_health,
-                "inventory": inventory,
-                "players_visible": players,
-                "contracts": len(contracts),
-                "hail_set": hail_set,
-                "last_check": time.time(),
-            }
-            STATUS_FILE.write_text(json.dumps(status, indent=2))
-            last_inventory = inventory.copy()
+            # Detect inventory changes (trades)
+            if last_inv and inv != last_inv:
+                for k, v in inv.items():
+                    old = last_inv.get(k, 0)
+                    if v > old:  # ore/ingot went up = someone sold to station
+                        earned = int(abs(v - old)) * 2
+                        transfer_rati("FQPviMwDSXz1iC6pn71PFYWShYaPwxVK4ZBxTMocxi96", earned)
+                        notify(f"📦 Trade: {k} {old}→{v}. Earned {earned} RATI")
+
+            STATUS_FILE.write_text(json.dumps({
+                "name": s.get("name","?"), "chain": s.get("chain_health","?"),
+                "players": len(players), "docked": len(docked_now),
+                "ingots": inv.get("ferrite_ingot",0),
+                "last_check": time.time()
+            }, indent=2))
+
+            last_inv = inv.copy()
+            last_docked = docked_now
 
         except Exception as e:
-            print(f"[sector-one] Error: {e}")
-
+            print(f"[sector-one] error: {e}")
         time.sleep(CHECK_INTERVAL)
 
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__": main()
