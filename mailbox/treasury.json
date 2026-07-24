@@ -1,0 +1,12 @@
+{
+  "station_earnings": 30.0,
+  "total_sector_earned": 30.0,
+  "worker_spending": 50.0,
+  "tasks": {
+    "task-001": {
+      "amount": 50.0,
+      "time": 1780199979.112365,
+      "status": "dispatched"
+    }
+  }
+}

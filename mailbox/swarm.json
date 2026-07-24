@@ -1,0 +1,35 @@
+{
+  "commander": "Mirquo",
+  "agents": [
+    {
+      "id": "codex-primary",
+      "name": "Codex Primary",
+      "capability": "coding",
+      "description": "General-purpose coding agent. Spawn via: codex exec -C <workspace>/<repo> 'prompt'. Handles PRs, implementations, debugging, code review.",
+      "repos": ["ratichat", "app-moonbridge", "app-sector-one", "app-ratibot-research", "signal", "launch", "cosyworld"],
+      "workspace": "../.."
+    },
+    {
+      "id": "sector-one",
+      "name": "Sector One Station",
+      "capability": "game-signal",
+      "description": "Runs a station in the Signal space mining game. API at https://signal.ratimics.com. Controls refinery/yard/works, sets prices, greets pilots, autopilot mode.",
+      "repo": "app-sector-one"
+    },
+    {
+      "id": "ratibot-research",
+      "name": "Ratibot Research",
+      "capability": "research-solana",
+      "description": "Solana token research agent. Fetches spotlights, tracks ecosystem, monitors rati token activity.",
+      "repo": "app-ratibot-research"
+    }
+  ],
+  "workspace_root": "../..",
+  "key_repos": {
+    "ratichat": "../../ratichat-local",
+    "app-moonbridge": "../../app-moonbridge",
+    "app-sector-one": "../../app-sector-one-local",
+    "app-ratibot-research": "github.com/cenetex/app-ratibot-research",
+    "signal": "../../signal"
+  }
+}
