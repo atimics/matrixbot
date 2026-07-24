@@ -12,16 +12,20 @@ if [ -z "$TASK_ID" ] || [ -z "$REPO_NAME" ] || [ -z "$PROMPT" ]; then
   exit 1
 fi
 
-WORKER_DIR="mailbox/workers/$TASK_ID"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+MAILBOX_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+RATICHAT_REPO="$(cd -- "$MAILBOX_DIR/.." && pwd)"
+WORKSPACE_ROOT="${RATICHAT_WORKSPACE_ROOT:-$(dirname -- "$RATICHAT_REPO")}"
+WORKER_DIR="$MAILBOX_DIR/workers/$TASK_ID"
 mkdir -p "$WORKER_DIR"
 
 # Map repo name to path
 case "$REPO_NAME" in
-  ratichat)    REPO_PATH="/Users/ratimics/develop/ratichat-local" ;;
-  moonbridge)  REPO_PATH="/Users/ratimics/develop/app-moonbridge" ;;
-  sector-one)  REPO_PATH="/Users/ratimics/develop/app-sector-one-local" ;;
-  signal)      REPO_PATH="/Users/ratimics/develop/signal" ;;
-  *)           REPO_PATH="/Users/ratimics/develop/$REPO_NAME" ;;
+  ratichat)    REPO_PATH="$RATICHAT_REPO" ;;
+  moonbridge)  REPO_PATH="$WORKSPACE_ROOT/app-moonbridge" ;;
+  sector-one)  REPO_PATH="$WORKSPACE_ROOT/app-sector-one-local" ;;
+  signal)      REPO_PATH="$WORKSPACE_ROOT/signal" ;;
+  *)           REPO_PATH="$WORKSPACE_ROOT/$REPO_NAME" ;;
 esac
 
 # Write task manifest
@@ -34,7 +38,7 @@ nohup codex exec \
   --dangerously-bypass-approvals-and-sandbox \
   -C "$REPO_PATH" \
   "You are a coding worker dispatched by Mirquo. Task: $PROMPT
-   When done, write your result to $PWD/$WORKER_DIR/result.json
+   When done, write your result to $WORKER_DIR/result.json
    as {\"status\": \"done\", \"summary\": \"<what you did>\", \"files_changed\": [...]}
    Then commit your changes." \
   > "$WORKER_DIR/worker.log" 2>&1 &

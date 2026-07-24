@@ -2,13 +2,16 @@
 # Auto-restarts the Signal server when it dies
 PORT=9091
 LOG=/private/tmp/signal-server-bots.log
-BINARY=/Users/ratimics/develop/signal/build/signal_server
-WORKDIR=/Users/ratimics/develop/signal
+MAILBOX_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+RATICHAT_REPO="$(cd -- "$MAILBOX_DIR/.." && pwd)"
+WORKSPACE_ROOT="${RATICHAT_WORKSPACE_ROOT:-$(dirname -- "$RATICHAT_REPO")}"
+WORKDIR="${SIGNAL_REPO_PATH:-$WORKSPACE_ROOT/signal}"
+BINARY="${SIGNAL_BINARY_PATH:-$WORKDIR/build/signal_server}"
 
 while true; do
     if ! lsof -i :$PORT -sTCP:LISTEN >/dev/null 2>&1; then
         echo "[watchdog] $(date): server down, restarting..." >> /tmp/signal-watchdog.log
-        cd "$WORKDIR"
+        cd "$WORKDIR" || exit 1
         SIGNAL_PERSISTENCE_MODE=ephemeral \
         PORT=$PORT \
         SIGNAL_API_TOKEN="mirquo-sector-one-token" \

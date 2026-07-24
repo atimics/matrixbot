@@ -8,6 +8,7 @@ Falls back to local filesystem if Arweave is unreachable.
 
 import json
 import logging
+import os
 import time
 import hashlib
 from pathlib import Path
@@ -22,8 +23,15 @@ import base64
 logger = logging.getLogger(__name__)
 
 ARWEAVE_GATEWAY = "https://arweave.net"
-WALLET_PATH = Path("/Users/ratimics/develop/signal/arweave-wallet.json")
-LOCAL_STORE = Path(__file__).resolve().parent.parent.parent.parent / "mailbox" / "sessions"
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+LOCAL_STORE = PROJECT_ROOT / "mailbox" / "sessions"
+
+
+def _wallet_path() -> Path:
+    configured = os.environ.get("ARWEAVE_WALLET_PATH")
+    if configured:
+        return Path(configured).expanduser()
+    return PROJECT_ROOT / "data" / "arweave_wallet.json"
 
 
 class ArweaveStore:
@@ -41,7 +49,7 @@ class ArweaveStore:
 
     def _load_wallet(self) -> bool:
         try:
-            self._wallet = json.loads(WALLET_PATH.read_text())
+            self._wallet = json.loads(_wallet_path().read_text())
             return True
         except (FileNotFoundError, json.JSONDecodeError):
             return False

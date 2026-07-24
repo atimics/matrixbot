@@ -5,9 +5,9 @@
       "id": "codex-primary",
       "name": "Codex Primary",
       "capability": "coding",
-      "description": "General-purpose coding agent. Spawn via: codex exec -C /Users/ratimics/develop/<repo> 'prompt'. Handles PRs, implementations, debugging, code review.",
+      "description": "General-purpose coding agent. Spawn via: codex exec -C <workspace>/<repo> 'prompt'. Handles PRs, implementations, debugging, code review.",
       "repos": ["ratichat", "app-moonbridge", "app-sector-one", "app-ratibot-research", "signal", "launch", "cosyworld"],
-      "workspace": "/Users/ratimics/develop"
+      "workspace": "../.."
     },
     {
       "id": "sector-one",
@@ -24,12 +24,12 @@
       "repo": "app-ratibot-research"
     }
   ],
-  "workspace_root": "/Users/ratimics/develop",
+  "workspace_root": "../..",
   "key_repos": {
-    "ratichat": "/Users/ratimics/develop/ratichat-local",
-    "app-moonbridge": "/Users/ratimics/develop/app-moonbridge",
-    "app-sector-one": "/Users/ratimics/develop/app-sector-one-local", 
+    "ratichat": "../../ratichat-local",
+    "app-moonbridge": "../../app-moonbridge",
+    "app-sector-one": "../../app-sector-one-local",
     "app-ratibot-research": "github.com/cenetex/app-ratibot-research",
-    "signal": "/Users/ratimics/develop/signal"
+    "signal": "../../signal"
   }
 }

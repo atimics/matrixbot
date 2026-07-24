@@ -19,6 +19,10 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 MAILBOX_DIR = Path(__file__).resolve().parent.parent.parent.parent / "mailbox"
+PROJECT_ROOT = MAILBOX_DIR.parent
+WORKSPACE_ROOT = Path(
+    os.environ.get("RATICHAT_WORKSPACE_ROOT") or PROJECT_ROOT.parent
+).expanduser()
 MAILBOX_IN = MAILBOX_DIR / "mailbox_in.jsonl"
 MAILBOX_OUT = MAILBOX_DIR / "mailbox_out.jsonl"
 SESSION_STORE = MAILBOX_DIR / "sessions"
@@ -60,8 +64,11 @@ def _load_persona_from_launch() -> str:
     """Load Mirquo's persona prompt from a .launch file if available."""
     launch_paths = [
         MAILBOX_DIR / "mirquo.launch",
-        Path("/Users/ratimics/develop/mirquo-launch/mirquo.launch"),
+        WORKSPACE_ROOT / "mirquo-launch" / "mirquo.launch",
     ]
+    configured_launch = os.environ.get("MIRQUO_LAUNCH_PATH")
+    if configured_launch:
+        launch_paths.insert(0, Path(configured_launch).expanduser())
     for lp in launch_paths:
         if lp.exists():
             try:
