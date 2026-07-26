@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
-import { apiClient } from '@/lib/api'
+import { apiClient } from '@/api'
 import { SetupStep } from '@/types'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 

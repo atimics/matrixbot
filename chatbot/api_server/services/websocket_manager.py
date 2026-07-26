@@ -17,8 +17,8 @@ class LogWebSocketManager:
         self.active_connections: List[WebSocket] = []
         self.log_handler = None
         
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
+    async def connect(self, websocket: WebSocket, subprotocol: str = None):
+        await websocket.accept(subprotocol=subprotocol)
         self.active_connections.append(websocket)
         
     def disconnect(self, websocket: WebSocket):

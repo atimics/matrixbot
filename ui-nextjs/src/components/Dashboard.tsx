@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { apiClient } from '@/lib/api'
+import { apiClient } from '@/api'
 import LogViewer from '@/components/LogViewer'
 import StatusPanel from '@/components/StatusPanel'
 import ToolManager from '@/components/ToolManager'

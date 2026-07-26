@@ -39,9 +39,15 @@ class IntegrationManager:
         if encryption_key:
             self.cipher = Fernet(encryption_key)
         else:
-            # Generate a key for development - in production, this should come from a secure vault
+            if settings.CHATBOT_ENV.lower() == "production":
+                raise ValueError(
+                    "INTEGRATION_CREDENTIAL_KEY is required in production"
+                )
+            # Ephemeral credentials are acceptable only for local/test databases.
             self.cipher = Fernet(Fernet.generate_key())
-            logger.warning("Using generated encryption key - not suitable for production!")
+            logger.warning(
+                "Using an ephemeral integration credential key in non-production"
+            )
             
     async def initialize(self):
         """Initialize the integration manager and database schema"""
@@ -155,7 +161,7 @@ class IntegrationManager:
             self.integration_types['farcaster'] = FarcasterObserver
         except ImportError as e:
             logger.warning(f"Failed to import FarcasterObserver: {e}")
-            
+
         logger.info(f"Registered integration types: {list(self.integration_types.keys())}")
         
     async def add_integration(
@@ -244,6 +250,9 @@ class IntegrationManager:
         # Create integration instance
         integration_class = self.integration_types[integration_data['integration_type']]
         config = json.loads(integration_data['config'])
+        if config.get("test_mode") is True:
+            logger.info("Skipped network connection for test-mode integration %s", integration_id)
+            return False
         
         # Load credentials for this integration
         credentials = await self._load_credentials(integration_id)
@@ -280,12 +289,22 @@ class IntegrationManager:
         
         # Attempt connection
         try:
-            await integration.connect()
+            await asyncio.wait_for(
+                integration.connect(),
+                timeout=settings.INTEGRATION_CONNECT_TIMEOUT_SECONDS,
+            )
             self.active_integrations[integration_id] = integration
             logger.info(f"Successfully connected integration {integration_id}")
             return True
         except Exception as e:
             logger.error(f"Error connecting integration {integration_id}: {e}")
+            try:
+                await asyncio.wait_for(integration.disconnect(), timeout=5)
+            except Exception:
+                logger.warning(
+                    "Cleanup failed for integration %s after connection failure",
+                    integration_id,
+                )
             return False
             
     async def disconnect_integration(self, integration_id: str) -> None:
@@ -295,6 +314,30 @@ class IntegrationManager:
             await integration.disconnect()
             del self.active_integrations[integration_id]
             logger.info(f"Disconnected integration {integration_id}")
+
+    async def remove_integration(self, integration_id: str) -> bool:
+        """Disconnect and permanently remove an integration and its credentials."""
+        await self.disconnect_integration(integration_id)
+
+        async def db_operation(db):
+            cursor = await db.execute(
+                "SELECT 1 FROM integrations WHERE id = ?", (integration_id,)
+            )
+            if await cursor.fetchone() is None:
+                return False
+            await db.execute(
+                "DELETE FROM credentials WHERE integration_id = ?", (integration_id,)
+            )
+            await db.execute(
+                "DELETE FROM integrations WHERE id = ?", (integration_id,)
+            )
+            await db.commit()
+            return True
+
+        removed = await self._execute_db_operation(db_operation)
+        if removed:
+            logger.info("Removed integration %s", integration_id)
+        return removed
             
     async def connect_all_active(self) -> Dict[str, bool]:
         """
@@ -379,7 +422,13 @@ class IntegrationManager:
         """
         if integration_type not in self.integration_types:
             return {"success": False, "error": f"Unsupported integration type: {integration_type}"}
+        if config.get("test_mode") is True:
+            return {
+                "success": False,
+                "error": "Network connection tests are disabled in test mode",
+            }
             
+        integration = None
         try:
             # Create temporary integration instance
             integration_class = self.integration_types[integration_type]
@@ -399,11 +448,21 @@ class IntegrationManager:
             if hasattr(integration, 'set_credentials'):
                 await integration.set_credentials(credentials)
                 
-            result = await integration.test_connection()
+            result = await asyncio.wait_for(
+                integration.test_connection(),
+                timeout=settings.INTEGRATION_CONNECT_TIMEOUT_SECONDS,
+            )
             return {"success": result, "error": None if result else "Connection test failed"}
             
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+        except Exception:
+            logger.exception("Integration connection test failed")
+            return {"success": False, "error": "Connection test failed"}
+        finally:
+            if integration is not None:
+                try:
+                    await asyncio.wait_for(integration.disconnect(), timeout=5)
+                except Exception:
+                    logger.warning("Integration test cleanup failed")
             
     async def _load_integration_data(self, integration_id: str) -> Optional[Dict[str, Any]]:
         """Load integration configuration from database"""

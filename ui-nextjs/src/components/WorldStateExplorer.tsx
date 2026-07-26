@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { apiClient } from '@/lib/api'
+import { apiClient } from '@/api'
 import { WorldState } from '@/types'
 
 export default function WorldStateExplorer() {

@@ -38,6 +38,8 @@ class AppConfig(BaseSettings):
 
     # Chatbot Core
     CHATBOT_DB_PATH: str = "data/chatbot.db"
+    CHATBOT_ENV: str = "development"
+    INTEGRATION_CREDENTIAL_KEY: Optional[str] = None
     OBSERVATION_INTERVAL: float = 2.0
     MAX_CYCLES_PER_HOUR: int = 300
     MAX_ACTIONS_PER_HOUR: int = 600
@@ -58,6 +60,26 @@ class AppConfig(BaseSettings):
     )
     MATRIX_DEVICE_ID: Optional[str] = None
     MATRIX_MEDIA_GALLERY_ROOM_ID: Optional[str] = None  # Dedicated channel for auto-posting generated media
+
+    # Telegram
+    TELEGRAM_BOT_TOKEN: Optional[str] = None
+    TELEGRAM_ALLOWED_CHAT_IDS: str = ""
+    TELEGRAM_ALLOWED_SENDER_IDS: str = ""
+    TELEGRAM_MESSAGE_RATE_LIMIT_PER_MINUTE: int = 10
+    TELEGRAM_MAX_MESSAGE_CHARS: int = 4000
+    TELEGRAM_OFFSET_PATH: str = "data/telegram_offset.txt"
+    TELEGRAM_OPERATOR_QUEUE_PATH: str = "data/telegram_operator_queue.jsonl"
+    TELEGRAM_OPERATOR_QUEUE_MAX_BYTES: int = 1_048_576
+
+    # Local management API. The token is required for every /api request other
+    # than health checks and for the log WebSocket.
+    ADMIN_API_TOKEN: Optional[str] = None
+    ADMIN_API_HOST: str = "127.0.0.1"
+    ADMIN_API_PORT: int = 8000
+    ADMIN_API_ALLOWED_ORIGINS: str = (
+        "http://127.0.0.1:8000,http://localhost:8000,http://localhost:3000"
+    )
+    INTEGRATION_CONNECT_TIMEOUT_SECONDS: float = 15.0
     DEVICE_NAME: str = "ratichat_bot"
 
     # Farcaster (Optional)
@@ -65,6 +87,7 @@ class AppConfig(BaseSettings):
     FARCASTER_BOT_FID: Optional[str] = None
     FARCASTER_BOT_SIGNER_UUID: Optional[str] = None
     FARCASTER_BOT_USERNAME: Optional[str] = None  # Bot's username for filtering
+    FARCASTER_WEBHOOK_SECRET: Optional[str] = None
 
     # Ecosystem Token Tracking
     ECOSYSTEM_TOKEN_CONTRACT_ADDRESS: Optional[str] = "Ci6Y1UX8bY4jxn6YiogJmdCxFEu2jmZhCcG65PStpump"  # Contract address of the token
@@ -114,6 +137,7 @@ class AppConfig(BaseSettings):
     # Arweave Configuration (Internal Uploader Service)
     ARWEAVE_INTERNAL_UPLOADER_SERVICE_URL: str = "http://arweave-uploader:8001"
     ARWEAVE_GATEWAY_URL: str = "https://arweave.net"
+    ARWEAVE_UPLOADER_API_KEY: Optional[str] = None
 
     # NFT & Airdrop Configuration (v0.0.4)
     NFT_DEV_WALLET_PRIVATE_KEY: Optional[str] = None  # For sponsoring transactions or direct minting

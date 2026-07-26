@@ -12,6 +12,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import HTTPException, Request
 
+from ...config import settings
 from ...core.world_state import WorldStateManager
 
 logger = logging.getLogger(__name__)
@@ -22,10 +23,12 @@ class FarcasterWebhookHandler:
 
     def __init__(self, world_state_manager: WorldStateManager):
         self.world_state = world_state_manager
-        self.webhook_secret: Optional[str] = None  # For verifying webhook authenticity
+        self.webhook_secret = settings.FARCASTER_WEBHOOK_SECRET
 
     def set_webhook_secret(self, secret: str):
         """Set the webhook secret for verification"""
+        if len(secret.encode("utf-8")) < 32:
+            raise ValueError("Farcaster webhook secret must be at least 32 bytes")
         self.webhook_secret = secret
 
     async def handle_webhook(self, request: Request) -> Dict[str, str]:
@@ -45,16 +48,23 @@ class FarcasterWebhookHandler:
             # Get raw body for signature verification
             body = await request.body()
             headers = request.headers
-            
-            # Verify webhook signature if secret is configured
-            if self.webhook_secret:
-                await self._verify_webhook_signature(body, headers)
+            if len(body) > 1_048_576:
+                raise HTTPException(status_code=413, detail="Webhook payload too large")
+            if not self.webhook_secret or len(
+                self.webhook_secret.encode("utf-8")
+            ) < 32:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Farcaster webhook verification is not configured",
+                )
+            await self._verify_webhook_signature(body, headers)
             
             # Parse JSON payload
             try:
                 payload = json.loads(body.decode('utf-8'))
-            except json.JSONDecodeError as e:
-                logger.error(f"Invalid JSON in webhook payload: {e}")
+                if not isinstance(payload, dict):
+                    raise ValueError("Webhook payload must be an object")
+            except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
                 raise HTTPException(status_code=400, detail="Invalid JSON payload")
             
             # Process the webhook event
@@ -114,25 +124,23 @@ class FarcasterWebhookHandler:
         """
         event_type = payload.get('type')
         data = payload.get('data', {})
+        if not isinstance(event_type, str) or not isinstance(data, dict):
+            raise HTTPException(status_code=400, detail="Invalid webhook payload")
         
         logger.info(f"Processing Farcaster webhook event: {event_type}")
         
-        try:
-            if event_type == 'cast.created':
-                await self._handle_cast_created(data)
-            elif event_type == 'cast.mention':
-                await self._handle_mention(data)
-            elif event_type == 'reaction.created':
-                await self._handle_reaction_created(data)
-            elif event_type == 'follow.created':
-                await self._handle_follow_created(data)
-            elif event_type == 'cast.reply':
-                await self._handle_cast_reply(data)
-            else:
-                logger.info(f"Unhandled webhook event type: {event_type}")
-                
-        except Exception as e:
-            logger.error(f"Error processing webhook event {event_type}: {e}")
+        if event_type == 'cast.created':
+            await self._handle_cast_created(data)
+        elif event_type == 'cast.mention':
+            await self._handle_mention(data)
+        elif event_type == 'reaction.created':
+            await self._handle_reaction_created(data)
+        elif event_type == 'follow.created':
+            await self._handle_follow_created(data)
+        elif event_type == 'cast.reply':
+            await self._handle_cast_reply(data)
+        else:
+            logger.info(f"Unhandled webhook event type: {event_type}")
 
     async def _handle_cast_created(self, data: Dict[str, Any]):
         """Handle new cast creation event"""

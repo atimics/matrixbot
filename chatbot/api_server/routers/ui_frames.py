@@ -7,11 +7,14 @@ This module handles all UI serving and Farcaster frame endpoints including:
 - Frame actions and responses
 """
 
+import hashlib
+import hmac
+import html
+from pathlib import Path
 from typing import Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
-import os
 from datetime import datetime
 import logging
 
@@ -24,6 +27,7 @@ logger = logging.getLogger(__name__)
 # Create two routers - one for UI and one for frames
 ui_router = APIRouter(tags=["ui"])
 frames_router = APIRouter(prefix="/frames", tags=["frames"])
+UI_ROOT = (Path.cwd() / "ui").resolve()
 
 
 class FrameActionRequest(BaseModel):
@@ -32,13 +36,36 @@ class FrameActionRequest(BaseModel):
     trustedData: Dict[str, Any]
 
 
+def _ui_file(file_path: str) -> Optional[Path]:
+    candidate = (UI_ROOT / file_path).resolve()
+    if candidate.is_relative_to(UI_ROOT) and candidate.is_file():
+        return candidate
+    return None
+
+
+async def _verify_frame_signature(request: Request) -> None:
+    secret = settings.FRAMES_WEBHOOK_SECRET
+    if not secret or len(secret.encode("utf-8")) < 32:
+        raise HTTPException(
+            status_code=503, detail="Frame action verification is not configured"
+        )
+    supplied = request.headers.get("x-frame-signature", "")
+    if supplied.startswith("sha256="):
+        supplied = supplied[7:]
+    expected = hmac.new(
+        secret.encode("utf-8"), await request.body(), hashlib.sha256
+    ).hexdigest()
+    if not supplied or not hmac.compare_digest(supplied, expected):
+        raise HTTPException(status_code=401, detail="Invalid frame signature")
+
+
 # ===== UI ENDPOINTS =====
 
 @ui_router.get("/")
 async def serve_root():
     """Redirect root to UI."""
-    ui_file = os.path.join(os.getcwd(), "ui", "index.html")
-    if os.path.exists(ui_file):
+    ui_file = _ui_file("index.html")
+    if ui_file:
         return FileResponse(ui_file)
     else:
         raise HTTPException(status_code=404, detail="UI not found. Please ensure ui/index.html exists.")
@@ -47,13 +74,13 @@ async def serve_root():
 @ui_router.get("/ui/{file_path:path}")
 async def serve_ui_files(file_path: str):
     """Serve UI static files."""
-    ui_path = os.path.join(os.getcwd(), "ui", file_path)
-    if os.path.exists(ui_path) and os.path.isfile(ui_path):
+    ui_path = _ui_file(file_path)
+    if ui_path:
         return FileResponse(ui_path)
     else:
         # Fallback to index.html for SPA routing
-        index_path = os.path.join(os.getcwd(), "ui", "index.html")
-        if os.path.exists(index_path):
+        index_path = _ui_file("index.html")
+        if index_path:
             return FileResponse(index_path)
         else:
             raise HTTPException(status_code=404, detail="File not found")
@@ -81,20 +108,31 @@ async def serve_mint_frame(
     """
     try:
         # Get frame metadata from world state
-        world_state = orchestrator.world_state_manager.get_state()
+        world_state = await orchestrator.world_state.get_state()
         frame_metadata = getattr(world_state, 'nft_frames', {}).get(frame_id)
         
         if not frame_metadata:
             raise HTTPException(status_code=404, detail="Frame not found")
         
         # Build frame HTML with meta tags
-        title = frame_metadata.get('title', 'AI Art NFT')
-        description = frame_metadata.get('description', 'Mint this AI-generated artwork as an NFT')
-        image_url = frame_metadata.get('image_url', '')
+        title = html.escape(str(frame_metadata.get('title', 'AI Art NFT')), quote=True)
+        description = html.escape(
+            str(
+                frame_metadata.get(
+                    'description', 'Mint this AI-generated artwork as an NFT'
+                )
+            ),
+            quote=True,
+        )
+        image_url = html.escape(str(frame_metadata.get('image_url', '')), quote=True)
         button_text = "Check Eligibility" if claim_type == "gated" else "Mint NFT"
         
         # Construct action URL
-        action_url = f"{settings.FRAMES_BASE_URL or 'https://yourbot.com'}/frames/action/mint/{frame_id}"
+        action_url = html.escape(
+            f"{settings.FRAMES_BASE_URL or 'https://yourbot.com'}/frames/action/mint/{frame_id}",
+            quote=True,
+        )
+        escaped_claim_type = html.escape(claim_type.title(), quote=True)
         
         html_content = f"""
 <!DOCTYPE html>
@@ -162,7 +200,7 @@ async def serve_mint_frame(
         <img src="{image_url}" alt="{title}" class="frame-image" />
         <h1>{title}</h1>
         <p>{description}</p>
-        <p><strong>Claim Type:</strong> {claim_type.title()}</p>
+        <p><strong>Claim Type:</strong> {escaped_claim_type}</p>
         <p><strong>Max Mints:</strong> {max_mints}</p>
         <button class="mint-button" onclick="alert('Use Farcaster to interact with this frame!')">{button_text}</button>
     </div>
@@ -172,14 +210,17 @@ async def serve_mint_frame(
         
         return HTMLResponse(content=html_content)
         
-    except Exception as e:
-        logger.error(f"Error serving mint frame: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Error serving mint frame")
+        raise HTTPException(status_code=500, detail="Unable to render frame")
 
 
 @frames_router.post("/action/mint/{frame_id}")
 async def handle_mint_action(
     frame_id: str,
+    request: Request,
     action_data: FrameActionRequest,
     orchestrator: MainOrchestrator = Depends(get_orchestrator)
 ):
@@ -189,11 +230,10 @@ async def handle_mint_action(
     This endpoint processes the Farcaster frame button click and returns
     appropriate response based on user eligibility and minting logic.
     """
+    await _verify_frame_signature(request)
     try:
         # Extract user data from the frame action
         untrusted_data = action_data.untrustedData
-        trusted_data = action_data.trustedData
-        
         # Get user's FID (Farcaster ID)
         user_fid = untrusted_data.get('fid')
         button_index = untrusted_data.get('buttonIndex', 1)
@@ -201,7 +241,7 @@ async def handle_mint_action(
         logger.info(f"Frame action for {frame_id} from user {user_fid}, button {button_index}")
         
         # Get frame metadata
-        world_state = orchestrator.world_state_manager.get_state()
+        world_state = await orchestrator.world_state.get_state()
         frame_metadata = getattr(world_state, 'nft_frames', {}).get(frame_id)
         
         if not frame_metadata:

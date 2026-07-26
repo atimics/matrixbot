@@ -10,7 +10,7 @@ This module handles all integration-related endpoints including:
 
 from typing import Dict, Any, List
 from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 import logging
 
@@ -30,14 +30,14 @@ class IntegrationConfig(BaseModel):
     integration_type: str
     display_name: str
     config: Dict[str, Any]
-    credentials: Dict[str, str] = {}
+    credentials: Dict[str, str] = Field(default_factory=dict)
 
 
 class IntegrationTestRequest(BaseModel):
     """Model for testing integration configurations."""
     integration_type: str
     config: Dict[str, Any]
-    credentials: Dict[str, str] = {}
+    credentials: Dict[str, str] = Field(default_factory=dict)
 
 
 @router.get("")
@@ -46,9 +46,26 @@ async def list_integrations(orchestrator: MainOrchestrator = Depends(get_orchest
     try:
         integrations = await orchestrator.integration_manager.list_integrations()
         return integrations
-    except Exception as e:
-        logger.error(f"Error listing integrations: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error listing integrations")
+        raise HTTPException(status_code=500, detail="Unable to list integrations")
+
+
+@router.get("/types")
+async def get_available_integration_types(
+    orchestrator: MainOrchestrator = Depends(get_orchestrator)
+):
+    """Get list of available integration types."""
+    try:
+        integration_types = (
+            orchestrator.integration_manager.get_available_integration_types()
+        )
+        return {"integration_types": integration_types}
+    except Exception:
+        logger.exception("Error getting integration types")
+        raise HTTPException(
+            status_code=500, detail="Unable to list integration types"
+        )
 
 
 @router.post("")
@@ -65,9 +82,9 @@ async def add_integration(
             credentials=config.credentials
         )
         return {"integration_id": integration_id, "message": "Integration added successfully"}
-    except Exception as e:
-        logger.error(f"Error adding integration: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.exception("Error adding integration")
+        raise HTTPException(status_code=400, detail="Unable to add integration")
 
 
 @router.get("/{integration_id}")
@@ -83,9 +100,9 @@ async def get_integration_status(
         return status
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Error getting integration status: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error getting integration status")
+        raise HTTPException(status_code=500, detail="Unable to get integration status")
 
 
 @router.post("/{integration_id}/connect")
@@ -99,9 +116,9 @@ async def connect_integration(
             integration_id, orchestrator.world_state
         )
         return {"success": success, "message": "Connection attempt completed"}
-    except Exception as e:
-        logger.error(f"Error connecting integration: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error connecting integration")
+        raise HTTPException(status_code=500, detail="Unable to connect integration")
 
 
 @router.post("/{integration_id}/disconnect")
@@ -113,9 +130,9 @@ async def disconnect_integration(
     try:
         await orchestrator.integration_manager.disconnect_integration(integration_id)
         return {"message": "Integration disconnected successfully"}
-    except Exception as e:
-        logger.error(f"Error disconnecting integration: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error disconnecting integration")
+        raise HTTPException(status_code=500, detail="Unable to disconnect integration")
 
 
 @router.delete("/{integration_id}")
@@ -125,14 +142,17 @@ async def remove_integration(
 ):
     """Remove an integration configuration."""
     try:
-        # First disconnect if connected
-        await orchestrator.integration_manager.disconnect_integration(integration_id)
-        
-        # TODO: Add remove_integration method to IntegrationManager
+        removed = await orchestrator.integration_manager.remove_integration(
+            integration_id
+        )
+        if not removed:
+            raise HTTPException(status_code=404, detail="Integration not found")
         return {"message": "Integration removed successfully"}
-    except Exception as e:
-        logger.error(f"Error removing integration: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Error removing integration")
+        raise HTTPException(status_code=500, detail="Unable to remove integration")
 
 
 @router.post("/test")
@@ -148,22 +168,9 @@ async def test_integration_config(
             credentials=test_request.credentials
         )
         return result
-    except Exception as e:
-        logger.error(f"Error testing integration config: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@router.get("/types")
-async def get_available_integration_types(
-    orchestrator: MainOrchestrator = Depends(get_orchestrator)
-):
-    """Get list of available integration types."""
-    try:
-        types = orchestrator.integration_manager.get_available_integration_types()
-        return {"integration_types": types}
-    except Exception as e:
-        logger.error(f"Error getting integration types: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error testing integration config")
+        raise HTTPException(status_code=400, detail="Unable to test integration")
 
 
 @router.get("/arweave/wallet")

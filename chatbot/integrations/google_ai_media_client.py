@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import base64
 import io
@@ -7,9 +9,21 @@ import time # Kept for Veo polling timeout
 from typing import Dict, List, Optional, Union # Kept for type hints
 
 import httpx # Kept for Veo video downloads if URI is returned by SDK
-from google import genai
-from google.genai import types
-from PIL import Image # For handling image data
+
+try:
+    from google import genai
+    from google.genai import types
+except ImportError as exc:
+    genai = None
+    types = None
+    _GENAI_IMPORT_ERROR = exc
+else:
+    _GENAI_IMPORT_ERROR = None
+
+try:
+    from PIL import Image # For handling image data
+except ImportError:
+    Image = None
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +50,10 @@ class GoogleAIMediaClient:
             default_veo_video_model: Default Veo model for video generation.
         """
         self.api_key = api_key
+        if genai is None or types is None:
+            raise RuntimeError(
+                "Google AI media support requires the locked google-genai dependency"
+            ) from _GENAI_IMPORT_ERROR
         try:
             # Initialize the google-genai client for Gemini Developer API
             self.client = genai.Client(api_key=self.api_key)

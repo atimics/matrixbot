@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { apiClient } from '@/lib/api'
+import { apiClient } from '@/api'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import { SystemInfo, DashboardProps } from '@/types'
 

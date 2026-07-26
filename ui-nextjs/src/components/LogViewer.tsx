@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { getAdminWebSocketProtocols } from '@/api'
 
 interface LogEntry {
   timestamp: string
@@ -21,7 +22,7 @@ export default function LogViewer() {
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
     const wsUrl = apiUrl.replace(/^https?/, apiUrl.startsWith('https') ? 'wss' : 'ws') + '/ws/logs'
     
-    const websocket = new WebSocket(wsUrl)
+    const websocket = new WebSocket(wsUrl, getAdminWebSocketProtocols())
 
     websocket.onopen = () => {
       setIsConnected(true)

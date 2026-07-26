@@ -30,17 +30,19 @@ class TestMediaGalleryIntegration:
         context = MagicMock(spec=ActionContext)
         
         # Mock arweave service
-        context.arweave_service = AsyncMock()
+        context.arweave_service = MagicMock()
         context.arweave_service.is_configured.return_value = True
-        context.arweave_service.upload_image_data.return_value = "https://arweave.net/test-media-id"
+        context.arweave_service.upload_image_data = AsyncMock(
+            return_value="https://arweave.net/test-media-id"
+        )
         
         # Mock world state manager
         context.world_state_manager = MagicMock()
         context.world_state_manager.record_generated_media = MagicMock()
         
         # Mock matrix observer
-        context.matrix_observer = AsyncMock()
-        context.matrix_observer.client = AsyncMock()
+        context.matrix_observer = MagicMock()
+        context.matrix_observer.client = MagicMock()
         
         return context
 
@@ -53,8 +55,10 @@ class TestMediaGalleryIntegration:
         
         try:
             with patch('chatbot.tools.media_generation_tools.SendMatrixImageTool') as mock_tool_class:
-                mock_tool_instance = AsyncMock()
-                mock_tool_instance.execute.return_value = {"status": "success"}
+                mock_tool_instance = MagicMock()
+                mock_tool_instance.execute = AsyncMock(
+                    return_value={"status": "success"}
+                )
                 mock_tool_class.return_value = mock_tool_instance
                 
                 # Execute
@@ -112,8 +116,10 @@ class TestMediaGalleryIntegration:
         
         try:
             with patch('chatbot.tools.media_generation_tools.SendMatrixImageTool') as mock_tool_class:
-                mock_tool_instance = AsyncMock()
-                mock_tool_instance.execute.return_value = {"status": "error", "error": "Failed to send"}
+                mock_tool_instance = MagicMock()
+                mock_tool_instance.execute = AsyncMock(
+                    return_value={"status": "error", "error": "Failed to send"}
+                )
                 mock_tool_class.return_value = mock_tool_instance
                 
                 with caplog.at_level(logging.WARNING):
@@ -144,8 +150,10 @@ class TestMediaGalleryIntegration:
                 mock_auto_post.return_value = None
                 
                 with patch('chatbot.tools.media_generation_tools.GoogleAIMediaClient') as mock_client_class:
-                    mock_client = AsyncMock()
-                    mock_client.generate_image_gemini.return_value = b"fake_image_data"
+                    mock_client = MagicMock()
+                    mock_client.generate_image_gemini = AsyncMock(
+                        return_value=b"fake_image_data"
+                    )
                     mock_client_class.return_value = mock_client
                     
                     # Configure settings for Google AI
@@ -190,8 +198,9 @@ class TestMediaGalleryIntegration:
             orchestrator = MainOrchestrator()
             
             # Mock matrix observer and client
-            mock_matrix_observer = AsyncMock()
-            mock_client = AsyncMock()
+            mock_matrix_observer = MagicMock()
+            mock_client = MagicMock()
+            mock_client.room_create = AsyncMock()
             mock_matrix_observer.client = mock_client
             
             # Create action context manually since orchestrator hasn't started

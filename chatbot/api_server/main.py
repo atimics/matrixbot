@@ -9,14 +9,15 @@ import logging
 from datetime import datetime
 from typing import Any, Dict
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 
 from chatbot.core.orchestration import MainOrchestrator
 from .services import SetupManager, LogWebSocketManager
 from .routers import system, tools, config, integrations, ai, worldstate, setup, logs, ui_frames
 from .schemas import StatusResponse
+from .auth import allowed_origins, configured_admin_token, is_admin_authorized
 
 logger = logging.getLogger(__name__)
 
@@ -48,11 +49,43 @@ class ChatbotAPIServer:
         """Configure CORS and other middleware."""
         self.app.add_middleware(
             CORSMiddleware,
-            allow_origins=["*"],  # Configure appropriately for production
-            allow_credentials=True,
-            allow_methods=["*"],
-            allow_headers=["*"],
+            allow_origins=allowed_origins(),
+            allow_credentials=False,
+            allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            allow_headers=["Authorization", "Content-Type", "X-Admin-Token"],
         )
+
+        @self.app.middleware("http")
+        async def require_admin_authentication(request, call_next):
+            public_paths = {"/health", "/api/system/health"}
+            protected_documentation = {
+                "/docs",
+                "/docs/oauth2-redirect",
+                "/openapi.json",
+                "/redoc",
+            }
+            if (
+                request.method != "OPTIONS"
+                and (
+                    request.url.path.startswith("/api/")
+                    or request.url.path in protected_documentation
+                )
+                and request.url.path not in public_paths
+            ):
+                if configured_admin_token() is None:
+                    return JSONResponse(
+                        status_code=503,
+                        content={
+                            "detail": "Management API authentication is not configured"
+                        },
+                    )
+                if not is_admin_authorized(request.headers):
+                    return JSONResponse(
+                        status_code=401,
+                        content={"detail": "Invalid or missing management API token"},
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+            return await call_next(request)
     
     def _setup_dependency_overrides(self):
         """Set up dependency injection overrides for routers."""
@@ -113,7 +146,26 @@ class ChatbotAPIServer:
         @self.app.websocket("/ws/logs")
         async def websocket_logs(websocket: WebSocket):
             """WebSocket endpoint for real-time log streaming."""
-            await self.log_manager.connect(websocket)
+            if configured_admin_token() is None:
+                await websocket.close(code=1013, reason="Authentication not configured")
+                return
+            if not is_admin_authorized(websocket.headers):
+                await websocket.close(code=4401, reason="Unauthorized")
+                return
+            requested_protocols = {
+                protocol.strip()
+                for protocol in websocket.headers.get(
+                    "sec-websocket-protocol", ""
+                ).split(",")
+            }
+            selected_protocol = (
+                "ratichat-admin"
+                if "ratichat-admin" in requested_protocols
+                else None
+            )
+            await self.log_manager.connect(
+                websocket, subprotocol=selected_protocol
+            )
             try:
                 while True:
                     # Keep connection alive and handle client messages if needed

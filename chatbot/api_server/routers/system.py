@@ -65,9 +65,9 @@ async def get_system_status(orchestrator: MainOrchestrator = Depends(get_orchest
         try:
             integration_status = await orchestrator.integration_manager.list_integrations()
             logger.info(f"Got integration status: {type(integration_status)}")
-        except Exception as e:
-            logger.warning(f"Failed to get integration status: {e}")
-            integration_status = {"error": str(e)}
+        except Exception:
+            logger.warning("Failed to get integration status", exc_info=True)
+            integration_status = {"error": "Integration status unavailable"}
         
         logger.info("Assembling final status response")
         status = {
@@ -88,9 +88,9 @@ async def get_system_status(orchestrator: MainOrchestrator = Depends(get_orchest
         logger.info("get_system_status completed successfully")
         return status
         
-    except Exception as e:
-        logger.error(f"Error getting system status: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to get system status: {str(e)}")
+    except Exception:
+        logger.exception("Error getting system status")
+        raise HTTPException(status_code=500, detail="Failed to get system status")
 
 
 @router.post("/command", response_model=StatusResponse)
@@ -172,6 +172,8 @@ async def execute_system_command(
         else:
             raise HTTPException(status_code=400, detail=f"Unknown command: {command.command}")
             
-    except Exception as e:
-        logger.error(f"Error executing system command {command.command}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Command execution failed: {str(e)}")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Error executing system command %s", command.command)
+        raise HTTPException(status_code=500, detail="Command execution failed")

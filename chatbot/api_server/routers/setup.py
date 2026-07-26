@@ -53,9 +53,9 @@ async def start_setup(setup_manager: SetupManager = Depends(get_setup_manager)):
                 "complete": True,
                 "step": None
             }
-    except Exception as e:
-        logger.error(f"Error starting setup: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error starting setup")
+        raise HTTPException(status_code=500, detail="Unable to start setup")
 
 
 @router.post("/submit")
@@ -67,9 +67,9 @@ async def submit_setup_step(
     try:
         result = setup_manager.submit_step(submission.step_key, submission.value)
         return result
-    except Exception as e:
-        logger.error(f"Error submitting setup step: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error submitting setup step")
+        raise HTTPException(status_code=500, detail="Unable to submit setup step")
 
 
 @router.post("/reset")
@@ -78,9 +78,9 @@ async def reset_setup(setup_manager: SetupManager = Depends(get_setup_manager)):
     try:
         setup_manager.reset_setup()
         return {"success": True, "message": "Setup process has been reset"}
-    except Exception as e:
-        logger.error(f"Error resetting setup: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error resetting setup")
+        raise HTTPException(status_code=500, detail="Unable to reset setup")
 
 
 @router.get("/status")
@@ -88,6 +88,6 @@ async def get_setup_status(setup_manager: SetupManager = Depends(get_setup_manag
     """Get the current setup status."""
     try:
         return setup_manager.get_setup_status()
-    except Exception as e:
-        logger.error(f"Error getting setup status: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error getting setup status")
+        raise HTTPException(status_code=500, detail="Unable to get setup status")
