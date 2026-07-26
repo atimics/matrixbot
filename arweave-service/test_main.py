@@ -13,10 +13,13 @@ from fastapi.testclient import TestClient
 from fastapi import HTTPException
 
 # Import the main application and classes
+import main
 from main import (
     app, ArweaveWalletManager, validate_api_key, 
     UploadResponse, WalletInfo, HealthResponse
 )
+
+TEST_API_KEY = "a" * 32
 
 
 class TestArweaveWalletManager:
@@ -117,25 +120,25 @@ class TestAPIKeyValidation:
     
     def test_validate_api_key_no_key_configured(self):
         """Test validation when no API key is configured"""
-        with patch.dict(os.environ, {}, clear=True):
-            # Should not raise any exception
-            validate_api_key("any_key")
-            validate_api_key(None)
+        with patch.object(main, "API_KEY", None):
+            with pytest.raises(HTTPException) as exc_info:
+                main.validate_api_key(None)
+            assert exc_info.value.status_code == 503
             
     def test_validate_api_key_valid(self):
         """Test validation with correct API key"""
-        with patch.dict(os.environ, {"ARWEAVE_SERVICE_API_KEY": "secret123"}):
+        with patch.dict(os.environ, {"ARWEAVE_SERVICE_API_KEY": TEST_API_KEY}):
             # Import after setting env var to get updated API_KEY
             from importlib import reload
             import main
             reload(main)
             
             # Should not raise any exception
-            main.validate_api_key("secret123")
+            main.validate_api_key(TEST_API_KEY)
             
     def test_validate_api_key_invalid(self):
         """Test validation with incorrect API key"""
-        with patch.dict(os.environ, {"ARWEAVE_SERVICE_API_KEY": "secret123"}):
+        with patch.dict(os.environ, {"ARWEAVE_SERVICE_API_KEY": TEST_API_KEY}):
             from importlib import reload
             import main
             reload(main)
@@ -148,7 +151,7 @@ class TestAPIKeyValidation:
             
     def test_validate_api_key_missing(self):
         """Test validation when API key is required but not provided"""
-        with patch.dict(os.environ, {"ARWEAVE_SERVICE_API_KEY": "secret123"}):
+        with patch.dict(os.environ, {"ARWEAVE_SERVICE_API_KEY": TEST_API_KEY}):
             from importlib import reload
             import main
             reload(main)
@@ -165,7 +168,8 @@ class TestEndpoints:
     
     def setup_method(self):
         """Setup test client for each test"""
-        self.client = TestClient(app)
+        main.API_KEY = TEST_API_KEY
+        self.client = TestClient(app, headers={"X-API-Key": TEST_API_KEY})
         
     def test_health_check_wallet_not_ready(self):
         """Test health check when wallet is not ready"""
@@ -280,7 +284,7 @@ class TestEndpoints:
             
     def test_upload_file_with_api_key(self):
         """Test file upload with API key authentication"""
-        with patch.dict(os.environ, {"ARWEAVE_SERVICE_API_KEY": "secret123"}), \
+        with patch.dict(os.environ, {"ARWEAVE_SERVICE_API_KEY": TEST_API_KEY}), \
              patch('main.wallet_manager') as mock_manager, \
              patch('main.Transaction') as mock_transaction_class, \
              patch('asyncio.to_thread') as mock_to_thread:
@@ -306,7 +310,7 @@ class TestEndpoints:
             mock_to_thread.return_value.set_result(None)
             
             files = {"file": ("test.txt", b"test content", "text/plain")}
-            headers = {"X-API-Key": "secret123"}
+            headers = {"X-API-Key": TEST_API_KEY}
             
             client = TestClient(main.app)
             response = client.post("/upload", files=files, headers=headers)
@@ -315,7 +319,7 @@ class TestEndpoints:
             
     def test_upload_file_invalid_api_key(self):
         """Test file upload with invalid API key"""
-        with patch.dict(os.environ, {"ARWEAVE_SERVICE_API_KEY": "secret123"}):
+        with patch.dict(os.environ, {"ARWEAVE_SERVICE_API_KEY": TEST_API_KEY}):
             from importlib import reload
             import main
             reload(main)

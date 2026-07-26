@@ -16,6 +16,7 @@ markdown
 ollama
 httpx # Added for asynchronous HTTP requests
 colorlog # Added for colorful logging
+google-genai
 
 # Testing dependencies
 pytest>=7.0.0

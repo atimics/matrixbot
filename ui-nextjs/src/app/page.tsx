@@ -1,15 +1,18 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import SetupWizard from '@/components/SetupWizard'
 import Dashboard from '@/components/Dashboard'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
-import { apiClient } from '@/lib/api'
-import { SystemInfo, SystemStatus } from '@/types'
+import { apiClient, setAdminToken } from '@/api'
+import { SystemInfo } from '@/types'
 
 export default function Home() {
   const [systemInfo, setSystemInfo] = useState<SystemInfo>({ status: 'LOADING' })
   const [error, setError] = useState<string | null>(null)
+  const [tokenInput, setTokenInput] = useState('')
+  const [authenticated, setAuthenticated] = useState(false)
+  const [authenticating, setAuthenticating] = useState(false)
 
   const checkSystemStatus = async () => {
     try {
@@ -17,37 +20,87 @@ export default function Home() {
       const systemData = response.data as SystemInfo
       setSystemInfo(systemData)
       setError(null)
+      return true
     } catch (err: any) {
       console.error('Failed to fetch system status:', err)
       setError(err.response?.data?.detail || 'Failed to connect to the backend')
       setSystemInfo({ status: 'ERROR' })
+      return false
     }
   }
 
   useEffect(() => {
-    checkSystemStatus()
+    if (!authenticated) return
     // Poll status every 30 seconds
     const interval = setInterval(checkSystemStatus, 30000)
     return () => clearInterval(interval)
-  }, [])
+  }, [authenticated])
+
+  const handleAuthenticate = async (event: FormEvent) => {
+    event.preventDefault()
+    if (new TextEncoder().encode(tokenInput).length < 32) {
+      setError('The management token must be at least 32 bytes.')
+      return
+    }
+
+    setAuthenticating(true)
+    setAdminToken(tokenInput)
+    const accepted = await checkSystemStatus()
+    if (accepted) {
+      setAuthenticated(true)
+      setTokenInput('')
+    } else {
+      setAdminToken(null)
+    }
+    setAuthenticating(false)
+  }
 
   const handleSetupComplete = () => {
     // Refresh system status after setup completion
     checkSystemStatus()
   }
 
+  if (!authenticated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <form
+          onSubmit={handleAuthenticate}
+          className="w-full max-w-md rounded-lg bg-white p-8 shadow"
+        >
+          <h1 className="text-2xl font-semibold text-gray-900">
+            Ratichat administration
+          </h1>
+          <p className="mt-2 text-sm text-gray-600">
+            Enter the local management token. It is kept only in this page&apos;s
+            memory and is cleared on reload.
+          </p>
+          <label className="mt-6 block text-sm font-medium text-gray-700">
+            Management token
+          </label>
+          <input
+            type="password"
+            autoComplete="off"
+            value={tokenInput}
+            onChange={(event) => setTokenInput(event.target.value)}
+            className="mt-2 w-full rounded-md border border-gray-300 px-3 py-2"
+          />
+          {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+          <button
+            type="submit"
+            disabled={authenticating}
+            className="mt-6 w-full rounded-md bg-blue-600 px-4 py-2 text-white disabled:bg-gray-400"
+          >
+            {authenticating ? 'Authenticating…' : 'Authenticate'}
+          </button>
+        </form>
+      </div>
+    )
+  }
+
   if (systemInfo.status === 'LOADING') {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <LoadingSpinner size="large" />
-          <h2 className="mt-4 text-xl font-medium text-gray-700">
-            Connecting to Ratichat...
-          </h2>
-          <p className="mt-2 text-gray-500">
-            Initializing the administrative interface
-          </p>
-        </div>
+        <LoadingSpinner size="large" />
       </div>
     )
   }

@@ -16,8 +16,7 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
@@ -26,6 +25,12 @@ import uvicorn
 # Note: HistoryRecorder was consolidated into ContextManager for cleaner architecture
 from chatbot.core.orchestration import MainOrchestrator
 from chatbot.core.world_state import WorldStateManager
+from chatbot.api_server.auth import (
+    allowed_origins,
+    configured_admin_token,
+    is_admin_authorized,
+)
+from chatbot.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -68,11 +73,28 @@ app = FastAPI(title="Context Management Control Panel", version="1.0.0")
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=allowed_origins(),
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Admin-Token"],
 )
+
+
+@app.middleware("http")
+async def require_control_panel_authentication(request, call_next):
+    if request.method != "OPTIONS" and request.url.path.startswith("/api/"):
+        if configured_admin_token() is None:
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "Control panel authentication is not configured"},
+            )
+        if not is_admin_authorized(request.headers):
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Invalid or missing management API token"},
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    return await call_next(request)
 
 @app.on_event("startup")
 async def startup_event():
@@ -189,8 +211,9 @@ async def get_context_details(channel_id: str):
             "messages": messages[-20:],  # Last 20 messages
             "system_prompt_preview": summary.get("system_prompt", "")[:500] + "..." if len(summary.get("system_prompt", "")) > 500 else summary.get("system_prompt", "")
         }
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=f"Context not found: {str(e)}")
+    except Exception:
+        logger.exception("Could not get context %s", channel_id)
+        raise HTTPException(status_code=404, detail="Context not found")
 
 @app.post("/api/message")
 async def send_message(message: MessageRequest):
@@ -605,6 +628,13 @@ def get_control_panel_html() -> str:
     
     <script>
         let refreshInterval;
+        let adminToken;
+
+        function escapeHtml(value) {
+            const node = document.createElement('div');
+            node.textContent = String(value ?? '');
+            return node.innerHTML;
+        }
         
         async function apiCall(url, method = 'GET', body = null) {
             try {
@@ -612,6 +642,7 @@ def get_control_panel_html() -> str:
                     method,
                     headers: {
                         'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${adminToken}`,
                     }
                 };
                 
@@ -692,14 +723,14 @@ def get_control_panel_html() -> str:
                     <div class="state-change">
                         <div class="state-change-header">
                             <div>
-                                <span class="state-change-type">${change.change_type}</span>
-                                <span style="margin-left: 10px; color: #7d8590;">from ${change.source}</span>
-                                ${change.channel_id ? `<span style="margin-left: 10px; color: #58a6ff;">${change.channel_id}</span>` : ''}
+                                <span class="state-change-type">${escapeHtml(change.change_type)}</span>
+                                <span style="margin-left: 10px; color: #7d8590;">from ${escapeHtml(change.source)}</span>
+                                ${change.channel_id ? `<span style="margin-left: 10px; color: #58a6ff;">${escapeHtml(change.channel_id)}</span>` : ''}
                             </div>
-                            <div class="state-change-time">${change.formatted_time}</div>
+                            <div class="state-change-time">${escapeHtml(change.formatted_time)}</div>
                         </div>
-                        ${change.observations ? `<div style="color: #e6edf3; margin-bottom: 8px;"><strong>Observations:</strong> ${change.observations}</div>` : ''}
-                        ${change.reasoning ? `<div style="color: #e6edf3;"><strong>Reasoning:</strong> ${change.reasoning}</div>` : ''}
+                        ${change.observations ? `<div style="color: #e6edf3; margin-bottom: 8px;"><strong>Observations:</strong> ${escapeHtml(change.observations)}</div>` : ''}
+                        ${change.reasoning ? `<div style="color: #e6edf3;"><strong>Reasoning:</strong> ${escapeHtml(change.reasoning)}</div>` : ''}
                     </div>
                 `).join('');
             } catch (error) {
@@ -720,13 +751,13 @@ def get_control_panel_html() -> str:
                 container.innerHTML = contexts.map(context => `
                     <div class="context-card">
                         <div class="context-header">
-                            <div class="context-id">${context.channel_id}</div>
-                            <button class="btn btn-danger" style="padding: 5px 10px; font-size: 12px;" onclick="clearContext('${context.channel_id}')">Clear</button>
+                            <div class="context-id">${escapeHtml(context.channel_id)}</div>
+                            <button class="btn btn-danger" style="padding: 5px 10px; font-size: 12px;" data-channel-id="${escapeHtml(context.channel_id)}" onclick="clearContext(this.dataset.channelId)">Clear</button>
                         </div>
                         <div class="context-stats">
                             <span>👤 ${context.user_message_count} user messages</span>
                             <span>🤖 ${context.assistant_message_count} AI messages</span>
-                            <span>🕒 Last update: ${context.formatted_last_update}</span>
+                            <span>🕒 Last update: ${escapeHtml(context.formatted_last_update)}</span>
                         </div>
                     </div>
                 `).join('');
@@ -820,6 +851,11 @@ def get_control_panel_html() -> str:
         
         // Initialize the page
         document.addEventListener('DOMContentLoaded', function() {
+            adminToken = window.prompt('Enter the Ratichat management token');
+            if (!adminToken || new TextEncoder().encode(adminToken).length < 32) {
+                showError('A management token of at least 32 bytes is required.');
+                return;
+            }
             refreshData();
             
             // Auto-refresh every 10 seconds
@@ -851,7 +887,9 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description="Context Management Control Panel")
-    parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
+    parser.add_argument(
+        "--host", default=settings.ADMIN_API_HOST, help="Host to bind to"
+    )
     parser.add_argument("--port", type=int, default=8001, help="Port to bind to")
     parser.add_argument("--reload", action="store_true", help="Enable auto-reload")
     

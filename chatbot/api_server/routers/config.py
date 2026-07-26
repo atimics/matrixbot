@@ -42,17 +42,21 @@ async def get_configuration(orchestrator: MainOrchestrator = Depends(get_orchest
                 "max_actions_per_hour": getattr(settings, 'MAX_ACTIONS_PER_HOUR', 600),
                 "image_generation_cooldown": settings.IMAGE_GENERATION_COOLDOWN_SECONDS,
                 "video_generation_cooldown": settings.VIDEO_GENERATION_COOLDOWN_SECONDS,
-                "farcaster_post_cooldown": settings.FARCASTER_POST_COOLDOWN_SECONDS
+                "farcaster_post_cooldown": getattr(
+                    settings, "FARCASTER_POST_COOLDOWN_SECONDS", 0
+                )
             },
             "integrations": {
                 "matrix_enabled": bool(settings.MATRIX_USER_ID and settings.MATRIX_PASSWORD),
                 "farcaster_enabled": bool(settings.NEYNAR_API_KEY),
-                "arweave_enabled": bool(settings.ARWEAVE_WALLET_PATH),
+                "arweave_enabled": bool(
+                    settings.ARWEAVE_INTERNAL_UPLOADER_SERVICE_URL
+                ),
                 "replicate_enabled": bool(settings.REPLICATE_API_TOKEN),
                 "google_ai_enabled": bool(settings.GOOGLE_API_KEY)
             },
             "storage": {
-                "db_path": settings.DB_PATH,
+                "db_path": settings.CHATBOT_DB_PATH,
                 "context_storage_enabled": True,
                 "history_retention_days": getattr(settings, 'HISTORY_RETENTION_DAYS', 30)
             },
@@ -76,9 +80,9 @@ async def get_configuration(orchestrator: MainOrchestrator = Depends(get_orchest
             ]
         }
         
-    except Exception as e:
-        logger.error(f"Error getting configuration: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to get configuration: {str(e)}")
+    except Exception:
+        logger.exception("Error getting configuration")
+        raise HTTPException(status_code=500, detail="Failed to get configuration")
 
 
 @router.put("", response_model=StatusResponse)
@@ -129,8 +133,9 @@ async def update_configuration(
         # Apply the update
         try:
             allowed_updates[key](value)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Failed to apply update: {str(e)}")
+        except Exception:
+            logger.exception("Failed to apply configuration update for %s", key)
+            raise HTTPException(status_code=400, detail="Failed to apply update")
         
         # For some updates, we might need to notify other components
         if key.startswith("processing."):
@@ -149,6 +154,6 @@ async def update_configuration(
         
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Error updating configuration: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to update configuration: {str(e)}")
+    except Exception:
+        logger.exception("Error updating configuration")
+        raise HTTPException(status_code=500, detail="Failed to update configuration")

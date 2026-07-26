@@ -44,9 +44,9 @@ async def get_tools(orchestrator: MainOrchestrator = Depends(get_orchestrator)):
             "stats": orchestrator.tool_registry.get_tool_stats()
         }
         
-    except Exception as e:
-        logger.error(f"Error getting tools: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to get tools: {str(e)}")
+    except Exception:
+        logger.exception("Error getting tools")
+        raise HTTPException(status_code=500, detail="Failed to get tools")
 
 
 @router.put("/{tool_name}/status", response_model=StatusResponse)
@@ -80,9 +80,9 @@ async def update_tool_status(
         
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Error updating tool status for {tool_name}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to update tool status: {str(e)}")
+    except Exception:
+        logger.exception("Error updating tool status for %s", tool_name)
+        raise HTTPException(status_code=500, detail="Failed to update tool status")
 
 
 @router.get("/{tool_name}")
@@ -122,6 +122,6 @@ async def get_tool_details(
         
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Error getting tool details for {tool_name}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to get tool details: {str(e)}")
+    except Exception:
+        logger.exception("Error getting tool details for %s", tool_name)
+        raise HTTPException(status_code=500, detail="Failed to get tool details")

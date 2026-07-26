@@ -33,9 +33,9 @@ async def get_ai_prompt(orchestrator: MainOrchestrator = Depends(get_orchestrato
             "enabled_tools_count": len(orchestrator.tool_registry.get_enabled_tools()),
             "timestamp": datetime.now().isoformat()
         }
-    except Exception as e:
-        logger.error(f"Error getting AI prompt: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error getting AI prompt")
+        raise HTTPException(status_code=500, detail="Unable to get AI prompt")
 
 
 @router.get("/models")
@@ -59,6 +59,6 @@ async def get_ai_models():
             ],
             "timestamp": datetime.now().isoformat()
         }
-    except Exception as e:
-        logger.error(f"Error getting AI models: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error getting AI models")
+        raise HTTPException(status_code=500, detail="Unable to get AI models")

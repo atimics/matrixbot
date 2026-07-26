@@ -21,6 +21,8 @@ from ...integrations.arweave_uploader_client import ArweaveUploaderClient
 from ...integrations.farcaster import FarcasterObserver
 from ..node_system.node_manager import NodeManager
 from ...integrations.matrix.observer import MatrixObserver
+from ...integrations.telegram import TelegramObserver
+from ...integrations.telegram.operator_queue import OperatorQueueBridge
 from ...integrations.base_nft_service import BaseNFTService
 from ...integrations.eligibility_service import UserEligibilityService
 from ...tools.registry import ToolRegistry
@@ -230,6 +232,11 @@ class MainOrchestrator:
         # Integration management
         self.integration_manager = IntegrationManager(
             db_path=self.config.db_path,
+            encryption_key=(
+                settings.INTEGRATION_CREDENTIAL_KEY.encode("utf-8")
+                if settings.INTEGRATION_CREDENTIAL_KEY
+                else None
+            ),
             world_state_manager=self.world_state
         )
         
@@ -263,6 +270,7 @@ class MainOrchestrator:
             self.arweave_client = ArweaveUploaderClient(
                 uploader_service_url=settings.ARWEAVE_INTERNAL_UPLOADER_SERVICE_URL,
                 gateway_url=settings.ARWEAVE_GATEWAY_URL,
+                api_key=settings.ARWEAVE_UPLOADER_API_KEY,
             )
             logger.info("Arweave client initialized for internal uploader service.")
         
@@ -283,6 +291,7 @@ class MainOrchestrator:
         # External observers
         self.matrix_observer: Optional[MatrixObserver] = None
         self.farcaster_observer: Optional[FarcasterObserver] = None
+        self.telegram_observer: Optional[TelegramObserver] = None
         
         # NFT and eligibility services
         self.base_nft_service: Optional[BaseNFTService] = None
@@ -324,6 +333,7 @@ class MainOrchestrator:
             CreateMintFrameTool,
             CreateAirdropClaimFrameTool,
         )
+        from ...tools.telegram_tools import SendTelegramMessageTool, SendTelegramReplyTool
         from ...tools.matrix_tools import (
             AcceptMatrixInviteTool,
             IgnoreMatrixInviteTool,
@@ -335,7 +345,13 @@ class MainOrchestrator:
             SendMatrixReplyTool,
             SendMatrixVideoTool,
         )
-        from ...tools.media_generation_tools import GenerateImageTool, GenerateVideoTool
+        try:
+            from ...tools.media_generation_tools import GenerateImageTool, GenerateVideoTool
+            _has_media_tools = True
+        except ImportError:
+            GenerateImageTool = GenerateVideoTool = None
+            _has_media_tools = False
+            logger.warning("Media generation tools unavailable — skipping")
         from ...tools.permaweb_tools import StorePermanentMemoryTool
         from ...tools.web_tools import WebSearchTool
         from ...tools.research_tools import UpdateResearchTool, QueryResearchTool
@@ -378,6 +394,10 @@ class MainOrchestrator:
         self.tool_registry.register_tool(AcceptMatrixInviteTool())
         self.tool_registry.register_tool(IgnoreMatrixInviteTool())
         
+        # Telegram tools
+        self.tool_registry.register_tool(SendTelegramMessageTool())
+        self.tool_registry.register_tool(SendTelegramReplyTool())
+
         # Farcaster tools
         self.tool_registry.register_tool(SendFarcasterPostTool())
         self.tool_registry.register_tool(SendFarcasterReplyTool())
@@ -406,8 +426,9 @@ class MainOrchestrator:
         self.tool_registry.register_tool(CreateAirdropClaimFrameTool())
         
         # Media generation tools
-        self.tool_registry.register_tool(GenerateImageTool())
-        self.tool_registry.register_tool(GenerateVideoTool())
+        if _has_media_tools:
+            self.tool_registry.register_tool(GenerateImageTool())
+            self.tool_registry.register_tool(GenerateVideoTool())
         
         # Permaweb tools
         self.tool_registry.register_tool(StorePermanentMemoryTool())
@@ -516,6 +537,12 @@ class MainOrchestrator:
         if self.farcaster_observer:
             await self.farcaster_observer.stop()
 
+        if self.telegram_observer:
+            await self.telegram_observer.stop()
+
+        if hasattr(self, "telegram_operator_queue") and self.telegram_operator_queue:
+            await self.telegram_operator_queue.stop()
+
         logger.info("Main orchestrator system stopped")
 
     def _setup_processing_components(self):
@@ -622,10 +649,39 @@ class MainOrchestrator:
             except Exception as e:
                 logger.error(f"Failed to initialize Farcaster observer: {e}")
                 logger.info("Continuing without Farcaster integration")
-        
+
+        # Initialize Telegram observer if token available
+        if settings.TELEGRAM_BOT_TOKEN:
+            try:
+                self.telegram_observer = TelegramObserver(
+                    world_state_manager=self.world_state
+                )
+                await self.telegram_observer.start()
+                self.telegram_operator_queue = OperatorQueueBridge(
+                    self.telegram_observer
+                )
+                self.telegram_observer.operator_queue_bridge = (
+                    self.telegram_operator_queue
+                )
+                await self.telegram_operator_queue.start()
+                self.world_state.update_system_status(
+                    {"telegram_connected": True}
+                )
+                logger.info("Telegram observer initialized and started")
+            except Exception as e:
+                logger.error(f"Failed to initialize Telegram observer: {e}")
+                if getattr(self, "telegram_operator_queue", None):
+                    await self.telegram_operator_queue.stop()
+                    self.telegram_operator_queue = None
+                if self.telegram_observer:
+                    await self.telegram_observer.stop()
+                    self.telegram_observer = None
+                logger.info("Continuing without Telegram integration")
+
         # Update action context with initialized observers
         self.action_context.matrix_observer = self.matrix_observer
         self.action_context.farcaster_observer = self.farcaster_observer
+        self.action_context.telegram_observer = self.telegram_observer
         
         # Configure critical node pinning based on active integrations
         self._configure_critical_node_pinning()

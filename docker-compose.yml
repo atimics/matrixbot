@@ -44,6 +44,9 @@ services:
       - PYTHONUNBUFFERED=1
       - RATICHAT_DB_PATH=/app/data/ratichat.db
       - ARWEAVE_INTERNAL_UPLOADER_SERVICE_URL=http://arweave-service:8001
+      # Container networking requires a non-loopback bind. API authentication
+      # remains mandatory through ADMIN_API_TOKEN from .env.
+      - ADMIN_API_HOST=0.0.0.0
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
@@ -60,6 +63,7 @@ services:
       - "8001:8001"  # Expose for testing and direct access
     environment:
       - ARWEAVE_WALLET_PATH=/data/arweave_wallet.json
+      - ARWEAVE_SERVICE_API_KEY=${ARWEAVE_UPLOADER_API_KEY:?required}
       - PYTHONUNBUFFERED=1
     volumes:
       # Mount the wallet file directly from host data directory

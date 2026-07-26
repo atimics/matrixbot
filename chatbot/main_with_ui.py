@@ -73,8 +73,8 @@ class ChatbotWithUI:
         def run_server():
             config = uvicorn.Config(
                 self.api_server,
-                host="0.0.0.0",
-                port=8000,
+                host=settings.ADMIN_API_HOST,
+                port=settings.ADMIN_API_PORT,
                 log_level="info"
             )
             server = uvicorn.Server(config)
@@ -82,8 +82,16 @@ class ChatbotWithUI:
             
         self.server_thread = Thread(target=run_server, daemon=True)
         self.server_thread.start()
-        logger.info("API server started on http://0.0.0.0:8000")
-        logger.info("Management UI available at http://localhost:8000")
+        logger.info(
+            "API server started on http://%s:%s",
+            settings.ADMIN_API_HOST,
+            settings.ADMIN_API_PORT,
+        )
+        logger.info(
+            "Management UI available at http://%s:%s",
+            settings.ADMIN_API_HOST,
+            settings.ADMIN_API_PORT,
+        )
         
     async def start_chatbot(self):
         """Start the chatbot orchestrator."""
@@ -128,9 +136,11 @@ class ChatbotWithUI:
             logger.info("=" * 60)
             logger.info("Chatbot Management Console is now running:")
             logger.info("  - Chatbot: Active and processing")
-            logger.info("  - API Server: http://localhost:8000")
-            logger.info("  - Management UI: http://localhost:8000")
-            logger.info("  - API Documentation: http://localhost:8000/docs")
+            logger.info(
+                "  - API Server: http://%s:%s",
+                settings.ADMIN_API_HOST,
+                settings.ADMIN_API_PORT,
+            )
             logger.info("=" * 60)
             
             # Keep running until signal received

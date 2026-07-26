@@ -133,7 +133,7 @@ class SetupManager:
         """Save the configuration to a config file in the data directory."""
         # Use data directory for persistence instead of .env (which may be read-only in Docker)
         config_path = Path("data/config.json")
-        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         
         # Map our step keys to environment variable names
         step_to_env = {
@@ -156,8 +156,22 @@ class SetupManager:
         
         # Save to JSON file
         try:
-            with open(config_path, 'w') as f:
-                json.dump(config, f, indent=2)
+            temporary_path = config_path.with_suffix(".json.tmp")
+            flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+            flags |= getattr(os, "O_CLOEXEC", 0)
+            flags |= getattr(os, "O_NOFOLLOW", 0)
+            descriptor = os.open(temporary_path, flags, 0o600)
+            try:
+                os.fchmod(descriptor, 0o600)
+                with os.fdopen(descriptor, "w") as config_file:
+                    descriptor = -1
+                    json.dump(config, config_file, indent=2)
+                    config_file.flush()
+                    os.fsync(config_file.fileno())
+                os.replace(temporary_path, config_path)
+            finally:
+                if descriptor >= 0:
+                    os.close(descriptor)
             logger.info(f"Configuration saved to {config_path}")
         except Exception as e:
             logger.error(f"Failed to save configuration: {e}")

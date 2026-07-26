@@ -3,6 +3,7 @@ Arweave Service - Secure, lean microservice for Arweave uploads
 This service expects a pre-provisioned wallet file and does NOT generate wallets.
 """
 import asyncio
+import hmac
 import json
 import logging
 import os
@@ -114,10 +115,28 @@ wallet_manager = get_wallet()
 
 # API Key for basic authentication
 API_KEY = os.getenv("ARWEAVE_SERVICE_API_KEY")
+MAX_UPLOAD_BYTES = int(os.getenv("ARWEAVE_MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
+
+
+def _validate_content_type(content_type: str) -> str:
+    """Reject oversized metadata and newline-based tag injection."""
+    if (
+        not content_type
+        or len(content_type) > 255
+        or "\r" in content_type
+        or "\n" in content_type
+    ):
+        raise HTTPException(status_code=400, detail="Invalid content type")
+    return content_type
+
 
 def validate_api_key(x_api_key: Optional[str] = None):
-    """Validate API key if one is configured"""
-    if API_KEY and x_api_key != API_KEY:
+    """Require an explicitly configured, sufficiently strong API key."""
+    if not API_KEY or len(API_KEY.encode("utf-8")) < 32:
+        raise HTTPException(
+            status_code=503, detail="Arweave service authentication is not configured"
+        )
+    if not x_api_key or not hmac.compare_digest(x_api_key, API_KEY):
         raise HTTPException(status_code=401, detail="Invalid API Key")
 
 @app.on_event("startup")
@@ -142,8 +161,11 @@ async def health_check():
     )
 
 @app.get("/wallet", response_model=WalletInfo)
-async def get_wallet_info():
+async def get_wallet_info(
+    x_api_key: Annotated[str | None, Header()] = None
+):
     """Get wallet information"""
+    validate_api_key(x_api_key)
     if not wallet_manager.is_ready():
         raise HTTPException(status_code=503, detail="Wallet not initialized")
     
@@ -165,10 +187,14 @@ async def _parse_tags(tags: Optional[str]) -> Dict[str, str]:
     
     try:
         tag_dict = json.loads(tags)
-        return {key: str(value) for key, value in tag_dict.items()}
-    except json.JSONDecodeError:
-        logger.warning(f"Invalid tags JSON provided: {tags}")
-        return {}
+        if not isinstance(tag_dict, dict) or len(tag_dict) > 20:
+            raise ValueError("Tags must be an object with at most 20 entries")
+        normalized = {str(key): str(value) for key, value in tag_dict.items()}
+        if any(len(key) > 128 or len(value) > 1024 for key, value in normalized.items()):
+            raise ValueError("Tag key or value exceeds the allowed length")
+        return normalized
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 async def _create_and_send_transaction(
     data: bytes, 
@@ -248,11 +274,16 @@ async def upload_to_arweave(
     
     try:
         # Read file content
-        file_content = await file.read()
+        file_content = await file.read(MAX_UPLOAD_BYTES + 1)
         if not file_content:
             raise HTTPException(status_code=400, detail="Empty file provided")
-        
-        logger.info(f"Uploading file: {file.filename} ({len(file_content)} bytes)")
+        if len(file_content) > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="Upload exceeds size limit")
+        content_type = _validate_content_type(
+            file.content_type or "application/octet-stream"
+        )
+
+        logger.info("Uploading file (%s bytes)", len(file_content))
         
         # Parse custom tags
         custom_tags = await _parse_tags(tags)
@@ -260,12 +291,14 @@ async def upload_to_arweave(
         # Prepare additional system tags
         additional_tags = {}
         if file.filename:
+            if len(file.filename) > 255 or "\r" in file.filename or "\n" in file.filename:
+                raise HTTPException(status_code=400, detail="Invalid file name")
             additional_tags['File-Name'] = file.filename
         
         # Create and send transaction
         transaction = await _create_and_send_transaction(
             data=file_content,
-            content_type=file.content_type or "application/octet-stream",
+            content_type=content_type,
             custom_tags=custom_tags,
             additional_tags=additional_tags
         )
@@ -274,15 +307,17 @@ async def upload_to_arweave(
         response = _create_upload_response(
             transaction=transaction,
             data_size=len(file_content),
-            content_type=file.content_type or "application/octet-stream"
+            content_type=content_type
         )
         
         logger.info(f"Upload successful: {transaction.id}")
         return response
         
-    except Exception as e:
-        logger.error(f"Upload failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Upload failed")
+        raise HTTPException(status_code=500, detail="Upload failed")
 
 @app.post("/upload/data", response_model=UploadResponse)
 async def upload_data_to_arweave(
@@ -308,6 +343,11 @@ async def upload_data_to_arweave(
     
     try:
         data_bytes = data.encode('utf-8')
+        if not data_bytes:
+            raise HTTPException(status_code=400, detail="Empty data provided")
+        if len(data_bytes) > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="Upload exceeds size limit")
+        content_type = _validate_content_type(content_type)
         logger.info(f"Uploading data ({len(data_bytes)} bytes)")
         
         # Parse custom tags
@@ -330,9 +370,11 @@ async def upload_data_to_arweave(
         logger.info(f"Data upload successful: {transaction.id}")
         return response
         
-    except Exception as e:
-        logger.error(f"Data upload failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Data upload failed: {str(e)}")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Data upload failed")
+        raise HTTPException(status_code=500, detail="Data upload failed")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8001)

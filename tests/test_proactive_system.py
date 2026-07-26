@@ -31,7 +31,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 
-class TestProactiveSystem:
+class ProactiveSystemHarness:
     """Comprehensive test suite for the proactive conversation system."""
     
     def __init__(self):
@@ -489,7 +489,7 @@ async def run_comprehensive_tests():
     logger.info("Starting comprehensive proactive conversation system tests...")
     
     # Create test instance
-    test_suite = TestProactiveSystem()
+    test_suite = ProactiveSystemHarness()
     
     try:
         # Setup test environment

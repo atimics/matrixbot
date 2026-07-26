@@ -43,9 +43,9 @@ async def get_recent_logs():
             "count": 1,
             "timestamp": datetime.now().isoformat()
         }
-    except Exception as e:
-        logger.error(f"Error getting recent logs: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error getting recent logs")
+        raise HTTPException(status_code=500, detail="Unable to get recent logs")
 
 
 @router.get("/history/actions")
@@ -69,6 +69,6 @@ async def get_action_history(orchestrator: MainOrchestrator = Depends(get_orches
             "total_actions": len(orchestrator.world_state.state.action_history.actions),
             "timestamp": datetime.now().isoformat()
         }
-    except Exception as e:
-        logger.error(f"Error getting action history: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error getting action history")
+        raise HTTPException(status_code=500, detail="Unable to get action history")

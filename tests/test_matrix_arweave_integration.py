@@ -28,7 +28,7 @@ class TestMatrixArweaveIntegration:
     @pytest.fixture
     def mock_arweave_client(self):
         """Create a mock Arweave client."""
-        mock_client = AsyncMock()
+        mock_client = MagicMock()
         mock_client.upload_data = AsyncMock(return_value="test_tx_id")
         mock_client.get_arweave_url.return_value = "https://arweave.net/test_tx_id"
         return mock_client
@@ -37,7 +37,8 @@ class TestMatrixArweaveIntegration:
     def matrix_observer(self, mock_world_state, mock_arweave_client):
         """Create a Matrix observer with mocked dependencies."""
         observer = MatrixObserver(mock_world_state, mock_arweave_client)
-        observer.client = AsyncMock()
+        observer.client = MagicMock()
+        observer.client.download = AsyncMock()
         observer.user_id = "@testbot:example.com"  # Set bot user ID different from test message sender
         return observer
 

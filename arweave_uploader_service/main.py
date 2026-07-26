@@ -2,9 +2,11 @@
 Arweave Uploader Service - Microservice for handling direct Arweave uploads
 """
 import asyncio
+import hmac
 import json
 import logging
 import os
+import string
 from typing import Dict, List, Optional, Annotated
 
 import uvicorn
@@ -135,11 +137,18 @@ wallet_manager: Optional[ArweaveWalletManager] = None
 
 # Optional API key for internal service authentication
 API_KEY = os.getenv("ARWEAVE_UPLOADER_API_KEY")
+MAX_UPLOAD_BYTES = int(os.getenv("ARWEAVE_MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
+VALID_TX_ID_CHARS = frozenset(string.ascii_letters + string.digits + "_-")
 
 
 def verify_api_key(x_api_key: Annotated[str | None, Header()] = None):
-    """Verify API key if configured."""
-    if API_KEY and x_api_key != API_KEY:
+    """Require an explicitly configured, sufficiently strong API key."""
+    if not API_KEY or len(API_KEY.encode("utf-8")) < 32:
+        raise HTTPException(
+            status_code=503,
+            detail="Arweave uploader authentication is not configured",
+        )
+    if not x_api_key or not hmac.compare_digest(x_api_key, API_KEY):
         raise HTTPException(
             status_code=401,
             detail="Invalid or missing API key"
@@ -169,8 +178,13 @@ def _parse_tags(tags: Optional[str]) -> Optional[List[Dict[str, str]]]:
     
     try:
         parsed_tags = json.loads(tags)
-        if not isinstance(parsed_tags, list):
-            raise ValueError("Tags must be a list")
+        if not isinstance(parsed_tags, list) or len(parsed_tags) > 20:
+            raise ValueError("Tags must be a list with at most 20 entries")
+        for tag in parsed_tags:
+            if not isinstance(tag, dict) or set(tag) != {"name", "value"}:
+                raise ValueError("Each tag must contain only name and value")
+            if len(str(tag["name"])) > 128 or len(str(tag["value"])) > 1024:
+                raise ValueError("Tag name or value exceeds the allowed length")
         return parsed_tags
     except (json.JSONDecodeError, ValueError) as e:
         logger.warning(f"Invalid tags format: {e}")
@@ -178,6 +192,19 @@ def _parse_tags(tags: Optional[str]) -> Optional[List[Dict[str, str]]]:
             status_code=400,
             detail=f"Invalid tags format. Expected JSON list: {str(e)}"
         )
+
+
+def _validate_content_type(content_type: str) -> str:
+    """Reject metadata that is oversized or can inject additional headers/tags."""
+    if (
+        not content_type
+        or len(content_type) > 255
+        or "\r" in content_type
+        or "\n" in content_type
+    ):
+        raise HTTPException(status_code=400, detail="Invalid content type")
+    return content_type
+
 
 @app.post("/upload")
 async def upload_file(
@@ -195,7 +222,12 @@ async def upload_file(
     
     try:
         # Read file data
-        file_data = await file.read()
+        file_data = await file.read(MAX_UPLOAD_BYTES + 1)
+        if not file_data:
+            raise HTTPException(status_code=400, detail="Empty file provided")
+        if len(file_data) > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="Upload exceeds size limit")
+        content_type = _validate_content_type(content_type)
         
         # Parse tags if provided
         parsed_tags = _parse_tags(tags)
@@ -222,7 +254,7 @@ async def upload_file(
         logger.error(f"Upload endpoint error: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Internal server error: {str(e)}"
+            detail="Internal server error"
         )
 
 @app.get("/wallet-info")
@@ -264,7 +296,7 @@ async def get_wallet_info(_: bool = Depends(verify_api_key)):
         logger.error(f"Error getting wallet info: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to get wallet info: {str(e)}"
+            detail="Failed to get wallet info"
         )
 
 @app.get("/status/{tx_id}")
@@ -275,6 +307,8 @@ async def get_transaction_status(tx_id: str, _: bool = Depends(verify_api_key)):
             status_code=503,
             detail="Arweave wallet not initialized"
         )
+    if len(tx_id) != 43 or any(char not in VALID_TX_ID_CHARS for char in tx_id):
+        raise HTTPException(status_code=400, detail="Invalid transaction ID")
     
     try:
         # Use the Arweave Python library to check transaction status
@@ -299,7 +333,7 @@ async def get_transaction_status(tx_id: str, _: bool = Depends(verify_api_key)):
         logger.error(f"Error getting transaction status: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to get transaction status: {str(e)}"
+            detail="Failed to get transaction status"
         )
 
 @app.get("/health")

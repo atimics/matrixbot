@@ -55,9 +55,9 @@ async def get_world_state(orchestrator: MainOrchestrator = Depends(get_orchestra
             "processing_mode": "node_based" if orchestrator.config.processing_config.enable_node_based_processing else "traditional",
             "timestamp": datetime.now().isoformat()
         }
-    except Exception as e:
-        logger.error(f"Error getting world state: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error getting world state")
+        raise HTTPException(status_code=500, detail="Could not get world state")
 
 
 @router.get("/channels")
@@ -88,9 +88,9 @@ async def get_channels(orchestrator: MainOrchestrator = Depends(get_orchestrator
             "total_channels": len(channels),
             "timestamp": datetime.now().isoformat()
         }
-    except Exception as e:
-        logger.error(f"Error getting channels: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error getting channels")
+        raise HTTPException(status_code=500, detail="Could not get channels")
 
 
 @router.get("/ai-payload")
@@ -127,9 +127,11 @@ async def get_ai_world_state_payload(orchestrator: MainOrchestrator = Depends(ge
                 "timestamp": datetime.now().isoformat()
             }
         }
-    except Exception as e:
-        logger.error(f"Error getting AI world state payload: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error getting AI world state payload")
+        raise HTTPException(
+            status_code=500, detail="Could not build AI world state payload"
+        )
 
 
 @router.post("/node/action")
@@ -165,6 +167,8 @@ async def execute_node_action(
             "node_id": action.node_id,
             "message": f"Action '{action.action}' executed on node '{action.node_id}'"
         }
-    except Exception as e:
-        logger.error(f"Error executing node action: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Error executing node action")
+        raise HTTPException(status_code=500, detail="Could not execute node action")
