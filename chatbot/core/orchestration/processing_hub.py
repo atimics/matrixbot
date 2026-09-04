@@ -344,13 +344,32 @@ class ProcessingHub:
         return active_channels
 
     def _hash_state(self, state_dict: Dict[str, Any]) -> str:
-        """Generate a hash of the world state for change detection."""
+        """Generate a stable hash of state that can change a bot decision.
+
+        ``recent_activity`` is a derived view. It includes the wall clock time on
+        every call. The observation counters also change while an AI cycle is
+        being built. Including either value makes an idle system look active and
+        can trigger a paid model request on every polling interval.
+        """
         import hashlib
         import json
-        
+
+        stable_state = {
+            key: value
+            for key, value in state_dict.items()
+            if key != "recent_activity"
+        }
+        system_status = stable_state.get("system_status")
+        if isinstance(system_status, dict):
+            stable_state["system_status"] = {
+                key: value
+                for key, value in system_status.items()
+                if key not in {"last_observation_cycle", "total_cycles"}
+            }
+
         # Create a deterministic representation
-        state_str = json.dumps(state_dict, sort_keys=True, default=str)
-        return hashlib.md5(state_str.encode()).hexdigest()
+        state_str = json.dumps(stable_state, sort_keys=True, default=str)
+        return hashlib.sha256(state_str.encode()).hexdigest()
 
     def _log_rate_limit_status(self):
         """Log current rate limiting status."""
