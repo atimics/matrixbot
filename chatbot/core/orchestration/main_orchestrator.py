@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from ...config import settings
+from ...config import matrix_auth_is_configured, settings
 from ...core.ai_engine import AIDecisionEngine, ActionPlan
 from ...core.context import ContextManager
 from ...core.integration_manager import IntegrationManager
@@ -686,7 +686,7 @@ class MainOrchestrator:
     async def _initialize_observers(self) -> None:
         """Initialize available observers based on environment configuration."""
         # Initialize Matrix observer if credentials available
-        if settings.MATRIX_USER_ID and settings.MATRIX_PASSWORD:
+        if matrix_auth_is_configured(settings):
             try:
                 self.matrix_observer = MatrixObserver(self.world_state, self.arweave_client)
                 room_id = settings.MATRIX_ROOM_ID
@@ -1165,9 +1165,16 @@ class MainOrchestrator:
                     logger.error(f"Failed to remove Farcaster integration: {e}")
         
         # Check for Matrix integration
-        if (settings.MATRIX_HOMESERVER and 
-            settings.MATRIX_USER_ID and 
-            settings.MATRIX_PASSWORD):
+        if matrix_auth_is_configured(settings):
+            matrix_credentials = {
+                "homeserver": settings.MATRIX_HOMESERVER,
+                "user_id": settings.MATRIX_USER_ID,
+            }
+            if settings.MATRIX_PASSWORD:
+                matrix_credentials["password"] = settings.MATRIX_PASSWORD
+            if settings.MATRIX_ACCESS_TOKEN:
+                matrix_credentials["access_token"] = settings.MATRIX_ACCESS_TOKEN
+                matrix_credentials["device_id"] = settings.MATRIX_DEVICE_ID
             
             matrix_exists = any(
                 integration.get('integration_type') == 'matrix' 
@@ -1184,11 +1191,7 @@ class MainOrchestrator:
                             'room_id': settings.MATRIX_ROOM_ID,
                             'device_name': settings.DEVICE_NAME
                         },
-                        credentials={
-                            'homeserver': settings.MATRIX_HOMESERVER,
-                            'user_id': settings.MATRIX_USER_ID,
-                            'password': settings.MATRIX_PASSWORD
-                        }
+                        credentials=matrix_credentials,
                     )
                     logger.info("✓ Matrix integration registered successfully")
                 except Exception as e:
@@ -1208,11 +1211,7 @@ class MainOrchestrator:
                         # Update credentials from environment
                         await self.integration_manager.update_credentials(
                             matrix_integration['integration_id'],
-                            {
-                                'homeserver': settings.MATRIX_HOMESERVER,
-                                'user_id': settings.MATRIX_USER_ID,
-                                'password': settings.MATRIX_PASSWORD
-                            }
+                            matrix_credentials,
                         )
                         logger.info("✓ Matrix credentials updated from environment variables")
                     except Exception as e:

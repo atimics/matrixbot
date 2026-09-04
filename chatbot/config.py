@@ -56,6 +56,7 @@ class AppConfig(BaseSettings):
     MATRIX_HOMESERVER: Optional[str] = None
     MATRIX_USER_ID: Optional[str] = None
     MATRIX_PASSWORD: Optional[str] = None
+    MATRIX_ACCESS_TOKEN: Optional[str] = None
     MATRIX_ROOM_ID: str = (
         "#robot-laboratory:chat.ratimics.com"  # Default initial room to monitor
     )
@@ -184,6 +185,15 @@ class AppConfig(BaseSettings):
     # GitHub ACE (Autonomous Code Evolution) Integration
     GITHUB_TOKEN: Optional[str] = None
     GITHUB_USERNAME: Optional[str] = None
+
+
+def matrix_auth_is_configured(config: AppConfig) -> bool:
+    """Return whether Matrix has a complete password or access-token login."""
+    if not config.MATRIX_HOMESERVER or not config.MATRIX_USER_ID:
+        return False
+    if config.MATRIX_ACCESS_TOKEN:
+        return bool(config.MATRIX_DEVICE_ID)
+    return bool(config.MATRIX_PASSWORD)
 
 
 # Global settings instance

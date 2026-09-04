@@ -1,0 +1,57 @@
+name: Deploy RatiChat bot to Fly
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: Reserved Fly app name
+        required: true
+        default: ratichat-bot-prod
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fly-ratichat-bot-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy one bot Machine
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_RATICHAT_BOT_DEPLOY_TOKEN }}
+      FLY_APP_NAME: ${{ inputs.app_name }}
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # v1.6
+
+      - name: Validate Fly configuration
+        run: >-
+          flyctl config validate
+          --app "$FLY_APP_NAME"
+          --config deploy/fly/bot/fly.toml
+
+      - name: Deploy in SJC
+        run: >-
+          flyctl deploy .
+          --app "$FLY_APP_NAME"
+          --config deploy/fly/bot/fly.toml
+          --ha=false
+          --remote-only
+
+      - name: Fix the bot at one Machine
+        run: >-
+          flyctl scale count app=1
+          --app "$FLY_APP_NAME"
+          --yes
+
+      - name: Show final status
+        run: flyctl status --app "$FLY_APP_NAME"

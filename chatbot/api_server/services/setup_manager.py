@@ -186,19 +186,39 @@ class SetupManager:
                 with open(config_path, 'r') as f:
                     config = json.load(f)
                     if config.get("_setup_completed", False):
-                        # Verify essential keys are present
-                        required_keys = ["OPENROUTER_API_KEY", "MATRIX_USER_ID", "MATRIX_PASSWORD"]
-                        if all(config.get(key) for key in required_keys):
+                        if self._has_required_configuration(config):
                             return False
             except Exception as e:
                 logger.warning(f"Error reading config file: {e}")
         
-        # Fall back to checking environment variables
-        required_vars = ["OPENROUTER_API_KEY", "MATRIX_USER_ID", "MATRIX_PASSWORD"]
-        for var in required_vars:
-            if not os.getenv(var):
-                return True
-        return False
+        environment = {
+            key: os.getenv(key)
+            for key in (
+                "OPENROUTER_API_KEY",
+                "MATRIX_HOMESERVER",
+                "MATRIX_USER_ID",
+                "MATRIX_PASSWORD",
+                "MATRIX_ACCESS_TOKEN",
+                "MATRIX_DEVICE_ID",
+            )
+        }
+        return not self._has_required_configuration(environment)
+
+    @staticmethod
+    def _has_required_configuration(config: Dict[str, Optional[str]]) -> bool:
+        """Check setup fields for password or service-token Matrix auth."""
+        required_values = (
+            config.get("OPENROUTER_API_KEY"),
+            config.get("MATRIX_HOMESERVER"),
+            config.get("MATRIX_USER_ID"),
+        )
+        if not all(required_values):
+            return False
+
+        access_token = config.get("MATRIX_ACCESS_TOKEN")
+        if access_token:
+            return bool(config.get("MATRIX_DEVICE_ID"))
+        return bool(config.get("MATRIX_PASSWORD"))
     
     def get_setup_status(self) -> dict:
         """Get the current setup status."""
