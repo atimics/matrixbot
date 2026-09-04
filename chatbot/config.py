@@ -59,6 +59,7 @@ class AppConfig(BaseSettings):
     MATRIX_ROOM_ID: str = (
         "#robot-laboratory:chat.ratimics.com"  # Default initial room to monitor
     )
+    PUBLIC_MATRIX_ROOM_IDS: str = ""
     MATRIX_DEVICE_ID: Optional[str] = None
     MATRIX_MEDIA_GALLERY_ROOM_ID: Optional[str] = None  # Dedicated channel for auto-posting generated media
 

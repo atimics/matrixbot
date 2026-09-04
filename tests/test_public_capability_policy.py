@@ -31,7 +31,11 @@ class RecordingTool(ToolInterface):
         return {"status": "success", "message": "done"}
 
 
-def make_processor(profile: str, registry: ToolRegistry):
+def make_processor(
+    profile: str,
+    registry: ToolRegistry,
+    approved_matrix_room_ids=(),
+):
     ai_engine = AsyncMock()
     context_manager = AsyncMock()
     processor = TraditionalProcessor(
@@ -40,7 +44,10 @@ def make_processor(profile: str, registry: ToolRegistry):
         rate_limiter=Mock(),
         context_manager=context_manager,
         action_context=ActionContext(),
-        capability_policy=CapabilityPolicy(profile),
+        capability_policy=CapabilityPolicy(
+            profile,
+            approved_matrix_room_ids=approved_matrix_room_ids,
+        ),
     )
     return processor, ai_engine, context_manager
 
@@ -92,7 +99,7 @@ async def test_disabled_public_tool_stays_unavailable_at_execution_boundary():
     reply_tool = RecordingTool("send_matrix_reply")
     registry.register_tool(reply_tool)
     registry.set_tool_enabled("send_matrix_reply", False)
-    processor, _, _ = make_processor("public", registry)
+    processor, _, _ = make_processor("operator", registry)
 
     result = await processor._execute_action_and_return_result(
         action("send_matrix_reply")
@@ -122,6 +129,7 @@ async def test_public_profile_blocks_external_matrix_media_parameter():
 @pytest.mark.asyncio
 async def test_public_profile_only_shows_allowed_tools_to_model():
     registry = ToolRegistry()
+    registry.register_tool(RecordingTool("send_matrix_message"))
     registry.register_tool(RecordingTool("send_matrix_reply"))
     registry.register_tool(RecordingTool("create_github_issue"))
     processor, ai_engine, _ = make_processor("public", registry)
@@ -133,7 +141,135 @@ async def test_public_profile_only_shows_allowed_tools_to_model():
     await processor.process_payload(payload, [])
 
     assert "send_matrix_reply" in payload["available_tools"]
+    assert "send_matrix_message" not in payload["available_tools"]
     assert "create_github_issue" not in payload["available_tools"]
+
+
+@pytest.mark.asyncio
+async def test_public_profile_blocks_reply_to_unapproved_matrix_room():
+    registry = ToolRegistry()
+    reply_tool = RecordingTool("send_matrix_reply")
+    registry.register_tool(reply_tool)
+    processor, _, context_manager = make_processor(
+        "public", registry, approved_matrix_room_ids=("!approved:example.com",)
+    )
+    scope = processor.capability_policy.scope_from_payload(
+        {
+            "current_processing_channel_id": "!other:example.com",
+            "channels": {
+                "!other:example.com": {
+                    "type": "matrix",
+                    "recent_messages": [{"id": "$event"}],
+                }
+            },
+        }
+    )
+    public_action = ActionPlan(
+        action_type="send_matrix_reply",
+        parameters={
+            "channel_id": "!other:example.com",
+            "content": "hello",
+            "reply_to_id": "$event",
+        },
+        reasoning="test",
+        priority=5,
+    )
+
+    result = await processor._execute_action_and_return_result(public_action, scope)
+
+    assert result["status"] == "blocked"
+    assert reply_tool.calls == []
+    audit_result = context_manager.add_tool_result.await_args.kwargs["result"]
+    assert "outside the approved public rooms" in audit_result["message"]
+
+
+@pytest.mark.asyncio
+async def test_public_profile_blocks_unapproved_farcaster_target():
+    registry = ToolRegistry()
+    reply_tool = RecordingTool("send_farcaster_reply")
+    registry.register_tool(reply_tool)
+    processor, _, context_manager = make_processor("public", registry)
+    scope = processor.capability_policy.scope_from_payload(
+        {
+            "current_processing_channel_id": "farcaster:notifications",
+            "channels": {
+                "farcaster:notifications": {
+                    "type": "farcaster",
+                    "recent_messages": [{"id": "0xapproved"}],
+                }
+            },
+        }
+    )
+    public_action = ActionPlan(
+        action_type="send_farcaster_reply",
+        parameters={"content": "hello", "reply_to_hash": "0xother"},
+        reasoning="test",
+        priority=5,
+    )
+
+    result = await processor._execute_action_and_return_result(public_action, scope)
+
+    assert result["status"] == "blocked"
+    assert reply_tool.calls == []
+    audit_result = context_manager.add_tool_result.await_args.kwargs["result"]
+    assert "outside the current source context" in audit_result["message"]
+
+
+@pytest.mark.asyncio
+async def test_public_profile_allows_reply_to_current_approved_matrix_event():
+    registry = ToolRegistry()
+    reply_tool = RecordingTool("send_matrix_reply")
+    registry.register_tool(reply_tool)
+    room_id = "!approved:example.com"
+    processor, _, _ = make_processor(
+        "public", registry, approved_matrix_room_ids=(room_id,)
+    )
+    scope = processor.capability_policy.scope_from_payload(
+        {
+            "current_processing_channel_id": room_id,
+            "channels": {
+                room_id: {
+                    "type": "matrix",
+                    "recent_messages": [{"id": "$event"}],
+                }
+            },
+        }
+    )
+    parameters = {
+        "channel_id": room_id,
+        "content": "hello",
+        "reply_to_id": "$event",
+    }
+    public_action = ActionPlan(
+        action_type="send_matrix_reply",
+        parameters=parameters,
+        reasoning="test",
+        priority=5,
+    )
+
+    result = await processor._execute_action_and_return_result(public_action, scope)
+
+    assert result["status"] == "success"
+    assert reply_tool.calls == [parameters]
+
+
+@pytest.mark.asyncio
+async def test_public_profile_fails_closed_without_source_context():
+    registry = ToolRegistry()
+    reply_tool = RecordingTool("send_farcaster_reply")
+    registry.register_tool(reply_tool)
+    processor, _, _ = make_processor("public", registry)
+    public_action = ActionPlan(
+        action_type="send_farcaster_reply",
+        parameters={"content": "hello", "reply_to_hash": "0xtarget"},
+        reasoning="test",
+        priority=5,
+    )
+
+    result = await processor._execute_action_and_return_result(public_action)
+
+    assert result["status"] == "blocked"
+    assert reply_tool.calls == []
 
 
 def test_unknown_profile_fails_closed():

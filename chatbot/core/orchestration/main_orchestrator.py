@@ -31,7 +31,7 @@ from ..world_state.payload_builder import PayloadBuilder
 from .processing_hub import ProcessingHub, ProcessingConfig
 from .rate_limiter import RateLimiter, RateLimitConfig
 from ..proactive import ProactiveConversationEngine
-from .capability_policy import CapabilityPolicy
+from .capability_policy import CapabilityPolicy, ExecutionScope
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +69,8 @@ class TraditionalProcessor:
             active_channels: List of active channel IDs
         """
         try:
+            execution_scope = self.capability_policy.scope_from_payload(payload)
+
             # Add available tools to the payload
             allowed_tool_names = self.capability_policy.filter_tool_names(
                 self.tool_registry.get_tool_names()
@@ -90,7 +92,7 @@ class TraditionalProcessor:
             # Execute selected actions
             for action in decision_result.selected_actions:
                 try:
-                    await self._execute_action(action)
+                    await self._execute_action(action, execution_scope)
                 except Exception as e:
                     logger.error(f"Error executing action {action.action_type}: {e}")
                     
@@ -98,11 +100,15 @@ class TraditionalProcessor:
             logger.error(f"Error in traditional processing: {e}")
             raise
             
-    async def _execute_action(self, action: ActionPlan) -> None:
+    async def _execute_action(
+        self,
+        action: ActionPlan,
+        execution_scope: ExecutionScope | None = None,
+    ) -> None:
         """Execute a single action."""
         try:
             denial_reason = self.capability_policy.denial_reason(
-                action.action_type, action.parameters
+                action.action_type, action.parameters, execution_scope
             )
             if denial_reason:
                 await self._record_blocked_action(action, denial_reason)
@@ -159,7 +165,11 @@ class TraditionalProcessor:
         )
         return {"status": "blocked", "error": message}
 
-    async def _execute_actions(self, actions: list) -> None:
+    async def _execute_actions(
+        self,
+        actions: list,
+        execution_scope: ExecutionScope | None = None,
+    ) -> None:
         """
         Execute a list of actions with coordination logic.
         
@@ -184,18 +194,24 @@ class TraditionalProcessor:
                             action.parameters["embed_url"] = image_result["embed_page_url"]
                 
                 # Execute the action
-                result = await self._execute_action_and_return_result(action)
+                result = await self._execute_action_and_return_result(
+                    action, execution_scope
+                )
                 execution_results[action.action_type] = result
                 
             except Exception as e:
                 logger.error(f"Error executing action {action.action_type}: {e}")
                 execution_results[action.action_type] = {"status": "error", "error": str(e)}
     
-    async def _execute_action_and_return_result(self, action: ActionPlan) -> dict:
+    async def _execute_action_and_return_result(
+        self,
+        action: ActionPlan,
+        execution_scope: ExecutionScope | None = None,
+    ) -> dict:
         """Execute a single action and return the result for coordination."""
         try:
             denial_reason = self.capability_policy.denial_reason(
-                action.action_type, action.parameters
+                action.action_type, action.parameters, execution_scope
             )
             if denial_reason:
                 return await self._record_blocked_action(action, denial_reason)
@@ -254,6 +270,15 @@ class OrchestratorConfig:
     capability_profile: str = field(
         default_factory=lambda: settings.BOT_CAPABILITY_PROFILE
     )
+    public_matrix_room_ids: tuple[str, ...] = field(
+        default_factory=lambda: tuple(
+            room_id.strip()
+            for room_id in (
+                settings.PUBLIC_MATRIX_ROOM_IDS or settings.MATRIX_ROOM_ID
+            ).split(",")
+            if room_id.strip()
+        )
+    )
 
 
 class MainOrchestrator:
@@ -269,7 +294,10 @@ class MainOrchestrator:
     
     def __init__(self, config: Optional[OrchestratorConfig] = None):
         self.config = config or OrchestratorConfig()
-        self.capability_policy = CapabilityPolicy(self.config.capability_profile)
+        self.capability_policy = CapabilityPolicy(
+            self.config.capability_profile,
+            approved_matrix_room_ids=self.config.public_matrix_room_ids,
+        )
         
         # Core components
         self.world_state = WorldStateManager()
