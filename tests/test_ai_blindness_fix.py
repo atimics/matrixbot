@@ -22,7 +22,9 @@ class TestAIBlindnessFix:
     @pytest.fixture
     def orchestrator(self):
         """Create a test orchestrator."""
-        config = OrchestratorConfig(db_path=":memory:")
+        config = OrchestratorConfig(
+            db_path=":memory:", capability_profile="operator"
+        )
         return ContextAwareOrchestrator(config)
     
     @pytest.fixture

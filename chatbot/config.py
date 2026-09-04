@@ -46,6 +46,7 @@ class AppConfig(BaseSettings):
     AI_MODEL: str = "openai/gpt-4o-mini"
     AI_MULTIMODAL_MODEL: str = "openai/gpt-4o"  # Model for image/video analysis
     OPENROUTER_API_KEY: Optional[str] = None  # Made optional for demo mode
+    BOT_CAPABILITY_PROFILE: str = "public"
     LOG_LEVEL: str = "INFO"
     
     # Web Search and Research
@@ -58,6 +59,7 @@ class AppConfig(BaseSettings):
     MATRIX_ROOM_ID: str = (
         "#robot-laboratory:chat.ratimics.com"  # Default initial room to monitor
     )
+    PUBLIC_MATRIX_ROOM_IDS: str = ""
     MATRIX_DEVICE_ID: Optional[str] = None
     MATRIX_MEDIA_GALLERY_ROOM_ID: Optional[str] = None  # Dedicated channel for auto-posting generated media
 

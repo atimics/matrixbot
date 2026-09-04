@@ -3,7 +3,7 @@ Tool registry for dynamic tool management and AI prompt generation.
 """
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Collection, Dict, List, Optional
 
 from .base import ToolInterface
 
@@ -64,7 +64,9 @@ class ToolRegistry:
         """
         return list(self._tools.keys())
 
-    def get_tool_descriptions_for_ai(self) -> str:
+    def get_tool_descriptions_for_ai(
+        self, allowed_tool_names: Optional[Collection[str]] = None
+    ) -> str:
         """
         Generate a formatted string describing all enabled tools for AI prompts.
 
@@ -74,10 +76,13 @@ class ToolRegistry:
         if not self._tools:
             return "No tools currently available."
 
+        allowed_names = set(allowed_tool_names) if allowed_tool_names is not None else None
         descriptions = []
         for tool in self._tools.values():
             # Only include enabled tools
             if not self.is_tool_enabled(tool.name):
+                continue
+            if allowed_names is not None and tool.name not in allowed_names:
                 continue
                 
             desc = f"- {tool.name}:\n"
@@ -97,6 +102,12 @@ class ToolRegistry:
             return "No enabled tools currently available."
 
         return "\nAvailable tools:\n" + "\n".join(descriptions)
+
+    def get_enabled_tool(self, name: str) -> Optional[ToolInterface]:
+        """Return a tool only when it is registered and enabled."""
+        if not self.is_tool_enabled(name):
+            return None
+        return self._tools.get(name)
 
     def validate_tool_call(
         self, tool_name: str, params: Dict[str, any]

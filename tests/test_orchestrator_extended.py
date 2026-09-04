@@ -14,6 +14,7 @@ class TestOrchestratorExtended:
         """Set up test environment."""
         self.config = OrchestratorConfig()
         self.config.db_path = ":memory:"  # Use in-memory database for tests
+        self.config.capability_profile = "operator"
         self.orchestrator = MainOrchestrator(self.config)
     
     def teardown_method(self):
