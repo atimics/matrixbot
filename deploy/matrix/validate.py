@@ -34,6 +34,10 @@ EXPECTED_SERVICES: dict[str, dict[str, Any]] = {
             "ghcr.io/pocket-id/pocket-id:v2.14.0@"
             "sha256:01540977dcf4c7b41b1159f34d68e4632f2658d62790e460ca65a42722b13c4a"
         ),
+        "build_images": [
+            "node:24-alpine@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf AS frontend-builder",
+            "golang:1.26.6-alpine@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83 AS backend-builder",
+        ],
     },
     "element-web": {
         "app": "ratichat-chat",
@@ -123,9 +127,13 @@ def validate_service(name: str, expected: dict[str, Any], errors: list[str]) -> 
             )
 
     from_lines = [line.strip() for line in dockerfile.splitlines() if line.startswith("FROM ")]
-    check(from_lines == [f"FROM {expected['image']}"], f"{name}: image pin changed", errors)
+    images = [*expected.get("build_images", []), expected["image"]]
+    check(from_lines == [f"FROM {image}" for image in images], f"{name}: image pin changed", errors)
     check(
-        bool(re.search(r":v[^@\s]+@sha256:[0-9a-f]{64}$", from_lines[0])) if from_lines else False,
+        bool(from_lines) and all(
+            re.fullmatch(r"FROM \S+:[^@\s]+@sha256:[0-9a-f]{64}(?: AS [\w-]+)?", line)
+            for line in from_lines
+        ),
         f"{name}: image needs a version tag and digest",
         errors,
     )
