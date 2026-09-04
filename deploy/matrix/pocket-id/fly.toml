@@ -1,0 +1,52 @@
+app = "ratichat-id"
+primary_region = "sjc"
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[deploy]
+  strategy = "rolling"
+  max_unavailable = 1
+
+[env]
+  ALLOW_INSECURE_CALLBACK_URLS = "false"
+  APP_URL = "https://id.rati.chat"
+  DB_CONNECTION_STRING = "/app/data/pocket-id.db"
+  EMAIL_ONE_TIME_ACCESS_AS_UNAUTHENTICATED_ENABLED = "false"
+  TRUST_PROXY = "true"
+  WEBAUTHN_ALLOW_SYNCED_PASSKEYS = "true"
+  WEBAUTHN_AUTHENTICATOR_ATTACHMENT = "any"
+  WEBAUTHN_USER_VERIFICATION = "required"
+
+[[mounts]]
+  source = "pocket_data"
+  destination = "/app/data"
+
+[http_service]
+  internal_port = 1411
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 50
+    hard_limit = 75
+
+  [[http_service.checks]]
+    grace_period = "20s"
+    interval = "30s"
+    method = "GET"
+    timeout = "10s"
+    path = "/healthz"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+
+[[restart]]
+  policy = "always"

@@ -1,0 +1,62 @@
+app = "ratichat-matrix"
+primary_region = "sjc"
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[deploy]
+  strategy = "rolling"
+  max_unavailable = 1
+
+[env]
+  CONTINUWUITY_ADDRESS = "0.0.0.0"
+  CONTINUWUITY_ALLOW_DEVICE_NAME_FEDERATION = "false"
+  CONTINUWUITY_ALLOW_FEDERATION = "true"
+  CONTINUWUITY_ALLOW_PUBLIC_ROOM_DIRECTORY_OVER_FEDERATION = "false"
+  CONTINUWUITY_ALLOW_REGISTRATION = "true"
+  CONTINUWUITY_DATABASE_BACKUPS_TO_KEEP = "3"
+  CONTINUWUITY_DATABASE_BACKUP_PATH = "/data/backups"
+  CONTINUWUITY_DATABASE_PATH = "/data/database"
+  CONTINUWUITY_LOCKDOWN_PUBLIC_ROOM_DIRECTORY = "true"
+  CONTINUWUITY_LOG_COLORS = "false"
+  CONTINUWUITY_MAX_REQUEST_SIZE = "20971520"
+  CONTINUWUITY_OAUTH__OIDC__DISCOVERY_URL = "https://id.rati.chat"
+  CONTINUWUITY_OAUTH__OIDC__PROFILE_KEY_IMPORT_MODE = "on_registration"
+  CONTINUWUITY_OAUTH__OIDC__PROMPT_FOR_LOCALPART = "true"
+  CONTINUWUITY_PORT = "8008"
+  CONTINUWUITY_SERVER_NAME = "rati.chat"
+  CONTINUWUITY_WELL_KNOWN__CLIENT = "https://matrix.rati.chat"
+  CONTINUWUITY_WELL_KNOWN__SERVER = "matrix.rati.chat:443"
+
+[[mounts]]
+  source = "matrix_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8008
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 100
+    hard_limit = 150
+
+  [[http_service.checks]]
+    grace_period = "30s"
+    interval = "30s"
+    method = "GET"
+    timeout = "10s"
+    path = "/_matrix/client/versions"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"
+
+[[restart]]
+  policy = "always"

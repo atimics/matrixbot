@@ -1,0 +1,26 @@
+{
+  "brand": "RatiChat",
+  "default_server_name": "rati.chat",
+  "default_server_config": {
+    "m.homeserver": {
+      "base_url": "https://matrix.rati.chat",
+      "server_name": "rati.chat"
+    }
+  },
+  "disable_custom_urls": true,
+  "default_federate": true,
+  "default_theme": "dark",
+  "permalink_prefix": "https://chat.rati.chat",
+  "room_directory": {
+    "servers": [
+      "rati.chat"
+    ]
+  },
+  "sso_redirect_options": {
+    "immediate": false,
+    "on_welcome_page": true,
+    "on_login_page": true
+  },
+  "show_labs_settings": false,
+  "mobile_guide_toast": true
+}

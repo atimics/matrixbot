@@ -1,0 +1,44 @@
+name: ratichat-matrix-pilot
+
+services:
+  continuwuity:
+    build:
+      context: ./continuwuity
+    environment:
+      CONTINUWUITY_ADDRESS: 0.0.0.0
+      CONTINUWUITY_ALLOW_FEDERATION: "false"
+      CONTINUWUITY_ALLOW_REGISTRATION: "false"
+      CONTINUWUITY_DATABASE_PATH: /data/database
+      CONTINUWUITY_LOG_COLORS: "false"
+      CONTINUWUITY_PORT: "8008"
+      CONTINUWUITY_SERVER_NAME: localhost
+    ports:
+      - "127.0.0.1:8008:8008"
+    volumes:
+      - matrix-local:/data
+
+  pocket-id:
+    build:
+      context: ./pocket-id
+    environment:
+      ALLOW_INSECURE_CALLBACK_URLS: "false"
+      APP_URL: http://localhost:1411
+      DB_CONNECTION_STRING: /app/data/pocket-id.db
+      ENCRYPTION_KEY: local-validation-key-32-bytes-only
+      TRUST_PROXY: "false"
+    ports:
+      - "127.0.0.1:1411:1411"
+    volumes:
+      - pocket-local:/app/data
+
+  element-web:
+    build:
+      context: ./element-web
+    environment:
+      ELEMENT_WEB_PORT: "8080"
+    ports:
+      - "127.0.0.1:8080:8080"
+
+volumes:
+  matrix-local:
+  pocket-local:

@@ -1,0 +1,32 @@
+name: Matrix pilot infrastructure
+
+# This workflow validates local files. It never contacts Fly or deploys an app.
+
+on:
+  pull_request:
+    paths:
+      - "deploy/matrix/**"
+      - "scripts/validate-matrix-pilot.sh"
+      - ".github/workflows/matrix-pilot-infra.yml"
+      - ".github/workflows/deploy.yml"
+  push:
+    branches:
+      - develop
+    paths:
+      - "deploy/matrix/**"
+      - "scripts/validate-matrix-pilot.sh"
+      - ".github/workflows/matrix-pilot-infra.yml"
+      - ".github/workflows/deploy.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate configuration
+        run: ./scripts/validate-matrix-pilot.sh
+      - name: Check shell syntax
+        run: sh -n ./scripts/validate-matrix-pilot.sh

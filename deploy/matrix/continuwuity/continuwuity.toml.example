@@ -1,0 +1,31 @@
+# This file shows the effective production settings in a readable form.
+# The Fly deployment uses matching CONTINUWUITY_* environment variables.
+# Supply client_id and client_secret through Fly secrets before the first deploy.
+
+[global]
+server_name = "rati.chat"
+database_path = "/data/database"
+database_backup_path = "/data/backups"
+database_backups_to_keep = 3
+address = ["0.0.0.0"]
+port = 8008
+
+# Pocket ID controls who can sign in. This setting lets an invited Pocket ID
+# user create a Matrix account on their first successful OIDC login.
+allow_registration = true
+allow_federation = true
+allow_public_room_directory_over_federation = false
+lockdown_public_room_directory = true
+allow_device_name_federation = false
+max_request_size = 20971520
+
+[global.well_known]
+client = "https://matrix.rati.chat"
+server = "matrix.rati.chat:443"
+
+[global.oauth.oidc]
+discovery_url = "https://id.rati.chat"
+client_id = "<set-with-fly-secrets>"
+client_secret = "<set-with-fly-secrets>"
+prompt_for_localpart = true
+profile_key_import_mode = "on_registration"
