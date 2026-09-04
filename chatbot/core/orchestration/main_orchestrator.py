@@ -31,6 +31,7 @@ from ..world_state.payload_builder import PayloadBuilder
 from .processing_hub import ProcessingHub, ProcessingConfig
 from .rate_limiter import RateLimiter, RateLimitConfig
 from ..proactive import ProactiveConversationEngine
+from .capability_policy import CapabilityPolicy
 
 logger = logging.getLogger(__name__)
 
@@ -43,12 +44,21 @@ class TraditionalProcessor:
     handling the traditional full-payload processing approach.
     """
     
-    def __init__(self, ai_engine, tool_registry, rate_limiter, context_manager, action_context):
+    def __init__(
+        self,
+        ai_engine,
+        tool_registry,
+        rate_limiter,
+        context_manager,
+        action_context,
+        capability_policy,
+    ):
         self.ai_engine = ai_engine
         self.tool_registry = tool_registry
         self.rate_limiter = rate_limiter
         self.context_manager = context_manager
         self.action_context = action_context
+        self.capability_policy = capability_policy
         
     async def process_payload(self, payload: Dict[str, Any], active_channels: list) -> None:
         """
@@ -60,7 +70,12 @@ class TraditionalProcessor:
         """
         try:
             # Add available tools to the payload
-            payload["available_tools"] = self.tool_registry.get_tool_descriptions_for_ai()
+            allowed_tool_names = self.capability_policy.filter_tool_names(
+                self.tool_registry.get_tool_names()
+            )
+            payload["available_tools"] = self.tool_registry.get_tool_descriptions_for_ai(
+                allowed_tool_names=allowed_tool_names
+            )
             
             # Generate a cycle ID for this decision
             cycle_id = payload.get("cycle_id", f"cycle_{int(time.time() * 1000)}")
@@ -86,10 +101,17 @@ class TraditionalProcessor:
     async def _execute_action(self, action: ActionPlan) -> None:
         """Execute a single action."""
         try:
+            denial_reason = self.capability_policy.denial_reason(
+                action.action_type, action.parameters
+            )
+            if denial_reason:
+                await self._record_blocked_action(action, denial_reason)
+                return
+
             # Get the tool from registry
-            tool = self.tool_registry.get_tool(action.action_type)
+            tool = self.tool_registry.get_enabled_tool(action.action_type)
             if not tool:
-                logger.error(f"Tool not found: {action.action_type}")
+                logger.error(f"Tool unavailable: {action.action_type}")
                 return
                 
             # Execute the tool with parameters and context
@@ -106,7 +128,6 @@ class TraditionalProcessor:
                     "parameters": action.parameters
                 }
             )
-            
         except Exception as e:
             logger.error(f"Error executing action {action.action_type}: {e}")
             # Log the failed action
@@ -120,6 +141,23 @@ class TraditionalProcessor:
                     "parameters": action.parameters
                 }
             )
+
+    async def _record_blocked_action(
+        self, action: ActionPlan, message: str
+    ) -> Dict[str, str]:
+        """Record a model action blocked by the active capability profile."""
+        logger.warning(message)
+        await self.context_manager.add_tool_result(
+            channel_id="system",
+            tool_name=action.action_type,
+            result={
+                "status": "blocked",
+                "message": message,
+                "reasoning": action.reasoning,
+                "parameters": action.parameters,
+            },
+        )
+        return {"status": "blocked", "error": message}
 
     async def _execute_actions(self, actions: list) -> None:
         """
@@ -156,11 +194,17 @@ class TraditionalProcessor:
     async def _execute_action_and_return_result(self, action: ActionPlan) -> dict:
         """Execute a single action and return the result for coordination."""
         try:
+            denial_reason = self.capability_policy.denial_reason(
+                action.action_type, action.parameters
+            )
+            if denial_reason:
+                return await self._record_blocked_action(action, denial_reason)
+
             # Get the tool from registry
-            tool = self.tool_registry.get_tool(action.action_type)
+            tool = self.tool_registry.get_enabled_tool(action.action_type)
             if not tool:
-                logger.error(f"Tool not found: {action.action_type}")
-                return {"status": "error", "error": f"Tool not found: {action.action_type}"}
+                logger.error(f"Tool unavailable: {action.action_type}")
+                return {"status": "error", "error": f"Tool unavailable: {action.action_type}"}
                 
             # Execute the tool with parameters and context
             result = await tool.execute(action.parameters, self.action_context)
@@ -207,6 +251,9 @@ class OrchestratorConfig:
     
     # AI Model settings
     ai_model: str = "openai/gpt-4o-mini"
+    capability_profile: str = field(
+        default_factory=lambda: settings.BOT_CAPABILITY_PROFILE
+    )
 
 
 class MainOrchestrator:
@@ -222,6 +269,7 @@ class MainOrchestrator:
     
     def __init__(self, config: Optional[OrchestratorConfig] = None):
         self.config = config or OrchestratorConfig()
+        self.capability_policy = CapabilityPolicy(self.config.capability_profile)
         
         # Core components
         self.world_state = WorldStateManager()
@@ -553,7 +601,8 @@ class MainOrchestrator:
             tool_registry=self.tool_registry,
             rate_limiter=self.rate_limiter,
             context_manager=self.context_manager,
-            action_context=self.action_context
+            action_context=self.action_context,
+            capability_policy=self.capability_policy,
         )
         
         self.processing_hub.set_traditional_processor(traditional_processor)
@@ -884,6 +933,12 @@ class MainOrchestrator:
 
     async def _execute_action(self, action) -> None:
         """Execute a single action - wrapper for test compatibility."""
+        denial_reason = self.capability_policy.denial_reason(
+            action.action_type, action.parameters
+        )
+        if denial_reason:
+            logger.warning(denial_reason)
+            return
         if hasattr(self.processing_hub, 'traditional_processor') and self.processing_hub.traditional_processor:
             await self.processing_hub.traditional_processor._execute_action(action)
         else:

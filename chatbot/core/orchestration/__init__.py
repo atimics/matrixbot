@@ -12,6 +12,7 @@ This package contains:
 from .main_orchestrator import MainOrchestrator, OrchestratorConfig, TraditionalProcessor
 from .processing_hub import ProcessingHub, ProcessingConfig
 from .rate_limiter import RateLimiter, RateLimitConfig
+from .capability_policy import CapabilityPolicy, PUBLIC_BOT_ALLOWED_TOOLS
 
 __all__ = [
     "MainOrchestrator",
@@ -21,4 +22,6 @@ __all__ = [
     "ProcessingConfig",
     "RateLimiter",
     "RateLimitConfig",
+    "CapabilityPolicy",
+    "PUBLIC_BOT_ALLOWED_TOOLS",
 ]
