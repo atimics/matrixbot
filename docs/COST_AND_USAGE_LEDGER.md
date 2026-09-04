@@ -20,8 +20,32 @@ database goes through the upgrade check in
 [DEPLOYMENT_OPTIONS.md](DEPLOYMENT_OPTIONS.md#upgrade-rules).
 
 Keep Fly machine-creating autoscaling off during the pilot. Check the
-month-to-date Fly bill each day. Record the check in the current operations
-log. The model alert and stop are enforced inside RatiChat.
+month-to-date Fly bill each day. Record the check in the daily table below.
+The model alert and stop are enforced inside RatiChat.
+
+## Launch checkpoint: 2026-09-04
+
+The four production app names are reserved on Fly.io.
+
+| Fly app | Launch state | Machine | Live volume | Region |
+| --- | --- | --- | --- | --- |
+| `ratichat-chat` | Running | One `shared-cpu-1x`, 256 MB | - | `sjc` |
+| `ratichat-id` | Reserved; no Machine yet | - | `pocket_data`, 1 GB | `sjc` |
+| `ratichat-matrix` | Reserved; no Machine yet | - | `matrix_data`, 10 GB | `sjc` |
+| `ratichat-bot-prod` | Reserved; no Machine yet | - | - | - |
+
+Actual Fly invoice values are pending. The fixed values in the `Launch plan`
+row remain planning estimates until they are replaced with invoice values.
+
+## Daily month-to-date checks
+
+Add one row after each daily Fly bill check. Keep provider usage counts
+month-to-date so the last row can be reconciled with the monthly invoice.
+
+| Check date | Fly MTD bill | Running Machines | Provisioned volume | Accepted Matrix events | Accepted Farcaster events | Completed replies | Model input / output tokens | Neynar credits | Evidence or note |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 2026-09-04 | pending | 1 | 11 GB | pending | pending | pending | pending | pending | Launch infrastructure checkpoint |
+| YYYY-MM-DD | $0.00 | 0 | 0 GB | 0 | 0 | 0 | 0 / 0 | 0 | Link to billing and usage evidence |
 
 ## Monthly cost ledger
 
