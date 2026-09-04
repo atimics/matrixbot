@@ -372,6 +372,11 @@ The system supports deployment on:
 
 See [Deployment Guide](DEVELOPMENT.md#deployment-options) for detailed instructions.
 
+For the planned `rati.chat` service, see the [Fly.io deployment
+options](docs/DEPLOYMENT_OPTIONS.md) and the [cost and usage
+ledger](docs/COST_AND_USAGE_LEDGER.md). The invited pilot uses Continuwuity,
+Pocket ID passkeys, Element Web, and a fixed-cost target below $25 per month.
+
 ## 🧪 Testing
 
 The system includes comprehensive testing infrastructure:
@@ -520,6 +525,8 @@ Comprehensive documentation is available:
 - **[ARCHITECTURE.md](ARCHITECTURE.md)**: Detailed system architecture and design
 - **[DEVELOPMENT.md](DEVELOPMENT.md)**: Development setup, workflows, and guidelines
 - **[API.md](API.md)**: API reference and integration details
+- **[Deployment options](docs/DEPLOYMENT_OPTIONS.md)**: Fly.io choices, costs, recovery targets, and upgrade rules
+- **[Cost and usage ledger](docs/COST_AND_USAGE_LEDGER.md)**: Monthly cost attribution and uptake measures
 
 ### 📚 Additional Resources
 
