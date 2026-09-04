@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Depends
 
 from ..schemas import ConfigUpdate, StatusResponse
 from chatbot.core.orchestration import MainOrchestrator
-from chatbot.config import settings
+from chatbot.config import matrix_auth_is_configured, settings
 from ..dependencies import get_orchestrator
 
 logger = logging.getLogger(__name__)
@@ -47,7 +47,7 @@ async def get_configuration(orchestrator: MainOrchestrator = Depends(get_orchest
                 )
             },
             "integrations": {
-                "matrix_enabled": bool(settings.MATRIX_USER_ID and settings.MATRIX_PASSWORD),
+                "matrix_enabled": matrix_auth_is_configured(settings),
                 "farcaster_enabled": bool(settings.NEYNAR_API_KEY),
                 "arweave_enabled": bool(
                     settings.ARWEAVE_INTERNAL_UPLOADER_SERVICE_URL

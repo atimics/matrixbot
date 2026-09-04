@@ -26,7 +26,7 @@ from nio import (
     RoomSendResponse,
 )
 
-from ...config import settings
+from ...config import matrix_auth_is_configured, settings
 from ...core.world_state import Channel, Message, WorldStateManager
 from ..base import Integration, IntegrationError, IntegrationConnectionError
 
@@ -57,6 +57,8 @@ class MatrixObserver(Integration):
         self.homeserver = settings.MATRIX_HOMESERVER
         self.user_id = settings.MATRIX_USER_ID
         self.password = settings.MATRIX_PASSWORD
+        self.access_token = settings.MATRIX_ACCESS_TOKEN
+        self.device_id = settings.MATRIX_DEVICE_ID
         self.client: Optional[AsyncClient] = None
         self.sync_task: Optional[asyncio.Task] = None
         self.channels_to_monitor = []
@@ -66,11 +68,13 @@ class MatrixObserver(Integration):
         self.store_path.mkdir(parents=True, exist_ok=True)
         
         # Check for Matrix configuration - disable if not available
-        self._enabled = all([self.homeserver, self.user_id, self.password])
+        self._enabled = matrix_auth_is_configured(settings)
         if not self._enabled:
             logger.warning(
                 "Matrix configuration incomplete. Matrix observer will be disabled. "
-                "Check MATRIX_HOMESERVER, MATRIX_USER_ID, and MATRIX_PASSWORD environment variables."
+                "Set MATRIX_HOMESERVER, MATRIX_USER_ID, and either MATRIX_PASSWORD "
+                "or MATRIX_ACCESS_TOKEN. MATRIX_ACCESS_TOKEN also requires "
+                "MATRIX_DEVICE_ID."
             )
             return
 
@@ -95,12 +99,11 @@ class MatrixObserver(Integration):
 
         # Create client with device configuration and store path
         device_name = settings.DEVICE_NAME
-        device_id = settings.MATRIX_DEVICE_ID
 
         self.client = AsyncClient(
             self.homeserver,
             self.user_id,
-            device_id=device_id,
+            device_id=self.device_id,
             store_path=str(self.store_path),
         )
 
@@ -115,24 +118,7 @@ class MatrixObserver(Integration):
         self.client.add_event_callback(self._on_membership_change, RoomMemberEvent)
 
         try:
-            # Try to load saved token
-            if await self._load_token():
-                logger.info("MatrixObserver: Using saved authentication token")
-            else:
-                # Login with password and device configuration
-                logger.info("MatrixObserver: Logging in with password...")
-                response = await self.client.login(
-                    password=self.password, device_name=device_name
-                )
-                if isinstance(response, LoginResponse):
-                    logger.info(
-                        f"MatrixObserver: Login successful as {response.user_id}"
-                    )
-                    logger.info(f"MatrixObserver: Device ID: {response.device_id}")
-                    await self._save_token()
-                else:
-                    logger.error(f"MatrixObserver: Login failed: {response}")
-                    raise IntegrationConnectionError(f"Login failed: {response}")
+            await self._authenticate(device_name)
 
             # Update world state
             self.world_state.update_system_status({"matrix_connected": True})
@@ -226,19 +212,23 @@ class MatrixObserver(Integration):
 
     async def set_credentials(self, credentials: Dict[str, str]) -> None:
         """Set Matrix credentials."""
-        required_keys = ["homeserver", "user_id", "password"]
-        missing_keys = [key for key in required_keys if key not in credentials]
-        if missing_keys:
-            logger.warning(f"Matrix integration disabled: Missing required credentials: {missing_keys}")
-            self._enabled = False
+        self.homeserver = credentials.get("homeserver")
+        self.user_id = credentials.get("user_id")
+        self.password = credentials.get("password")
+        self.access_token = credentials.get("access_token")
+        self.device_id = credentials.get("device_id")
+
+        has_identity = bool(self.homeserver and self.user_id)
+        has_auth = bool(self.access_token or self.password)
+        token_has_device = bool(not self.access_token or self.device_id)
+        self._enabled = has_identity and has_auth and token_has_device
+
+        if not self._enabled:
+            logger.warning(
+                "Matrix integration disabled: provide homeserver, user_id, and "
+                "password or access_token. access_token also requires device_id."
+            )
             return
-            
-        self.homeserver = credentials["homeserver"]
-        self.user_id = credentials["user_id"]
-        self.password = credentials["password"]
-        
-        # Update enabled status
-        self._enabled = all([self.homeserver, self.user_id, self.password])
         
         logger.info(f"Matrix credentials updated for {self.user_id}@{self.homeserver}")
 
@@ -611,6 +601,72 @@ class MatrixObserver(Integration):
             channel.power_levels.update(room_details["power_levels"])
             channel.last_checked = room_details["last_checked"]
 
+    async def _authenticate(self, device_name: str) -> None:
+        """Restore or establish a verified Matrix session."""
+        if await self._load_token():
+            logger.info("MatrixObserver: Using saved authentication token")
+            return
+
+        if self.access_token:
+            logger.info("MatrixObserver: Verifying configured access token...")
+            if await self._use_configured_access_token():
+                logger.info("MatrixObserver: Using configured access token")
+                await self._save_token()
+                return
+
+        if not self.password:
+            raise IntegrationConnectionError(
+                "Matrix access token verification failed and password fallback is unavailable"
+            )
+
+        logger.info("MatrixObserver: Logging in with password...")
+        response = await self.client.login(
+            password=self.password, device_name=device_name
+        )
+        if not isinstance(response, LoginResponse):
+            logger.error(f"MatrixObserver: Login failed: {response}")
+            raise IntegrationConnectionError(f"Login failed: {response}")
+
+        logger.info(f"MatrixObserver: Login successful as {response.user_id}")
+        logger.info(f"MatrixObserver: Device ID: {response.device_id}")
+        await self._save_token()
+
+    async def _use_configured_access_token(self) -> bool:
+        """Restore and verify the configured service access token."""
+        if not self.access_token or not self.device_id:
+            return False
+
+        try:
+            self.client.restore_login(
+                self.user_id,
+                self.device_id,
+                self.access_token,
+            )
+            response = await self.client.whoami()
+            if getattr(response, "user_id", None) == self.user_id:
+                logger.info(
+                    f"MatrixObserver: Configured token verified for {self.user_id}"
+                )
+                return True
+
+            logger.warning(
+                "MatrixObserver: Configured access token did not verify for the "
+                "configured user"
+            )
+        except Exception as e:
+            logger.warning(
+                f"MatrixObserver: Configured access token verification failed: {e}"
+            )
+
+        self._clear_client_auth()
+        return False
+
+    def _clear_client_auth(self) -> None:
+        """Clear a rejected restored session before another login method."""
+        self.client.access_token = ""
+        self.client.user_id = self.user_id
+        self.client.device_id = self.device_id or ""
+
     async def _load_token(self) -> bool:
         """Load saved authentication token"""
         token_file = Path("matrix_token.json")
@@ -621,23 +677,50 @@ class MatrixObserver(Integration):
             with open(token_file, "r") as f:
                 token_data = json.load(f)
 
-            self.client.access_token = token_data["access_token"]
-            self.client.user_id = token_data["user_id"]
-            self.client.device_id = token_data["device_id"]
+            token_access_token = token_data["access_token"]
+            token_user_id = token_data["user_id"]
+            token_device_id = token_data["device_id"]
+            token_homeserver = token_data.get("homeserver")
+            if self.access_token and token_access_token != self.access_token:
+                logger.info(
+                    "MatrixObserver: Configured access token replaces saved token"
+                )
+                return False
+            if token_user_id != self.user_id:
+                logger.warning(
+                    "MatrixObserver: Saved token belongs to a different user"
+                )
+                return False
+            if token_homeserver and token_homeserver != self.homeserver:
+                logger.warning(
+                    "MatrixObserver: Saved token belongs to a different homeserver"
+                )
+                return False
+            if not token_device_id:
+                logger.warning("MatrixObserver: Saved token has no device ID")
+                return False
+
+            self.client.restore_login(
+                token_user_id,
+                token_device_id,
+                token_access_token,
+            )
 
             # Verify token is still valid
             response = await self.client.whoami()
-            if hasattr(response, "user_id") and response.user_id:
+            if getattr(response, "user_id", None) == self.user_id:
                 logger.info(
                     f"MatrixObserver: Token verified for user {response.user_id}"
                 )
                 return True
             else:
                 logger.warning(f"MatrixObserver: Saved token is invalid: {response}")
+                self._clear_client_auth()
                 return False
 
         except Exception as e:
             logger.warning(f"MatrixObserver: Failed to load token: {e}")
+            self._clear_client_auth()
             return False
 
     async def _save_token(self):
