@@ -30,3 +30,28 @@ jobs:
         run: ./scripts/validate-matrix-pilot.sh
       - name: Check shell syntax
         run: sh -n ./scripts/validate-matrix-pilot.sh
+
+  pocket-signup:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test the Pocket ID signup flow
+        run: docker build --tag ratichat-pocket-signup deploy/matrix/pocket-id
+      - name: Check the patched app starts
+        run: |
+          docker run --detach --name pocket-signup-check \
+            --publish 127.0.0.1:1411:1411 \
+            --env APP_URL=http://localhost:1411 \
+            --env ENCRYPTION_KEY=local-validation-key-32-bytes-only \
+            ratichat-pocket-signup
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:1411/healthz; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs pocket-signup-check
+          exit 1
+      - name: Remove the test container
+        if: always()
+        run: docker rm --force pocket-signup-check || true

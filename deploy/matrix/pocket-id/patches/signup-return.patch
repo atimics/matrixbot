@@ -1,0 +1,180 @@
+diff --git a/frontend/src/lib/utils/signup-navigation.js b/frontend/src/lib/utils/signup-navigation.js
+new file mode 100644
+index 0000000..4cc51a5
+--- /dev/null
++++ b/frontend/src/lib/utils/signup-navigation.js
+@@ -0,0 +1,26 @@
++/** Keep signup return paths on the local OIDC flow. */
++export function signupReturnPath(/** @type {string | null | undefined} */ value) {
++	if (!value || !value.startsWith('/') || value.startsWith('//') || /[\\\r\n]/.test(value)) {
++		return '/settings';
++	}
++	const url = new URL(value, 'https://signup.invalid');
++	if (
++		url.origin !== 'https://signup.invalid' ||
++		!['/authorize', '/interaction'].includes(url.pathname) ||
++		url.hash
++	) {
++		return '/settings';
++	}
++	return url.pathname + url.search;
++}
++
++/** Carry the OIDC flow through each signup page. */
++export function signupPath(
++	/** @type {'/signup' | '/signup/add-passkey' | '/login'} */ path,
++	/** @type {string | null | undefined} */ returnPath
++) {
++	const destination = signupReturnPath(returnPath);
++	return destination === '/settings'
++		? path
++		: `${path}?${new URLSearchParams({ redirect: destination })}`;
++}
+diff --git a/frontend/src/routes/interaction/+page.svelte b/frontend/src/routes/interaction/+page.svelte
+index a98b99d..86600b4 100644
+--- a/frontend/src/routes/interaction/+page.svelte
++++ b/frontend/src/routes/interaction/+page.svelte
+@@ -1,5 +1,6 @@
+ <script lang="ts">
+ 	import { invalidateAll } from '$app/navigation';
++	import { signupPath } from '$lib/utils/signup-navigation.js';
+ 	import FormattedMessage from '$lib/components/formatted-message.svelte';
+ 	import SignInWrapper from '$lib/components/login-wrapper.svelte';
+ 	import ScopeList from '$lib/components/scope-list.svelte';
+@@ -199,8 +200,21 @@
+ 		<Button class="flex-1" {isLoading} onclick={handlePipeline} autofocus={true}>
+ 			{errorMessage ? m.try_again() : m.sign_in()}
+ 		</Button>
+-		<Button class="flex-1" variant="secondary" href={document.referrer || '/'}>
+-			{m.cancel()}
+-		</Button>
++		{#if !$userStore && $appConfigStore.allowUserSignups === 'open'}
++			<Button
++				class="flex-1"
++				variant="secondary"
++				href={signupPath(
++					'/signup',
++					`/interaction?interaction=${encodeURIComponent(interactionSession.id)}`
++				)}
++			>
++				{m.signup()}
++			</Button>
++		{:else}
++			<Button class="flex-1" variant="secondary" href={document.referrer || '/'}>
++				{m.cancel()}
++			</Button>
++		{/if}
+ 	</div>
+ </SignInWrapper>
+diff --git a/frontend/src/routes/login/+page.svelte b/frontend/src/routes/login/+page.svelte
+index 6714c6c..27003ef 100644
+--- a/frontend/src/routes/login/+page.svelte
++++ b/frontend/src/routes/login/+page.svelte
+@@ -1,5 +1,6 @@
+ <script lang="ts">
+ 	import { goto } from '$app/navigation';
++	import { signupPath } from '$lib/utils/signup-navigation.js';
+ 	import SignInWrapper from '$lib/components/login-wrapper.svelte';
+ 	import { Button } from '$lib/components/ui/button';
+ 	import { m } from '$lib/paraglide/messages';
+@@ -57,7 +58,7 @@
+ 	{/if}
+ 	<div class="mt-10 flex justify-center gap-3 w-full max-w-[450px]">
+ 		{#if $appConfigStore.allowUserSignups === 'open'}
+-			<Button class="w-[50%]" variant="secondary" href="/signup">
++			<Button class="w-[50%]" variant="secondary" href={signupPath('/signup', data.redirect)}>
+ 				{m.signup()}
+ 			</Button>
+ 		{/if}
+diff --git a/frontend/src/routes/settings/admin/application-configuration/forms/app-config-general-form.svelte b/frontend/src/routes/settings/admin/application-configuration/forms/app-config-general-form.svelte
+index 891aa71..470e85e 100644
+--- a/frontend/src/routes/settings/admin/application-configuration/forms/app-config-general-form.svelte
++++ b/frontend/src/routes/settings/admin/application-configuration/forms/app-config-general-form.svelte
+@@ -25,7 +25,8 @@
+ 
+ 	const homePageUrlOptions = [
+ 		{ label: m.my_account(), value: '/settings/account' },
+-		{ label: m.my_apps(), value: '/settings/apps' }
++		{ label: m.my_apps(), value: '/settings/apps' },
++		{ label: 'RATi Chat', value: 'https://chat.rati.chat/#/login' }
+ 	];
+ 
+ 	const updatedAppConfig = {
+diff --git a/frontend/src/routes/signup/+page.svelte b/frontend/src/routes/signup/+page.svelte
+index 058a5e3..4b53855 100644
+--- a/frontend/src/routes/signup/+page.svelte
++++ b/frontend/src/routes/signup/+page.svelte
+@@ -1,5 +1,6 @@
+ <script lang="ts">
+ 	import { goto } from '$app/navigation';
++	import { signupPath } from '$lib/utils/signup-navigation.js';
+ 	import SignInWrapper from '$lib/components/login-wrapper.svelte';
+ 	import SignupForm from '$lib/components/signup/signup-form.svelte';
+ 	import { Button } from '$lib/components/ui/button';
+@@ -30,7 +31,7 @@
+ 
+ 		await userStore.setUser(result.data);
+ 
+-		goto('/signup/add-passkey');
++		goto(signupPath('/signup/add-passkey', data.redirect));
+ 		return true;
+ 	}
+ 
+@@ -72,7 +73,7 @@
+ 	{#if $appConfigStore.allowUserSignups === 'open' || data.token}
+ 		<SignupForm callback={handleSignup} />
+ 		<div class="mt-10 flex w-full items-center justify-between gap-2">
+-			<a class="text-muted-foreground mt-5 flex text-sm" href="/login"
++			<a class="text-muted-foreground mt-5 flex text-sm" href={signupPath('/login', data.redirect)}
+ 				><LucideChevronLeft class="size-5" /> {m.back()}</a
+ 			>
+ 			<Button type="submit" form="sign-up-form" onclick={() => (error = undefined)}
+diff --git a/frontend/src/routes/signup/+page.ts b/frontend/src/routes/signup/+page.ts
+index 82b6e36..4266a02 100644
+--- a/frontend/src/routes/signup/+page.ts
++++ b/frontend/src/routes/signup/+page.ts
+@@ -1,7 +1,9 @@
+ import type { PageLoad } from './$types';
++import { signupReturnPath } from '$lib/utils/signup-navigation.js';
+ 
+ export const load: PageLoad = async ({ url }) => {
+ 	return {
+-		token: url.searchParams.get('token') || undefined
++		token: url.searchParams.get('token') || undefined,
++		redirect: signupReturnPath(url.searchParams.get('redirect'))
+ 	};
+ };
+diff --git a/frontend/src/routes/signup/add-passkey/+page.svelte b/frontend/src/routes/signup/add-passkey/+page.svelte
+index 7eb7601..6256c35 100644
+--- a/frontend/src/routes/signup/add-passkey/+page.svelte
++++ b/frontend/src/routes/signup/add-passkey/+page.svelte
+@@ -11,6 +11,7 @@
+ 	import { fade } from 'svelte/transition';
+ 	import LoginLogoErrorSuccessIndicator from '../../login/components/login-logo-error-success-indicator.svelte';
+ 
++	let { data } = $props();
+ 	const webauthnService = new WebAuthnService();
+ 
+ 	let isLoading = $state(false);
+@@ -41,7 +42,8 @@
+ 			return;
+ 		}
+ 
+-		goto('/settings/account');
++		// A full navigation also resumes the server-owned /authorize endpoint.
++		window.location.assign(data.redirect);
+ 		isLoading = false;
+ 	}
+ 
+diff --git a/frontend/src/routes/signup/add-passkey/+page.ts b/frontend/src/routes/signup/add-passkey/+page.ts
+new file mode 100644
+index 0000000..6bff677
+--- /dev/null
++++ b/frontend/src/routes/signup/add-passkey/+page.ts
+@@ -0,0 +1,6 @@
++import type { PageLoad } from './$types';
++import { signupReturnPath } from '$lib/utils/signup-navigation.js';
++
++export const load: PageLoad = async ({ url }) => ({
++	redirect: signupReturnPath(url.searchParams.get('redirect'))
++});

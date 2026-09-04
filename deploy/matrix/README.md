@@ -113,6 +113,9 @@ fly certs add id.rati.chat --app ratichat-id
 
 Open `https://id.rati.chat/setup` and create the first admin passkey. Configure
 user signup as **Signup with token**. Keep anonymous email one-time access off.
+Follow the [self-service signup setup](pocket-id/README.md) to assign the chat
+group automatically and return new users to chat after passkey setup. That
+guide also covers the operator's choice to open public registration.
 Create a Pocket ID OIDC client named `RatiChat Matrix` with this exact callback:
 
 ```text
