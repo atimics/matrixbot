@@ -45,7 +45,7 @@ class NeynarAPIClient:
     def _get_headers(self, is_post: bool = False) -> Dict[str, str]:
         headers = {
             "accept": "application/json",
-            "api_key": self.api_key,
+            "x-api-key": self.api_key,
         }
         if is_post:
             headers["content-type"] = "application/json"
