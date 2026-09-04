@@ -147,14 +147,62 @@ def validate_public_config(errors: list[str]) -> None:
         errors,
     )
 
-    client = json.loads((ROOT / "well-known/matrix/client").read_text(encoding="utf-8"))
-    server = json.loads((ROOT / "well-known/matrix/server").read_text(encoding="utf-8"))
+    element_root = ROOT / "element-web"
+    client = json.loads(
+        (element_root / "well-known/matrix/client").read_text(encoding="utf-8")
+    )
+    server = json.loads(
+        (element_root / "well-known/matrix/server").read_text(encoding="utf-8")
+    )
     check(
         client.get("m.homeserver", {}).get("base_url") == "https://matrix.rati.chat",
         "client discovery URL changed",
         errors,
     )
     check(server.get("m.server") == "matrix.rati.chat:443", "server discovery URL changed", errors)
+
+    dockerfile = (element_root / "Dockerfile").read_text(encoding="utf-8")
+    check(
+        "COPY well-known /app/.well-known" in dockerfile,
+        "Element image must include Matrix discovery files",
+        errors,
+    )
+    check(
+        "COPY default.conf.template /etc/nginx/templates/default.conf.template" in dockerfile,
+        "Element image must install the discovery server configuration",
+        errors,
+    )
+
+    nginx = (element_root / "default.conf.template").read_text(encoding="utf-8")
+    check(
+        "server_name rati.chat chat.rati.chat;" in nginx,
+        "Element must serve the identity and chat hostnames",
+        errors,
+    )
+    client_location = nginx.split("location = /.well-known/matrix/client {", 1)
+    check(len(client_location) == 2, "client discovery route is missing", errors)
+    if len(client_location) == 2:
+        client_block = client_location[1].split("}", 1)[0]
+        check(
+            "default_type application/json;" in client_block,
+            "client discovery must use application/json",
+            errors,
+        )
+        check(
+            'add_header Access-Control-Allow-Origin "*" always;' in client_block,
+            "client discovery must allow browser CORS",
+            errors,
+        )
+
+    server_location = nginx.split("location = /.well-known/matrix/server {", 1)
+    check(len(server_location) == 2, "server discovery route is missing", errors)
+    if len(server_location) == 2:
+        server_block = server_location[1].split("}", 1)[0]
+        check(
+            "default_type application/json;" in server_block,
+            "server discovery must use application/json",
+            errors,
+        )
 
 
 def validate_identity_settings(errors: list[str]) -> None:

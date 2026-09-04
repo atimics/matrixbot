@@ -6,7 +6,7 @@ This directory contains the low-cost invited-pilot deployment for:
 | --- | --- | --- | --- | --- |
 | `matrix.rati.chat` | Continuwuity 26.8.1 | `ratichat-matrix` | shared CPU, 1 GB | 10 GB `matrix_data` volume |
 | `id.rati.chat` | Pocket ID 2.14.0 | `ratichat-id` | shared CPU, 512 MB | 1 GB `pocket_data` volume |
-| `chat.rati.chat` | Element Web 1.12.26 | `ratichat-chat` | shared CPU, 256 MB | stateless |
+| `chat.rati.chat` and `rati.chat` | Element Web 1.12.26 and Matrix discovery | `ratichat-chat` | shared CPU, 256 MB | stateless |
 
 Every image has a release tag and an immutable multi-platform digest. All three
 apps stay in the `sjc` region and keep one Machine active.
@@ -145,7 +145,8 @@ fly deploy deploy/matrix/continuwuity \
 fly certs add matrix.rati.chat --app ratichat-matrix
 ```
 
-Deploy Element Web after the Matrix versions endpoint is healthy:
+Deploy Element Web after the Matrix versions endpoint is healthy. The image
+also serves the Matrix discovery files for the `rati.chat` identity domain:
 
 ```sh
 curl --fail --silent --show-error \
@@ -154,25 +155,54 @@ curl --fail --silent --show-error \
 fly deploy deploy/matrix/element-web \
   --config deploy/matrix/element-web/fly.toml
 fly certs add chat.rati.chat --app ratichat-chat
+fly certs add rati.chat --app ratichat-chat
 ```
+
+Route `chat.rati.chat` to `ratichat-chat.fly.dev`. Route the apex `rati.chat`
+A and AAAA records to the addresses returned by:
+
+```sh
+fly ips list --app ratichat-chat
+```
+
+Wait for both certificates to become ready:
+
+```sh
+fly certs check chat.rati.chat --app ratichat-chat
+fly certs check rati.chat --app ratichat-chat
+```
+
+The apex now opens Element Web and owns Matrix discovery. Keep both public
+names on the same Fly app so a future web-host change also moves the discovery
+files as one tested unit.
 
 No workflow deploys these apps. Keep deployment manual until the production
 secrets, external backups, and recovery checks are ready.
 
 ## Publish Matrix discovery
 
-Serve the committed files from the existing `https://rati.chat` web host:
+The Element image serves these committed files:
 
-- `well-known/matrix/client` as `/.well-known/matrix/client`
-- `well-known/matrix/server` as `/.well-known/matrix/server`
+- `element-web/well-known/matrix/client` as `/.well-known/matrix/client`
+- `element-web/well-known/matrix/server` as `/.well-known/matrix/server`
 
-Serve both as `application/json`. Add this response header to the client file:
+Its Nginx template serves both as `application/json`. The client response also
+includes:
 
 ```text
 Access-Control-Allow-Origin: *
 ```
 
-The expected public values are:
+After DNS and certificates are ready, check the public headers and values:
+
+```sh
+curl --fail --silent --show-error --include \
+  https://rati.chat/.well-known/matrix/client
+curl --fail --silent --show-error --include \
+  https://rati.chat/.well-known/matrix/server
+```
+
+The expected values are:
 
 ```json
 {
@@ -195,7 +225,8 @@ Complete each check before sending an external invite:
 1. `https://id.rati.chat/healthz` returns HTTP 200.
 2. `https://matrix.rati.chat/_matrix/client/versions` returns HTTP 200.
 3. `https://chat.rati.chat/config.json` points only to `matrix.rati.chat`.
-4. Both `rati.chat` discovery files return the committed JSON.
+4. Both `rati.chat` discovery files return the committed JSON with
+   `Content-Type: application/json`.
 5. The client discovery response includes `Access-Control-Allow-Origin: *`.
 6. Matrix federation reaches `matrix.rati.chat` on port 443.
 7. An invited user enrolls two independent passkeys on separate authenticators.

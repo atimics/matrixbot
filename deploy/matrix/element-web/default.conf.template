@@ -1,0 +1,44 @@
+server {
+    listen ${ELEMENT_WEB_PORT};
+    listen [::]:${ELEMENT_WEB_PORT};
+    server_name rati.chat chat.rati.chat;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    location = /.well-known/matrix/client {
+        default_type application/json;
+        add_header Access-Control-Allow-Origin "*" always;
+        add_header Cache-Control "no-cache" always;
+        try_files $uri =404;
+    }
+
+    location = /.well-known/matrix/server {
+        default_type application/json;
+        add_header Cache-Control "no-cache" always;
+        try_files $uri =404;
+    }
+
+    location = /index.html {
+        add_header Cache-Control "no-cache";
+    }
+
+    location = /version {
+        add_header Cache-Control "no-cache";
+    }
+
+    location /i18n/ {
+        add_header Cache-Control "no-cache";
+    }
+
+    location /config {
+        root /tmp/element-web-config;
+        add_header Cache-Control "no-cache";
+    }
+
+    location /modules {
+        alias /modules;
+    }
+
+    error_page 500 502 503 504 /50x.html;
+}
