@@ -37,6 +37,7 @@ class AppConfig(BaseSettings):
     )
 
     # Chatbot Core
+    BOT_PUBLIC_URL: str = ""
     CHATBOT_DB_PATH: str = "data/chatbot.db"
     CHATBOT_ENV: str = "development"
     INTEGRATION_CREDENTIAL_KEY: Optional[str] = None

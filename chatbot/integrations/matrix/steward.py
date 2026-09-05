@@ -6,6 +6,7 @@ import json
 import logging
 import sqlite3
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import quote
 
@@ -38,6 +39,7 @@ class MatrixSteward:
             transport=self.transport,
         )
 
+    @contextmanager
     def _db(self):
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         db = sqlite3.connect(self.db_path, timeout=10)
@@ -46,7 +48,11 @@ class MatrixSteward:
             operation TEXT NOT NULL, target TEXT NOT NULL,
             created_at REAL NOT NULL, result TEXT NOT NULL
         )""")
-        return db
+        try:
+            with db:
+                yield db
+        finally:
+            db.close()
 
     def _reserve(self, source_event_id, operation, target):
         receipt_id = hashlib.sha256(
@@ -81,7 +87,7 @@ class MatrixSteward:
             response.raise_for_status()
         return {
             "status": "success",
-            "message": "Matrix health checked.",
+            "message": "Matrix API is healthy. Bot connection: " + ("ready." if observer and observer.client and observer.client.access_token else "waiting."),
             "matrix_api": "healthy",
             "matrix_versions": response.json().get("versions", []),
             "bot_connected": bool(observer and observer.client and observer.client.access_token),
@@ -112,7 +118,11 @@ class MatrixSteward:
                 return {**previous, "replayed": True, "receipt_id": receipt_id}
             try:
                 encoded_room = quote(room_id, safe="")
-                async with self._client(observer.client.access_token) as client:
+                token = (self.config.MATRIX_ADMIN_ACCESS_TOKEN if operation in {"publish", "unpublish"}
+                         else observer.client.access_token)
+                if not token:
+                    raise ValueError("Configure the management session to publish a room")
+                async with self._client(token) as client:
                     if operation in {"name", "topic"}:
                         response = await client.put(
                             f"/_matrix/client/v3/rooms/{encoded_room}/state/m.room.{operation}",

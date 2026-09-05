@@ -70,6 +70,18 @@ class TraditionalProcessor:
         """
         try:
             execution_scope = self.capability_policy.scope_from_payload(payload)
+            if self.capability_policy.profile == "matrix_steward":
+                if not self.ai_engine.api_key:
+                    return
+                if execution_scope.channel_id not in self.capability_policy.approved_matrix_room_ids:
+                    return
+                # Each request gets only its own room's messages. Global history,
+                # profiles, and thread summaries may contain private room data.
+                payload = {
+                    "current_processing_channel_id": execution_scope.channel_id,
+                    "channels": {execution_scope.channel_id: payload["channels"][execution_scope.channel_id]},
+                    "cycle_id": payload.get("cycle_id"),
+                }
 
             # Add available tools to the payload
             allowed_tool_names = self.capability_policy.filter_tool_names(
@@ -98,6 +110,23 @@ class TraditionalProcessor:
             # Execute selected actions
             for action in decision_result.selected_actions:
                 try:
+                    if action.action_type in {"manage_matrix_room", "manage_matrix_server", "matrix_server_status"}:
+                        result = await self._execute_action_and_return_result(action, execution_scope)
+                        if result.get("status") != "blocked":
+                            # Send the actual result as the reply, then finish this
+                            # turn. Model text produced before execution is stale.
+                            receipt = result.get("receipt_id")
+                            message = result.get("message", str(result))
+                            if receipt:
+                                message += "\n\nReceipt: " + receipt[:12]
+                            reply = ActionPlan("send_matrix_reply", {
+                                "channel_id": execution_scope.channel_id,
+                                "reply_to_id": execution_scope.latest_event_id,
+                                "content": message,
+                                "format_as_markdown": False,
+                            }, "Report the Matrix action result", 1)
+                            await self._execute_action(reply, execution_scope)
+                        break
                     await self._execute_action(action, execution_scope)
                 except Exception as e:
                     logger.error(f"Error executing action {action.action_type}: {e}")
@@ -348,6 +377,12 @@ class MainOrchestrator:
             api_key=settings.OPENROUTER_API_KEY,
             model=self.config.ai_model
         )
+        from ..openrouter_link import OpenRouterLink
+        self.openrouter_link = OpenRouterLink(
+            self.config.db_path, settings.INTEGRATION_CREDENTIAL_KEY,
+            settings.BOT_PUBLIC_URL,
+        )
+        self.ai_engine.api_key = self.openrouter_link.api_key() or settings.OPENROUTER_API_KEY
         
         # Initialize Arweave client for internal uploader service
         self.arweave_client = None

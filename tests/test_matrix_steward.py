@@ -187,3 +187,58 @@ async def test_uncertain_change_is_not_repeated_after_restart(tmp_path):
     result = await MatrixSteward(config(), db, httpx.MockTransport(handle)).server_action("backup", "$request")
     assert result["status"] == "uncertain"
     assert len(requests) == 1
+
+@pytest.mark.asyncio
+async def test_public_ai_payload_has_only_its_room():
+    engine = AsyncMock()
+    engine.make_decision.return_value = DecisionResult([], '', '', 'cycle')
+    data = payload(ROOM)
+    data['channels'][CONTROL] = {'type': 'matrix', 'recent_messages': [{'content': 'private owner request'}]}
+    data['action_history'] = ['private server result']
+    data['thread_context'] = {'private': 'private thread'}
+    processor = TraditionalProcessor(engine, ToolRegistry(), Mock(), AsyncMock(), ActionContext(), policy())
+    await processor.process_payload(data, [ROOM])
+    sent = engine.make_decision.call_args.args[0]
+    assert list(sent['channels']) == [ROOM]
+    assert 'private' not in json.dumps(sent)
+
+
+@pytest.mark.asyncio
+async def test_management_reply_uses_actual_receipt():
+    registry = ToolRegistry()
+    registry.register_tool(ManageMatrixServerTool())
+    reply = Mock(name='reply')
+    reply.name = 'send_matrix_reply'
+    reply.enabled = True
+    reply.parameters_schema = {}
+    reply.execute = AsyncMock(return_value={'status': 'success'})
+    registry.register_tool(reply)
+    context = ActionContext()
+    context.matrix_steward = SimpleNamespace(server_action=AsyncMock(return_value={
+        'status': 'response_received', 'message': 'Backup completed', 'receipt_id': 'receipt123456789',
+    }))
+    engine = AsyncMock()
+    engine.make_decision.return_value = DecisionResult([
+        ActionPlan('manage_matrix_server', {'operation': 'backup', 'source_event_id': '$request'}, 'test', 5),
+        ActionPlan('send_matrix_reply', {'content': 'invented result'}, 'test', 1),
+    ], '', '', 'cycle')
+    processor = TraditionalProcessor(engine, registry, Mock(), AsyncMock(), context, policy())
+    await processor.process_payload(payload(), [CONTROL])
+    reply.execute.assert_awaited_once()
+    params = reply.execute.call_args.args[0]
+    assert params['channel_id'] == CONTROL
+    assert params['reply_to_id'] == '$request'
+    assert params['content'] == 'Backup completed\n\nReceipt: receipt12345'
+
+
+@pytest.mark.asyncio
+async def test_room_directory_uses_manager_session(tmp_path):
+    def handle(request):
+        assert request.headers['Authorization'] == 'Bearer admin-test-token'
+        assert request.url.path.endswith('/directory/list/room/' + ROOM)
+        assert json.loads(request.content) == {'visibility': 'public'}
+        return httpx.Response(200, json={})
+    steward = MatrixSteward(config(), str(tmp_path / 'db'), httpx.MockTransport(handle))
+    observer = SimpleNamespace(client=SimpleNamespace(access_token='bot-token'))
+    result = await steward.room_action({'room_id': ROOM, 'operation': 'publish', 'source_event_id': '$publish'}, observer)
+    assert result['status'] == 'success'

@@ -109,6 +109,8 @@ class ChatbotAPIServer:
         
     def _setup_routers(self):
         """Include all modular routers."""
+        from .routers.openrouter import create_router
+        self.app.include_router(create_router(self.orchestrator))
         self.app.include_router(system.router)
         self.app.include_router(tools.router)
         self.app.include_router(config.router)

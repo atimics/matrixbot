@@ -48,10 +48,9 @@ handling. The server admin room stays outside the AI conversation history.
 The server command tool accepts four named operations and checks the sender
 and reply event ID of each result.
 
-When local room directory publication is restricted to server admins, publish
-the initial public room through the server admin account. A room creator can
-still manage its name and topic. The room publication tool reports the server's
-permission result.
+Room directory changes use the dedicated manager session. Name and topic
+changes use the chat account session. Both require an owner request for a
+configured public room.
 
 ## Operator examples
 
@@ -63,9 +62,30 @@ In the control room, ask:
 - "Set our chat room topic to Welcome to RATi Chat."
 
 Use the public room for conversation with RATi. Its topic should explain that
-messages addressed to the bot are processed by its configured AI provider.
+messages in the room are processed by OpenRouter and the selected model provider.
 
 Verify an actual reply after launch, then test a room topic change and an
 online backup from the operator room. Check that an ordinary user's public
 message cannot run management tools. Volume snapshots and the online database
 backup remain on Fly; keep an external copy for disaster recovery.
+
+## Connect OpenRouter
+
+Set `BOT_PUBLIC_URL` to the bot's HTTPS address. The default Fly address is
+`https://ratichat-bot-prod.fly.dev`. Configure `ADMIN_API_TOKEN` and
+`INTEGRATION_CREDENTIAL_KEY` as Fly secrets before launch.
+
+An authenticated `POST /api/ai/openrouter/link` returns a one-time owner URL
+that expires in 15 minutes. Open it in the browser and choose **Connect
+OpenRouter**. OpenRouter handles sign-in, approval, and the key's spending
+limit. RATi uses S256 PKCE and binds the callback to the owner browser session.
+
+The resulting key is encrypted in `/data/chatbot.db` using
+`INTEGRATION_CREDENTIAL_KEY`. The running AI engine loads it at once and reads
+it again after restart. Keep the encryption secret when deploying updates.
+The connection page links to the key's settings on OpenRouter. Each owner
+session lasts 30 minutes; issue a fresh owner URL for later changes.
+
+This key powers the shared RATi bot. Each AI request includes messages from its
+current approved room. The private control room has its own conversation
+context. RATi sends management receipts directly back to the requesting room.
