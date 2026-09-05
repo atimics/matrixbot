@@ -8,7 +8,7 @@ import pytest
 from chatbot.config import AppConfig
 from chatbot.core.ai_engine import ActionPlan, DecisionResult
 from chatbot.core.orchestration.capability_policy import CapabilityPolicy
-from chatbot.core.orchestration.main_orchestrator import TraditionalProcessor
+from chatbot.core.orchestration.main_orchestrator import MainOrchestrator, TraditionalProcessor
 from chatbot.core.world_state import Message
 from chatbot.integrations.matrix.steward import MatrixSteward
 from chatbot.tools.base import ActionContext
@@ -38,6 +38,16 @@ def policy():
     return CapabilityPolicy(
         "matrix_steward", (ROOM, CONTROL), CONTROL, (OWNER,), (ROOM,),
     )
+
+
+@pytest.mark.asyncio
+async def test_steward_startup_uses_configured_rooms():
+    orchestrator = SimpleNamespace(
+        config=SimpleNamespace(capability_profile="matrix_steward"),
+        action_context=SimpleNamespace(matrix_observer=SimpleNamespace(client=AsyncMock())),
+    )
+    await MainOrchestrator._ensure_media_gallery_exists(orchestrator)
+    orchestrator.action_context.matrix_observer.client.room_create.assert_not_awaited()
 
 
 def payload(room=CONTROL, sender=OWNER, event="$request", previous=None):
