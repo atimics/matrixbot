@@ -247,6 +247,12 @@ class MatrixObserver(Integration):
 
     async def _on_message(self, room: MatrixRoom, event):
         """Handle incoming Matrix messages and update room details"""
+        if room.room_id == settings.MATRIX_ADMIN_ROOM_ID:
+            return
+        if settings.BOT_CAPABILITY_PROFILE == "matrix_steward":
+            approved = {value.strip() for value in settings.PUBLIC_MATRIX_ROOM_IDS.split(",") if value.strip()}
+            if room.room_id not in approved:
+                return
         # Ensure world_state is available
         if self.world_state is None:
             # Fallback to default WorldStateManager if not provided

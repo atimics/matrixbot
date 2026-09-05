@@ -10,7 +10,8 @@ kill_timeout = 30
 [env]
   ADMIN_API_HOST = "0.0.0.0"
   ADMIN_API_PORT = "8000"
-  BOT_CAPABILITY_PROFILE = "public"
+  BOT_CAPABILITY_PROFILE = "matrix_steward"
+  MATRIX_BACKUP_INTERVAL_SECONDS = "86400"
   CHATBOT_DB_PATH = "/data/chatbot.db"
   CHATBOT_ENV = "production"
   FARCASTER_OUTBOUND_ENABLED = "false"

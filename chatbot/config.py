@@ -63,6 +63,13 @@ class AppConfig(BaseSettings):
     PUBLIC_MATRIX_ROOM_IDS: str = ""
     MATRIX_DEVICE_ID: Optional[str] = None
     MATRIX_MEDIA_GALLERY_ROOM_ID: Optional[str] = None  # Dedicated channel for auto-posting generated media
+    MATRIX_CONTROL_ROOM_ID: str = ""
+    MATRIX_OPERATOR_USER_IDS: str = ""
+    MATRIX_MANAGED_ROOM_IDS: str = ""
+    MATRIX_ADMIN_ROOM_ID: str = ""
+    MATRIX_ADMIN_ACCESS_TOKEN: Optional[str] = None
+    MATRIX_ADMIN_SERVER_USER_ID: str = "@conduit:rati.chat"
+    MATRIX_BACKUP_INTERVAL_SECONDS: int = 86400
 
     # Telegram
     TELEGRAM_BOT_TOKEN: Optional[str] = None

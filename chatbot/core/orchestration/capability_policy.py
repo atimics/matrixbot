@@ -18,6 +18,9 @@ PUBLIC_BOT_BLOCKED_PARAMETERS = {
     "send_matrix_reply": frozenset({"image_url"}),
 }
 
+MATRIX_MANAGEMENT_TOOLS = frozenset({"manage_matrix_room", "manage_matrix_server"})
+MATRIX_STEWARD_TOOLS = PUBLIC_BOT_ALLOWED_TOOLS | MATRIX_MANAGEMENT_TOOLS | {"matrix_server_status"}
+
 
 @dataclass(frozen=True)
 class ExecutionScope:
@@ -26,17 +29,22 @@ class ExecutionScope:
     channel_id: str | None
     channel_type: str | None
     message_ids: frozenset[str]
+    latest_event_id: str | None = None
+    latest_sender_id: str | None = None
 
 
 class CapabilityPolicy:
     """Apply a hard capability ceiling to model-selected actions."""
 
-    SUPPORTED_PROFILES = frozenset({"public", "operator"})
+    SUPPORTED_PROFILES = frozenset({"public", "operator", "matrix_steward"})
 
     def __init__(
         self,
         profile: str = "public",
         approved_matrix_room_ids: Collection[str] = (),
+        control_room_id: str = "",
+        operator_user_ids: Collection[str] = (),
+        managed_room_ids: Collection[str] = (),
     ) -> None:
         normalized_profile = profile.strip().lower()
         if normalized_profile not in self.SUPPORTED_PROFILES:
@@ -45,6 +53,9 @@ class CapabilityPolicy:
                 f"Unknown bot capability profile '{profile}'. Supported profiles: {supported}"
             )
         self.profile = normalized_profile
+        self.control_room_id = control_room_id
+        self.operator_user_ids = frozenset(value.strip() for value in operator_user_ids if value.strip())
+        self.managed_room_ids = frozenset(value.strip() for value in managed_room_ids if value.strip())
         self.approved_matrix_room_ids = frozenset(
             room_id.strip()
             for room_id in approved_matrix_room_ids
@@ -55,11 +66,28 @@ class CapabilityPolicy:
         """Return whether this profile permits a model-selected tool."""
         if self.profile == "operator":
             return True
+        if self.profile == "matrix_steward":
+            return tool_name in MATRIX_STEWARD_TOOLS
         return tool_name in PUBLIC_BOT_ALLOWED_TOOLS
 
-    def filter_tool_names(self, tool_names: Collection[str]) -> set[str]:
+    def filter_tool_names(self, tool_names: Collection[str], execution_scope=None) -> set[str]:
         """Return the names that may be shown to and used by the model."""
-        return {tool_name for tool_name in tool_names if self.allows(tool_name)}
+        return {
+            name for name in tool_names
+            if self.allows(name) and (
+                self.profile != "matrix_steward"
+                or name not in MATRIX_MANAGEMENT_TOOLS
+                or self._operator_scope(execution_scope)
+            )
+        }
+
+    def _operator_scope(self, scope: ExecutionScope | None) -> bool:
+        return bool(
+            scope and scope.channel_type == "matrix"
+            and self.control_room_id
+            and scope.channel_id == self.control_room_id
+            and scope.latest_sender_id in self.operator_user_ids
+        )
 
     def scope_from_payload(self, payload: Mapping[str, Any]) -> ExecutionScope:
         """Build the public action scope from the current source channel."""
@@ -86,7 +114,16 @@ class CapabilityPolicy:
             and isinstance(message.get("id"), str)
             and message["id"]
         )
-        return ExecutionScope(channel_id, channel_type, message_ids)
+        latest = recent_messages[-1] if recent_messages else {}
+        if not isinstance(latest, Mapping):
+            latest = {}
+        # The observer sets sender from the Matrix event, and the compact
+        # payload preserves it as sender_id. Display names carry no authority.
+        sender_id = latest.get("sender_id", latest.get("sender"))
+        return ExecutionScope(
+            channel_id, channel_type, message_ids,
+            latest.get("id"), sender_id if isinstance(sender_id, str) else None,
+        )
 
     def denial_reason(
         self,
@@ -101,6 +138,19 @@ class CapabilityPolicy:
                 f"'{self.profile}' capability profile"
             )
         if self.profile == "operator":
+            return None
+
+        if tool_name in MATRIX_MANAGEMENT_TOOLS | {"matrix_server_status"}:
+            if not execution_scope or execution_scope.channel_type != "matrix":
+                return "A current Matrix request is required"
+            if execution_scope.channel_id not in self.approved_matrix_room_ids:
+                return "Use an approved Matrix room"
+            if not execution_scope.latest_event_id or parameters.get("source_event_id") != execution_scope.latest_event_id:
+                return "Use the latest Matrix request event"
+            if tool_name in MATRIX_MANAGEMENT_TOOLS and not self._operator_scope(execution_scope):
+                return "Management requires an operator request in the control room"
+            if tool_name == "manage_matrix_room" and parameters.get("room_id") not in self.managed_room_ids:
+                return "Choose a configured managed room"
             return None
 
         blocked_parameters = PUBLIC_BOT_BLOCKED_PARAMETERS.get(tool_name, frozenset())

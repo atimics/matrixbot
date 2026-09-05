@@ -52,6 +52,7 @@ ENV CHATBOT_ENV=production
 # Install runtime dependencies only
 RUN apt-get update && apt-get install -y \
     curl \
+    gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
@@ -77,8 +78,8 @@ ENV PATH="/app/.venv/bin:$PATH"
 RUN mkdir -p /app/data /app/logs /app/matrix_store /app/context_storage
 RUN chown -R chatbot:chatbot /app
 
-# Switch to non-root user
-USER chatbot
+# Prepare mounted storage, then run the app as chatbot.
+ENTRYPOINT ["sh", "/app/scripts/runtime-entrypoint.sh"]
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
