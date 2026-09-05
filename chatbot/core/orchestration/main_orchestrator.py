@@ -107,8 +107,14 @@ class TraditionalProcessor:
                 logger.debug("No actions selected by AI")
                 return
                 
-            # Execute selected actions
-            for action in decision_result.selected_actions:
+            # Management actions produce their own factual reply after execution.
+            actions = decision_result.selected_actions
+            if self.capability_policy.profile == "matrix_steward":
+                management = [action for action in actions if action.action_type in {
+                    "manage_matrix_room", "manage_matrix_server", "matrix_server_status",
+                }]
+                actions = management[:1] if management else actions
+            for action in actions:
                 try:
                     if action.action_type in {"manage_matrix_room", "manage_matrix_server", "matrix_server_status"}:
                         result = await self._execute_action_and_return_result(action, execution_scope)

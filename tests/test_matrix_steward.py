@@ -219,8 +219,8 @@ async def test_management_reply_uses_actual_receipt():
     }))
     engine = AsyncMock()
     engine.make_decision.return_value = DecisionResult([
-        ActionPlan('manage_matrix_server', {'operation': 'backup', 'source_event_id': '$request'}, 'test', 5),
         ActionPlan('send_matrix_reply', {'content': 'invented result'}, 'test', 1),
+        ActionPlan('manage_matrix_server', {'operation': 'backup', 'source_event_id': '$request'}, 'test', 5),
     ], '', '', 'cycle')
     processor = TraditionalProcessor(engine, registry, Mock(), AsyncMock(), context, policy())
     await processor.process_payload(payload(), [CONTROL])

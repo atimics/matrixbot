@@ -5,7 +5,7 @@ kill_signal = "SIGTERM"
 kill_timeout = 30
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = "../../../Dockerfile"
 
 [env]
   ADMIN_API_HOST = "0.0.0.0"
