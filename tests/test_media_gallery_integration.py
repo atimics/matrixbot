@@ -14,7 +14,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from chatbot.config import settings
-from chatbot.core.orchestration.main_orchestrator import MainOrchestrator
+from chatbot.core.orchestration.main_orchestrator import MainOrchestrator, OrchestratorConfig
 from chatbot.tools.media_generation_tools import GenerateImageTool, GenerateVideoTool, _auto_post_to_gallery
 from chatbot.tools.base import ActionContext
 
@@ -195,7 +195,7 @@ class TestMediaGalleryIntegration:
         settings.MATRIX_MEDIA_GALLERY_ROOM_ID = None
         
         try:
-            orchestrator = MainOrchestrator()
+            orchestrator = MainOrchestrator(OrchestratorConfig(capability_profile="operator"))
             
             # Mock matrix observer and client
             mock_matrix_observer = MagicMock()

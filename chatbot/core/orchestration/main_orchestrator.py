@@ -1103,6 +1103,8 @@ class MainOrchestrator:
 
     async def _ensure_media_gallery_exists(self) -> None:
         """Check for, create, and configure the media gallery room."""
+        if self.config.capability_profile != "operator":
+            return
         if settings.MATRIX_MEDIA_GALLERY_ROOM_ID:
             logger.info(f"Matrix media gallery is configured: {settings.MATRIX_MEDIA_GALLERY_ROOM_ID}")
             return
