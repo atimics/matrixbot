@@ -5,12 +5,14 @@ kill_signal = "SIGTERM"
 kill_timeout = 30
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = "../../../Dockerfile"
 
 [env]
   ADMIN_API_HOST = "0.0.0.0"
   ADMIN_API_PORT = "8000"
-  BOT_CAPABILITY_PROFILE = "public"
+  BOT_CAPABILITY_PROFILE = "matrix_steward"
+  BOT_PUBLIC_URL = "https://ratichat-bot-prod.fly.dev"
+  MATRIX_BACKUP_INTERVAL_SECONDS = "86400"
   CHATBOT_DB_PATH = "/data/chatbot.db"
   CHATBOT_ENV = "production"
   FARCASTER_OUTBOUND_ENABLED = "false"

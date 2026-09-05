@@ -70,14 +70,32 @@ class TraditionalProcessor:
         """
         try:
             execution_scope = self.capability_policy.scope_from_payload(payload)
+            if self.capability_policy.profile == "matrix_steward":
+                if not self.ai_engine.api_key:
+                    return
+                if execution_scope.channel_id not in self.capability_policy.approved_matrix_room_ids:
+                    return
+                # Each request gets only its own room's messages. Global history,
+                # profiles, and thread summaries may contain private room data.
+                payload = {
+                    "current_processing_channel_id": execution_scope.channel_id,
+                    "channels": {execution_scope.channel_id: payload["channels"][execution_scope.channel_id]},
+                    "cycle_id": payload.get("cycle_id"),
+                }
 
             # Add available tools to the payload
             allowed_tool_names = self.capability_policy.filter_tool_names(
-                self.tool_registry.get_tool_names()
+                self.tool_registry.get_tool_names(), execution_scope
             )
             payload["available_tools"] = self.tool_registry.get_tool_descriptions_for_ai(
                 allowed_tool_names=allowed_tool_names
             )
+            if self.capability_policy.profile == "matrix_steward":
+                payload["matrix_management"] = {
+                    "request_event_id": execution_scope.latest_event_id,
+                    "managed_room_ids": sorted(self.capability_policy.managed_room_ids),
+                    "role": "RATi manages this Matrix community. Use the tools available for this request and report their results in plain English.",
+                }
             
             # Generate a cycle ID for this decision
             cycle_id = payload.get("cycle_id", f"cycle_{int(time.time() * 1000)}")
@@ -89,9 +107,32 @@ class TraditionalProcessor:
                 logger.debug("No actions selected by AI")
                 return
                 
-            # Execute selected actions
-            for action in decision_result.selected_actions:
+            # Management actions produce their own factual reply after execution.
+            actions = decision_result.selected_actions
+            if self.capability_policy.profile == "matrix_steward":
+                management = [action for action in actions if action.action_type in {
+                    "manage_matrix_room", "manage_matrix_server", "matrix_server_status",
+                }]
+                actions = management[:1] if management else actions
+            for action in actions:
                 try:
+                    if action.action_type in {"manage_matrix_room", "manage_matrix_server", "matrix_server_status"}:
+                        result = await self._execute_action_and_return_result(action, execution_scope)
+                        if result.get("status") != "blocked":
+                            # Send the actual result as the reply, then finish this
+                            # turn. Model text produced before execution is stale.
+                            receipt = result.get("receipt_id")
+                            message = result.get("message", str(result))
+                            if receipt:
+                                message += "\n\nReceipt: " + receipt[:12]
+                            reply = ActionPlan("send_matrix_reply", {
+                                "channel_id": execution_scope.channel_id,
+                                "reply_to_id": execution_scope.latest_event_id,
+                                "content": message,
+                                "format_as_markdown": False,
+                            }, "Report the Matrix action result", 1)
+                            await self._execute_action(reply, execution_scope)
+                        break
                     await self._execute_action(action, execution_scope)
                 except Exception as e:
                     logger.error(f"Error executing action {action.action_type}: {e}")
@@ -297,6 +338,9 @@ class MainOrchestrator:
         self.capability_policy = CapabilityPolicy(
             self.config.capability_profile,
             approved_matrix_room_ids=self.config.public_matrix_room_ids,
+            control_room_id=settings.MATRIX_CONTROL_ROOM_ID,
+            operator_user_ids=settings.MATRIX_OPERATOR_USER_IDS.split(","),
+            managed_room_ids=settings.MATRIX_MANAGED_ROOM_IDS.split(","),
         )
         
         # Core components
@@ -339,6 +383,12 @@ class MainOrchestrator:
             api_key=settings.OPENROUTER_API_KEY,
             model=self.config.ai_model
         )
+        from ..openrouter_link import OpenRouterLink
+        self.openrouter_link = OpenRouterLink(
+            self.config.db_path, settings.INTEGRATION_CREDENTIAL_KEY,
+            settings.BOT_PUBLIC_URL,
+        )
+        self.ai_engine.api_key = self.openrouter_link.api_key() or settings.OPENROUTER_API_KEY
         
         # Initialize Arweave client for internal uploader service
         self.arweave_client = None
@@ -363,6 +413,10 @@ class MainOrchestrator:
             arweave_client=self.arweave_client,
             arweave_service=arweave_service_instance
         )
+        from ...integrations.matrix.steward import MatrixSteward
+        self.matrix_steward = MatrixSteward(settings, self.config.db_path)
+        self.action_context.matrix_steward = self.matrix_steward
+        self.steward_task = None
         
         # External observers
         self.matrix_observer: Optional[MatrixObserver] = None
@@ -452,6 +506,9 @@ class MainOrchestrator:
         
         # Core tools
         self.tool_registry.register_tool(WaitTool())
+        from ...tools.matrix_management_tools import MatrixServerStatusTool, ManageMatrixRoomTool, ManageMatrixServerTool
+        for tool in (MatrixServerStatusTool(), ManageMatrixRoomTool(), ManageMatrixServerTool()):
+            self.tool_registry.register_tool(tool)
         self.tool_registry.register_tool(DescribeImageTool())
         
         # Web search and research tools
@@ -559,6 +616,8 @@ class MainOrchestrator:
             
             # Update action context with properly connected integrations
             await self._update_action_context_integrations()
+            if self.config.capability_profile == "matrix_steward":
+                self.steward_task = asyncio.create_task(self.matrix_steward.backup_loop())
             
             # Ensure the media gallery channel exists or create it
             await self._ensure_media_gallery_exists()
@@ -591,6 +650,10 @@ class MainOrchestrator:
 
         # Stop processing hub
         self.processing_hub.stop_processing_loop()
+        if self.steward_task:
+            self.steward_task.cancel()
+            await asyncio.gather(self.steward_task, return_exceptions=True)
+            self.steward_task = None
         
         # Stop proactive conversation engine
         if self.proactive_engine:

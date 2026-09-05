@@ -38,6 +38,7 @@ chatbot.db
 .python-version
 .pyenv
 venv/
+.venv/
 env/
 dist/
 build/

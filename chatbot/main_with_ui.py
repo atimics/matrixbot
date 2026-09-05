@@ -75,7 +75,8 @@ class ChatbotWithUI:
                 self.api_server,
                 host=settings.ADMIN_API_HOST,
                 port=settings.ADMIN_API_PORT,
-                log_level="info"
+                log_level="info",
+                access_log=False,  # OAuth callback codes stay out of access logs.
             )
             server = uvicorn.Server(config)
             asyncio.run(server.serve())

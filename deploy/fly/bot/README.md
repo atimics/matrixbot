@@ -3,6 +3,9 @@
 This folder defines the first production Fly deployment for the RatiChat bot.
 It is a low-cost single-instance design for the `sjc` region.
 
+The [Matrix management guide](MANAGEMENT.md) covers RATi's control room,
+room tools, dedicated server session, and daily database backups.
+
 ## Runtime shape
 
 - One `shared-cpu-1x` Machine with 1 GB of memory.

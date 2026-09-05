@@ -126,6 +126,7 @@ class Message:
             "channel_id": self.channel_id,
             "channel_type": self.channel_type,
             "sender_username": self.sender_username or self.sender,
+            "sender_id": self.sender if self.channel_type == "matrix" else None,
             "content": self.content[:250] + "..."
             if len(self.content) > 250
             else self.content,
